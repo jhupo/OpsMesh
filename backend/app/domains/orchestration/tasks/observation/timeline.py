@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.values import stringify_or_none
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
@@ -16,7 +17,6 @@ from backend.app.domains.orchestration.tasks.observation.timeline_events import 
     run_event_timeline_event,
     run_timeline_events,
     step_timeline_event,
-    str_or_none,
     timeline_event_sort_key,
 )
 from backend.app.domains.workspace.storage.artifact_models import Artifact
@@ -118,8 +118,8 @@ class TaskTimelineService:
                 "metadata": {
                     "domain_type": task.domain_type,
                     "priority": task.priority,
-                    "agent_team_id": str_or_none(task.agent_team_id),
-                    "runtime_space_id": str_or_none(task.runtime_space_id),
+                    "agent_team_id": stringify_or_none(task.agent_team_id),
+                    "runtime_space_id": stringify_or_none(task.runtime_space_id),
                     "has_project_plan": task.project_plan is not None,
                     "has_final_output": task.final_output is not None,
                 },

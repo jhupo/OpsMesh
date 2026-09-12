@@ -15,15 +15,15 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.capabilities.mcp.catalog.helpers import require_mcp_server
+from backend.app.domains.capabilities.mcp.policy import require_mcp_server
 from backend.app.domains.capabilities.models import McpCredentialReference
 from backend.app.domains.workspace.reviews.approval_service import ResourceReviewApprovalService
+from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE,
 )
-from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.observability.audit_service import AuditService
 

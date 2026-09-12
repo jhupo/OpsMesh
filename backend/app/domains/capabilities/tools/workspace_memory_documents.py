@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.values import stringify_or_none
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.memory.retrieval.search import (
     MemorySearchDocument,
@@ -139,13 +140,13 @@ class WorkspaceMemoryDocumentRepository:
                 ),
                 created_at=artifact.created_at,
                 metadata={
-                    "task_id": str_or_none(artifact.task_id),
-                    "agent_run_id": str_or_none(artifact.agent_run_id),
-                    "task_step_id": str_or_none(artifact.task_step_id),
-                    "agent_profile_id": str_or_none(artifact.agent_profile_id),
+                    "task_id": stringify_or_none(artifact.task_id),
+                    "agent_run_id": stringify_or_none(artifact.agent_run_id),
+                    "task_step_id": stringify_or_none(artifact.task_step_id),
+                    "agent_profile_id": stringify_or_none(artifact.agent_profile_id),
                     "work_package_id": artifact.work_package_id,
                     "version": artifact.version,
-                    "supersedes_artifact_id": str_or_none(artifact.supersedes_artifact_id),
+                    "supersedes_artifact_id": stringify_or_none(artifact.supersedes_artifact_id),
                     "review_status": artifact.review_status,
                     "artifact_type": artifact.artifact_type,
                     "content_type": artifact.content_type,
@@ -181,7 +182,7 @@ class WorkspaceMemoryDocumentRepository:
                 metadata={
                     "status": task.status,
                     "domain_type": task.domain_type,
-                    "agent_team_id": str_or_none(task.agent_team_id),
+                    "agent_team_id": stringify_or_none(task.agent_team_id),
                 },
             )
             for task in tasks
@@ -236,9 +237,9 @@ class WorkspaceMemoryDocumentRepository:
                 created_at=message.created_at,
                 metadata={
                     "task_id": str(message.task_id),
-                    "task_step_id": str_or_none(message.task_step_id),
-                    "agent_run_id": str_or_none(message.agent_run_id),
-                    "agent_profile_id": str_or_none(message.agent_profile_id),
+                    "task_step_id": stringify_or_none(message.task_step_id),
+                    "agent_run_id": stringify_or_none(message.agent_run_id),
+                    "agent_profile_id": stringify_or_none(message.agent_profile_id),
                     "message_type": message.message_type,
                     "sequence": message.sequence,
                 },
@@ -267,9 +268,9 @@ class WorkspaceMemoryDocumentRepository:
                 ),
                 created_at=item.created_at,
                 metadata={
-                    "domain_project_id": str_or_none(item.domain_project_id),
-                    "task_id": str_or_none(item.task_id),
-                    "parent_item_id": str_or_none(item.parent_item_id),
+                    "domain_project_id": stringify_or_none(item.domain_project_id),
+                    "task_id": stringify_or_none(item.task_id),
+                    "parent_item_id": stringify_or_none(item.parent_item_id),
                     "item_type": item.item_type,
                     "status": item.status,
                 },
@@ -303,10 +304,6 @@ def json_text(value: object) -> str:
     if value in (None, "", [], {}):
         return ""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
-
-
-def str_or_none(value: object) -> str | None:
-    return str(value) if value is not None else None
 
 
 def memory_entry_source_type(entry: WorkspaceMemoryEntry) -> str:

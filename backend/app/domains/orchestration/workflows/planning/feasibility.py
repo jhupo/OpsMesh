@@ -16,7 +16,7 @@ from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.providers.resolution.snapshot import ModelProviderResolutionService
 from backend.app.domains.capabilities.catalog.effective import EffectiveCapabilityCatalogService
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state_resource_usage import (
+from backend.app.domains.orchestration.runs.resources import (
     merge_usage_max,
     positive_int_usage,
 )

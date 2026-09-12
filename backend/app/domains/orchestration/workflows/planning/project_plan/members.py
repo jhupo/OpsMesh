@@ -2,10 +2,6 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.domains.orchestration.workflows.planning.project_plan.helpers import (
-    int_or_default,
-    same_label,
-)
 from backend.app.domains.orchestration.workflows.planning.project_plan.member_matching import (
     request_department,
     requested_member_match,
@@ -23,6 +19,10 @@ from backend.app.domains.orchestration.workflows.planning.project_plan.member_ro
     member_role,
     role_text,
     role_tokens,
+)
+from backend.app.domains.orchestration.workflows.planning.project_plan.normalization import (
+    int_or_default,
+    same_label,
 )
 
 

@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from backend.app.core.common.values import stringify_or_none
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.models import WorkspaceSkillInstall
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
@@ -55,8 +56,8 @@ def _team_payload(team: AgentTeam) -> dict[str, object]:
         "name": team.name,
         "team_type": team.team_type,
         "description": team.description,
-        "manager_agent_profile_id": _str_or_none(team.manager_agent_profile_id),
-        "runtime_space_id": _str_or_none(team.runtime_space_id),
+        "manager_agent_profile_id": stringify_or_none(team.manager_agent_profile_id),
+        "runtime_space_id": stringify_or_none(team.runtime_space_id),
         "coordination_rules": team.coordination_rules,
         "default_task_policy": team.default_task_policy,
         "capability_policy": team.capability_policy,
@@ -73,7 +74,7 @@ def _team_member_payload(member: AgentTeamMember) -> dict[str, object]:
         "workspace_id": str(member.workspace_id),
         "agent_team_id": str(member.agent_team_id),
         "agent_profile_id": str(member.agent_profile_id),
-        "reports_to_member_id": _str_or_none(member.reports_to_member_id),
+        "reports_to_member_id": stringify_or_none(member.reports_to_member_id),
         "team_role": member.team_role,
         "department": member.department,
         "position_title": member.position_title,
@@ -92,10 +93,10 @@ def _task_payload(task: Task) -> dict[str, object]:
     return {
         "id": str(task.id),
         "workspace_id": str(task.workspace_id),
-        "created_by_user_id": _str_or_none(task.created_by_user_id),
-        "created_by_agent_run_id": _str_or_none(task.created_by_agent_run_id),
-        "agent_team_id": _str_or_none(task.agent_team_id),
-        "runtime_space_id": _str_or_none(task.runtime_space_id),
+        "created_by_user_id": stringify_or_none(task.created_by_user_id),
+        "created_by_agent_run_id": stringify_or_none(task.created_by_agent_run_id),
+        "agent_team_id": stringify_or_none(task.agent_team_id),
+        "runtime_space_id": stringify_or_none(task.runtime_space_id),
         "domain_type": task.domain_type,
         "title": task.title,
         "description": task.description,
@@ -118,8 +119,8 @@ def _task_step_payload(step: TaskStep) -> dict[str, object]:
         "id": str(step.id),
         "workspace_id": str(step.workspace_id),
         "task_id": str(step.task_id),
-        "assigned_agent_profile_id": _str_or_none(step.assigned_agent_profile_id),
-        "runtime_space_id": _str_or_none(step.runtime_space_id),
+        "assigned_agent_profile_id": stringify_or_none(step.assigned_agent_profile_id),
+        "runtime_space_id": stringify_or_none(step.runtime_space_id),
         "work_package_id": step.work_package_id,
         "required_role": step.required_role,
         "required_skills": step.required_skills,
@@ -142,9 +143,9 @@ def _task_message_payload(message: TaskMessage) -> dict[str, object]:
         "id": str(message.id),
         "workspace_id": str(message.workspace_id),
         "task_id": str(message.task_id),
-        "task_step_id": _str_or_none(message.task_step_id),
-        "agent_run_id": _str_or_none(message.agent_run_id),
-        "agent_profile_id": _str_or_none(message.agent_profile_id),
+        "task_step_id": stringify_or_none(message.task_step_id),
+        "agent_run_id": stringify_or_none(message.agent_run_id),
+        "agent_profile_id": stringify_or_none(message.agent_profile_id),
         "message_type": message.message_type,
         "sequence": message.sequence,
         "body": message.body,
@@ -158,11 +159,11 @@ def _run_payload(run: AgentRun) -> dict[str, object]:
     return {
         "id": str(run.id),
         "workspace_id": str(run.workspace_id),
-        "task_id": _str_or_none(run.task_id),
-        "task_step_id": _str_or_none(run.task_step_id),
-        "agent_profile_id": _str_or_none(run.agent_profile_id),
-        "runtime_id": _str_or_none(run.runtime_id),
-        "runtime_space_id": _str_or_none(run.runtime_space_id),
+        "task_id": stringify_or_none(run.task_id),
+        "task_step_id": stringify_or_none(run.task_step_id),
+        "agent_profile_id": stringify_or_none(run.agent_profile_id),
+        "runtime_id": stringify_or_none(run.runtime_id),
+        "runtime_space_id": stringify_or_none(run.runtime_space_id),
         "status": run.status,
         "input": run.input,
         "output": run.output,
@@ -192,7 +193,7 @@ def _file_payload(file: WorkspaceFile) -> dict[str, object]:
     return {
         "id": str(file.id),
         "workspace_id": str(file.workspace_id),
-        "uploaded_by_user_id": _str_or_none(file.uploaded_by_user_id),
+        "uploaded_by_user_id": stringify_or_none(file.uploaded_by_user_id),
         "filename": file.filename,
         "content_type": file.content_type,
         "size_bytes": file.size_bytes,
@@ -210,11 +211,11 @@ def _artifact_payload(artifact: Artifact) -> dict[str, object]:
     return {
         "id": str(artifact.id),
         "workspace_id": str(artifact.workspace_id),
-        "task_id": _str_or_none(artifact.task_id),
-        "agent_run_id": _str_or_none(artifact.agent_run_id),
-        "task_step_id": _str_or_none(artifact.task_step_id),
-        "agent_profile_id": _str_or_none(artifact.agent_profile_id),
-        "supersedes_artifact_id": _str_or_none(artifact.supersedes_artifact_id),
+        "task_id": stringify_or_none(artifact.task_id),
+        "agent_run_id": stringify_or_none(artifact.agent_run_id),
+        "task_step_id": stringify_or_none(artifact.task_step_id),
+        "agent_profile_id": stringify_or_none(artifact.agent_profile_id),
+        "supersedes_artifact_id": stringify_or_none(artifact.supersedes_artifact_id),
         "work_package_id": artifact.work_package_id,
         "version": artifact.version,
         "review_status": artifact.review_status,
@@ -232,8 +233,8 @@ def _runtime_space_payload(runtime_space: RuntimeSpace) -> dict[str, object]:
     return {
         "id": str(runtime_space.id),
         "workspace_id": str(runtime_space.workspace_id),
-        "created_by_user_id": _str_or_none(runtime_space.created_by_user_id),
-        "default_runtime_template_id": _str_or_none(runtime_space.default_runtime_template_id),
+        "created_by_user_id": stringify_or_none(runtime_space.created_by_user_id),
+        "default_runtime_template_id": stringify_or_none(runtime_space.default_runtime_template_id),
         "name": runtime_space.name,
         "scope": runtime_space.scope,
         "status": runtime_space.status,
@@ -266,14 +267,14 @@ def _skill_install_payload(install: WorkspaceSkillInstall) -> dict[str, object]:
         "id": str(install.id),
         "workspace_id": str(install.workspace_id),
         "skill_id": str(install.skill_id),
-        "installed_by_user_id": _str_or_none(install.installed_by_user_id),
+        "installed_by_user_id": stringify_or_none(install.installed_by_user_id),
         "installed_key": install.installed_key,
         "installed_name": install.installed_name,
         "installed_version": install.installed_version,
         "installed_description": install.installed_description,
         "installed_capability_keys": install.installed_capability_keys,
         "installed_manifest": install.installed_manifest,
-        "source_owner_workspace_id": _str_or_none(install.source_owner_workspace_id),
+        "source_owner_workspace_id": stringify_or_none(install.source_owner_workspace_id),
         "source_visibility": install.source_visibility,
         "source_checksum": install.source_checksum,
         "config": install.config,
@@ -289,8 +290,8 @@ def _audit_payload(event: AuditEvent) -> dict[str, object]:
         "workspace_id": str(event.workspace_id),
         "actor_type": event.actor_type,
         "actor_id": event.actor_id,
-        "user_id": _str_or_none(event.user_id),
-        "agent_run_id": _str_or_none(event.agent_run_id),
+        "user_id": stringify_or_none(event.user_id),
+        "agent_run_id": stringify_or_none(event.agent_run_id),
         "action": event.action,
         "target_type": event.target_type,
         "target_id": event.target_id,
@@ -305,7 +306,3 @@ def _dt(value: datetime) -> str:
 
 def _dt_or_none(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
-
-
-def _str_or_none(value: object | None) -> str | None:
-    return str(value) if value is not None else None

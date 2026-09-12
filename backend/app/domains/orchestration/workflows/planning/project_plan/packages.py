@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
-from backend.app.domains.orchestration.workflows.planning.project_plan.helpers import (
+from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
+    member_agent_profile_id,
+    member_role,
+)
+from backend.app.domains.orchestration.workflows.planning.project_plan.normalization import (
     dict_or_default,
     expected_artifacts_for_role,
     skill_names,
     string_list,
     string_or_default,
     uuid_or_none,
-)
-from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
-    member_agent_profile_id,
-    member_role,
 )
 from backend.app.domains.orchestration.workflows.planning.project_plan.validation import (
     ProjectPlanValidationError,

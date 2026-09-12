@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from backend.app.domains.agents.messages.models import AgentMessageThread
+from backend.app.core.common.values import datetime_or_none
+from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.runtime.sessions.models import PersistentAgentSession
 from backend.app.domains.workspace.teams.models import (
+    TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
+    TEAM_RUNTIME_PAUSED,
+    TEAM_RUNTIME_STALL_THRESHOLD,
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
     AgentTeam,
@@ -15,9 +19,13 @@ from backend.app.domains.workspace.teams.operating_context_service import (
     TeamOperatingContextService,
 )
 from backend.app.domains.workspace.teams.runtime.mailbox import TeamRuntimeMailboxStore
-from backend.app.domains.workspace.teams.runtime.refs import _uuid_or_none, team_runtime_metadata
+from backend.app.domains.workspace.teams.runtime.refs import (
+    _dict_or_none,
+    _uuid_or_none,
+    team_runtime_metadata,
+)
 from backend.app.domains.workspace.teams.runtime.repository import TeamRuntimeRepository
-from backend.app.domains.workspace.teams.runtime.state_utils import _last_iteration, _runtime_health
+from backend.app.runtime.environment.models import WorkspaceRuntime
 
 
 @dataclass(frozen=True)
@@ -115,3 +123,85 @@ class TeamRuntimeStateBuilder:
             memory_summary=self._operating_context.memory_summary(team=team),
             metadata=runtime_metadata,
         )
+
+
+def _last_iteration(
+    runtime_metadata: dict[str, object],
+    message: AgentMessage | None,
+) -> dict[str, object] | None:
+    metadata_iteration = _dict_or_none(runtime_metadata.get("last_iteration"))
+    if metadata_iteration is not None:
+        return metadata_iteration
+    if message is None:
+        return None
+    payload = message.payload if isinstance(message.payload, dict) else {}
+    message_iteration = _dict_or_none(payload.get("iteration"))
+    if message_iteration is not None:
+        return message_iteration
+    return {
+        "status": str(payload.get("status") or "unknown"),
+        "summary": _dict_or_none(payload.get("summary")) or {},
+        "recorded_at": message.created_at.isoformat(),
+    }
+
+
+def _runtime_health(
+    *,
+    status: str,
+    runtime: WorkspaceRuntime | None,
+    metadata: dict[str, object],
+    generated_at: datetime,
+) -> str:
+    if status == TEAM_RUNTIME_STOPPED:
+        return "stopped"
+    if status == TEAM_RUNTIME_PAUSED:
+        return "paused"
+    if runtime is not None and (
+        runtime.status != "running" or runtime.connection_status in {"offline", "error"}
+    ):
+        return "degraded"
+    if metadata.get(TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY) is not None and runtime is None:
+        return "degraded"
+
+    last_heartbeat_at = datetime_or_none(metadata.get("last_heartbeat_at"))
+    if last_heartbeat_at is None:
+        return "starting"
+    if generated_at - last_heartbeat_at > timedelta(
+        seconds=TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS
+    ):
+        return "stale"
+    if metadata.get("heartbeat_status") == "skipped":
+        return "degraded"
+    if _runtime_stalled(metadata):
+        return "degraded"
+    if _last_worker_failure_active(metadata):
+        return "degraded"
+    return "healthy"
+
+
+def _runtime_stalled(metadata: dict[str, object]) -> bool:
+    if metadata.get("stalled_at"):
+        return True
+    return _int(metadata.get("stall_count")) >= TEAM_RUNTIME_STALL_THRESHOLD
+
+
+def _last_worker_failure_active(metadata: dict[str, object]) -> bool:
+    failure = metadata.get("last_worker_failure")
+    if not isinstance(failure, dict):
+        return False
+    return failure.get("status") in {"retrying", "failed"}
+
+
+def _int(value: object) -> int:
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return 0
+    return 0

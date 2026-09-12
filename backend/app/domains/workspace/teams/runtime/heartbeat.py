@@ -8,12 +8,12 @@ from sqlalchemy.orm import Session
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.domains.workspace.teams.models import (
     TEAM_RUNTIME_STALL_STATUSES,
+    TEAM_RUNTIME_STALL_THRESHOLD,
     TEAM_RUNTIME_STATUS_KEY,
 )
 from backend.app.domains.workspace.teams.runtime.mailbox import TeamRuntimeMailboxStore
 from backend.app.domains.workspace.teams.runtime.refs import team_runtime_metadata
 from backend.app.domains.workspace.teams.runtime.repository import TeamRuntimeRepository
-from backend.app.domains.workspace.teams.runtime.state_utils import _int, _stall_metadata_update
 
 
 class TeamRuntimeHeartbeatRecorder:
@@ -142,3 +142,51 @@ class TeamRuntimeHeartbeatRecorder:
             payload={"status": status, "worker_failure": failure},
         )
         self._session.flush()
+
+
+def _stall_metadata_update(
+    *,
+    runtime_metadata: dict[str, object],
+    status: str,
+    summary: dict[str, object],
+    recorded_at: str,
+) -> dict[str, object]:
+    if status not in TEAM_RUNTIME_STALL_STATUSES:
+        return {}
+    stall_count = _int(runtime_metadata.get("stall_count")) + 1
+    reason = _stall_reason(summary)
+    update: dict[str, object] = {
+        "stall_count": stall_count,
+        "stall_reason": reason,
+        "stall_threshold": TEAM_RUNTIME_STALL_THRESHOLD,
+    }
+    if stall_count >= TEAM_RUNTIME_STALL_THRESHOLD:
+        update["stalled_at"] = runtime_metadata.get("stalled_at") or recorded_at
+    return update
+
+
+def _stall_reason(summary: dict[str, object]) -> str:
+    for key in ("reason", "scheduled_run_skip_reason"):
+        value = summary.get(key)
+        if isinstance(value, str) and value:
+            return value
+    if _int(summary.get("eligible_action_count")) > 0:
+        return "eligible_actions_not_applied"
+    if _int(summary.get("skipped_task_count")) > 0:
+        return "tasks_not_finalizable"
+    return "no_progress"
+
+
+def _int(value: object) -> int:
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return 0
+    return 0

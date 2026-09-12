@@ -107,6 +107,11 @@ def optional_string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def stringify_or_none(value: object | None) -> str | None:
+    """Convert an optional identifier/value to text without inventing a sentinel."""
+    return str(value) if value is not None else None
+
+
 def non_empty_string_or_none(value: object) -> str | None:
     if not isinstance(value, str):
         return None

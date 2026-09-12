@@ -10,10 +10,6 @@ def _dt_or_none(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
-def _str_or_none(value: object | None) -> str | None:
-    return str(value) if value is not None else None
-
-
 def _string_field(item: dict[str, object], key: str, default: str = "") -> str:
     value = item.get(key, default)
     return value if isinstance(value, str) else default

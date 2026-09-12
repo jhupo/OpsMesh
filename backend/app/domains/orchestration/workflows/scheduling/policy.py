@@ -8,7 +8,7 @@ from backend.app.core.common.values import (
     positive_int_or_default,
     positive_int_or_none,
 )
-from backend.app.domains.orchestration.runs.state_resource_usage import scheduler_numeric_limits
+from backend.app.domains.orchestration.runs.resources import scheduler_numeric_limits
 from backend.app.domains.workspace.tenants.models import Workspace
 
 

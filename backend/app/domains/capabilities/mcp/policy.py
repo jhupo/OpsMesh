@@ -1,5 +1,9 @@
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
+from sqlalchemy.orm import Session
+
+from backend.app.core.security.redaction import redact_sensitive_text
 from backend.app.domains.capabilities.models import McpServer
 
 MCP_LIMIT_COUNTED_STATUSES = (
@@ -8,6 +12,25 @@ MCP_LIMIT_COUNTED_STATUSES = (
     "waiting_approval",
     "waiting_self_hosted",
 )
+
+
+def require_mcp_server(session: Session, workspace_id: UUID, server_id: UUID) -> McpServer:
+    """Load an MCP server only inside its workspace boundary."""
+    server = session.get(McpServer, server_id)
+    if server is None or server.workspace_id != workspace_id:
+        raise ValueError("MCP server not found")
+    return server
+
+
+def mcp_health_error(health_status: str, error_code: str | None) -> str | None:
+    if health_status == "healthy":
+        return None
+    normalized = error_code.strip() if isinstance(error_code, str) else ""
+    if normalized:
+        return redact_sensitive_text(normalized)
+    if health_status == "unhealthy":
+        return "health_check_failed"
+    return None
 
 
 def mcp_health_check_stale(server: McpServer, *, stale_after: timedelta) -> bool:

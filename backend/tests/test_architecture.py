@@ -759,6 +759,8 @@ def test_all_application_modules_are_discoverable_packages() -> None:
 def test_generic_utils_modules_are_not_used_as_dumping_grounds() -> None:
     app = ROOT / "backend/app"
     assert not list(app.rglob("utils.py"))
+    assert not list(app.rglob("*utils.py"))
+    assert not list(app.rglob("*helpers.py"))
     assert (app / "core/common/values.py").is_file()
     assert (app / "core/integrations/webhooks/policy.py").is_file()
     assert not (app / "core/integrations/webhooks/constants.py").exists()
@@ -769,6 +771,9 @@ def test_generic_utils_modules_are_not_used_as_dumping_grounds() -> None:
     assert not (app / "runtime/operations/timeline/constants.py").exists()
     assert not (app / "runtime/operations/timeline/utils.py").exists()
     assert not (app / "runtime/environment/lifecycle/guards.py").exists()
+    assert not (app / "domains/orchestration/runs/state_resource_usage.py").exists()
+    assert not (app / "domains/orchestration/runs/state_task_progress.py").exists()
+    assert not (app / "domains/orchestration/runs/profile.py").exists()
 
 
 def test_application_source_directories_are_not_empty() -> None:

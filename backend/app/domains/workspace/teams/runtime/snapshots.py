@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.values import stringify_or_none
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.providers.catalog.model_api import configured_model_api
 from backend.app.domains.orchestration.workflows.planning.org_structure import build_org_structure
@@ -50,7 +51,6 @@ def build_team_snapshot(
             )
         ).all()
     }
-
     snapshot = {
         "snapshot_version": 2,
         "captured_at": datetime.now(UTC).isoformat(),
@@ -59,7 +59,7 @@ def build_team_snapshot(
             "name": team.name,
             "team_type": team.team_type,
             "description": team.description,
-            "manager_agent_profile_id": _str_or_none(team.manager_agent_profile_id),
+            "manager_agent_profile_id": stringify_or_none(team.manager_agent_profile_id),
             "coordination_rules": team.coordination_rules,
             "default_task_policy": team.default_task_policy,
             "capability_policy": team.capability_policy,
@@ -87,7 +87,7 @@ def _member_snapshot(
     return {
         "id": str(member.id),
         "agent_profile_id": str(member.agent_profile_id),
-        "reports_to_member_id": _str_or_none(member.reports_to_member_id),
+        "reports_to_member_id": stringify_or_none(member.reports_to_member_id),
         "team_role": member.team_role,
         "department": member.department,
         "position_title": member.position_title,
@@ -113,7 +113,7 @@ def _agent_snapshot(agent: AgentProfile | None) -> dict[str, object] | None:
         "description": agent.description,
         "instructions": agent.instructions,
         "model": agent.model,
-        "model_provider_credential_id": _str_or_none(agent.model_provider_credential_id),
+        "model_provider_credential_id": stringify_or_none(agent.model_provider_credential_id),
         "model_api": configured_model_api(agent.model_settings or {}),
         "capabilities": agent.capabilities,
         "skills": agent.skills,
@@ -150,7 +150,3 @@ def _organization_snapshot(snapshot: dict[str, object]) -> dict[str, object]:
             "contributors": len(org.contributors),
         },
     }
-
-
-def _str_or_none(value: object | None) -> str | None:
-    return str(value) if value is not None else None

@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.values import stringify_or_none
 from backend.app.domains.agents.memory.configuration.service import initial_embedding_status
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
@@ -59,7 +60,7 @@ class WorkspaceMemoryIndexingService:
         metadata = {
             "status": task.status,
             "domain_type": task.domain_type,
-            "agent_team_id": _str_or_none(task.agent_team_id),
+            "agent_team_id": stringify_or_none(task.agent_team_id),
         }
         return self._refresh_source(
             workspace_id=workspace_id,
@@ -139,13 +140,13 @@ class WorkspaceMemoryIndexingService:
             _json_text(artifact.artifact_metadata),
         )
         metadata = {
-            "task_id": _str_or_none(artifact.task_id),
-            "agent_run_id": _str_or_none(artifact.agent_run_id),
-            "task_step_id": _str_or_none(artifact.task_step_id),
-            "agent_profile_id": _str_or_none(artifact.agent_profile_id),
+            "task_id": stringify_or_none(artifact.task_id),
+            "agent_run_id": stringify_or_none(artifact.agent_run_id),
+            "task_step_id": stringify_or_none(artifact.task_step_id),
+            "agent_profile_id": stringify_or_none(artifact.agent_profile_id),
             "work_package_id": artifact.work_package_id,
             "version": artifact.version,
-            "supersedes_artifact_id": _str_or_none(artifact.supersedes_artifact_id),
+            "supersedes_artifact_id": stringify_or_none(artifact.supersedes_artifact_id),
             "review_status": artifact.review_status,
             "artifact_type": artifact.artifact_type,
             "content_type": artifact.content_type,
@@ -258,10 +259,6 @@ def _json_text(value: object) -> str:
     if value in (None, {}, []):
         return ""
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
-
-
-def _str_or_none(value: object | None) -> str | None:
-    return str(value) if value is not None else None
 
 
 def _dt_or_none(value: datetime | None) -> str | None:

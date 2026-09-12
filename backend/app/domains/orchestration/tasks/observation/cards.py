@@ -1,16 +1,11 @@
 from collections import Counter
 from uuid import UUID
 
+from backend.app.core.common.values import stringify_or_none
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.observation.helpers import (
-    review_event_status,
-    safe_message_payload,
-    status_from_message_type,
-    str_or_none,
-)
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 
 
@@ -79,9 +74,9 @@ class TaskObservationTimelineCards:
                     "id": str(message.id),
                     "sequence": message.sequence,
                     "body": message.body,
-                    "task_step_id": str_or_none(message.task_step_id),
-                    "agent_run_id": str_or_none(message.agent_run_id),
-                    "agent_profile_id": str_or_none(message.agent_profile_id),
+                    "task_step_id": stringify_or_none(message.task_step_id),
+                    "agent_run_id": stringify_or_none(message.agent_run_id),
+                    "agent_profile_id": stringify_or_none(message.agent_profile_id),
                     "payload": safe_message_payload(message.payload),
                     "created_at": message.created_at,
                 },
@@ -114,12 +109,12 @@ class TaskObservationArtifactCards:
                     "content_type": artifact.content_type,
                     "size_bytes": artifact.size_bytes,
                     "checksum_sha256": artifact.checksum_sha256,
-                    "agent_run_id": str_or_none(artifact.agent_run_id),
-                    "task_step_id": str_or_none(artifact.task_step_id),
-                    "agent_profile_id": str_or_none(artifact.agent_profile_id),
+                    "agent_run_id": stringify_or_none(artifact.agent_run_id),
+                    "task_step_id": stringify_or_none(artifact.task_step_id),
+                    "agent_profile_id": stringify_or_none(artifact.agent_profile_id),
                     "work_package_id": artifact.work_package_id,
                     "version": artifact.version,
-                    "supersedes_artifact_id": str_or_none(artifact.supersedes_artifact_id),
+                    "supersedes_artifact_id": stringify_or_none(artifact.supersedes_artifact_id),
                     "review_status": artifact.review_status,
                     "metadata": redact_sensitive_payload(artifact.artifact_metadata),
                     "created_at": artifact.created_at,
@@ -189,3 +184,19 @@ def step_card(step: TaskStep, agents: dict[UUID, AgentProfile]) -> dict[str, obj
 
 def agent_payload(agent: AgentProfile) -> dict[str, object]:
     return {"id": str(agent.id), "name": agent.name, "role": agent.role, "status": agent.status}
+
+
+def safe_message_payload(payload: dict[str, object]) -> dict[str, object]:
+    return redact_sensitive_payload(payload)
+
+
+def status_from_message_type(message_type: str) -> str:
+    if message_type.endswith(".failed") or message_type.endswith(".blocked"):
+        return "attention"
+    if message_type.endswith(".completed") or message_type == "pm.acceptance_decision":
+        return "completed"
+    return "recorded"
+
+
+def review_event_status(message: TaskMessage) -> str:
+    return str(message.payload.get("decision") or message.payload.get("status") or "recorded")

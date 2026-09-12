@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 from uuid import UUID
 
+from backend.app.core.common.values import stringify_or_none
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
@@ -39,7 +39,7 @@ def step_timeline_event(
                 "acceptance_criteria_count": len(step.acceptance_criteria),
                 "review_policy": step.review_policy,
                 "dependencies": step.dependencies,
-                "runtime_space_id": str_or_none(step.runtime_space_id),
+                "runtime_space_id": stringify_or_none(step.runtime_space_id),
             }
         ),
     }
@@ -173,7 +173,7 @@ def artifact_timeline_event(
                 "checksum_sha256": artifact.checksum_sha256,
                 "work_package_id": artifact.work_package_id,
                 "version": artifact.version,
-                "supersedes_artifact_id": str_or_none(artifact.supersedes_artifact_id),
+                "supersedes_artifact_id": stringify_or_none(artifact.supersedes_artifact_id),
                 "review_status": artifact.review_status,
                 "artifact_metadata": artifact.artifact_metadata,
             }
@@ -186,15 +186,14 @@ def run_metadata(run: AgentRun) -> dict[str, object]:
     return redact_sensitive_payload(
         {
             "model": run.model,
-            "runtime_id": str_or_none(run.runtime_id),
-            "runtime_space_id": str_or_none(run.runtime_space_id),
+            "runtime_id": stringify_or_none(run.runtime_id),
+            "runtime_space_id": stringify_or_none(run.runtime_space_id),
             "input_keys": sorted(str(key) for key in run_input),
             "run_scope_snapshot": run_scope_snapshot_summary(run_input),
             "has_output": run.output is not None,
             "error": run.error,
         }
     )
-
 
 def run_scope_snapshot_summary(run_input: dict[str, object]) -> dict[str, object] | None:
     snapshot = run_input.get("authorization_snapshot")
@@ -299,7 +298,3 @@ def timeline_event_sort_key(event: dict[str, object]) -> tuple[float, int, int]:
         source_order,
         sequence if isinstance(sequence, int) else 0,
     )
-
-
-def str_or_none(value: Any) -> str | None:
-    return str(value) if value is not None else None

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.domains.orchestration.workflows.planning.project_plan.helpers import (
+from backend.app.domains.orchestration.workflows.planning.project_plan.normalization import (
     string_or_default,
     uuid_or_none,
 )

@@ -9,7 +9,7 @@ from backend.app.core.common.config import Settings, get_settings
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.governance.agent_policy import agent_mcp_policy_mode
 from backend.app.domains.capabilities.skills.diagnostics import SkillToolDiagnosticsService
-from backend.app.domains.capabilities.skills.lifecycle_helpers import (
+from backend.app.domains.capabilities.skills.lifecycle import (
     require_installable_skill,
     require_same_skill_key,
     require_workspace_install,

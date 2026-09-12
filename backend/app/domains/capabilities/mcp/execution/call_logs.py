@@ -11,12 +11,12 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.governance.agent_policy import agent_allowed_mcp_tool_names
-from backend.app.domains.capabilities.mcp.catalog.helpers import require_mcp_server
 from backend.app.domains.capabilities.mcp.execution.payloads import (
     error_code,
     hash_from_payload,
     response_hash_from_payload,
 )
+from backend.app.domains.capabilities.mcp.policy import require_mcp_server
 from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
 from backend.app.domains.orchestration.runs.models import AgentRun
 

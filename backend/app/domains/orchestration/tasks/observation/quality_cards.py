@@ -1,10 +1,7 @@
 from backend.app.core.common.values import dict_or_empty
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.orchestration.tasks.models import TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.observation.helpers import (
-    risk_flags_from_payload,
-    safe_message_payload,
-)
+from backend.app.domains.orchestration.tasks.observation.cards import safe_message_payload
 
 
 class TaskObservationQualityCards:
@@ -88,7 +85,6 @@ class TaskObservationQualityCards:
                     }
                 )
         return cards
-
     def risk_flag_cards(
         self,
         steps: list[TaskStep],
@@ -133,3 +129,32 @@ class TaskObservationQualityCards:
                     }
                 )
         return cards
+
+
+def risk_flags_from_payload(payload: dict[str, object]) -> list[dict[str, object]]:
+    risks: list[dict[str, object]] = []
+    raw_risks = payload.get("risks")
+    if isinstance(raw_risks, list):
+        risks.extend(item for item in raw_risks if isinstance(item, dict))
+
+    risk_level = payload.get("risk_level")
+    if isinstance(risk_level, str) and risk_level:
+        risks.append(
+            {
+                "title": str(payload.get("title") or "Risk flagged"),
+                "severity": risk_level,
+                "reason": payload.get("reason") or payload.get("summary"),
+            }
+        )
+
+    decision = payload.get("decision")
+    reasons = payload.get("reasons")
+    if decision == "request_revision":
+        risks.append(
+            {
+                "title": "Revision requested",
+                "severity": "attention",
+                "reason": reasons if isinstance(reasons, list) else payload.get("summary"),
+            }
+        )
+    return risks
