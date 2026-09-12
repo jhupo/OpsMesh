@@ -11,9 +11,9 @@ from backend.app.api.schemas.operations.self_hosted import (
     WorkerHeartbeatRequest,
     WorkerHeartbeatResponse,
 )
-from backend.app.runtime.self_hosted.dependencies import get_authenticated_worker
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.service import SelfHostedRuntimeService
-from backend.app.runtime.self_hosted.types import AuthenticatedWorker
+from backend.app.runtime.self_hosted.worker.dependencies import get_authenticated_worker
 
 router = APIRouter()
 

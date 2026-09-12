@@ -31,8 +31,8 @@ from backend.app.domains.workspace.storage.models import FileAccessEvent
 from backend.app.domains.workspace.storage.storage import ObjectStorage, create_storage
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.models import SelfHostedJobClaim
-from backend.app.runtime.self_hosted.types import AuthenticatedWorker
 
 
 @dataclass(frozen=True, slots=True)

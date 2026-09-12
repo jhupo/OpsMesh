@@ -16,21 +16,21 @@ from backend.app.api.schemas.operations.self_hosted import (
 from backend.app.core.common.config import Settings
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
-from backend.app.runtime.self_hosted.attestation import (
+from backend.app.runtime.self_hosted.contracts import (
+    AuthenticatedWorker,
+    CreatedEnrollmentToken,
+    RegisteredRuntime,
+)
+from backend.app.runtime.self_hosted.enrollment.attestation import (
     CapabilityAttestationResult,
     evaluate_capability_attestation,
 )
-from backend.app.runtime.self_hosted.events import SelfHostedEventRecorder
 from backend.app.runtime.self_hosted.models import (
     RuntimeCredential,
     RuntimeEnrollmentToken,
     SelfHostedWorker,
 )
-from backend.app.runtime.self_hosted.types import (
-    AuthenticatedWorker,
-    CreatedEnrollmentToken,
-    RegisteredRuntime,
-)
+from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
 
 
 class SelfHostedIdentityService:

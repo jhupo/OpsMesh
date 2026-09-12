@@ -11,11 +11,11 @@ from backend.app.core.common.config import Settings
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStateService
 from backend.app.domains.orchestration.runs.status import RunStatus
-from backend.app.runtime.self_hosted.events import SelfHostedEventRecorder
-from backend.app.runtime.self_hosted.jobs import SelfHostedJobFinalizer
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
 from backend.app.runtime.self_hosted.models import SelfHostedJobClaim
-from backend.app.runtime.self_hosted.project_files import SelfHostedProjectFileService
-from backend.app.runtime.self_hosted.types import AuthenticatedWorker
+from backend.app.runtime.self_hosted.projects.files import SelfHostedProjectFileService
+from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
 
 
 class SelfHostedRunCompletionService:

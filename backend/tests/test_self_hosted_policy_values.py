@@ -1,6 +1,6 @@
 import pytest
 
-from backend.app.runtime.self_hosted.policy import positive_policy_int
+from backend.app.runtime.self_hosted.enrollment.policy import positive_policy_int
 
 
 @pytest.mark.parametrize("value", [None, True, False, 0, -1, "10", 1.5])

@@ -7,10 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.self_hosted.events import SelfHostedEventRecorder
-from backend.app.runtime.self_hosted.jobs import SelfHostedJobFinalizer
+from backend.app.runtime.self_hosted.contracts import WorkerTrustCleanupResult
+from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
 from backend.app.runtime.self_hosted.models import SelfHostedWorker
-from backend.app.runtime.self_hosted.types import WorkerTrustCleanupResult
+from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
 
 
 class SelfHostedMaintenanceService:

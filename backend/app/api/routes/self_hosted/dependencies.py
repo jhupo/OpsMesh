@@ -3,14 +3,14 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
-from backend.app.runtime.self_hosted.dispatch import SelfHostedDispatchService
-from backend.app.runtime.self_hosted.events import SelfHostedEventRecorder
-from backend.app.runtime.self_hosted.job_completion import SelfHostedRunCompletionService
-from backend.app.runtime.self_hosted.jobs import SelfHostedJobFinalizer
-from backend.app.runtime.self_hosted.mcp_jobs import SelfHostedMcpJobService
-from backend.app.runtime.self_hosted.progress import SelfHostedProgressService
-from backend.app.runtime.self_hosted.project_files import SelfHostedProjectFileService
+from backend.app.runtime.self_hosted.dispatch.completion import SelfHostedRunCompletionService
+from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
+from backend.app.runtime.self_hosted.dispatch.mcp import SelfHostedMcpJobService
+from backend.app.runtime.self_hosted.dispatch.service import SelfHostedDispatchService
+from backend.app.runtime.self_hosted.projects.files import SelfHostedProjectFileService
 from backend.app.runtime.self_hosted.service import SelfHostedRuntimeService
+from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
+from backend.app.runtime.self_hosted.worker.progress import SelfHostedProgressService
 
 
 def self_hosted_service(

@@ -10,9 +10,9 @@ from backend.app.api.schemas.operations.self_hosted import (
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.workspace.storage.security import safe_filename, validate_storage_key
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.enrollment.policy import positive_policy_int
 from backend.app.runtime.self_hosted.models import LocalFileReference, SelfHostedArtifactUpload
-from backend.app.runtime.self_hosted.policy import positive_policy_int
-from backend.app.runtime.self_hosted.types import AuthenticatedWorker
 
 
 class SelfHostedArtifactService:

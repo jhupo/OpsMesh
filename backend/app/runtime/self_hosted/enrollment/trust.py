@@ -15,8 +15,8 @@ from backend.app.domains.capabilities.mcp.transport.payloads import (
 )
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.self_hosted.enrollment.policy import positive_policy_int
 from backend.app.runtime.self_hosted.models import RuntimeCredential, SelfHostedWorker
-from backend.app.runtime.self_hosted.policy import positive_policy_int
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
 
+from sqlalchemy.orm import Session
+
+from backend.app.core.admin.policy_reader import PlatformPolicyService
 from backend.app.core.common.values import string_list
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
@@ -270,3 +273,15 @@ def _normalize_network_mode(value: str) -> str:
 
 def _normalize_token(value: str) -> str:
     return value.strip().lower().replace("-", "_")
+
+
+class SelfHostedPolicyGate:
+    """Enforce the platform switch before any self-hosted operation."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def require_enabled(self) -> None:
+        policy = PlatformPolicyService(self._session).risky_execution_policy()
+        if not policy.allow_self_hosted_runtimes:
+            raise ValueError("Self-hosted runtimes are disabled by platform safety policy")

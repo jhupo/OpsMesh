@@ -22,18 +22,18 @@ from backend.app.runtime.environment.spaces.reservations.attachment import (
 from backend.app.runtime.environment.spaces.reservations.capacity import (
     RuntimeSpaceCapacityReservationService,
 )
-from backend.app.runtime.self_hosted.jobs import SelfHostedJobFinalizer
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
+from backend.app.runtime.self_hosted.enrollment.policy import (
+    WorkerJobPolicyDecision,
+    evaluate_worker_job_policy,
+    run_requires_verified_isolation,
+)
 from backend.app.runtime.self_hosted.models import (
     SelfHostedJobClaim,
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.runtime.self_hosted.policy import (
-    WorkerJobPolicyDecision,
-    evaluate_worker_job_policy,
-    run_requires_verified_isolation,
-)
-from backend.app.runtime.self_hosted.types import AuthenticatedWorker
 
 
 class SelfHostedWorkerEligibilityService:

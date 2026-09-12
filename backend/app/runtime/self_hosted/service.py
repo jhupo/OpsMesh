@@ -13,14 +13,23 @@ from backend.app.api.schemas.operations.self_hosted import (
 )
 from backend.app.core.common.config import Settings
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.runtime.self_hosted.artifacts import SelfHostedArtifactService
-from backend.app.runtime.self_hosted.dispatch import SelfHostedDispatchService
-from backend.app.runtime.self_hosted.events import SelfHostedEventRecorder
-from backend.app.runtime.self_hosted.identity import SelfHostedIdentityService
-from backend.app.runtime.self_hosted.job_completion import SelfHostedRunCompletionService
-from backend.app.runtime.self_hosted.jobs import SelfHostedJobFinalizer
-from backend.app.runtime.self_hosted.maintenance import SelfHostedMaintenanceService
-from backend.app.runtime.self_hosted.mcp_jobs import SelfHostedMcpJobService
+from backend.app.runtime.self_hosted.contracts import (
+    AuthenticatedWorker,
+    CreatedEnrollmentToken,
+    RegisteredRuntime,
+    WorkerControlResult,
+    WorkerTrustCleanupResult,
+)
+from backend.app.runtime.self_hosted.dispatch.completion import SelfHostedRunCompletionService
+from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
+from backend.app.runtime.self_hosted.dispatch.mcp import SelfHostedMcpJobService
+from backend.app.runtime.self_hosted.dispatch.service import SelfHostedDispatchService
+from backend.app.runtime.self_hosted.enrollment.identity import SelfHostedIdentityService
+from backend.app.runtime.self_hosted.enrollment.policy import SelfHostedPolicyGate
+from backend.app.runtime.self_hosted.enrollment.trust import (
+    SelfHostedTrustService,
+    WorkerTrustSnapshot,
+)
 from backend.app.runtime.self_hosted.models import (
     LocalFileReference,
     RuntimeCredential,
@@ -29,16 +38,10 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.runtime.self_hosted.policy_gate import SelfHostedPolicyGate
-from backend.app.runtime.self_hosted.trust import SelfHostedTrustService, WorkerTrustSnapshot
-from backend.app.runtime.self_hosted.types import (
-    AuthenticatedWorker,
-    CreatedEnrollmentToken,
-    RegisteredRuntime,
-    WorkerControlResult,
-    WorkerTrustCleanupResult,
-)
-from backend.app.runtime.self_hosted.worker_control import SelfHostedWorkerControlService
+from backend.app.runtime.self_hosted.projects.artifacts import SelfHostedArtifactService
+from backend.app.runtime.self_hosted.worker.control import SelfHostedWorkerControlService
+from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
+from backend.app.runtime.self_hosted.worker.maintenance import SelfHostedMaintenanceService
 
 
 class SelfHostedRuntimeService:

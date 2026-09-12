@@ -342,6 +342,39 @@ def test_worker_modules_are_nested_by_function() -> None:
         assert not (workers / name).exists(), name
 
 
+def test_self_hosted_runtime_modules_are_nested_by_function() -> None:
+    runtime = ROOT / "backend/app/runtime/self_hosted"
+    expected = {"enrollment", "dispatch", "worker", "projects"}
+    assert {path.name for path in runtime.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.stem
+        for path in runtime.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules == {"contracts", "models", "service"}
+    for name in (
+        "artifacts.py",
+        "attestation.py",
+        "dependencies.py",
+        "dispatch.py",
+        "dispatch_support.py",
+        "events.py",
+        "identity.py",
+        "job_completion.py",
+        "jobs.py",
+        "maintenance.py",
+        "mcp_jobs.py",
+        "policy.py",
+        "policy_gate.py",
+        "progress.py",
+        "project_files.py",
+        "trust.py",
+        "types.py",
+        "worker_control.py",
+    ):
+        assert not (runtime / name).exists(), name
+
+
 def test_operations_features_are_nested_by_function() -> None:
     operations = ROOT / "backend/app/runtime/operations"
     expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}

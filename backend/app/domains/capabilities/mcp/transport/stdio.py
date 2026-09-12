@@ -25,7 +25,7 @@ from backend.app.domains.capabilities.models import McpCredentialReference, McpS
 from backend.app.runtime.environment.contracts import RuntimeCommandInputFile
 from backend.app.runtime.environment.manager import RuntimeManager
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.self_hosted.mcp_jobs import SelfHostedMcpJobService
+from backend.app.runtime.self_hosted.dispatch.mcp import SelfHostedMcpJobService
 
 
 class DockerRuntimeStdioMcpToolAdapter:

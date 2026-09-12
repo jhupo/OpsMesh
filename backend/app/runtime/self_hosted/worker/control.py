@@ -11,10 +11,10 @@ from backend.app.domains.orchestration.runs.state import RunStateService
 from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.self_hosted.events import SelfHostedEventRecorder
-from backend.app.runtime.self_hosted.jobs import SelfHostedJobFinalizer, dt_iso
+from backend.app.runtime.self_hosted.contracts import WorkerControlResult
+from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer, dt_iso
 from backend.app.runtime.self_hosted.models import RuntimeCredential, SelfHostedWorker
-from backend.app.runtime.self_hosted.types import WorkerControlResult
+from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
 
 
 class SelfHostedWorkerControlService:

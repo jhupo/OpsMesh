@@ -19,13 +19,13 @@ from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
 from backend.app.runtime.environment.spaces.reservations.release import (
     RuntimeSpaceReservationReleaseService,
 )
-from backend.app.runtime.self_hosted.events import SelfHostedEventRecorder
 from backend.app.runtime.self_hosted.models import (
     RuntimeCredential,
     SelfHostedJobClaim,
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
+from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
 
 
 class SelfHostedJobFinalizer:

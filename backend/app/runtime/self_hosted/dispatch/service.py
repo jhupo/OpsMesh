@@ -13,20 +13,20 @@ from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.tasks.service import TaskStateService
 from backend.app.domains.orchestration.tasks.status import TaskStatus
-from backend.app.runtime.self_hosted.dispatch_support import (
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.dispatch.eligibility import (
     SelfHostedClaimLockRepository,
     SelfHostedRunReservationService,
     SelfHostedWorkerCapacityService,
     SelfHostedWorkerEligibilityService,
 )
-from backend.app.runtime.self_hosted.events import SelfHostedEventRecorder
-from backend.app.runtime.self_hosted.jobs import SelfHostedJobFinalizer
+from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
+from backend.app.runtime.self_hosted.enrollment.policy import SelfHostedPolicyGate
 from backend.app.runtime.self_hosted.models import (
     SelfHostedJobClaim,
     SelfHostedMcpJob,
 )
-from backend.app.runtime.self_hosted.policy_gate import SelfHostedPolicyGate
-from backend.app.runtime.self_hosted.types import AuthenticatedWorker
+from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
 
 
 class SelfHostedDispatchService:

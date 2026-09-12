@@ -5,13 +5,13 @@ from backend.app.api.schemas.operations.self_hosted import (
     SelfHostedWorkerTrustResponse,
     WorkerHeartbeatResponse,
 )
-from backend.app.runtime.self_hosted.models import SelfHostedWorker
-from backend.app.runtime.self_hosted.trust import WorkerTrustSnapshot
-from backend.app.runtime.self_hosted.types import (
+from backend.app.runtime.self_hosted.contracts import (
     CreatedEnrollmentToken,
     RegisteredRuntime,
     WorkerControlResult,
 )
+from backend.app.runtime.self_hosted.enrollment.trust import WorkerTrustSnapshot
+from backend.app.runtime.self_hosted.models import SelfHostedWorker
 
 
 def enrollment_token_response(created: CreatedEnrollmentToken) -> EnrollmentTokenCreateResponse:

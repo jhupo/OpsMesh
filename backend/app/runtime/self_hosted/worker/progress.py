@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.operations.self_hosted import ProgressEventRequest
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.runtime.self_hosted.events import SelfHostedEventRecorder
-from backend.app.runtime.self_hosted.types import AuthenticatedWorker
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
 
 
 class SelfHostedProgressService:

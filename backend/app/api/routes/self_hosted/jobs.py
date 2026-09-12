@@ -19,15 +19,15 @@ from backend.app.api.schemas.operations.self_hosted import (
 from backend.app.api.schemas.orchestration.runs import RunEventResponse
 from backend.app.api.schemas.workspace.files import ArtifactResponse
 from backend.app.domains.workspace.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.runtime.self_hosted.dependencies import get_authenticated_worker
-from backend.app.runtime.self_hosted.dispatch import SelfHostedDispatchService
-from backend.app.runtime.self_hosted.job_completion import SelfHostedRunCompletionService
-from backend.app.runtime.self_hosted.progress import SelfHostedProgressService
-from backend.app.runtime.self_hosted.project_files import (
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.dispatch.completion import SelfHostedRunCompletionService
+from backend.app.runtime.self_hosted.dispatch.service import SelfHostedDispatchService
+from backend.app.runtime.self_hosted.projects.files import (
     SelfHostedProjectContract,
     SelfHostedProjectFileService,
 )
-from backend.app.runtime.self_hosted.types import AuthenticatedWorker
+from backend.app.runtime.self_hosted.worker.dependencies import get_authenticated_worker
+from backend.app.runtime.self_hosted.worker.progress import SelfHostedProgressService
 
 router = APIRouter()
 

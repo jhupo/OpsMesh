@@ -14,15 +14,15 @@ from backend.app.api.schemas.operations.control_plane import (
 )
 from backend.app.core.common.values import age_seconds, positive_int_or_none, string_list
 from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.self_hosted.enrollment.trust import (
+    worker_capability_attestation_state,
+    worker_host_isolation_verified,
+)
 from backend.app.runtime.self_hosted.models import (
     RuntimeCredential,
     SelfHostedJobClaim,
     SelfHostedMcpJob,
     SelfHostedWorker,
-)
-from backend.app.runtime.self_hosted.trust import (
-    worker_capability_attestation_state,
-    worker_host_isolation_verified,
 )
 
 

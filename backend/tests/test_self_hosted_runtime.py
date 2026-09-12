@@ -40,11 +40,12 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.self_hosted.attestation import (
+from backend.app.runtime.self_hosted.enrollment.attestation import (
     CAPABILITY_ATTESTATION_PROTOCOL,
     attestation_signature,
     capability_digest,
 )
+from backend.app.runtime.self_hosted.enrollment.trust import _worker_version_diagnostics
 from backend.app.runtime.self_hosted.models import (
     RuntimeCredential,
     SelfHostedJobClaim,
@@ -52,7 +53,6 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.runtime.self_hosted.service import SelfHostedRuntimeService
-from backend.app.runtime.self_hosted.trust import _worker_version_diagnostics
 
 TOKEN = "test-token"
 
