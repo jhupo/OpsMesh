@@ -9,16 +9,21 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.memory.configuration import initial_embedding_status
-from backend.app.domains.agents.memory.content import memory_content_fingerprint
-from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.domains.agents.memory.configuration.service import initial_embedding_status
+from backend.app.domains.agents.memory.models import (
+    WorkspaceMemoryEntry,
+    memory_content_fingerprint,
+)
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.runtime_policy import runtime_file_denial_code
+from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 _CHUNK_SIZE = 900
 _CHUNK_OVERLAP = 120
+_SUPPORTED_MEMORY_INDEX_SOURCES = frozenset({"task", "workspace_file", "artifact"})
 
 
 @dataclass(frozen=True)
@@ -269,3 +274,30 @@ def _importance(source_type: str) -> int:
         "artifact": 45,
         "workspace_file": 35,
     }.get(source_type, 25)
+
+
+def enqueue_workspace_memory_index_job(
+    *,
+    queue: RedisQueue,
+    workspace_id: UUID,
+    source_type: str,
+    source_id: UUID,
+    requested_by_user_id: UUID | None = None,
+    requested_by_agent_run_id: UUID | None = None,
+    priority: int = -10,
+    routing: dict[str, object] | None = None,
+) -> bool:
+    if source_type not in _SUPPORTED_MEMORY_INDEX_SOURCES:
+        raise ValueError(f"Unsupported memory index source_type: {source_type}")
+    return queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.MEMORY_INDEX,
+            resource_id=source_id,
+            requested_by_user_id=requested_by_user_id,
+            requested_by_agent_run_id=requested_by_agent_run_id,
+            idempotency_key=f"memory.index:{workspace_id}:{source_type}:{source_id}",
+            routing={**(routing or {}), "source_type": source_type},
+            priority=priority,
+        )
+    )

@@ -23,8 +23,10 @@ from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.models import SecurityEvent
-from backend.app.domains.agents.memory.content import memory_content_fingerprint
-from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.domains.agents.memory.models import (
+    WorkspaceMemoryEntry,
+    memory_content_fingerprint,
+)
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.providers.credentials.commands import (

@@ -13,8 +13,10 @@ from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.memory.content import memory_content_fingerprint
-from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.domains.agents.memory.models import (
+    WorkspaceMemoryEntry,
+    memory_content_fingerprint,
+)
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.runtime.execution.contracts import (

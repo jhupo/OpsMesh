@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -22,6 +23,10 @@ from backend.app.core.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from backend.app.domains.workspace.tenants.models import Workspace
+
+
+def memory_content_fingerprint(title: str, content: str) -> str:
+    return hashlib.sha256(f"{title}\x00{content}".encode()).hexdigest()
 
 
 class WorkspaceMemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):

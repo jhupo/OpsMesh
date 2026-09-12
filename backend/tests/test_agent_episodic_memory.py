@@ -10,9 +10,9 @@ from sqlalchemy.types import JSON
 from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
-from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.memory.policy import normalized_memory_policy
+from backend.app.domains.agents.memory.stores.episodic import AgentEpisodicMemoryService
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.runtime.execution.contracts import AgentRunResult
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService

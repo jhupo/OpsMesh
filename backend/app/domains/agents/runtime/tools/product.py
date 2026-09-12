@@ -7,7 +7,10 @@ from backend.app.core.common.config import Settings
 from backend.app.core.common.trace_context import current_trace_context, telemetry_span
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.domains.agents.memory.authorization import memory_read_scopes, memory_write_scopes
+from backend.app.domains.agents.memory.access.authorization import (
+    memory_read_scopes,
+    memory_write_scopes,
+)
 from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeResourceGrant,

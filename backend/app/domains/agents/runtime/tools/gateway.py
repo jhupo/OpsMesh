@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.trace_context import with_current_trace_metadata
 from backend.app.core.security.models import SecurityEvent
-from backend.app.domains.agents.memory.authorization import memory_read_scopes, memory_write_scopes
+from backend.app.domains.agents.memory.access.authorization import (
+    memory_read_scopes,
+    memory_write_scopes,
+)
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeContext,

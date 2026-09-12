@@ -6,14 +6,16 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.memory.authorization import memory_read_scopes
-from backend.app.domains.agents.memory.embeddings import WorkspaceMemoryQueryEmbeddingService
+from backend.app.domains.agents.memory.access.authorization import memory_read_scopes
+from backend.app.domains.agents.memory.embeddings.service import (
+    WorkspaceMemoryQueryEmbeddingService,
+)
 from backend.app.domains.agents.memory.policy import (
     context_memory_retrieval_policy,
     episodic_memory_policy,
     semantic_memory_policy,
 )
-from backend.app.domains.agents.memory.search import query_fingerprint
+from backend.app.domains.agents.memory.retrieval.search import query_fingerprint
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeResourceGrant
 from backend.app.domains.agents.runtime.execution.tokens import (

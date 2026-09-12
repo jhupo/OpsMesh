@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
-from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
+from backend.app.domains.agents.memory.stores.episodic import AgentEpisodicMemoryService
+from backend.app.domains.agents.memory.stores.working import AgentWorkingMemoryService
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.runtime.execution.contracts import AgentRunResult
 from backend.app.domains.orchestration.runs.models import AgentRun

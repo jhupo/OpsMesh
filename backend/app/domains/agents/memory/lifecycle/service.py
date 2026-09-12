@@ -13,7 +13,7 @@ from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryLifecycleEvent,
 )
 from backend.app.domains.agents.memory.policy import MemoryLifecyclePolicy, memory_lifecycle_policy
-from backend.app.domains.agents.memory.semantic import (
+from backend.app.domains.agents.memory.stores.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryUpsert,
 )

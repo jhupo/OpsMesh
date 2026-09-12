@@ -18,10 +18,10 @@ from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.memory.content import memory_content_fingerprint
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     WorkspaceMemoryRetrievalEvent,
+    memory_content_fingerprint,
 )
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.models import AgentProfile

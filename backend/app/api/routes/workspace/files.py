@@ -19,7 +19,7 @@ from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.agents.memory.jobs import enqueue_workspace_memory_index_job
+from backend.app.domains.agents.memory.indexing.service import enqueue_workspace_memory_index_job
 from backend.app.domains.workspace.storage.security import content_disposition_attachment
 from backend.app.domains.workspace.storage.storage import create_storage
 from backend.app.runtime.workers.queue.dependencies import (

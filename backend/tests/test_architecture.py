@@ -471,6 +471,44 @@ def test_agent_runtime_vendor_modules_are_nested_by_provider() -> None:
         assert not (providers / name).exists(), name
 
 
+def test_memory_modules_are_nested_by_function() -> None:
+    memory = ROOT / "backend/app/domains/agents/memory"
+    expected = {
+        "access",
+        "configuration",
+        "context",
+        "embeddings",
+        "indexing",
+        "lifecycle",
+        "retrieval",
+        "stores",
+    }
+    assert {path.name for path in memory.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.stem
+        for path in memory.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules == {"models", "policy"}
+    for name in (
+        "authorization.py",
+        "configuration.py",
+        "context.py",
+        "content.py",
+        "embeddings.py",
+        "embedding_jobs.py",
+        "evidence.py",
+        "indexing.py",
+        "jobs.py",
+        "episodic.py",
+        "lifecycle.py",
+        "search.py",
+        "semantic.py",
+        "working.py",
+    ):
+        assert not (memory / name).exists(), name
+
+
 def test_operations_features_are_nested_by_function() -> None:
     operations = ROOT / "backend/app/runtime/operations"
     expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}

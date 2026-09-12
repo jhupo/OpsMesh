@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.memory.configuration import (
+from backend.app.domains.agents.memory.configuration.service import (
     EMBEDDING_DIMENSIONS,
     WorkspaceMemoryConfigurationService,
 )

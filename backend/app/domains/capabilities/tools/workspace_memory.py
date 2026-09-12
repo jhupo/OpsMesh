@@ -6,8 +6,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
-from backend.app.domains.agents.memory.configuration import WorkspaceMemoryConfigurationService
+from backend.app.domains.agents.memory.access.authorization import AuthorizedMemoryScope
+from backend.app.domains.agents.memory.configuration.service import (
+    WorkspaceMemoryConfigurationService,
+)
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     WorkspaceMemoryRetrievalEvent,
@@ -18,7 +20,7 @@ from backend.app.domains.agents.memory.policy import (
     hybrid_retrieval_policy,
     memory_lifecycle_policy,
 )
-from backend.app.domains.agents.memory.search import (
+from backend.app.domains.agents.memory.retrieval.search import (
     HybridMemorySearchBackend,
     LexicalMemorySearchBackend,
     MemorySearchBackend,

@@ -8,7 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.domains.agents.memory.search import (
+from backend.app.domains.agents.memory.retrieval.search import (
     MemorySearchDocument,
     MemorySearchHit,
     memory_entry_document_metadata,
