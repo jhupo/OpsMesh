@@ -12,7 +12,7 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.domains.workspace.teams.models import AgentTeamMember
-from backend.app.domains.workspace.teams.operations.console_utils import (
+from backend.app.domains.workspace.teams.operations.console_normalization import (
     _dict,
     _string_list,
     _uuid_or_none,

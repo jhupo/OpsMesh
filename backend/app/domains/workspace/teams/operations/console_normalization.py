@@ -13,7 +13,7 @@ from backend.app.core.common.values import (
     uuid_or_none,
 )
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.domains.workspace.teams.organization.policy_visibility import visible_task_policy
+from backend.app.domains.workspace.teams.organization.policy_payloads import visible_task_policy
 
 
 def _dict(value: object) -> dict[str, object]:

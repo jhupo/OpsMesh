@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 from backend.app.core.security.redaction import (
+    redact_sensitive_payload,
     redact_sensitive_payload_item,
     redact_text_fragments,
 )
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.teams.organization.policy_visibility import visible_task_policy
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
+
+_INTERNAL_POLICY_KEYS = {"team_runtime", "team_runtime_thread_id"}
+
+
+def visible_task_policy(value: object, *, redact: bool = False) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    visible = {key: item for key, item in value.items() if key not in _INTERNAL_POLICY_KEYS}
+    return redact_sensitive_payload(visible, text_mode="fragments") if redact else visible
 
 
 def operating_policy_payload(

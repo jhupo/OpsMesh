@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from backend.app.core.common.values import dict_list
 from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.workspace.teams.operations.console_normalization import (
+    _dict,
+    _int_value,
+    _positive_int,
+)
 from backend.app.domains.workspace.teams.operations.console_runtime_payloads import (
     _runtime_blocked_step_suggested_actions,
     _runtime_blocked_steps_payload,
     _runtime_queue_suggested_actions,
-)
-from backend.app.domains.workspace.teams.operations.console_utils import (
-    _dict,
-    _int_value,
-    _positive_int,
 )
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeState
 

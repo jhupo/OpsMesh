@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TypedDict
 from uuid import UUID
 
-from backend.app.domains.workspace.teams.operations.command_center_utils import (
+from backend.app.domains.workspace.teams.operations.command_center_payloads import (
     _int,
     _uuid_list,
     _uuid_value,

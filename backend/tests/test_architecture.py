@@ -141,6 +141,16 @@ def test_team_features_are_nested_by_function() -> None:
         "workspace_service",
     }
     assert (teams / "runtime/service.py").is_file()
+    assert (teams / "operations/console_normalization.py").is_file()
+    for name in (
+        "runtime/service_binding.py",
+        "runtime/service_heartbeat.py",
+        "runtime/service_lifecycle.py",
+        "operations/command_center_utils.py",
+        "organization/policy_visibility.py",
+        "operations/console_utils.py",
+    ):
+        assert not (teams / name).exists(), name
 
 
 def test_runtime_features_are_nested_by_function() -> None:

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.agents.messages.models import AgentMessage
-from backend.app.domains.workspace.teams.operations.console_utils import _preview
+from backend.app.domains.workspace.teams.operations.console_normalization import _preview
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeState
 
 

@@ -10,7 +10,7 @@ from backend.app.domains.agents.providers.health.summary import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
 )
-from backend.app.domains.workspace.teams.operations.console_utils import _uuid_or_none
+from backend.app.domains.workspace.teams.operations.console_normalization import _uuid_or_none
 from backend.app.domains.workspace.teams.operations.provider_credentials import (
     _empty_health_check_schedule_payload,
 )

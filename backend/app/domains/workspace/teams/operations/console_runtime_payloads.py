@@ -5,7 +5,7 @@ from uuid import UUID
 
 from backend.app.core.common.values import dict_list
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.workspace.teams.operations.console_utils import (
+from backend.app.domains.workspace.teams.operations.console_normalization import (
     _datetime_or_none,
     _dict,
     _int_value,
