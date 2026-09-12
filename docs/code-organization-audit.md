@@ -199,6 +199,10 @@ Run-event retrieval is likewise centralized in `domains/orchestration/runs/queri
 projections and full event timelines share the same workspace-scoped query owner. Observation
 repositories and timeline assembly no longer carry duplicate event-loading methods.
 
+The immutable run authorization snapshot is also read through that run query boundary. Model
+request construction, self-hosted worker policy, and MCP execution checks no longer each implement
+their own snapshot extraction; MCP context now owns only its audit metadata projection.
+
 The architecture gate now asserts these ownership rules, including the absence of local `_as_utc`
 implementations and the presence of the canonical run-query/value modules. Focused architecture,
 authentication, memory lifecycle, cost, operations, team-capacity and execution-loop tests passed;

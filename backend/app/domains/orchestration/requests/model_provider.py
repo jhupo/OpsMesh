@@ -13,8 +13,8 @@ from backend.app.domains.agents.providers.catalog.model_api import (
     model_api_options_for_provider,
 )
 from backend.app.domains.agents.providers.resolution.service import ModelProviderResolutionService
-from backend.app.domains.orchestration.requests.authorization import RunAuthorizationService
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 
 
 @dataclass(slots=True)
@@ -31,9 +31,7 @@ class RunRequestModelProviderService:
     ) -> dict[str, Any]:
         if override is not None:
             return override
-        snapshot = RunAuthorizationService(self.session).authorization_snapshot_for_run(run).get(
-            "model_provider"
-        )
+        snapshot = authorization_snapshot_for_run(run).get("model_provider")
         credential_id = profile.model_provider_credential_id
         agent_model = profile.model
         prefer_model_api = False

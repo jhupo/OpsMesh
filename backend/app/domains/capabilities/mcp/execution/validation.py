@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.config import Settings
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.domains.capabilities.mcp.execution.blocking import McpExecutionBlocker
-from backend.app.domains.capabilities.mcp.execution.context import authorization_snapshot
 from backend.app.domains.capabilities.mcp.execution.types import McpExecutionRequest
 from backend.app.domains.capabilities.mcp.policy import mcp_health_check_stale
 from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist
@@ -21,6 +20,7 @@ from backend.app.domains.orchestration.runs.models import (
     AgentRun,
     authorization_snapshot_fingerprint,
 )
+from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +39,7 @@ class McpExecutionValidator:
 
     def validate(self, request: McpExecutionRequest) -> ValidatedMcpExecution:
         run = self._require_run(request.workspace_id, request.agent_run_id)
-        snapshot = authorization_snapshot(run)
+        snapshot = authorization_snapshot_for_run(run)
         self._validate_snapshot_scope(snapshot, request)
         self._require_runtime_context_tool(request)
         descriptor, parameters, locked = self._require_snapshot_tool(snapshot, request)

@@ -53,6 +53,7 @@ from backend.app.domains.orchestration.requests.sessions import RunRequestSessio
 from backend.app.domains.orchestration.requests.tracing import agent_run_tracing
 from backend.app.domains.orchestration.runs.cancellation import DatabaseRunCancellation
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 from backend.app.domains.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationService,
 )
@@ -114,7 +115,7 @@ class RunRequestBuilder:
                 model=run.model or "gpt-4.1",
             )
 
-        authorization_snapshot = self.authorization_snapshot_for_run(run)
+        authorization_snapshot = authorization_snapshot_for_run(run)
         self.validate_authorization_snapshot(run, task, profile, authorization_snapshot)
         allowed_tools = self.allowed_tools_for_run(run, profile)
         tool_definitions = tool_definitions_for_snapshot(authorization_snapshot)
@@ -399,7 +400,7 @@ class RunRequestBuilder:
         profile = authorized_profile_for_run(self.session, run)
         if task is None or profile is None:
             raise ValueError("Direct workflow tools require a scoped task agent")
-        snapshot = self.authorization_snapshot_for_run(run)
+        snapshot = authorization_snapshot_for_run(run)
         self.validate_authorization_snapshot(run, task, profile, snapshot)
         runtime_binding = RunRuntimeAuthorizationService(self.session).validate_for_run(
             run=run, task=task, snapshot=snapshot
@@ -593,9 +594,6 @@ class RunRequestBuilder:
         profile: AgentProfile,
     ) -> tuple[str, ...]:
         return self.authorization.allowed_tools_for_run(run, profile)
-
-    def authorization_snapshot_for_run(self, run: AgentRun) -> dict[str, object]:
-        return self.authorization.authorization_snapshot_for_run(run)
 
     def validate_authorization_snapshot(
         self,

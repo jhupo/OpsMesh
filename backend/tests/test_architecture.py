@@ -789,6 +789,7 @@ def test_shared_normalization_and_run_queries_have_single_owners() -> None:
     assert "def task_for_run(" in query_source
     assert "def latest_events_by_run(" in query_source
     assert "def run_events_for_runs(" in query_source
+    assert "def authorization_snapshot_for_run(" in query_source
     authorization = app / "domains/orchestration/requests/authorization.py"
     authorization_source = authorization.read_text(encoding="utf-8")
     assert "def authorized_task_for_run(" in authorization_source
@@ -812,6 +813,7 @@ def test_shared_normalization_and_run_queries_have_single_owners() -> None:
         assert "def authorized_profile_for_run(" not in source
         assert "def list_run_events(" not in source
         assert "def _run_events(" not in source
+        assert "def authorization_snapshot_for_run(" not in source
     assert not any(
         "def _as_utc(" in path.read_text(encoding="utf-8")
         for path in app.rglob("*.py")

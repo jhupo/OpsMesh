@@ -1,10 +1,3 @@
-from backend.app.domains.orchestration.runs.models import AgentRun
-
-
-def authorization_snapshot(run: AgentRun) -> dict[str, object]:
-    run_input = run.input if isinstance(run.input, dict) else {}
-    snapshot = run_input.get("authorization_snapshot")
-    return snapshot if isinstance(snapshot, dict) else {}
 
 
 def snapshot_audit_metadata(snapshot: dict[str, object]) -> dict[str, object]:

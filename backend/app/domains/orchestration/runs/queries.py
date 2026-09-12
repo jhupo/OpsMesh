@@ -48,6 +48,13 @@ def task_for_run(session: Session, run: AgentRun) -> Task | None:
     return task
 
 
+def authorization_snapshot_for_run(run: AgentRun) -> dict[str, object]:
+    """Read the immutable authorization snapshot embedded in a run input."""
+    run_input = run.input if isinstance(run.input, dict) else {}
+    snapshot = run_input.get("authorization_snapshot")
+    return snapshot if isinstance(snapshot, dict) else {}
+
+
 def latest_events_by_run(
     session: Session,
     workspace_id: UUID,

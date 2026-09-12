@@ -26,6 +26,7 @@ from backend.app.domains.orchestration.runs.models import (
     AgentRun,
     authorization_snapshot_fingerprint,
 )
+from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 from backend.app.domains.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     RunRuntimeAuthorizationService,
@@ -79,17 +80,12 @@ class RunAuthorizationService:
         run: AgentRun,
         profile: AgentProfile,
     ) -> tuple[str, ...]:
-        snapshot = self.authorization_snapshot_for_run(run)
+        snapshot = authorization_snapshot_for_run(run)
         _ = profile
         raw_tools = snapshot.get("allowed_tools")
         if not isinstance(raw_tools, list) or not all(isinstance(tool, str) for tool in raw_tools):
             raise ValueError("Authorization snapshot allowed tools are invalid")
         return tuple(raw_tools)
-
-    def authorization_snapshot_for_run(self, run: AgentRun) -> dict[str, object]:
-        run_input = run.input if isinstance(run.input, dict) else {}
-        snapshot = run_input.get("authorization_snapshot")
-        return snapshot if isinstance(snapshot, dict) else {}
 
     def validate_authorization_snapshot(
         self,
@@ -195,7 +191,7 @@ class RunAuthorizationService:
                     "runtime_space_id": str(run.runtime_space_id)
                     if run.runtime_space_id is not None
                     else None,
-                    "authorization_snapshot_fingerprint": self.authorization_snapshot_for_run(
+                    "authorization_snapshot_fingerprint": authorization_snapshot_for_run(
                         run
                     ).get("fingerprint"),
                 },

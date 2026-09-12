@@ -3,10 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.capabilities.mcp.execution.context import (
-    authorization_snapshot,
-    snapshot_audit_metadata,
-)
+from backend.app.domains.capabilities.mcp.execution.context import snapshot_audit_metadata
 from backend.app.domains.capabilities.mcp.execution.logs import McpToolCallLogService
 from backend.app.domains.capabilities.mcp.execution.notifications import McpExecutionNotifier
 from backend.app.domains.capabilities.mcp.execution.payloads import payload_hash
@@ -19,6 +16,7 @@ from backend.app.domains.orchestration.approvals.policy import ApprovalPolicyDec
 from backend.app.domains.orchestration.approvals.service import ApprovalService
 from backend.app.domains.orchestration.approvals.waiting import ApprovalWaitingService
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 
 
 @dataclass(slots=True)
@@ -35,7 +33,7 @@ class McpToolApprovalRequester:
         reason: str,
         execution_review: ApprovalPolicyDecision | None = None,
     ) -> McpExecutionResult:
-        snapshot = authorization_snapshot(run)
+        snapshot = authorization_snapshot_for_run(run)
         log = McpToolCallLogService(self.session).record(
             request=request,
             server_id=server.id,

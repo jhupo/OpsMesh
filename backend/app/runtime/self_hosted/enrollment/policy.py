@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.admin.policy_reader import PlatformPolicyService
 from backend.app.core.common.values import string_list
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 
 
@@ -28,7 +29,7 @@ def evaluate_worker_job_policy(
     run: AgentRun,
     runtime_space: RuntimeSpace | None = None,
 ) -> WorkerJobPolicyDecision:
-    snapshot = _authorization_snapshot(run)
+    snapshot = authorization_snapshot_for_run(run)
 
     tool_decision = _evaluate_allowed_tools(worker_capabilities, snapshot)
     if not tool_decision.allowed:
@@ -56,7 +57,7 @@ def evaluate_worker_job_policy(
 def run_requires_verified_isolation(run: AgentRun) -> bool:
     """Return the immutable run policy's explicit host-isolation requirement."""
 
-    snapshot = _authorization_snapshot(run)
+    snapshot = authorization_snapshot_for_run(run)
     runtime_policy = snapshot.get("runtime_policy")
     return isinstance(runtime_policy, dict) and runtime_policy.get(
         "requires_verified_isolation"
@@ -153,12 +154,6 @@ def _evaluate_network_expectations(
             "supported_network_modes": sorted(supported_modes),
         },
     )
-
-
-def _authorization_snapshot(run: AgentRun) -> dict[str, object]:
-    run_input = run.input if isinstance(run.input, dict) else {}
-    snapshot = run_input.get("authorization_snapshot")
-    return snapshot if isinstance(snapshot, dict) else {}
 
 
 def _run_model(run: AgentRun, snapshot: dict[str, object]) -> str | None:
