@@ -13,7 +13,6 @@ from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.tasks import control_execution
 from backend.app.tasks.control_messages import TaskControlMessageWriter
-from backend.app.tasks.control_payloads import task_control_response
 from backend.app.tasks.control_state import task_control_state, with_task_control_state
 from backend.app.tasks.corrections import TaskCorrectionService
 from backend.app.tasks.models import Task
@@ -336,3 +335,26 @@ class TaskControlService:
             scheduled_run_ids=scheduled_run_ids,
             details=details,
         )
+
+
+def task_control_response(
+    task: Task,
+    *,
+    request: TaskControlActionRequest,
+    status: str,
+    message_id: UUID | None = None,
+    changed_step_ids: list[UUID] | None = None,
+    scheduled_run_ids: list[UUID] | None = None,
+    details: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return {
+        "workspace_id": task.workspace_id,
+        "task_id": task.id,
+        "action": request.action,
+        "status": status,
+        "task_status": task.status,
+        "message_id": message_id,
+        "changed_step_ids": changed_step_ids or [],
+        "scheduled_run_ids": scheduled_run_ids or [],
+        "details": details or {},
+    }
