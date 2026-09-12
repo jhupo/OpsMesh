@@ -1,3 +1,5 @@
+from typing import Protocol
+
 from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRuntimeExecutor
@@ -22,10 +24,13 @@ from backend.app.workers.job_handlers import (
     WebhookDeliveryJobHandler,
     WorkspaceArchiveExportJobHandler,
 )
-from backend.app.workers.job_handlers.base import WorkerJobTypeHandler
 from backend.app.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.redis_queue import RedisQueue
+
+
+class WorkerJobTypeHandler(Protocol):
+    def handle(self, job: JobPayload) -> None: ...
 
 
 class WorkerJobHandler:
