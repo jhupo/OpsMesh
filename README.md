@@ -386,6 +386,7 @@ backend/app/domains/capabilities/                     Skills, MCP, tools, market
 backend/app/domains/capabilities/{catalog,governance,resources,skills,marketplace,tools}/  Capability feature modules
 backend/app/domains/capabilities/mcp/{transport,catalog,execution}/  MCP transport, catalog, and execution modules; shared policy.py stays at the MCP boundary
 backend/app/domains/orchestration/                    Requests, runs, approvals, tasks, and workflows
+backend/app/domains/orchestration/tasks/{...}/         Task control, collaboration, delivery, execution, management, observation, and operations
 backend/app/runtime/                        Runtime, worker, operations, and self-hosted execution
 backend/app/runtime/environment/{...}/          Runtime backends, commands, lifecycle, pools, policies, and spaces
 backend/app/runtime/operations/{...}/       Metrics, queues, recovery, runtimes, timeline, and worker operations

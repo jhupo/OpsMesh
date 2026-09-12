@@ -39,6 +39,12 @@ Core persistence and security adapters remain nested under `core/db`, `core/redi
 `core/integrations/webhooks`. They are infrastructure boundaries, not application-level utility
 folders.
 
+Task orchestration follows the same ownership rule. `domains/orchestration/tasks` keeps durable
+task models, status transitions, the event bus, and public state services at its root. Control,
+collaboration, delivery, execution, management, observation, and operator actions live in their
+corresponding nested packages; filename prefixes such as `control_*` and `observation_*` are not
+used to simulate package boundaries.
+
 ## Edge-domain consolidation
 
 - Team project views are direct teams/project_* modules. Resource summaries now live with the

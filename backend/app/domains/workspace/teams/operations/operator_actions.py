@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.operator_actions import TaskOperatorActionService
+from backend.app.domains.orchestration.tasks.operations.actions import TaskOperatorActionService
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 
 TERMINAL_TASK_STATUSES = {"completed", "cancelled", "canceled"}

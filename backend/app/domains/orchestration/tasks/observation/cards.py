@@ -5,7 +5,7 @@ from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.observation_utils import (
+from backend.app.domains.orchestration.tasks.observation.helpers import (
     review_event_status,
     safe_message_payload,
     status_from_message_type,

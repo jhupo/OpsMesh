@@ -172,7 +172,7 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
 
 
 def test_authored_plan_cannot_be_replaced_by_automatic_regeneration() -> None:
-    from backend.app.domains.orchestration.tasks.plan_lifecycle import (
+    from backend.app.domains.orchestration.tasks.delivery.plan_lifecycle import (
         TaskPlanLifecycleService,
         TaskPlanRegenerateCommand,
     )

@@ -7,17 +7,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import dict_or_empty, int_or_zero, string_list
-from backend.app.domains.orchestration.tasks.control_state import task_control_state
-from backend.app.domains.orchestration.tasks.execution_diagnostics import (
+from backend.app.domains.orchestration.tasks.control.state import task_control_state
+from backend.app.domains.orchestration.tasks.execution.diagnostics import (
     TaskExecutionDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.live_status import TaskLiveStatusService
-from backend.app.domains.orchestration.tasks.manager_contracts import ManagerDiagnostics
-from backend.app.domains.orchestration.tasks.manager_diagnostics import (
+from backend.app.domains.orchestration.tasks.management.contracts import ManagerDiagnostics
+from backend.app.domains.orchestration.tasks.management.diagnostics import (
     TaskManagerDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.timeline import TaskTimelineService
+from backend.app.domains.orchestration.tasks.observation.live_status import TaskLiveStatusService
+from backend.app.domains.orchestration.tasks.observation.timeline import TaskTimelineService
 
 
 class TaskExecutionStatusService:

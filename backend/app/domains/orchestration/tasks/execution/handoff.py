@@ -2,7 +2,7 @@ from collections import Counter
 from uuid import UUID
 
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.queue_actions import (
+from backend.app.domains.orchestration.tasks.operations.queue_actions import (
     TeamQueueActionPlan,
     append_unique_uuid,
 )

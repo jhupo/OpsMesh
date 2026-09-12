@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TypedDict
 
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.observation_utils import (
+from backend.app.domains.orchestration.tasks.observation.helpers import (
     count_items,
     int_value,
     present,

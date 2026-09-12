@@ -311,7 +311,8 @@ backend/
         catalog/ governance/ resources/ skills/ marketplace/ tools/
         mcp/{transport,catalog,execution}/  # shared policy.py stays at the MCP boundary
       orchestration/                        # Requests, runs, approvals, tasks, workflows
-        approvals/ requests/ runs/ tasks/ workflows/
+        approvals/ requests/ runs/ workflows/
+        tasks/{collaboration,control,delivery,execution,management,observation,operations}/
       workspace/                            # Tenant, project, team, storage, and review domains
         domains/ projects/ reviews/ storage/ tenants/
         teams/{execution,operations,projects,providers,organization,runtime}/

@@ -1,7 +1,7 @@
 from backend.app.core.common.values import dict_or_empty
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.orchestration.tasks.models import TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.observation_utils import (
+from backend.app.domains.orchestration.tasks.observation.helpers import (
     risk_flags_from_payload,
     safe_message_payload,
 )

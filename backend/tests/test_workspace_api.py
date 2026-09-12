@@ -44,12 +44,12 @@ from backend.app.domains.agents.runtime.sessions import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.runs.status import RunStatus
-from backend.app.domains.orchestration.tasks.correction_diagnostics import (
+from backend.app.domains.orchestration.tasks.delivery.correction_diagnostics import (
     TaskCorrectionDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
-from backend.app.domains.orchestration.tasks.execution_diagnostics import (
+from backend.app.domains.orchestration.tasks.execution.diagnostics import (
     TaskExecutionDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.message_append import (
@@ -62,9 +62,9 @@ from backend.app.domains.orchestration.tasks.models import (
     TaskMessage,
     TaskStep,
 )
-from backend.app.domains.orchestration.tasks.observation import TaskObservationService
+from backend.app.domains.orchestration.tasks.observation.service import TaskObservationService
+from backend.app.domains.orchestration.tasks.observation.timeline import TaskTimelineService
 from backend.app.domains.orchestration.tasks.status import TaskStatus
-from backend.app.domains.orchestration.tasks.timeline import TaskTimelineService
 from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
 from backend.app.domains.workspace.storage.artifact_models import Artifact
@@ -8150,7 +8150,9 @@ def test_task_live_status_api_returns_active_runs_and_message_cursor() -> None:
 
 
 def test_task_live_status_scopes_participants_and_includes_message_only_agents() -> None:
-    from backend.app.domains.orchestration.tasks.live_status import TaskLiveStatusService
+    from backend.app.domains.orchestration.tasks.observation.live_status import (
+        TaskLiveStatusService,
+    )
 
     _, session = _client()
     _, workspace = _seed_workspace(session, role="owner")

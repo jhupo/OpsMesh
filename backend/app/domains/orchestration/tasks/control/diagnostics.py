@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
-from backend.app.domains.orchestration.tasks.control import TASK_PAUSED_REASON
-from backend.app.domains.orchestration.tasks.control_state import task_control_state
+from backend.app.domains.orchestration.tasks.control.execution import TASK_PAUSED_REASON
+from backend.app.domains.orchestration.tasks.control.state import task_control_state
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.runtime.operations.models import WorkerLease

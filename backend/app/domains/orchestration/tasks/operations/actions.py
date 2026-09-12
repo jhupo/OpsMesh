@@ -6,15 +6,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.orchestration.tasks.manager_contracts import TaskOperatorActionResult
-from backend.app.domains.orchestration.tasks.manager_review_requests import (
+from backend.app.domains.orchestration.tasks.management.contracts import TaskOperatorActionResult
+from backend.app.domains.orchestration.tasks.management.review_requests import (
     ManagerReviewRequestService,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.operator_action_recording import (
+from backend.app.domains.orchestration.tasks.operations.action_recording import (
     TaskOperatorActionRecorder,
 )
-from backend.app.domains.orchestration.tasks.operator_dependencies import (
+from backend.app.domains.orchestration.tasks.operations.dependencies import (
     completed_source_steps,
     dependency_step_ids,
     without_blocking_keys,

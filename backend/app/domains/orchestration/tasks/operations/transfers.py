@@ -14,7 +14,10 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep, TaskTransfer
-from backend.app.domains.orchestration.tasks.ownership import is_platform_owned_step, owner_version
+from backend.app.domains.orchestration.tasks.operations.ownership import (
+    is_platform_owned_step,
+    owner_version,
+)
 from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.workspace.storage.artifact_models import Artifact

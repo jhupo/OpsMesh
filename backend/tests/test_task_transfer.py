@@ -17,8 +17,8 @@ from backend.app.core.db.models import (  # noqa: F401
     Workspace,
 )
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.orchestration.tasks.ownership import task_owner_can_execute_step
-from backend.app.domains.orchestration.tasks.transfers import (
+from backend.app.domains.orchestration.tasks.operations.ownership import task_owner_can_execute_step
+from backend.app.domains.orchestration.tasks.operations.transfers import (
     TaskTransferCommand,
     TaskTransferDecision,
     TaskTransferError,

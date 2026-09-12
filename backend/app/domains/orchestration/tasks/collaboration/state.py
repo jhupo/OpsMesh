@@ -8,11 +8,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import dict_list, string_list
-from backend.app.domains.orchestration.tasks.execution_diagnostics import (
+from backend.app.domains.orchestration.tasks.execution.diagnostics import (
     TaskExecutionDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.manager_contracts import ManagerDiagnostics
-from backend.app.domains.orchestration.tasks.manager_diagnostics import (
+from backend.app.domains.orchestration.tasks.management.contracts import ManagerDiagnostics
+from backend.app.domains.orchestration.tasks.management.diagnostics import (
     TaskManagerDiagnosticsService,
 )
 

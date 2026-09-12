@@ -13,11 +13,11 @@ from backend.app.api.schemas.orchestration.tasks.overview import (
 from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
-from backend.app.domains.orchestration.tasks.corrections import (
+from backend.app.domains.orchestration.tasks.delivery.corrections import (
     TaskCorrectionResult,
     TaskCorrectionService,
 )
-from backend.app.domains.orchestration.tasks.delivery_review import TaskDeliveryReviewService
+from backend.app.domains.orchestration.tasks.delivery.review import TaskDeliveryReviewService
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.tasks.service import TaskStateService

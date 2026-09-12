@@ -27,13 +27,13 @@ from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks.execution_diagnostics import (
+from backend.app.domains.orchestration.tasks.execution.diagnostics import (
     TaskExecutionDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.manager_diagnostics import (
+from backend.app.domains.orchestration.tasks.management.diagnostics import (
     TaskManagerDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.workspace_service import (
+from backend.app.domains.orchestration.tasks.operations.workspace import (
     TaskCreateCommand,
     WorkspaceTaskService,
 )

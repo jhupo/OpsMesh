@@ -2,13 +2,13 @@ from collections import Counter
 from uuid import UUID
 
 from backend.app.core.common.values import string_list
-from backend.app.domains.orchestration.tasks.manager_contracts import (
+from backend.app.domains.orchestration.tasks.management.contracts import (
     ManagerDiagnostics,
     ManagerInfo,
     ManagerQueueItem,
 )
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.queue_actions import (
+from backend.app.domains.orchestration.tasks.operations.queue_actions import (
     TeamQueueActionPlan,
     append_unique_uuid,
 )

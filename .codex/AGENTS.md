@@ -142,7 +142,9 @@ the OpsMesh control plane.
   `mcp/{transport,catalog,execution}`. The MCP boundary keeps its one shared `policy.py` module
   at that boundary because health and limit rules are consumed by both catalog and execution;
   transport, catalog, and execution implementation files remain nested by function.
-- `backend/app/domains/orchestration`: requests, runs, approvals, tasks, and workflows.
+- `backend/app/domains/orchestration`: requests, runs, approvals, tasks, and workflows. Task
+  implementation is grouped under `tasks/{collaboration,control,delivery,execution,management,observation,operations}`;
+  the task root keeps only durable models, state transitions, events, and public entrypoints.
 - `backend/app/runtime`: runtime resources, Docker pools, workers, operations, and self-hosted jobs.
   Runtime internals are grouped under `runtime/environment/{backends,commands,lifecycle,pool,policies,spaces}`;
   operational views and maintenance are grouped under

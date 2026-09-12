@@ -19,12 +19,12 @@ from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.plan_lifecycle import (
+from backend.app.domains.orchestration.tasks.delivery.plan_lifecycle import (
     TaskPlanLifecycleService,
     TaskPlanRegenerateCommand,
     TaskPlanRetryCommand,
 )
+from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.definitions import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,

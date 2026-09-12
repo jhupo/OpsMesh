@@ -37,7 +37,7 @@ from backend.app.domains.orchestration.runs.authorization_snapshot import (
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.runs.status import RunStatus
-from backend.app.domains.orchestration.tasks.collaboration_state import (
+from backend.app.domains.orchestration.tasks.collaboration.state import (
     TaskCollaborationStateService,
 )
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus

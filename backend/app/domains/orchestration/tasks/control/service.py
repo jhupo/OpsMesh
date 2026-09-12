@@ -13,20 +13,22 @@ from backend.app.api.schemas.orchestration.tasks.overview import (
 from backend.app.core.common.values import int_or_zero
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks import control_execution
-from backend.app.domains.orchestration.tasks.control_messages import TaskControlMessageWriter
-from backend.app.domains.orchestration.tasks.control_state import (
+from backend.app.domains.orchestration.tasks.control.execution import (
+    TaskControlExecutionService,
+)
+from backend.app.domains.orchestration.tasks.control.messages import (
+    TaskControlMessageWriter,
+)
+from backend.app.domains.orchestration.tasks.control.state import (
     task_control_state,
     with_task_control_state,
 )
-from backend.app.domains.orchestration.tasks.corrections import TaskCorrectionService
+from backend.app.domains.orchestration.tasks.delivery.corrections import TaskCorrectionService
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.tasks.service import TaskStateService
 from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.workers.redis_queue import RedisQueue
-
-TASK_PAUSED_REASON = control_execution.TASK_PAUSED_REASON
 
 
 class TaskControlService:
@@ -70,7 +72,7 @@ class TaskControlService:
         if TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
             raise ValueError("Terminal tasks cannot be paused")
         now = datetime.now(UTC)
-        execution = control_execution.TaskControlExecutionService(self._session, queue=self._queue)
+        execution = TaskControlExecutionService(self._session, queue=self._queue)
         cancelled_runs, worker_cancel_requests = execution.cancel_active_runs(task, now=now)
         blocked_steps = execution.block_schedulable_steps(task, request=request, now=now)
         previous_status = task.status
@@ -145,7 +147,7 @@ class TaskControlService:
         )
         control.pop("pause_reason", None)
         task.generic_state = with_task_control_state(task.generic_state, control)
-        execution = control_execution.TaskControlExecutionService(self._session, queue=self._queue)
+        execution = TaskControlExecutionService(self._session, queue=self._queue)
         unblocked_steps = execution.unblock_paused_steps(task)
         previous_status = task.status
         if TaskStatus(task.status) == TaskStatus.BLOCKED:

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.timeline_events import (
+from backend.app.domains.orchestration.tasks.observation.timeline_events import (
     artifact_timeline_event,
     message_timeline_event,
     run_event_timeline_event,

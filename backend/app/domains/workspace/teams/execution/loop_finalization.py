@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.manager_diagnostics import (
+from backend.app.domains.orchestration.tasks.management.diagnostics import (
     TaskManagerDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep

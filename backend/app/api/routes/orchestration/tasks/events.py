@@ -33,7 +33,7 @@ from backend.app.core.common.trace_context import current_trace_metadata
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.orchestration.tasks.events import TaskEventBus
 from backend.app.domains.orchestration.tasks.feedback import TaskFeedbackService
-from backend.app.domains.orchestration.tasks.live_status import TaskLiveStatusService
+from backend.app.domains.orchestration.tasks.observation.live_status import TaskLiveStatusService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

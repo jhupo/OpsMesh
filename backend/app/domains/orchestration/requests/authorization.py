@@ -34,7 +34,7 @@ from backend.app.domains.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationService,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.ownership import task_owner_can_execute_step
+from backend.app.domains.orchestration.tasks.operations.ownership import task_owner_can_execute_step
 
 
 @dataclass(slots=True)

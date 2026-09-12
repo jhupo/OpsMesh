@@ -6,7 +6,7 @@ from uuid import UUID
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.observation_cards import (
+from backend.app.domains.orchestration.tasks.observation.cards import (
     TaskObservationArtifactCards,
     TaskObservationOverviewCards,
     TaskObservationReviewCards,
@@ -14,8 +14,10 @@ from backend.app.domains.orchestration.tasks.observation_cards import (
     agent_payload,
     step_card,
 )
-from backend.app.domains.orchestration.tasks.observation_domain import TaskObservationDomainCards
-from backend.app.domains.orchestration.tasks.observation_quality_cards import (
+from backend.app.domains.orchestration.tasks.observation.domain import (
+    TaskObservationDomainCards,
+)
+from backend.app.domains.orchestration.tasks.observation.quality_cards import (
     TaskObservationQualityCards,
 )
 from backend.app.domains.workspace.storage.artifact_models import Artifact

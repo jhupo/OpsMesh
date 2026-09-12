@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import dict_list
-from backend.app.domains.orchestration.tasks.collaboration_recovery_plan import (
+from backend.app.domains.orchestration.tasks.collaboration.recovery_plan import (
     build_recovery_plan,
     dry_run_recovery_result,
     filter_recovery_plan,
@@ -17,13 +17,13 @@ from backend.app.domains.orchestration.tasks.collaboration_recovery_plan import 
     skipped_recovery_plan_items,
     uuid_list,
 )
-from backend.app.domains.orchestration.tasks.collaboration_state import (
+from backend.app.domains.orchestration.tasks.collaboration.state import (
     TaskCollaborationStateService,
 )
-from backend.app.domains.orchestration.tasks.execution_diagnostics import (
+from backend.app.domains.orchestration.tasks.execution.diagnostics import (
     TaskExecutionDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.operator_actions import TaskOperatorActionService
+from backend.app.domains.orchestration.tasks.operations.actions import TaskOperatorActionService
 from backend.app.observability.audit_service import AuditService
 
 

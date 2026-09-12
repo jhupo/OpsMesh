@@ -196,6 +196,46 @@ def test_runtime_features_are_nested_by_function() -> None:
         assert not (runtime / name).exists(), name
 
 
+def test_task_modules_are_nested_by_function() -> None:
+    tasks = ROOT / "backend/app/domains/orchestration/tasks"
+    expected = {
+        "collaboration",
+        "control",
+        "delivery",
+        "execution",
+        "management",
+        "observation",
+        "operations",
+    }
+    assert {path.name for path in tasks.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.stem
+        for path in tasks.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules <= {
+        "events",
+        "event_outbox",
+        "feedback",
+        "message_append",
+        "models",
+        "service",
+        "status",
+        "step_service",
+        "step_status",
+    }
+    for name in (
+        "control.py",
+        "control_diagnostics.py",
+        "manager_contracts.py",
+        "observation.py",
+        "observation_utils.py",
+        "operator_actions.py",
+        "workspace_service.py",
+    ):
+        assert not (tasks / name).exists(), name
+
+
 def test_operations_features_are_nested_by_function() -> None:
     operations = ROOT / "backend/app/runtime/operations"
     expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}

@@ -16,11 +16,11 @@ from backend.app.domains.agents.runtime.contracts import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.plan_lifecycle import (
+from backend.app.domains.orchestration.tasks.delivery.plan_lifecycle import (
     TaskPlanLifecycleService,
     TaskPlanRetryCommand,
 )
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.plan_future_plan_mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,

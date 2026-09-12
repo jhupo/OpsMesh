@@ -12,7 +12,7 @@ from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.orchestration.tasks.transfers import (
+from backend.app.domains.orchestration.tasks.operations.transfers import (
     TaskTransferCommand,
     TaskTransferDecision,
     TaskTransferError,

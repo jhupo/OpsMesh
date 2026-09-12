@@ -6,9 +6,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.observation_models import SUPPORTED_VIEW_TYPES
-from backend.app.domains.orchestration.tasks.observation_repository import TaskObservationRepository
-from backend.app.domains.orchestration.tasks.observation_sections import (
+from backend.app.domains.orchestration.tasks.observation.models import SUPPORTED_VIEW_TYPES
+from backend.app.domains.orchestration.tasks.observation.repository import (
+    TaskObservationRepository,
+)
+from backend.app.domains.orchestration.tasks.observation.sections import (
     TaskObservationSectionBuilder,
 )
 
