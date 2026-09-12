@@ -31,7 +31,7 @@ from backend.app.operations.run_activity import RunActivityPayloadService
 from backend.app.operations.self_hosted_machines import (
     OperationsSelfHostedMachineService,
 )
-from backend.app.operations.worker_lifecycle_payloads import WorkerLifecyclePayloadService
+from backend.app.operations.worker_lifecycle import WorkerLifecyclePayloadService
 from backend.app.redis.cache import RedisJsonCache
 from backend.app.redis.dependencies import get_cache_service, get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder

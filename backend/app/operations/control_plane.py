@@ -16,6 +16,15 @@ from backend.app.api.schemas.operation_queue import QueueLatencyResponse
 from backend.app.api.schemas.operation_scheduler import OperationsSchedulerResponse
 
 
+def control_plane_health(issues: list[OperationsControlPlaneIssueResponse]) -> str:
+    severities = {issue.severity for issue in issues}
+    if "critical" in severities:
+        return "critical"
+    if "warning" in severities:
+        return "warning"
+    return "healthy"
+
+
 def append_outcome_issues(
     issues: list[OperationsControlPlaneIssueResponse],
     outcomes: OperationsOutcomesResponse,

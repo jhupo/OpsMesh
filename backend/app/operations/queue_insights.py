@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -7,9 +8,61 @@ from redis import Redis
 
 from backend.app.api.schemas.operation_queue import OperationsQueueInsightsResponse
 from backend.app.operations.queue_insight_buckets import QueueInsightBucketBuilder
-from backend.app.operations.queue_insight_scanner import QueueInsightScanner
 from backend.app.operations.utils import age_seconds
 from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.workers.jobs import JobPayload
+from backend.app.workers.redis_queue import RedisQueue
+
+
+@dataclass(frozen=True, slots=True)
+class QueueInsightScan:
+    queued_total: int
+    dead_letter_total: int
+    queued_jobs: list[JobPayload]
+    dead_letter_jobs: list[JobPayload]
+
+    @property
+    def truncated(self) -> bool:
+        return self.queued_total > len(self.queued_jobs) or self.dead_letter_total > len(
+            self.dead_letter_jobs
+        )
+
+
+
+
+
+
+
+class QueueInsightScanner:
+    def __init__(
+        self,
+        redis: Redis[str],
+        key_builder: RedisKeyBuilder,
+    ) -> None:
+        self._redis = redis
+        self._keys = key_builder
+
+    def scan(
+        self,
+        *,
+        workspace_id: UUID,
+        queue_name: str,
+        scan_limit: int,
+    ) -> QueueInsightScan:
+        queue = RedisQueue(self._redis, self._keys, queue_name)
+        return QueueInsightScan(
+            queued_total=queue.count_queued(workspace_id=workspace_id),
+            dead_letter_total=queue.count_dead_letters(workspace_id=workspace_id),
+            queued_jobs=[
+                job for job in queue.peek(limit=scan_limit) if job.workspace_id == workspace_id
+            ],
+            dead_letter_jobs=queue.list_dead_letters(scan_limit, workspace_id=workspace_id),
+        )
+
+
+
+
+
 
 
 class QueueInsightsService:
