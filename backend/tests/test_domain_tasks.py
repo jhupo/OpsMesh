@@ -16,8 +16,8 @@ from backend.app.db.session import get_db_session
 from backend.app.domains.models import RevisionRequest
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.orchestration.tasks.models import TaskMessage, TaskStep
 from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.tasks.models import TaskMessage, TaskStep
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType

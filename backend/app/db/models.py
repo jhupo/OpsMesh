@@ -21,7 +21,6 @@ from backend.app.agents.runtime.sessions import (
     PersistentAgentSession,
     PersistentAgentSessionItem,
 )
-from backend.app.approvals.models import Approval, PendingToolInvocation
 from backend.app.capabilities.marketplace.models import (
     MarketplaceListing,
     TalentListing,
@@ -50,10 +49,18 @@ from backend.app.observability.cost_models import (
 )
 from backend.app.observability.notification_models import WorkspaceNotification
 from backend.app.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
+from backend.app.orchestration.approvals.models import Approval, PendingToolInvocation
 from backend.app.orchestration.models import (
     OrchestrationDefinition,
     OrchestrationRevision,
     SubworkflowInvocation,
+)
+from backend.app.orchestration.tasks.models import (
+    Task,
+    TaskEventOutbox,
+    TaskMessage,
+    TaskStep,
+    TaskTransfer,
 )
 from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.projects.export_models import WorkspaceExportJob
@@ -92,7 +99,6 @@ from backend.app.self_hosted.models import (
 )
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import FileAccessEvent, WorkspaceFile
-from backend.app.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep, TaskTransfer
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
 from backend.app.workers.scheduled_models import (

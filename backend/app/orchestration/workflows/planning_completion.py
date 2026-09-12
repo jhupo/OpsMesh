@@ -8,6 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.runtime.contracts import AgentRunResult
+from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.plan_agent_plan import (
     AgentPlanProposal,
     is_agent_planning_step,
@@ -24,8 +26,6 @@ from backend.app.orchestration.workflows.planning_team_project_plan import (
     ProjectPlanStepMaterializer,
 )
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.message_append import TaskMessageAppendService
-from backend.app.tasks.models import Task, TaskStep
 
 
 class PlannerCompletionService:

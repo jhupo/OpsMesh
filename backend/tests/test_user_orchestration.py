@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.workflows.conditions import (
     evaluate_task_step_condition,
     validate_condition,
@@ -18,7 +19,6 @@ from backend.app.orchestration.workflows.plan_workflow_contracts import (
     WorkflowCondition,
     WorkflowNode,
 )
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.tests.test_capability_resources import (
     _client as _api_client,
@@ -172,7 +172,10 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
 
 
 def test_authored_plan_cannot_be_replaced_by_automatic_regeneration() -> None:
-    from backend.app.tasks.plan_lifecycle import TaskPlanLifecycleService, TaskPlanRegenerateCommand
+    from backend.app.orchestration.tasks.plan_lifecycle import (
+        TaskPlanLifecycleService,
+        TaskPlanRegenerateCommand,
+    )
 
     session = _session()
     user, workspace = _seed_workspace(session)

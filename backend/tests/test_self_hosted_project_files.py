@@ -22,6 +22,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
+from backend.app.orchestration.tasks.models import Task
 from backend.app.projects.models import (
     AgentRunProjectIOState,
     WorkspaceProject,
@@ -36,7 +37,6 @@ from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.storage import LocalStorage
-from backend.app.tasks.models import Task
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 from backend.tests.fixtures.project_authorization import authorize_project_run
 

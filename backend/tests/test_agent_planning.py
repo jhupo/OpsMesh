@@ -12,6 +12,11 @@ from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRunResult, AgentRuntimeStructuredOutput
 from backend.app.observability.cost_models import WorkspaceCostBudget
 from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.plan_lifecycle import (
+    TaskPlanLifecycleService,
+    TaskPlanRetryCommand,
+)
 from backend.app.orchestration.workflows.plan_future_plan_mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
@@ -22,8 +27,6 @@ from backend.app.orchestration.workflows.planning_completion import PlannerCompl
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.tasks.models import Task, TaskStep
-from backend.app.tasks.plan_lifecycle import TaskPlanLifecycleService, TaskPlanRetryCommand
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.jobs import JobPayload, JobType

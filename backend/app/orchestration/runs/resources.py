@@ -11,6 +11,7 @@ from backend.app.orchestration.runs.state_resource_usage import (
     merge_workspace_slot_usage,
     positive_int_usage,
 )
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.runs.models import AgentRun
 from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceReservation
 from backend.app.runtime.space_reservation_attachment import (
@@ -22,7 +23,6 @@ from backend.app.runtime.space_reservation_capacity import (
 from backend.app.runtime.space_reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
-from backend.app.tasks.models import Task, TaskStep
 from backend.app.workspaces.models import WorkspaceReservation
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 

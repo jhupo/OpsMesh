@@ -32,10 +32,6 @@ from backend.app.agents.runtime.contracts import (
 from backend.app.agents.runtime.providers import openai_agents as openai_runtime
 from backend.app.agents.runtime.sessions import PersistentAgentSession
 from backend.app.agents.runtime.state_store import AgentRunStateStore
-from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
-from backend.app.approvals.decisions import ApprovalDecisionService
-from backend.app.approvals.models import Approval, PendingToolInvocation
-from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.capabilities.models import (
     CapabilityResource,
     McpCredentialReference,
@@ -49,6 +45,12 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.observability.audit_models import AuditEvent
+from backend.app.orchestration.approvals.agent_tool_interruptions import (
+    AgentToolInterruptionService,
+)
+from backend.app.orchestration.approvals.decisions import ApprovalDecisionService
+from backend.app.orchestration.approvals.models import Approval, PendingToolInvocation
+from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.request_reviewing import (
     model_request_review_fingerprint,
@@ -70,6 +72,8 @@ from backend.app.orchestration.runs.resources import RunResourceReservationServi
 from backend.app.orchestration.runs.service import (
     RunOrchestrationService,
 )
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.orchestration.workflows.step_launcher import RunStepLauncher
 from backend.app.orchestration.workflows.step_scheduling_state import (
@@ -92,8 +96,6 @@ from backend.app.runtime.space_models import (
 )
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.storage.artifact_models import Artifact
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.runtime import TeamRuntimeService
 from backend.app.workers.handlers import WorkerJobHandler

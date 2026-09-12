@@ -17,6 +17,9 @@ from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_confl
 from backend.app.db.pagination import page_scalars
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.models import OrchestrationDefinition, OrchestrationRevision
+from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.status import TERMINAL_TASK_STATUSES
 from backend.app.orchestration.workflows.definition_commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
@@ -35,9 +38,6 @@ from backend.app.orchestration.workflows.planning_team_project_plan import (
 )
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.message_append import TaskMessageAppendService
-from backend.app.tasks.models import Task, TaskStep
-from backend.app.tasks.status import TERMINAL_TASK_STATUSES
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.snapshots import build_team_snapshot
 

@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.execution_overview_contracts import (
     ACTIVE_RUN_STATUSES,
     ACTIVE_STEP_STATUSES,

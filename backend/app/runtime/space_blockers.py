@@ -3,8 +3,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.blocked_reasons import explain_blocked_reason
-from backend.app.tasks.models import Task, TaskStep
 
 
 class RuntimeSpaceBlockerService:

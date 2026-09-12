@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.admin.models import PlatformPolicy
 from backend.app.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.approvals.models import Approval
 from backend.app.capabilities.tools.context import ToolContext
 from backend.app.capabilities.tools.runtime_tools import RuntimeToolService
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun, RunEvent
@@ -28,8 +30,6 @@ from backend.app.runtime.contracts import (
 )
 from backend.app.runtime.manager import RuntimeManager
 from backend.app.runtime.models import RuntimeTemplate
-from backend.app.tasks.models import Task
-from backend.app.tasks.status import TaskStatus
 from backend.app.workspaces.models import Workspace
 
 

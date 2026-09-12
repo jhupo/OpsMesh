@@ -2,9 +2,6 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.approvals.policy import ApprovalPolicyDecision
-from backend.app.approvals.service import ApprovalService
-from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.capabilities.mcp.execution_context import (
     authorization_snapshot,
     snapshot_audit_metadata,
@@ -14,6 +11,9 @@ from backend.app.capabilities.mcp.execution_notifications import McpExecutionNot
 from backend.app.capabilities.mcp.payloads import payload_hash
 from backend.app.capabilities.mcp.types import McpExecutionRequest, McpExecutionResult
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
+from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision
+from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
 from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_sensitive_payload
 

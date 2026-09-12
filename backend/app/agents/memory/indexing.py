@@ -12,10 +12,10 @@ from sqlalchemy.orm import Session
 from backend.app.agents.memory.configuration import initial_embedding_status
 from backend.app.agents.memory.content import memory_content_fingerprint
 from backend.app.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.orchestration.tasks.models import Task
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.runtime_policy import runtime_file_denial_code
-from backend.app.tasks.models import Task
 
 _CHUNK_SIZE = 900
 _CHUNK_OVERLAP = 120

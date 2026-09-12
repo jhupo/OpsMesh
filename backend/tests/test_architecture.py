@@ -22,8 +22,10 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "observability",
         "agents/runtime/providers",
         "agents/runtime/runtime",
+        "orchestration/approvals",
         "orchestration/requests",
         "orchestration/runs",
+        "orchestration/tasks",
         "orchestration/workflows",
     ):
         assert (app / name / "__init__.py").is_file(), name
@@ -50,6 +52,8 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "memory",
         "tools",
         "marketplace",
+        "approvals",
+        "tasks",
         "orchestration/models_layer",
         "orchestration/run_request",
         "orchestration/planning",
@@ -100,7 +104,7 @@ def test_team_consolidation_removes_superseded_sources() -> None:
     app = ROOT / "backend/app"
     for name in (
         "agents/messages/pagination.py",
-        "tasks/control_payloads.py",
+        "orchestration/tasks/control_payloads.py",
         "workers/job_handlers/base.py",
         "teams/operating_context.py",
         "api/services/workspace_export_constants.py",

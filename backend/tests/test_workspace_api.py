@@ -34,6 +34,18 @@ from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
+from backend.app.orchestration.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
+from backend.app.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
+from backend.app.orchestration.tasks.events import RedisTaskEventBus
+from backend.app.orchestration.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
+from backend.app.orchestration.tasks.message_append import (
+    TASK_MESSAGE_CREATED_EVENT_TYPE,
+    TaskMessageAppendService,
+)
+from backend.app.orchestration.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep
+from backend.app.orchestration.tasks.observation import TaskObservationService
+from backend.app.orchestration.tasks.status import TaskStatus
+from backend.app.orchestration.tasks.timeline import TaskTimelineService
 from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
@@ -57,18 +69,6 @@ from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.models import SecurityEvent
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
-from backend.app.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
-from backend.app.tasks.event_outbox import TaskEventOutboxPublisher
-from backend.app.tasks.events import RedisTaskEventBus
-from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
-from backend.app.tasks.message_append import (
-    TASK_MESSAGE_CREATED_EVENT_TYPE,
-    TaskMessageAppendService,
-)
-from backend.app.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep
-from backend.app.tasks.observation import TaskObservationService
-from backend.app.tasks.status import TaskStatus
-from backend.app.tasks.timeline import TaskTimelineService
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.operations_console import TeamOperationsConsoleService
 from backend.app.workers.dependencies import get_worker_queue
@@ -8129,7 +8129,7 @@ def test_task_live_status_api_returns_active_runs_and_message_cursor() -> None:
 
 
 def test_task_live_status_scopes_participants_and_includes_message_only_agents() -> None:
-    from backend.app.tasks.live_status import TaskLiveStatusService
+    from backend.app.orchestration.tasks.live_status import TaskLiveStatusService
 
     _, session = _client()
     _, workspace = _seed_workspace(session, role="owner")

@@ -34,15 +34,15 @@ from backend.app.agents.runtime.tool_payloads import (
     workspace_file_content_payload,
     workspace_file_payload,
 )
-from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
-from backend.app.approvals.service import ApprovalService
-from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES
 from backend.app.capabilities.tools.context import ToolContext
 from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
 from backend.app.capabilities.tools.product_service import ProductToolService
 from backend.app.core.config import Settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
+from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
+from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.redaction import redact_sensitive_text
 from backend.app.storage.storage import ObjectStorage, create_storage

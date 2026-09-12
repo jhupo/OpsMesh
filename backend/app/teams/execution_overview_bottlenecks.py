@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import TaskStep
 from backend.app.teams.execution_overview_contracts import (
     ExecutionBottleneck,
     MemberWorkload,

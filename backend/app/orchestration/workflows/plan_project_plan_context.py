@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.workflows.plan_project_plan_members import (
     execution_members,
     executive_members,
@@ -13,7 +14,6 @@ from backend.app.orchestration.workflows.plan_project_plan_members import (
     snapshot_members,
 )
 from backend.app.orchestration.workflows.plan_project_plan_utils import uuid_or_none
-from backend.app.tasks.models import Task
 
 
 class PlanningContext:

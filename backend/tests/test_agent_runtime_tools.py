@@ -36,6 +36,7 @@ from backend.app.identity.models import User
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
+from backend.app.orchestration.tasks.models import Task
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun
@@ -47,7 +48,6 @@ from backend.app.runtime.contracts import (
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.models import SelfHostedMcpJob
-from backend.app.tasks.models import Task
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

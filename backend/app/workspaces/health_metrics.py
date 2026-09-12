@@ -5,10 +5,10 @@ from collections.abc import Iterable, Mapping
 from uuid import UUID
 
 from backend.app.core.typing import int_or_zero
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.storage.artifact_models import Artifact
-from backend.app.tasks.models import Task, TaskStep
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,

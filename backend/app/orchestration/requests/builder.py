@@ -23,9 +23,9 @@ from backend.app.agents.runtime.sessions import (
 )
 from backend.app.agents.runtime.state_store import AgentRunStateStore
 from backend.app.agents.runtime.tools import BackendToolExecutor
-from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
 from backend.app.core.config import Settings
+from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.orchestration.requests.authorization import (
     RunAuthorizationService,
     file_scope_ids_for_snapshot,
@@ -49,13 +49,13 @@ from backend.app.orchestration.runs.cancellation import DatabaseRunCancellation
 from backend.app.orchestration.runs.runtime_authorization import RunRuntimeAuthorizationService
 from backend.app.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
 from backend.app.orchestration.runs.tool_authorization import hydrate_agent_tools
+from backend.app.orchestration.tasks.models import Task
 from backend.app.projects.runtime_context import project_runtime_context
 from backend.app.runs.models import AgentRun
 from backend.app.runtime.backend_registry import build_runtime_backend_registry
 from backend.app.runtime.contracts import DockerRuntimeClient
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
 
 

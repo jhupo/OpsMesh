@@ -13,6 +13,9 @@ from backend.app.orchestration.runs.job_routing import RunJobRoutingService
 from backend.app.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
 from backend.app.orchestration.runs.resources import RunResourceReservationService
 from backend.app.orchestration.runs.runtime_authorization import runtime_binding_for_snapshot
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.service import TaskStateService
+from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
 from backend.app.orchestration.workflows.planning_team_step_planner import TeamStepPlanner
 from backend.app.orchestration.workflows.scheduler_main import WorkspaceScheduler
@@ -26,9 +29,6 @@ from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import Task, TaskStep
-from backend.app.tasks.service import TaskStateService
-from backend.app.tasks.status import TaskStatus
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.snapshots import build_team_snapshot
 from backend.app.workers.jobs import JobPayload, JobType

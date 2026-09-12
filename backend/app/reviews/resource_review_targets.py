@@ -4,7 +4,6 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.approvals.models import Approval
 from backend.app.capabilities.marketplace.models import MarketplaceListing, TalentListing
 from backend.app.capabilities.models import (
     Capability,
@@ -15,6 +14,7 @@ from backend.app.capabilities.models import (
 )
 from backend.app.core.typing import uuid_or_none
 from backend.app.observability.audit_service import AuditService
+from backend.app.orchestration.approvals.models import Approval
 from backend.app.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_REJECTED,

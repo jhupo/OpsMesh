@@ -17,8 +17,8 @@ from backend.app.db.models import (  # noqa: F401
     User,
     Workspace,
 )
-from backend.app.tasks.ownership import task_owner_can_execute_step
-from backend.app.tasks.transfers import (
+from backend.app.orchestration.tasks.ownership import task_owner_can_execute_step
+from backend.app.orchestration.tasks.transfers import (
     TaskTransferCommand,
     TaskTransferDecision,
     TaskTransferError,

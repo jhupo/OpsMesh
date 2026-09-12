@@ -13,7 +13,7 @@ from backend.app.api.routes.workspace_task_streaming import (
     _sse_event,
     _task_event_stream_payload,
 )
-from backend.app.tasks.events import RedisTaskEventBus, TaskEvent
+from backend.app.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
 
 
 def test_redis_task_event_bus_publishes_and_reads_stream_events() -> None:

@@ -20,7 +20,7 @@ from backend.app.capabilities.tools.product_normalization import (
     optional_uuid_from_metadata,
 )
 from backend.app.core.pagination import PageParams
-from backend.app.tasks.models import Task
+from backend.app.orchestration.tasks.models import Task
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 

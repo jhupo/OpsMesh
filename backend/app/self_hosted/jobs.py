@@ -6,6 +6,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.service import TaskStateService
+from backend.app.orchestration.tasks.status import TaskStatus
+from backend.app.orchestration.tasks.step_service import TaskStepStateService
+from backend.app.orchestration.tasks.step_status import TaskStepStatus
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
@@ -20,11 +25,6 @@ from backend.app.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.tasks.models import Task, TaskStep
-from backend.app.tasks.service import TaskStateService
-from backend.app.tasks.status import TaskStatus
-from backend.app.tasks.step_service import TaskStepStateService
-from backend.app.tasks.step_status import TaskStepStatus
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 

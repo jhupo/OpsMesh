@@ -3,9 +3,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.tasks.models import Task
 from backend.app.runtime.models import RuntimeTemplate
 from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceBinding
-from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 
 TARGET_TYPES_BY_SCOPE = {

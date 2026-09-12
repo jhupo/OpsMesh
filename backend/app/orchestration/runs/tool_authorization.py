@@ -30,7 +30,7 @@ from backend.app.orchestration.requests.authorization import (
     tool_definitions_for_snapshot,
 )
 from backend.app.orchestration.requests.utils import dict_copy, string_list, uuid_or_none
-from backend.app.tasks.models import Task
+from backend.app.orchestration.tasks.models import Task
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 MAX_AGENT_TOOL_DEPTH = 3

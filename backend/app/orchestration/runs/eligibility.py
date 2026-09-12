@@ -6,6 +6,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_service import AuditService
+from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.service import TaskStateService
+from backend.app.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
+from backend.app.orchestration.tasks.step_service import TaskStepStateService
+from backend.app.orchestration.tasks.step_status import TaskStepStatus
 from backend.app.orchestration.workflows.conditions import evaluate_task_step_condition
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.orchestration.workflows.step_dependencies import (
@@ -13,12 +19,6 @@ from backend.app.orchestration.workflows.step_dependencies import (
     dependency_decision,
 )
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.message_append import TaskMessageAppendService
-from backend.app.tasks.models import Task, TaskStep
-from backend.app.tasks.service import TaskStateService
-from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
-from backend.app.tasks.step_service import TaskStepStateService
-from backend.app.tasks.step_status import TaskStepStatus
 
 STEP_STATUS_QUEUED = "queued"
 STEP_STATUS_RUNNING = "running"

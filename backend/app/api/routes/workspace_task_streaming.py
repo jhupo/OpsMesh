@@ -9,9 +9,9 @@ from redis import Redis
 from redis.exceptions import RedisError
 
 from backend.app.core.config import Settings, get_settings
+from backend.app.orchestration.tasks.events import RedisTaskEventBus, TaskEvent, TaskEventBus
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.security.redaction import redact_sensitive_payload
-from backend.app.tasks.events import RedisTaskEventBus, TaskEvent, TaskEventBus
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

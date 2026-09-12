@@ -2,8 +2,8 @@ import json
 from hashlib import sha256
 
 from backend.app.agents.runtime.contracts import AgentRunRequest
+from backend.app.orchestration.tasks.models import Task
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.models import Task
 
 
 def model_request_review_context(request: AgentRunRequest) -> dict[str, object]:

@@ -14,10 +14,10 @@ from backend.app.api.schemas.operation_control_plane import (
     RunActivityPhaseBucketResponse,
 )
 from backend.app.operations.utils import ensure_aware_utc
+from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.runs.activity import run_activity
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.tasks.models import Task
 
 
 @dataclass(slots=True)

@@ -5,13 +5,13 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.runs.state_resource_usage import step_resource_requirements
+from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.orchestration.workflows.scheduler_policy import WorkspaceSchedulerPolicy
 from backend.app.orchestration.workflows.scheduler_team_capacity import (
     TeamMemberCapacityResolver,
     member_blocked_reason,
 )
 from backend.app.orchestration.workflows.step_scheduling_state import set_blocked_resource_keys
-from backend.app.tasks.models import TaskStep
 
 
 @dataclass(frozen=True)

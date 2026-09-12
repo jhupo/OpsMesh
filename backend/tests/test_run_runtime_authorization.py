@@ -29,12 +29,12 @@ from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     RunRuntimeAuthorizationService,
 )
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.runtime.space_models import RuntimeSpace
 from backend.app.security.models import SecurityEvent
 from backend.app.storage.models import WorkspaceFile
-from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 

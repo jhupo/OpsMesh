@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.tasks.models import TaskStep
+from backend.app.orchestration.tasks.models import TaskStep
 
 SCHEDULING_STATUS_KEY = "scheduling_status"
 SCHEDULING_STATUS_BLOCKED = "blocked"

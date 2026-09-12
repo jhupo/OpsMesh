@@ -36,8 +36,8 @@ from backend.app.orchestration.runs.authorization_snapshot import (
 )
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.result_payloads import run_output_payload
+from backend.app.orchestration.tasks.models import Task
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.tasks.models import Task
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 

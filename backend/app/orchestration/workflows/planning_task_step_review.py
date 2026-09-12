@@ -1,4 +1,4 @@
-from backend.app.tasks.models import TaskStep
+from backend.app.orchestration.tasks.models import TaskStep
 
 
 def is_pm_summary_step(step: TaskStep) -> bool:

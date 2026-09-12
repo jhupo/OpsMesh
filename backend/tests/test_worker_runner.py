@@ -36,6 +36,10 @@ from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsSe
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.tasks.collaboration_state import TaskCollaborationStateService
+from backend.app.orchestration.tasks.events import RedisTaskEventBus
+from backend.app.orchestration.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep
+from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.projects.export_status import WorkspaceExportJobStatus
 from backend.app.redis.keys import RedisKeyBuilder
@@ -52,10 +56,6 @@ from backend.app.runtime.contracts import (
 from backend.app.runtime.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.tasks.collaboration_state import TaskCollaborationStateService
-from backend.app.tasks.events import RedisTaskEventBus
-from backend.app.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep
-from backend.app.tasks.status import TaskStatus
 from backend.app.teams.execution_loop import TeamExecutionLoopQueueService
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.teams.runtime import TeamRuntimeService

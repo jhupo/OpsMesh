@@ -13,7 +13,7 @@ from backend.app.operations.timeline_utils import (
     datetime_from_value,
     within,
 )
-from backend.app.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam
 
 

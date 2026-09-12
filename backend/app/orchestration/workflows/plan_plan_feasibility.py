@@ -17,6 +17,7 @@ from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalo
 from backend.app.core.errors import DomainError
 from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
 from backend.app.orchestration.runs.state_resource_usage import merge_usage_max, positive_int_usage
+from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.workflows.plan_org_structure import normalize_role
 from backend.app.orchestration.workflows.plan_project_plan_validation import (
     ProjectPlanValidationError,
@@ -27,7 +28,6 @@ from backend.app.orchestration.workflows.scheduler_policy import (
 )
 from backend.app.runs.models import AgentRun
 from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.tasks.models import Task
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.models import WorkspaceQuota
 

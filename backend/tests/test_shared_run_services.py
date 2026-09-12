@@ -2,10 +2,10 @@ from uuid import uuid4
 
 import pytest
 
-from backend.app.approvals.waiting import ApprovalWaitingService
+from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
+from backend.app.orchestration.tasks.models import Task
 from backend.app.runs.event_writer import RunEventWriter
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.models import Task
 from backend.tests.test_product_tools import _seed_workspace, _session
 
 

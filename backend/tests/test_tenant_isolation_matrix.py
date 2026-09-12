@@ -27,6 +27,7 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.notification_models import WorkspaceNotification
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
@@ -43,7 +44,6 @@ from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.storage import LocalStorage
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam
 from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
 from backend.app.workers.dependencies import get_worker_queue

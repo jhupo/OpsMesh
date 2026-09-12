@@ -1,11 +1,11 @@
 from uuid import uuid4
 
+from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.workflows.plan_project_plans import (
     ProjectPlanningService,
     ProjectPlanValidationError,
     validate_project_plan,
 )
-from backend.app.tasks.models import Task
 
 
 def test_initial_plan_uses_mature_org_hierarchy() -> None:

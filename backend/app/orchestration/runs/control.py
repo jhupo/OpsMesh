@@ -6,11 +6,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
-from backend.app.approvals.models import PendingToolInvocation
 from backend.app.observability.audit_service import AuditService
+from backend.app.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
+from backend.app.orchestration.approvals.models import PendingToolInvocation
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.terminal_state import RunTerminalStateService
+from backend.app.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.service import TaskStateService
+from backend.app.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.orchestration.workflows.statuses import (
     ACTIVE_RUN_STATUS_VALUES,
     STALE_RECOVERABLE_RUN_STATUS_VALUES,
@@ -23,9 +26,6 @@ from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.runtime.space_reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
-from backend.app.tasks.models import Task
-from backend.app.tasks.service import TaskStateService
-from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 EnqueueRun = Callable[[AgentRun, UUID | None], bool]

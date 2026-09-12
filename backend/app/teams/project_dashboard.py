@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.tasks.models import Task
+from backend.app.orchestration.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.project_dashboard_repository import TeamProjectDashboardRepository
 from backend.app.teams.project_dashboard_views import (

@@ -19,6 +19,12 @@ from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
 from backend.app.db.session import get_db_session
 from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.plan_lifecycle import (
+    TaskPlanLifecycleService,
+    TaskPlanRegenerateCommand,
+    TaskPlanRetryCommand,
+)
 from backend.app.orchestration.workflows.definitions import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
@@ -28,12 +34,6 @@ from backend.app.orchestration.workflows.plan_future_plan_mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
     TaskPlanMutationService,
-)
-from backend.app.tasks.models import Task
-from backend.app.tasks.plan_lifecycle import (
-    TaskPlanLifecycleService,
-    TaskPlanRegenerateCommand,
-    TaskPlanRetryCommand,
 )
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.redis_queue import RedisQueue

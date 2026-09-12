@@ -4,7 +4,7 @@ from collections import defaultdict
 from uuid import UUID
 
 from backend.app.agents.models import AgentProfile
-from backend.app.tasks.models import TaskStep
+from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.teams.execution_overview_contracts import (
     ACTIVE_STEP_STATUSES,
     StaffingGap,

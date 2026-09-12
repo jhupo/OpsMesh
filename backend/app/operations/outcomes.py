@@ -15,8 +15,8 @@ from backend.app.api.schemas.operations import (
     RunFailureReasonResponse,
     RunOutcomeWindowResponse,
 )
-from backend.app.approvals.models import Approval
 from backend.app.operations.utils import ensure_aware_utc
+from backend.app.orchestration.approvals.models import Approval
 from backend.app.runs.models import AgentRun
 from backend.app.self_hosted.models import SelfHostedMcpJob
 

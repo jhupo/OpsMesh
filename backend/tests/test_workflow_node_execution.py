@@ -12,6 +12,7 @@ from backend.app.agents.runtime.contracts import (
 from backend.app.orchestration.models import SubworkflowInvocation
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.conditions import evaluate_task_step_condition
 from backend.app.orchestration.workflows.data import (
     WorkflowDataBindingError,
@@ -25,7 +26,6 @@ from backend.app.orchestration.workflows.subworkflows import (
 )
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import Task, TaskStep
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 

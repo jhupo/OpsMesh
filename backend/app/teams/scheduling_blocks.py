@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.typing import dict_or_empty, json_safe_payload
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.security.redaction import redact_sensitive_payload
-from backend.app.tasks.models import Task, TaskStep
 
 
 def scheduled_run_blocking_summary(

@@ -5,11 +5,11 @@ import pytest
 from sqlalchemy.orm import Session
 
 from backend.app.db import models  # noqa: F401 - register ORM relationship targets
+from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.orchestration.workflows.scheduler_team_capacity import (
     TeamMemberCapacityResolver,
     manager_capacity_context,
 )
-from backend.app.tasks.models import TaskStep
 from backend.app.teams.models import AgentTeam
 
 

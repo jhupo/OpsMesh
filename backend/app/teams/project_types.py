@@ -6,6 +6,7 @@ from uuid import UUID
 
 from backend.app.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.runs.models import AgentRun
 from backend.app.runtime.space_models import (
     RuntimeSpace,
@@ -15,7 +16,6 @@ from backend.app.runtime.space_models import (
 )
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 

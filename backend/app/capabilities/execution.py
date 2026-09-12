@@ -7,7 +7,6 @@ from opentelemetry.trace import SpanKind
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.approvals.policy import ApprovalPolicyEngine
 from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
@@ -26,6 +25,7 @@ from backend.app.capabilities.mcp.types import (
 from backend.app.capabilities.models import McpToolCallLog
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.trace_context import current_trace_context, telemetry_span
+from backend.app.orchestration.approvals.policy import ApprovalPolicyEngine
 
 
 class McpToolExecutionService:

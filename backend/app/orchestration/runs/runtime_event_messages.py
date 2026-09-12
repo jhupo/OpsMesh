@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 from backend.app.agents.runtime.contracts import AgentRunResult
 from backend.app.agents.runtime.event_mapping import RuntimeEventTaskMessageMapper
 from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.message_append import TaskMessageAppendService
-from backend.app.tasks.models import TaskStep
 
 
 @dataclass(slots=True)

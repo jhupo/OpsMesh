@@ -14,9 +14,9 @@ from backend.app.agents.memory.search import (
     memory_entry_document_metadata,
 )
 from backend.app.domains.models import DomainItem
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import WorkspaceFile
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
 SOURCE_LIMIT = 80
 

@@ -1,3 +1,4 @@
+from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.workflows.plan_member_matching import MemberMatchingService
 from backend.app.orchestration.workflows.plan_project_plan_builder import (
     MatureOrgProjectPlanBuilder,
@@ -8,7 +9,6 @@ from backend.app.orchestration.workflows.plan_project_plan_validation import (
     validate_project_plan,
 )
 from backend.app.orchestration.workflows.plan_workflow_contracts import WorkflowNode
-from backend.app.tasks.models import Task
 
 
 class ProjectPlanningService:

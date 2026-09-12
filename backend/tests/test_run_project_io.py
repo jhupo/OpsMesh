@@ -25,6 +25,7 @@ from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
+from backend.app.orchestration.tasks.models import Task
 from backend.app.projects.models import (
     AgentRunProjectIOState,
     WorkspaceProject,
@@ -43,7 +44,6 @@ from backend.app.security.models import SecurityEvent
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.storage.storage import LocalStorage
-from backend.app.tasks.models import Task
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 from backend.tests.fixtures.project_authorization import authorize_project_run
 

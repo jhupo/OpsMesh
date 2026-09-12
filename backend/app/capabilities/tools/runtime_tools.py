@@ -2,11 +2,11 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
-from backend.app.approvals.service import ApprovalService
-from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.capabilities.tools.context import ToolContext
 from backend.app.core.config import Settings
+from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
+from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
 from backend.app.runs.event_writer import RunEventWriter
 from backend.app.runtime.manager import RuntimeManager
 from backend.app.runtime.models import RuntimeCommand, WorkspaceRuntime

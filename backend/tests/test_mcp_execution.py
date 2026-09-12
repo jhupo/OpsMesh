@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.admin.models import PlatformPolicy
 from backend.app.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.approvals.models import Approval
 from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
 from backend.app.capabilities.execution import McpToolExecutionService
 from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
@@ -34,15 +33,16 @@ from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
+from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
 )
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.reviews.models import ResourceReview
 from backend.app.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.security.models import SecurityEvent
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

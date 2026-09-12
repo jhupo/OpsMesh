@@ -6,13 +6,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.agents.runtime.contracts import AgentRuntimeOutputSchema
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.plan_project_plan_context import PlanningContext
 from backend.app.orchestration.workflows.plan_project_plan_models import ProjectPlan
 from backend.app.orchestration.workflows.plan_project_plan_validation import (
     ProjectPlanValidationError,
 )
 from backend.app.orchestration.workflows.plan_workflow_contracts import WorkflowNode
-from backend.app.tasks.models import Task, TaskStep
 
 
 class PlannedWork(WorkflowNode):

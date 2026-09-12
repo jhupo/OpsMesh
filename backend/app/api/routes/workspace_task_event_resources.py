@@ -31,9 +31,9 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.core.pagination import PageParams
 from backend.app.core.trace_context import current_trace_metadata
 from backend.app.db.session import get_db_session
-from backend.app.tasks.events import TaskEventBus
-from backend.app.tasks.feedback import TaskFeedbackService
-from backend.app.tasks.live_status import TaskLiveStatusService
+from backend.app.orchestration.tasks.events import TaskEventBus
+from backend.app.orchestration.tasks.feedback import TaskFeedbackService
+from backend.app.orchestration.tasks.live_status import TaskLiveStatusService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

@@ -16,8 +16,8 @@ from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.operations.models import WorkerLease
+from backend.app.orchestration.tasks.models import TaskEventOutbox
 from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.tasks.models import TaskEventOutbox
 from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
 
 

@@ -1,9 +1,9 @@
 """Protect authored execution graphs from automatic plan replacement."""
 
+from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.workflows.plan_project_plan_validation import (
     ProjectPlanValidationError,
 )
-from backend.app.tasks.models import Task
 
 
 def require_automatic_plan_ownership(task: Task) -> None:

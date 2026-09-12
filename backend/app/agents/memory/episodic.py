@@ -12,10 +12,10 @@ from backend.app.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.agents.memory_policy import EpisodicMemoryPolicy, episodic_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRunResult
-from backend.app.approvals.models import Approval
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.tasks.models import Task, TaskMessage
 from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import redact_text_fragments
-from backend.app.tasks.models import Task, TaskMessage
 
 RUN_COMPLETED_ENTRY_TYPE = "agent_run_completed"
 RUN_FAILED_ENTRY_TYPE = "agent_run_failed"

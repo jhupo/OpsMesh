@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.orchestration.workflows.scheduler_execution_limits import SchedulerExecutionLimiter
 from backend.app.orchestration.workflows.scheduler_ordering import SchedulerStepOrdering
 from backend.app.orchestration.workflows.scheduler_policy import (
@@ -19,7 +20,6 @@ from backend.app.orchestration.workflows.step_scheduling_state import (
     mark_step_scheduling_runnable,
 )
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.models import TaskStep
 
 ACTIVE_RUN_STATUSES = ACTIVE_RUN_STATUS_VALUES
 

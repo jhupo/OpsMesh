@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.admin.models import PlatformPolicy, PlatformPolicyEvent
-from backend.app.approvals.models import Approval
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -20,13 +19,14 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.operations.models import WorkerLease, WorkerNode
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.tasks.models import Task
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
 from backend.app.security.models import SecurityEvent
-from backend.app.tasks.models import Task
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.redis_queue import RedisQueue

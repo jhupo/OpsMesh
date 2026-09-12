@@ -5,9 +5,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 ACTIVE_RUN_STATUSES = ACTIVE_RUN_STATUS_VALUES

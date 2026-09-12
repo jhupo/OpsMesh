@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.tasks.models import TaskStep
+from backend.app.orchestration.tasks.models import TaskStep
 
 
 class RunProfileLookup:

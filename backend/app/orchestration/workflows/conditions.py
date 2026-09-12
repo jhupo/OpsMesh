@@ -8,7 +8,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.models import Task, TaskStep
 
 ConditionState = Literal["true", "false", "pending"]
 _MISSING = object()

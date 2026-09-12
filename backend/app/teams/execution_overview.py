@@ -7,9 +7,9 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagnosticsService
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.runs.models import AgentRun, RunEvent
-from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
-from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.execution_overview_contracts import (
     ACTIVE_RUN_STATUSES,
     dedupe_strings,

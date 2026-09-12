@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections import Counter
 from uuid import UUID
 
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.execution_overview_bottlenecks import (
     delivery_health,
     summary_bottlenecks,

@@ -14,13 +14,13 @@ from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     runtime_binding_for_snapshot,
 )
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.ownership import task_owner_can_execute_step
 from backend.app.orchestration.workflows.scheduler_main import WorkspaceScheduler
 from backend.app.orchestration.workflows.step_dependencies import dependencies_satisfied
 from backend.app.projects.run_snapshots import RunProjectSnapshotService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import Task, TaskStep
-from backend.app.tasks.ownership import task_owner_can_execute_step
 
 STEP_STATUS_QUEUED = "queued"
 

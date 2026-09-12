@@ -15,7 +15,6 @@ from sqlalchemy.pool import StaticPool
 from backend.app.admin.models import PlatformPolicy
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.models import AgentProfile
-from backend.app.approvals.models import Approval
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.core.config import Settings, get_settings
 from backend.app.db import models as registered_models  # noqa: F401
@@ -26,6 +25,8 @@ from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.projects.export_models import WorkspaceExportJob
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.redis.keys import RedisKeyBuilder
@@ -39,7 +40,6 @@ from backend.app.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.tasks.models import Task, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobPayload, JobType

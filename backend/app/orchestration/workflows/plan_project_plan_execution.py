@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.workflows.plan_member_matching import MemberMatchingService
 from backend.app.orchestration.workflows.plan_project_plan_context import PlanningContext
 from backend.app.orchestration.workflows.plan_project_plan_members import (
@@ -25,7 +26,6 @@ from backend.app.orchestration.workflows.plan_project_plan_validation import (
     ProjectPlanValidationError,
 )
 from backend.app.orchestration.workflows.plan_workflow_contracts import WorkflowNode
-from backend.app.tasks.models import Task
 
 
 class ExecutionPackageAppender:

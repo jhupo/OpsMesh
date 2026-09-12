@@ -7,8 +7,8 @@ from backend.app.orchestration.runs.state_task_progress import (
     deep_merge_dict,
     task_progress_from_output,
 )
+from backend.app.orchestration.tasks.models import Task, TaskMessage
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.models import Task, TaskMessage
 
 AppendTaskMessage = Callable[..., TaskMessage]
 

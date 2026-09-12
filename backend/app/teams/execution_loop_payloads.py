@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.app.core.typing import dict_list, dict_or_empty, int_or_zero
-from backend.app.tasks.models import Task, TaskMessage
+from backend.app.orchestration.tasks.models import Task, TaskMessage
 
 
 def _result(

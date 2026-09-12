@@ -7,6 +7,9 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.admin.updates.service import maintenance_enabled
+from backend.app.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.service import TaskStateService
+from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
@@ -24,9 +27,6 @@ from backend.app.self_hosted.models import (
 )
 from backend.app.self_hosted.policy_gate import SelfHostedPolicyGate
 from backend.app.self_hosted.types import AuthenticatedWorker
-from backend.app.tasks.models import Task
-from backend.app.tasks.service import TaskStateService
-from backend.app.tasks.status import TaskStatus
 
 
 class SelfHostedDispatchService:

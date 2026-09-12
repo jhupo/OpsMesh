@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.tasks.models import TaskStep
+from backend.app.orchestration.tasks.models import TaskStep
 
 
 def dependencies_satisfied(session: Session, step: TaskStep) -> bool:

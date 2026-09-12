@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.typing import string_list
 from backend.app.orchestration.requests.authorization import RunAuthorizationService
 from backend.app.orchestration.runs.runtime_authorization import RunRuntimeAuthorizationService
+from backend.app.orchestration.tasks.models import Task
 from backend.app.runs.models import AgentRun
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.runtime.space_models import RuntimeSpace
@@ -30,7 +31,6 @@ from backend.app.self_hosted.policy import (
     run_requires_verified_isolation,
 )
 from backend.app.self_hosted.types import AuthenticatedWorker
-from backend.app.tasks.models import Task
 from backend.app.workspaces.quotas import WorkspaceQuotaService
 
 

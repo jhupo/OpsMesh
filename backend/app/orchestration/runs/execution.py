@@ -23,17 +23,21 @@ from backend.app.agents.runtime.errors import (
 )
 from backend.app.agents.runtime.factory import build_agent_runtime_registry
 from backend.app.agents.runtime.state_store import AgentRunStateStore
-from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
-from backend.app.approvals.pending_tools import PendingToolInvocationService
-from backend.app.approvals.service import ApprovalService
-from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.core.config import Settings, get_settings
 from backend.app.observability.audit_service import AuditService
+from backend.app.orchestration.approvals.agent_tool_interruptions import (
+    AgentToolInterruptionService,
+)
+from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
+from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.run_gateway import ModelRunGateway
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.lifecycle import RunLifecycleService
 from backend.app.orchestration.runs.runtime_event_messages import RunRuntimeEventMessageMapper
+from backend.app.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.orchestration.workflows.data import resolve_workflow_inputs
 from backend.app.orchestration.workflows.subworkflows import SubworkflowExecutionService
 from backend.app.projects.runtime_io import RunProjectIOService
@@ -46,8 +50,6 @@ from backend.app.runtime.run_environment import (
     RuntimeEnvironmentError,
 )
 from backend.app.storage.storage import ObjectStorage
-from backend.app.tasks.models import Task
-from backend.app.tasks.status import TaskStatus
 from backend.app.workers.jobs import JobPayload
 from backend.app.workers.redis_queue import RedisQueue
 
@@ -367,7 +369,7 @@ class RunExecutionService:
     ) -> AgentRuntimeToolResult | None:
         if run.task_step_id is None:
             return None
-        from backend.app.tasks.models import TaskStep
+        from backend.app.orchestration.tasks.models import TaskStep
 
         step = self.session.get(TaskStep, run.task_step_id)
         if step is None or not isinstance(step.dependencies, dict):
@@ -467,7 +469,7 @@ class RunExecutionService:
     def _node_type(self, run: AgentRun) -> str | None:
         if run.task_step_id is None:
             return None
-        from backend.app.tasks.models import TaskStep
+        from backend.app.orchestration.tasks.models import TaskStep
 
         step = self.session.get(TaskStep, run.task_step_id)
         if step is None or not isinstance(step.dependencies, dict):

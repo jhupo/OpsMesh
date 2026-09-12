@@ -21,11 +21,11 @@ from backend.app.api.schemas.tasks import TaskCreateRequest
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import SessionLocal
 from backend.app.identity.models import User
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.redis.client import redis_client
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 from backend.app.workers.handlers import WorkerJobHandler
 from backend.app.workers.queue_consumer import consume_once

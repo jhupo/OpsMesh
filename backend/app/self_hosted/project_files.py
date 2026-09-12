@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.tasks.models import Task
 from backend.app.projects.file_boundaries import (
     ProjectBoundaryViolation,
     ProjectFileBoundaryService,
@@ -32,7 +33,6 @@ from backend.app.self_hosted.types import AuthenticatedWorker
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import FileAccessEvent
 from backend.app.storage.storage import ObjectStorage, create_storage
-from backend.app.tasks.models import Task
 
 
 @dataclass(frozen=True, slots=True)

@@ -4,22 +4,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.runtime.contracts import AgentRunRequest
-from backend.app.approvals.models import Approval
-from backend.app.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
-from backend.app.approvals.service import ApprovalService
 from backend.app.core.config import Settings
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
+from backend.app.orchestration.approvals.service import ApprovalService
 from backend.app.orchestration.requests.request_reviewing import (
     model_request_review_context,
     model_request_review_fingerprint,
     model_request_review_input,
 )
 from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.service import TaskStateService
+from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.runs.models import AgentRun
 from backend.app.runs.service import RunStateService
 from backend.app.runs.status import RunStatus
-from backend.app.tasks.models import Task
-from backend.app.tasks.service import TaskStateService
-from backend.app.tasks.status import TaskStatus
 
 
 @dataclass(slots=True)

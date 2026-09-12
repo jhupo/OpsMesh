@@ -14,13 +14,13 @@ from backend.app.agents.memory_policy import WorkingMemoryPolicy
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRuntimeToolResult
 from backend.app.agents.runtime.token_estimation import truncate_to_token_bound
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.runs.models import AgentRun
 from backend.app.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_text,
     redact_text_fragments,
 )
-from backend.app.tasks.models import Task, TaskStep
 
 WORKING_MEMORY_LAYER = "working"
 WORKING_MEMORY_SOURCE = "run_working_memory"

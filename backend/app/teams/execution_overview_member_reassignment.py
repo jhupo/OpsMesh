@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.agents.models import AgentProfile
-from backend.app.tasks.models import TaskStep
+from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.teams.execution_overview_contracts import (
     REASSIGNABLE_SPECIALIST_STEP_STATUSES,
     SpecialistReassignment,

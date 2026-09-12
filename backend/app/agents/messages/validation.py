@@ -5,7 +5,7 @@ from sqlalchemy import select
 from backend.app.agents.messages.contracts import MailboxStore
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.models import AgentProfile
-from backend.app.tasks.models import Task
+from backend.app.orchestration.tasks.models import Task
 from backend.app.teams.models import AgentTeam
 
 

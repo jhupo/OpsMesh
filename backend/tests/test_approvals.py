@@ -19,16 +19,6 @@ from backend.app.agents.runtime.contracts import (
     AgentRuntimeResumeState,
 )
 from backend.app.agents.runtime.state_store import AgentRunStateStore
-from backend.app.approvals.agent_tool_interruptions import AgentToolInterruptionService
-from backend.app.approvals.decisions import ApprovalDecisionService
-from backend.app.approvals.lifecycle import AgentToolApprovalLifecycleService
-from backend.app.approvals.models import Approval, PendingToolInvocation
-from backend.app.approvals.pending_tools import (
-    PendingToolInvocationRequest,
-    PendingToolInvocationService,
-)
-from backend.app.approvals.queries import ApprovalQueryService
-from backend.app.approvals.service import ApprovalService
 from backend.app.capabilities.models import McpServer
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
@@ -38,6 +28,20 @@ from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
+from backend.app.orchestration.approvals.agent_tool_interruptions import (
+    AgentToolInterruptionService,
+)
+from backend.app.orchestration.approvals.decisions import ApprovalDecisionService
+from backend.app.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
+from backend.app.orchestration.approvals.models import Approval, PendingToolInvocation
+from backend.app.orchestration.approvals.pending_tools import (
+    PendingToolInvocationRequest,
+    PendingToolInvocationService,
+)
+from backend.app.orchestration.approvals.queries import ApprovalQueryService
+from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
@@ -48,8 +52,6 @@ from backend.app.reviews.constants import (
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.tasks.models import Task
-from backend.app.tasks.status import TaskStatus
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.jobs import JobType
 from backend.app.workers.redis_queue import RedisQueue

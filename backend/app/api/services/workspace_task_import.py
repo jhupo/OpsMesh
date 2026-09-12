@@ -22,8 +22,8 @@ from backend.app.api.services.workspace_metadata_import_context import (
     WorkspaceMetadataImportContext,
 )
 from backend.app.api.services.workspace_metadata_import_support import resolved_dependency_id
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.runtime.space_models import RuntimeSpace
-from backend.app.tasks.models import Task, TaskMessage, TaskStep
 
 
 class TaskMetadataImporter:

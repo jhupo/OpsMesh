@@ -21,10 +21,10 @@ from backend.app.core.pagination import PageParams
 from backend.app.core.typing import string_list
 from backend.app.observability.audit_service import AuditService
 from backend.app.operations.utils import ensure_aware_utc, positive_int_or_none
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.blocked_reasons import explain_blocked_reason
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.runs.models import AgentRun
-from backend.app.tasks.models import Task, TaskStep
 from backend.app.workspaces.models import Workspace
 
 

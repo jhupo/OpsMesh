@@ -10,6 +10,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.projects.models import AgentRunProjectSnapshot, WorkspaceProject
 from backend.app.projects.run_manifest import RunProjectOutput
 from backend.app.projects.runtime_io_errors import ProjectRunIOError
@@ -22,7 +23,6 @@ from backend.app.storage.storage_transactions import (
     ObjectStorageCompensationError,
     ObjectStorageKeyConflictError,
 )
-from backend.app.tasks.models import TaskStep
 
 
 @dataclass(slots=True)

@@ -1,4 +1,4 @@
-from backend.app.tasks.models import TaskStep
+from backend.app.orchestration.tasks.models import TaskStep
 
 
 def step_message_payload(step: TaskStep) -> dict[str, object]:

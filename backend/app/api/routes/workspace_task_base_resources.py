@@ -25,14 +25,14 @@ from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
 from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.service import RunOrchestrationService
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
-from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
-from backend.app.tasks.workspace_service import (
+from backend.app.orchestration.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
+from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagnosticsService
+from backend.app.orchestration.tasks.workspace_service import (
     TaskCreateCommand,
     WorkspaceTaskService,
 )
+from backend.app.redis.dependencies import get_redis_client
+from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.workers.dependencies import get_worker_queue
 from backend.app.workers.redis_queue import RedisQueue
 
