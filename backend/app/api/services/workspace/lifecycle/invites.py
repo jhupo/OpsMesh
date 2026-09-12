@@ -25,11 +25,11 @@ from backend.app.api.services.workspace.lifecycle.snapshots import (
     invite_snapshot,
     member_snapshot,
 )
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db.errors import commit_or_raise_conflict
+from backend.app.core.identity.models import User
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceInvite, WorkspaceMember
 from backend.app.observability.audit_service import AuditService
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db.errors import commit_or_raise_conflict
-from backend.app.platform.identity.models import User
-from backend.app.workspace.tenants.models import Workspace, WorkspaceInvite, WorkspaceMember
 
 
 @dataclass(frozen=True)

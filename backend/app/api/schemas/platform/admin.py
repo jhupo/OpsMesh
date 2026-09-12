@@ -14,8 +14,8 @@ from backend.app.api.schemas.operations.overview import (
 from backend.app.api.schemas.operations.runtime_spaces import RuntimeSpaceResponse
 from backend.app.api.schemas.operations.runtimes import WorkspaceRuntimeResponse
 from backend.app.api.schemas.workspace.workspaces import WorkspaceResponse
-from backend.app.execution.workers.jobs import JobPayload
-from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.runtime.workers.jobs import JobPayload
 
 
 class AdminOverviewResponse(BaseModel):

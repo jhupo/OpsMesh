@@ -4,8 +4,8 @@ from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.admin.dependencies import admin_worker_service
 from backend.app.api.routes.admin.responses import page_response
 from backend.app.api.schemas.platform.admin import AdminWorkerNodeResponse, AdminWorkerUpdateRequest
-from backend.app.platform.admin.workers import AdminWorkerService
-from backend.app.platform.common.pagination import PageParams
+from backend.app.core.admin.workers import AdminWorkerService
+from backend.app.core.common.pagination import PageParams
 
 router = APIRouter()
 

@@ -9,23 +9,23 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import sessionmaker
 
-import backend.app.agents.runtime.providers.openai_streaming as openai_streaming
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.runtime.contracts import (
+import backend.app.domains.agents.runtime.providers.openai_streaming as openai_streaming
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
-from backend.app.agents.runtime.errors import AgentRuntimeCancelledError
-from backend.app.agents.runtime.providers.claude_runner import ClaudeAgentSDKRunner
-from backend.app.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
-from backend.app.orchestration.runs.cancellation import DatabaseRunCancellation
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.runs.status import RunStatus
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.workspace.tenants.models import Workspace
+from backend.app.domains.agents.runtime.errors import AgentRuntimeCancelledError
+from backend.app.domains.agents.runtime.providers.claude_runner import ClaudeAgentSDKRunner
+from backend.app.domains.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
+from backend.app.domains.orchestration.runs.cancellation import DatabaseRunCancellation
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.workspace.tenants.models import Workspace
 
 
 class TriggerCancellation:

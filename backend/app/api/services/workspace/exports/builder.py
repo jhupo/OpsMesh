@@ -7,7 +7,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.workspace.exports import (
     SUPPORTED_WORKSPACE_EXPORT_FORMAT,
     WorkspaceExportManifest,
@@ -31,16 +30,17 @@ from backend.app.api.services.workspace.exports.payloads import (
     _team_payload,
     _workspace_payload,
 )
-from backend.app.capabilities.models import WorkspaceSkillInstall
-from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.capabilities.models import WorkspaceSkillInstall
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.workspace.storage.artifact_models import Artifact
+from backend.app.domains.workspace.storage.models import WorkspaceFile
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.observability.audit_service import AuditService
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.workspace.storage.artifact_models import Artifact
-from backend.app.workspace.storage.models import WorkspaceFile
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.tenants.models import Workspace
+from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 
 
 class WorkspaceExportBuilder:

@@ -5,11 +5,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.workspace.projects.export_models import (
+from backend.app.domains.workspace.projects.export_models import (
     WorkspaceExportJob,
     WorkspaceExportJobStatus,
 )
-from backend.app.workspace.storage.storage import ObjectStorage
+from backend.app.domains.workspace.storage.storage import ObjectStorage
 
 
 class WorkspaceArchiveExportJobRepository:

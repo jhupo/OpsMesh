@@ -16,28 +16,28 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.main import create_app
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.tasks.models import Task
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.identity.models import User
-from backend.app.workspace.projects.models import (
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.db.session import get_db_session
+from backend.app.core.identity.models import User
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.projects.models import (
     AgentRunProjectIOState,
     WorkspaceProject,
     WorkspaceProjectConfigurationVersion,
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from backend.app.workspace.projects.run_snapshots import RunProjectSnapshotService
-from backend.app.workspace.projects.serialization import sha256_json
-from backend.app.workspace.storage.artifact_models import Artifact
-from backend.app.workspace.storage.models import WorkspaceFile
-from backend.app.workspace.storage.storage import LocalStorage
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.workspace.projects.run_snapshots import RunProjectSnapshotService
+from backend.app.domains.workspace.projects.serialization import sha256_json
+from backend.app.domains.workspace.storage.artifact_models import Artifact
+from backend.app.domains.workspace.storage.models import WorkspaceFile
+from backend.app.domains.workspace.storage.storage import LocalStorage
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.main import create_app
+from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.tests.fixtures.project_authorization import authorize_project_run
 
 TOKEN = "self-hosted-project-token"

@@ -12,39 +12,42 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.capabilities.catalog.effective import effective_catalog_fingerprint
-from backend.app.capabilities.mcp.execution.service import McpToolExecutionService
-from backend.app.capabilities.mcp.execution.types import (
+from backend.app.core.admin.models import PlatformPolicy
+from backend.app.core.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
+from backend.app.core.common.config import Settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
+from backend.app.domains.capabilities.mcp.execution.service import McpToolExecutionService
+from backend.app.domains.capabilities.mcp.execution.types import (
     McpExecutionError,
     McpExecutionRequest,
 )
-from backend.app.capabilities.mcp.transport.remote import SseMcpToolAdapter
-from backend.app.capabilities.mcp.transport.resolver import McpAdapterResolver
-from backend.app.capabilities.models import (
+from backend.app.domains.capabilities.mcp.transport.remote import SseMcpToolAdapter
+from backend.app.domains.capabilities.mcp.transport.resolver import McpAdapterResolver
+from backend.app.domains.capabilities.models import (
     McpCredentialReference,
     McpServer,
     McpToolAllowlist,
     McpToolCallLog,
 )
-from backend.app.capabilities.tools.errors import ToolPermissionError, ToolResourceNotFoundError
-from backend.app.orchestration.approvals.models import Approval
-from backend.app.orchestration.runs.models import (
+from backend.app.domains.capabilities.tools.errors import (
+    ToolPermissionError,
+    ToolResourceNotFoundError,
+)
+from backend.app.domains.orchestration.approvals.models import Approval
+from backend.app.domains.orchestration.runs.models import (
     AgentRun,
     RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.runs.status import RunStatus
-from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.platform.admin.models import PlatformPolicy
-from backend.app.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.platform.common.config import Settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.platform.security.models import SecurityEvent
-from backend.app.workspace.reviews.models import ResourceReview
-from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.workspace.reviews.models import ResourceReview
+from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 @pytest.fixture(autouse=True)
@@ -818,11 +821,11 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
     session.commit()
     sdk = _FakeSseSdk(_FakeSdkCallToolResult(structured_content={"status": "created"}))
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.sse_client",
+        "backend.app.domains.capabilities.mcp.transport.remote.sse_client",
         sdk.sse_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
+        "backend.app.domains.capabilities.mcp.transport.remote.ClientSession",
         sdk.client_session,
     )
 
@@ -863,11 +866,11 @@ def test_mcp_sse_adapter_normalizes_remote_errors(monkeypatch) -> None:
 
     sdk = _FakeSseSdk(_FakeSdkCallToolResult(is_error=True))
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.sse_client",
+        "backend.app.domains.capabilities.mcp.transport.remote.sse_client",
         sdk.sse_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
+        "backend.app.domains.capabilities.mcp.transport.remote.ClientSession",
         sdk.client_session,
     )
 

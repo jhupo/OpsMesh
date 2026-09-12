@@ -9,21 +9,21 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.runtime.contracts import (
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
     AgentRuntimeUsage,
 )
-from backend.app.agents.runtime.usage import runtime_usage
+from backend.app.domains.agents.runtime.usage import runtime_usage
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
 from backend.app.observability.cost_usage import normalize_model_usage
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_usage_normalization_handles_provider_aliases_and_redacts_raw_payload() -> None:

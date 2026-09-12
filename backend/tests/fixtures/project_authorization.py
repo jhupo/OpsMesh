@@ -4,12 +4,15 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from backend.app.capabilities.catalog.effective import effective_catalog_fingerprint
-from backend.app.capabilities.models import CapabilityResource
-from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.orchestration.runs.models import AgentRun, authorization_snapshot_fingerprint
-from backend.app.orchestration.tasks.models import Task
-from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
+from backend.app.domains.capabilities.models import CapabilityResource
+from backend.app.domains.orchestration.runs.models import (
+    AgentRun,
+    authorization_snapshot_fingerprint,
+)
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.storage.models import WorkspaceFile
+from backend.app.runtime.environment.models import WorkspaceRuntime
 
 
 def authorize_project_run(

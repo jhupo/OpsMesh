@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, String, event
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.app.platform.db.base import Base, UUIDPrimaryKeyMixin
+from backend.app.core.db.base import Base, UUIDPrimaryKeyMixin
 
 
 class AuditEvent(UUIDPrimaryKeyMixin, Base):

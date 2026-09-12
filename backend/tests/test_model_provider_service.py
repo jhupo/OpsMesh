@@ -9,30 +9,36 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agents.providers import health_service as model_provider_health_service_module
-from backend.app.agents.providers.contracts import (
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.domains.agents.providers import (
+    health_service as model_provider_health_service_module,
+)
+from backend.app.domains.agents.providers.contracts import (
     ModelProviderUnavailableError,
 )
-from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
-from backend.app.agents.providers.credential_queries import ModelProviderCredentialQueryService
-from backend.app.agents.providers.health import (
+from backend.app.domains.agents.providers.credential_commands import (
+    ModelProviderCredentialCommandService,
+)
+from backend.app.domains.agents.providers.credential_queries import (
+    ModelProviderCredentialQueryService,
+)
+from backend.app.domains.agents.providers.health import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
-from backend.app.agents.providers.health_service import ModelProviderHealthService
-from backend.app.agents.providers.model_api import (
+from backend.app.domains.agents.providers.health_service import ModelProviderHealthService
+from backend.app.domains.agents.providers.model_api import (
     model_api_for_agent_provider,
     unsupported_agent_model_api,
 )
-from backend.app.agents.providers.models import ModelProviderCredential
-from backend.app.agents.providers.resolution_service import ModelProviderResolutionService
+from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.resolution_service import ModelProviderResolutionService
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.platform.secrets.service import SecretEncryptionService
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_agent_model_api_override_is_limited_to_provider_supported_protocols() -> None:

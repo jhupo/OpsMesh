@@ -134,23 +134,23 @@ the OpsMesh control plane.
   packages, with only `common.py` at the schema root. Workspace-facing application services are
   grouped under `api/services/workspace/{exports,imports,lifecycle}` rather than using filename
   prefixes in the service root.
-- `backend/app/agents`: public agent models/services plus nested `profiles`, `memory`, `messages`,
+- `backend/app/domains/agents`: public agent models/services plus nested `profiles`, `memory`, `messages`,
   `providers`, and SDK `runtime` domains. Profile helpers do not remain as root-level prefixed files;
   agent memory policies live with the other memory policies.
-- `backend/app/capabilities`: public capability models/service plus nested `catalog`, `governance`,
+- `backend/app/domains/capabilities`: public capability models/service plus nested `catalog`, `governance`,
   `resources`, `skills`, `marketplace`, and `tools` modules. MCP is further split into
   `mcp/{transport,catalog,execution}`. The MCP boundary keeps its one shared `policy.py` module
   at that boundary because health and limit rules are consumed by both catalog and execution;
   transport, catalog, and execution implementation files remain nested by function.
-- `backend/app/orchestration`: requests, runs, approvals, tasks, and workflows.
-- `backend/app/execution`: runtime resources, Docker pools, workers, operations, and self-hosted jobs.
-  Runtime internals are grouped under `execution/runtime/{backends,commands,lifecycle,pool,policies,spaces}`;
+- `backend/app/domains/orchestration`: requests, runs, approvals, tasks, and workflows.
+- `backend/app/runtime`: runtime resources, Docker pools, workers, operations, and self-hosted jobs.
+  Runtime internals are grouped under `runtime/environment/{backends,commands,lifecycle,pool,policies,spaces}`;
   operational views and maintenance are grouped under
-  `execution/operations/{metrics,queues,recovery,runtimes,timeline,workers}`.
-- `backend/app/workspace`: tenant/workspace lifecycle, projects, teams, storage, domains, and reviews.
-  Team internals are nested by function under `workspace/teams/{execution,operations,projects,providers,organization,runtime}`;
+  `runtime/operations/{metrics,queues,recovery,runtimes,timeline,workers}`.
+- `backend/app/domains/workspace`: tenant/workspace lifecycle, projects, teams, storage, domains, and reviews.
+  Team internals are nested by function under `domains/workspace/teams/{execution,operations,projects,providers,organization,runtime}`;
   root team files are only domain models or public service entrypoints.
-- `backend/app/platform`: authentication, identity, shared common foundations, database, Redis, security, secrets,
+- `backend/app/core`: authentication, identity, shared common foundations, database, Redis, security, secrets,
   administration, and external delivery integrations.
 - `backend/app/observability`: audit, cost, trace, and notification evidence.
 - `backend/migrations`: Alembic migrations.

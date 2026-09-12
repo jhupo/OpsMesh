@@ -3,15 +3,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.agents.providers.audit_responses import usage_audit_response
-from backend.app.agents.providers.contracts import provider_health_probes
-from backend.app.agents.providers.credential_commands import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.agents.providers.credential_queries import (
-    ModelProviderCredentialQueryService,
-)
-from backend.app.agents.providers.health_service import ModelProviderHealthService
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.agents.providers import (
     ModelProviderCredentialCreateRequest,
@@ -22,14 +13,23 @@ from backend.app.api.schemas.agents.providers import (
     ModelProviderHealthCheckResponse,
     ModelProviderUsageAuditResponse,
 )
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.secrets.service import SecretEncryptionService
-from backend.app.platform.security.egress import EgressUrlValidationError
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.egress import EgressUrlValidationError
+from backend.app.domains.agents.providers.audit_responses import usage_audit_response
+from backend.app.domains.agents.providers.contracts import provider_health_probes
+from backend.app.domains.agents.providers.credential_commands import (
+    ModelProviderCredentialCommandService,
+)
+from backend.app.domains.agents.providers.credential_queries import (
+    ModelProviderCredentialQueryService,
+)
+from backend.app.domains.agents.providers.health_service import ModelProviderHealthService
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-credentials",

@@ -7,9 +7,9 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_models import AuditIntegrityCheck
 from backend.app.observability.audit_service import AuditService
-from backend.app.workspace.tenants.models import Workspace
 
 
 @dataclass(frozen=True)

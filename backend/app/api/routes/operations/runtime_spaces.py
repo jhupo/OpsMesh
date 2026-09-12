@@ -16,12 +16,12 @@ from backend.app.api.schemas.operations.runtime_spaces import (
     RuntimeSpaceResponse,
     RuntimeSpaceUpdateRequest,
 )
-from backend.app.execution.runtime.spaces.service import RuntimeSpaceService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.runtime.environment.spaces.service import RuntimeSpaceService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["runtime-spaces"])
 

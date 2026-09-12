@@ -1,6 +1,6 @@
 from sqlalchemy.orm import configure_mappers
 
-from backend.app.platform.db import models as registered_models
+from backend.app.core.db import models as registered_models
 
 
 def test_model_registry_import_configures_all_relationships() -> None:

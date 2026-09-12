@@ -11,27 +11,27 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.execution.runtime.spaces.models import (
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.service import RunOrchestrationService
+from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.execution.workers.jobs import JobPayload
-from backend.app.execution.workers.scheduled_jobs import WorkspaceScheduledJobService
-from backend.app.execution.workers.scheduled_models import (
+from backend.app.runtime.workers.jobs import JobPayload
+from backend.app.runtime.workers.scheduled_jobs import WorkspaceScheduledJobService
+from backend.app.runtime.workers.scheduled_models import (
     WorkspaceScheduledJob,
     WorkspaceScheduledJobEvent,
 )
-from backend.app.execution.workers.scheduled_types import ScheduledJobMaintenanceSummary
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.runs.service import RunOrchestrationService
-from backend.app.orchestration.runs.status import RunStatus
-from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.workers.scheduled_types import ScheduledJobMaintenanceSummary
 
 POSTGRES_TEST_URL_ENV = "OPSMESH_TEST_POSTGRES_URL"
 

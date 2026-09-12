@@ -8,19 +8,19 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agents.providers.models import ModelProviderCredential
-from backend.app.capabilities.models import McpCredentialReference
-from backend.app.execution.workers.handlers import WorkerJobHandler
-from backend.app.execution.workers.jobs import JobPayload, JobType
-from backend.app.platform.common.config import Settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.platform.integrations.webhooks.models import WebhookSubscription
-from backend.app.platform.secrets.rotation import HostedSecretReencryptService
-from backend.app.platform.secrets.service import SecretEncryptionService
-from backend.app.platform.security.models import SecurityEvent
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.core.common.config import Settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.core.integrations.webhooks.models import WebhookSubscription
+from backend.app.core.secrets.rotation import HostedSecretReencryptService
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.capabilities.models import McpCredentialReference
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.workers.handlers import WorkerJobHandler
+from backend.app.runtime.workers.jobs import JobPayload, JobType
 
 OLD_SECRET = "old-credential-secret"
 NEW_SECRET = "new-credential-secret"

@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import fakeredis
 
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.platform.common.config import Settings
+from backend.app.core.common.config import Settings
+from backend.app.runtime.workers.dependencies import get_worker_queue
 
 
 def test_worker_queue_dependency_uses_app_state_redis_client() -> None:

@@ -10,15 +10,15 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.core.auth.errors import AuthenticationError
+from backend.app.core.auth.service import AuthorizationService
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db.base import Base
+from backend.app.core.db.session import get_db_session
+from backend.app.core.identity.models import User, UserAPIToken
+from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
-from backend.app.platform.auth.errors import AuthenticationError
-from backend.app.platform.auth.service import AuthorizationService
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.identity.models import User, UserAPIToken
-from backend.app.platform.security.models import SecurityEvent
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 INTERNAL_TOKEN = "test-internal-token"
 

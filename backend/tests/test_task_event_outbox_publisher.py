@@ -9,19 +9,19 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.execution.workers.runner import WorkerRunner, WorkerRunnerConfig
-from backend.app.orchestration.tasks.event_outbox import (
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.orchestration.tasks.event_outbox import (
     TaskEventOutboxPublisher,
     TaskEventOutboxService,
 )
-from backend.app.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
-from backend.app.orchestration.tasks.models import Task, TaskEventOutbox
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
+from backend.app.domains.orchestration.tasks.models import Task, TaskEventOutbox
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
 
 
 def test_task_event_outbox_publisher_publishes_pending_event() -> None:

@@ -11,13 +11,13 @@ from backend.app.api.middleware import (
     SecurityHeadersMiddleware,
 )
 from backend.app.api.router import api_router
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.executors import shutdown_blocking_executor
+from backend.app.core.common.logging import configure_logging
+from backend.app.core.db.session import engine
+from backend.app.core.rate_limits.service import FixedWindowRateLimiter
+from backend.app.core.redis.client import close_redis_client, create_redis_client
 from backend.app.observability.tracing import configure_api_telemetry
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.common.executors import shutdown_blocking_executor
-from backend.app.platform.common.logging import configure_logging
-from backend.app.platform.db.session import engine
-from backend.app.platform.rate_limits.service import FixedWindowRateLimiter
-from backend.app.platform.redis.client import close_redis_client, create_redis_client
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

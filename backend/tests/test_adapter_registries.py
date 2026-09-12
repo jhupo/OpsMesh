@@ -5,17 +5,17 @@ from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
 
-from backend.app.agents.providers.health import (
+from backend.app.domains.agents.providers.health import (
     AnthropicHealthProbe,
     ModelProviderHealthTarget,
     OpenAICompatibleHealthProbe,
     ProviderHealthRegistry,
 )
-from backend.app.agents.providers.model_api import (
+from backend.app.domains.agents.providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
 )
-from backend.app.execution.runtime.backends.registry import build_runtime_backend_registry
+from backend.app.runtime.environment.backends.registry import build_runtime_backend_registry
 
 
 def test_health_registry_selects_provider_sdk_adapters() -> None:

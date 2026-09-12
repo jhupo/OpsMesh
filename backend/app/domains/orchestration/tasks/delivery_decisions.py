@@ -1,0 +1,354 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from backend.app.api.schemas.orchestration.tasks.overview import (
+    TaskCorrectionRequest,
+    TaskDeliveryDecisionRequest,
+)
+from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.tasks.corrections import (
+    TaskCorrectionResult,
+    TaskCorrectionService,
+)
+from backend.app.domains.orchestration.tasks.delivery_review import TaskDeliveryReviewService
+from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.orchestration.tasks.service import TaskStateService
+from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.observability.audit_service import AuditService
+from backend.app.runtime.workers.redis_queue import RedisQueue
+
+ACTIVE_RUN_STATUSES = {
+    RunStatus.QUEUED.value,
+    RunStatus.RUNNING.value,
+    RunStatus.WAITING_RUNTIME.value,
+    RunStatus.WAITING_APPROVAL.value,
+    RunStatus.WAITING_SUBWORKFLOW.value,
+}
+FINAL_STEP_STATUSES = {"completed", "cancelled", "skipped"}
+
+
+class TaskDeliveryDecisionService:
+    """Apply owner/manager delivery acceptance decisions for a task."""
+
+    def __init__(self, session: Session, queue: RedisQueue | None = None) -> None:
+        self._session = session
+        self._queue = queue
+
+    def apply_decision(
+        self,
+        *,
+        workspace_id: UUID,
+        task_id: UUID,
+        actor_user_id: UUID,
+        request: TaskDeliveryDecisionRequest,
+    ) -> dict[str, object] | None:
+        task = self._task(workspace_id, task_id)
+        if task is None:
+            return None
+        if request.action == "approve":
+            return self._approve(task, actor_user_id=actor_user_id, request=request)
+        if request.action in {"request_changes", "reject"}:
+            return self._request_follow_up(task, actor_user_id=actor_user_id, request=request)
+        raise ValueError(f"Unsupported delivery decision: {request.action}")
+
+    def _approve(
+        self,
+        task: Task,
+        *,
+        actor_user_id: UUID,
+        request: TaskDeliveryDecisionRequest,
+    ) -> dict[str, object]:
+        decision_message = self._append_decision_message(
+            task,
+            actor_user_id=actor_user_id,
+            decision="approved",
+            request=request,
+        )
+        final_output = _final_output_from_decision(decision_message)
+        finalization = self._finalization_result(
+            task,
+            finalize=request.finalize,
+            final_output=final_output,
+            override=request.override,
+            override_reason=request.override_reason,
+        )
+        if finalization["status"] == "finalized":
+            AgentEpisodicMemoryService(self._session).capture_task_completed(
+                task,
+                event_id=decision_message.id,
+                summary=request.summary,
+            )
+        self._audit(
+            task,
+            actor_user_id=actor_user_id,
+            action="task.delivery.approved",
+            metadata={
+                "message_id": str(decision_message.id),
+                "finalization": finalization,
+                "override": request.override,
+                "metadata": request.metadata,
+            },
+        )
+        self._session.commit()
+        return self._response(
+            task,
+            request=request,
+            decision="approved",
+            status="approved",
+            message_id=decision_message.id,
+            final_output=final_output,
+            details={"finalization": finalization},
+        )
+
+    def _request_follow_up(
+        self,
+        task: Task,
+        *,
+        actor_user_id: UUID,
+        request: TaskDeliveryDecisionRequest,
+    ) -> dict[str, object]:
+        if not request.instruction:
+            raise ValueError("instruction is required for follow-up delivery decisions")
+        decision = "request_revision" if request.action == "request_changes" else "rejected"
+        decision_message = self._append_decision_message(
+            task,
+            actor_user_id=actor_user_id,
+            decision=decision,
+            request=request,
+        )
+        if task.status not in {"completed", "failed", "cancelled"}:
+            TaskStateService().transition(task, TaskStatus.BLOCKED)
+        correction = self._create_follow_up_correction(
+            task,
+            actor_user_id=actor_user_id,
+            request=request,
+            decision_message_id=decision_message.id,
+        )
+        self._audit(
+            task,
+            actor_user_id=actor_user_id,
+            action=f"task.delivery.{request.action}",
+            metadata={
+                "message_id": str(decision_message.id),
+                "created_step_id": str(correction.created_step_id)
+                if correction is not None and correction.created_step_id is not None
+                else None,
+                "metadata": request.metadata,
+            },
+        )
+        self._session.commit()
+        return self._response(
+            task,
+            request=request,
+            decision=decision,
+            status="follow_up_created" if correction is not None else "recorded",
+            message_id=decision_message.id,
+            created_step_id=correction.created_step_id if correction is not None else None,
+            details={
+                "correction_status": correction.status if correction is not None else None,
+                "correction_mode": correction.mode if correction is not None else None,
+            },
+        )
+
+    def _task(self, workspace_id: UUID, task_id: UUID) -> Task | None:
+        return self._session.scalar(
+            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+        )
+
+    def _finalization_result(
+        self,
+        task: Task,
+        finalize: bool,
+        final_output: dict[str, object],
+        *,
+        override: bool,
+        override_reason: str | None,
+    ) -> dict[str, object]:
+        if not finalize:
+            return {"status": "deferred", "reason": "finalize_disabled"}
+        if override and not override_reason:
+            raise ValueError("override_reason is required for a delivery override")
+        if not override and override_reason:
+            raise ValueError("override_reason requires override=true")
+        blocked_reasons = self._finalization_blocked_reasons(task)
+        if blocked_reasons and not override:
+            return {
+                "status": "deferred",
+                "reason": blocked_reasons[0],
+                "blocked_reasons": blocked_reasons,
+            }
+        if task.status == TaskStatus.COMPLETED.value:
+            task.final_output = final_output
+            return {
+                "status": "finalized",
+                "reason": "overridden" if override and blocked_reasons else "already_completed",
+                "blocked_reasons": blocked_reasons,
+            }
+        TaskStateService().transition(
+            task,
+            TaskStatus.COMPLETED,
+            completed_at=datetime.now(UTC),
+            final_output=final_output,
+        )
+        return {
+            "status": "finalized",
+            "reason": "overridden" if override and blocked_reasons else "ready",
+            "blocked_reasons": blocked_reasons,
+        }
+
+    def _finalization_blocked_reasons(self, task: Task) -> list[str]:
+        reasons: list[str] = []
+        if task.status not in {
+            TaskStatus.RUNNING.value,
+            TaskStatus.BLOCKED.value,
+            TaskStatus.COMPLETED.value,
+        }:
+            reasons.append("task_status_not_finalizable")
+        active_run = self._session.scalar(
+            select(AgentRun.id)
+            .where(
+                AgentRun.workspace_id == task.workspace_id,
+                AgentRun.task_id == task.id,
+                AgentRun.status.in_(ACTIVE_RUN_STATUSES),
+            )
+            .limit(1)
+        )
+        if active_run is not None:
+            reasons.append("active_runs_present")
+        incomplete_step = self._session.scalar(
+            select(TaskStep.id)
+            .where(
+                TaskStep.workspace_id == task.workspace_id,
+                TaskStep.task_id == task.id,
+                ~TaskStep.status.in_(FINAL_STEP_STATUSES),
+            )
+            .limit(1)
+        )
+        if incomplete_step is not None:
+            reasons.append("task_steps_incomplete")
+        review = TaskDeliveryReviewService(self._session).get_review(
+            workspace_id=task.workspace_id,
+            task_id=task.id,
+        )
+        summary = review.get("summary") if isinstance(review, dict) else None
+        if isinstance(summary, dict):
+            if int(summary.get("missing_expected_artifact_count") or 0) > 0:
+                reasons.append("expected_artifacts_missing")
+            if int(summary.get("pending_review_artifact_count") or 0) > 0:
+                reasons.append("artifacts_pending_review")
+            if int(summary.get("rejected_artifact_count") or 0) > 0:
+                reasons.append("artifacts_rejected")
+        return list(dict.fromkeys(reasons))
+
+    def _create_follow_up_correction(
+        self,
+        task: Task,
+        *,
+        actor_user_id: UUID,
+        request: TaskDeliveryDecisionRequest,
+        decision_message_id: UUID,
+    ) -> TaskCorrectionResult | None:
+        correction = TaskCorrectionRequest(
+            target_type=request.target_type or "task",
+            mode=request.correction_mode or "revise",
+            instruction=request.instruction or request.summary,
+            target_id=request.target_id,
+            metadata={
+                **request.metadata,
+                "source": "delivery_decision",
+                "decision": request.action,
+                "acceptance_message_id": str(decision_message_id),
+            },
+        )
+        return TaskCorrectionService(self._session, queue=self._queue).create_correction(
+            workspace_id=task.workspace_id,
+            task_id=task.id,
+            actor_user_id=actor_user_id,
+            request=correction,
+        )
+
+    def _append_decision_message(
+        self,
+        task: Task,
+        *,
+        actor_user_id: UUID,
+        decision: str,
+        request: TaskDeliveryDecisionRequest,
+    ) -> TaskMessage:
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
+            message_type="pm.acceptance_decision",
+            body=request.summary,
+            payload={
+                "decision": decision,
+                "summary": request.summary,
+                "instruction": request.instruction,
+                "actor_user_id": str(actor_user_id),
+                "source": "delivery_decision",
+                "override": request.override,
+                "override_reason": request.override_reason,
+                "metadata": request.metadata,
+            },
+        )
+
+    def _audit(
+        self,
+        task: Task,
+        *,
+        actor_user_id: UUID,
+        action: str,
+        metadata: dict[str, object],
+    ) -> None:
+        AuditService(self._session).record_user_action(
+            workspace_id=task.workspace_id,
+            user_id=actor_user_id,
+            action=action,
+            target_type="task",
+            target_id=task.id,
+            metadata=metadata,
+        )
+
+    def _response(
+        self,
+        task: Task,
+        *,
+        request: TaskDeliveryDecisionRequest,
+        decision: str,
+        status: str,
+        message_id: UUID,
+        created_step_id: UUID | None = None,
+        final_output: dict[str, object] | None = None,
+        details: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        self._session.flush()
+        return {
+            "workspace_id": task.workspace_id,
+            "task_id": task.id,
+            "action": request.action,
+            "decision": decision,
+            "status": status,
+            "task_status": task.status,
+            "message_id": message_id,
+            "created_step_id": created_step_id,
+            "final_output": final_output,
+            "details": details or {},
+        }
+
+
+def _final_output_from_decision(message: TaskMessage) -> dict[str, object]:
+    payload = message.payload if isinstance(message.payload, dict) else {}
+    summary = payload.get("summary")
+    return {
+        "summary": summary if isinstance(summary, str) and summary else "Approved",
+        "source": "delivery_decision",
+        "acceptance_message_id": str(message.id),
+        "decision": "approved",
+    }

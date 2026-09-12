@@ -8,29 +8,29 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.capabilities.tools.context import ToolContext
-from backend.app.capabilities.tools.runtime_tools import RuntimeToolService
-from backend.app.execution.runtime.contracts import (
+from backend.app.core.admin.models import PlatformPolicy
+from backend.app.core.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.domains.capabilities.tools.context import ToolContext
+from backend.app.domains.capabilities.tools.runtime_tools import RuntimeToolService
+from backend.app.domains.orchestration.approvals.models import Approval
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.workspace.reviews.models import ResourceReview
+from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
     RuntimeLimits,
 )
-from backend.app.execution.runtime.manager import RuntimeManager
-from backend.app.execution.runtime.models import RuntimeTemplate
-from backend.app.orchestration.approvals.models import Approval
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.orchestration.runs.status import RunStatus
-from backend.app.orchestration.tasks.models import Task
-from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.platform.admin.models import PlatformPolicy
-from backend.app.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.workspace.reviews.models import ResourceReview
-from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.workspace.tenants.models import Workspace
+from backend.app.runtime.environment.manager import RuntimeManager
+from backend.app.runtime.environment.models import RuntimeTemplate
 
 
 @pytest.fixture(autouse=True)

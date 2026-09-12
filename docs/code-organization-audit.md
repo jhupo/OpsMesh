@@ -10,22 +10,22 @@ imports, dynamic patch targets, architecture gates and documentation together, w
 
 | Area | Current owner | Change |
 | --- | --- | --- |
-| Runtime models, backends, pools and lifecycle | execution/runtime | Former runtime_manager and runtimes share one owner. |
-| Placement quotas and reservations | execution/runtime/space_* | Former runtime_spaces and runtime/spaces, now direct modules. |
+| Runtime models, backends, pools and lifecycle | runtime/environment | Former runtime_manager and runtimes share one owner. |
+| Placement quotas and reservations | runtime/environment/spaces | Former runtime_spaces and runtime/spaces, now direct modules. |
 | Audit, costs, traces and notification delivery | observability | Direct modules, with explicit audit_, cost_ and notification_ names. |
-| Object storage, file metadata and artifact persistence | workspace/storage | Former files and artifacts; one byte-storage boundary. |
-| Project snapshots, staging policy and export metadata | workspace/projects | Project-domain policy remains separate from storage drivers. |
-| Provider SDK implementation and helpers | agents/runtime/providers | OpenAI helpers and Claude runner no longer have separate sibling packages. |
-| Vendor-neutral execution environment | agents/runtime/runtime | Former sandbox; distinct from the infrastructure runtime resource owner. |
-| Run execution and state application | orchestration/runs | Includes runtime authorization and execution state helpers. |
-| Plan validation, scheduling and step lifecycle | orchestration/workflows | Former planning, policies, steps and scheduler micro-packages consolidated. |
-| Authorized request construction and provider gateway | orchestration/requests | Former run_request and models_layer; these are services, not database models. |
-| Orchestration database entities | orchestration/models.py | Kept as a module; creating a one-file models package would add needless depth. |
-| Planning attempts, feasibility, ownership and project plans | orchestration/workflows/plan_* | Former top-level planning; one orchestration owner for automatic and user-authored work. |
+| Object storage, file metadata and artifact persistence | domains/workspace/storage | Former files and artifacts; one byte-storage boundary. |
+| Project snapshots, staging policy and export metadata | domains/workspace/projects | Project-domain policy remains separate from storage drivers. |
+| Provider SDK implementation and helpers | domains/agents/runtime/providers | OpenAI helpers and Claude runner no longer have separate sibling packages. |
+| Vendor-neutral execution environment | domains/agents/runtime/sandbox | Former sandbox; distinct from the infrastructure runtime resource owner. |
+| Run execution and state application | domains/orchestration/runs | Includes runtime authorization and execution state helpers. |
+| Plan validation, scheduling and step lifecycle | domains/orchestration/workflows | Former planning, policies, steps and scheduler micro-packages consolidated. |
+| Authorized request construction and provider gateway | domains/orchestration/requests | Former run_request and models_layer; these are services, not database models. |
+| Orchestration database entities | domains/orchestration/models.py | Kept as a module; creating a one-file models package would add needless depth. |
+| Planning attempts, feasibility, ownership and project plans | domains/orchestration/workflows/plan_* | Former top-level planning; one orchestration owner for automatic and user-authored work. |
 
 ### Platform foundations and shared helpers
 
-`backend/app/platform/common` is the single owner for cross-domain, provider-neutral foundations:
+`backend/app/core/common` is the single owner for cross-domain, provider-neutral foundations:
 configuration, logging, metrics, request/trace context, pagination contracts, typed value
 normalization, resource sizing, executors, and maintenance primitives. These modules deliberately
 remain small when they define a stable contract used by several domains; they are not a generic
@@ -34,10 +34,10 @@ that owns their behavior (for example `common/typing.py` for value coercion and
 `common/trace_context.py` for propagation). This keeps imports discoverable and prevents unrelated
 business logic from accumulating in a dumping ground.
 
-Platform persistence and security adapters remain nested under `platform/db`, `platform/redis`,
-`platform/security`, `platform/secrets`, `platform/auth`, `platform/identity`, `platform/admin`,
-and `platform/integrations/webhooks`. They are infrastructure boundaries, not application-level
-utility folders.
+Core persistence and security adapters remain nested under `core/db`, `core/redis`,
+`core/security`, `core/secrets`, `core/auth`, `core/identity`, `core/admin`, and
+`core/integrations/webhooks`. They are infrastructure boundaries, not application-level utility
+folders.
 
 ## Edge-domain consolidation
 
@@ -59,10 +59,10 @@ utility folders.
 
 ## Retained boundaries
 
-- capabilities/mcp is an SDK protocol/execution boundary.
+- domains/capabilities/mcp is an SDK protocol/execution boundary.
 - API routes and schema groups retain their authentication and transport grouping.
-- auth, identity, security, secrets, db, self_hosted and workspaces are separate security or
-  lifecycle owners; the target tree was not an instruction to erase these domains.
+- auth, identity, security, secrets, db, runtime/self_hosted and domains/workspace are separate
+  security or lifecycle owners; the target tree was not an instruction to erase these domains.
 
 ## File-level review policy
 

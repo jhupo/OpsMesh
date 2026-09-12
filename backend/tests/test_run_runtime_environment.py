@@ -7,13 +7,13 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.execution.runtime.contracts import RuntimeCommandInputFile, RuntimeCommandResult
-from backend.app.execution.runtime.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
-from backend.app.execution.runtime.run_environment import RunRuntimeEnvironmentService
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.workspace.tenants.models import Workspace
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.runtime.environment.contracts import RuntimeCommandInputFile, RuntimeCommandResult
+from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.environment.run_environment import RunRuntimeEnvironmentService
 
 
 class FakeDockerClient:

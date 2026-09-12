@@ -10,10 +10,10 @@ from uuid import UUID, uuid4
 from sqlalchemy import Select, delete, func, select, text
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.security.redaction import redact_sensitive_payload
-from backend.app.workspace.tenants.models import Workspace
 
 
 @dataclass(frozen=True)

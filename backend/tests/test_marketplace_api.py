@@ -11,34 +11,34 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.api.schemas.capabilities.marketplace import MarketplaceInstallRequest
-from backend.app.capabilities.marketplace.models import (
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.db.errors import DatabaseConflictError
+from backend.app.core.db.session import get_db_session
+from backend.app.core.identity.models import User
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.capabilities.marketplace.models import (
     MarketplaceListing,
     TalentListing,
     WorkspaceAgentInstall,
     WorkspaceMarketplaceInstall,
 )
-from backend.app.capabilities.marketplace.resource_service import MarketplaceService
-from backend.app.capabilities.models import (
+from backend.app.domains.capabilities.marketplace.resource_service import MarketplaceService
+from backend.app.domains.capabilities.models import (
     McpServer,
     McpToolAllowlist,
     Skill,
     WorkspaceSkillInstall,
 )
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage
+from backend.app.domains.workspace.reviews.llm import LlmReviewResult
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
-from backend.app.orchestration.tasks.models import Task, TaskMessage
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.errors import DatabaseConflictError
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.identity.models import User
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.workspace.reviews.llm import LlmReviewResult
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
 
@@ -53,7 +53,11 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
             signals={"reviewer": "llm", "verdict": "approve"},
         )
 
-    monkeypatch.setattr("backend.app.workspace.reviews.llm.LlmResourceReviewer.review", fake_review)
+    monkeypatch.setattr(
+        "backend.app.domains.workspace.reviews.llm."
+        "LlmResourceReviewer.review",
+        fake_review,
+    )
 
 
 def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
@@ -192,7 +196,7 @@ def test_private_plugin_listing_skips_resource_review_by_default(monkeypatch) ->
         )
 
     monkeypatch.setattr(
-        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review", require_review
     )
 
     created = client.post(
@@ -230,7 +234,7 @@ def test_private_plugin_review_can_be_enabled_per_workspace(monkeypatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review", require_review
     )
 
     created = client.post(
@@ -494,7 +498,7 @@ def test_public_plugin_listing_requires_resource_review_before_market_visibility
         )
 
     monkeypatch.setattr(
-        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review", require_review
     )
 
     created = client.post(

@@ -11,7 +11,7 @@ from backend.app.api.routes.admin.system import router as system_router
 from backend.app.api.routes.admin.updates import router as updates_router
 from backend.app.api.routes.admin.users import router as users_router
 from backend.app.api.routes.admin.workers import router as workers_router
-from backend.app.platform.auth.admin import require_platform_admin
+from backend.app.core.auth.admin import require_platform_admin
 
 router = APIRouter(
     prefix="/admin",

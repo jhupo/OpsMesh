@@ -16,28 +16,28 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.agents.models import AgentProfile
-from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
-from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.execution.workers.runner import WorkerRunner, WorkerRunnerConfig
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.db.session import get_db_session
+from backend.app.core.identity.models import User
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.capabilities.models import Skill, WorkspaceSkillInstall
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.workspace.projects.export_models import WorkspaceExportJob
+from backend.app.domains.workspace.storage.artifact_models import Artifact
+from backend.app.domains.workspace.storage.models import FileAccessEvent, WorkspaceFile
+from backend.app.domains.workspace.storage.storage import LocalStorage
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.identity.models import User
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.workspace.projects.export_models import WorkspaceExportJob
-from backend.app.workspace.storage.artifact_models import Artifact
-from backend.app.workspace.storage.models import FileAccessEvent, WorkspaceFile
-from backend.app.workspace.storage.storage import LocalStorage
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.workers.dependencies import get_worker_queue
+from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
 
 TOKEN = "test-token"
 

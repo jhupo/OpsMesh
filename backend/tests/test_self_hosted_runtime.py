@@ -10,45 +10,49 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
-from backend.app.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
-from backend.app.execution.runtime.models import RuntimeEvent, WorkspaceRuntime
-from backend.app.execution.runtime.spaces.models import (
+from backend.app.core.admin.models import PlatformPolicy
+from backend.app.core.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.db.session import get_db_session
+from backend.app.core.identity.models import User
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.providers.credential_commands import (
+    ModelProviderCredentialCommandService,
+)
+from backend.app.domains.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
+from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
+from backend.app.domains.orchestration.runs.authorization_snapshot import (
+    RunAuthorizationSnapshotService,
+)
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember, WorkspaceQuota
+from backend.app.main import create_app
+from backend.app.runtime.environment.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.execution.self_hosted.attestation import (
+from backend.app.runtime.self_hosted.attestation import (
     CAPABILITY_ATTESTATION_PROTOCOL,
     attestation_signature,
     capability_digest,
 )
-from backend.app.execution.self_hosted.models import (
+from backend.app.runtime.self_hosted.models import (
     RuntimeCredential,
     SelfHostedJobClaim,
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.execution.self_hosted.service import SelfHostedRuntimeService
-from backend.app.execution.self_hosted.trust import _worker_version_diagnostics
-from backend.app.main import create_app
-from backend.app.orchestration.requests.builder import RunRequestBuilder
-from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.orchestration.tasks.models import Task
-from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.platform.admin.models import PlatformPolicy
-from backend.app.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.identity.models import User
-from backend.app.platform.secrets.service import SecretEncryptionService
-from backend.app.platform.security.models import SecurityEvent
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember, WorkspaceQuota
+from backend.app.runtime.self_hosted.service import SelfHostedRuntimeService
+from backend.app.runtime.self_hosted.trust import _worker_version_diagnostics
 
 TOKEN = "test-token"
 

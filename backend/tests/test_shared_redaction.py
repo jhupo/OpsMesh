@@ -1,7 +1,7 @@
 import pytest
 
-from backend.app.platform.integrations.webhooks.utils import _safe_headers, _snippet
-from backend.app.platform.security.redaction import (
+from backend.app.core.integrations.webhooks.utils import _safe_headers, _snippet
+from backend.app.core.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_text,
     redact_text_fragments,

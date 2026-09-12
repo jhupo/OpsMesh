@@ -14,29 +14,31 @@ from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskPlanRetryRequest,
     TaskResponse,
 )
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.orchestration.runs.service import RunOrchestrationService
-from backend.app.orchestration.tasks.models import Task
-from backend.app.orchestration.tasks.plan_lifecycle import (
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.orchestration.runs.service import RunOrchestrationService
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.orchestration.tasks.plan_lifecycle import (
     TaskPlanLifecycleService,
     TaskPlanRegenerateCommand,
     TaskPlanRetryCommand,
 )
-from backend.app.orchestration.workflows.definitions import (
+from backend.app.domains.orchestration.workflows.definitions import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )
-from backend.app.orchestration.workflows.plan_diagnostics import ProjectPlanDiagnosticsService
-from backend.app.orchestration.workflows.plan_future_plan_mutation import (
+from backend.app.domains.orchestration.workflows.plan_diagnostics import (
+    ProjectPlanDiagnosticsService,
+)
+from backend.app.domains.orchestration.workflows.plan_future_plan_mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
     TaskPlanMutationService,
 )
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.db.session import get_db_session
+from backend.app.runtime.workers.dependencies import get_worker_queue
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

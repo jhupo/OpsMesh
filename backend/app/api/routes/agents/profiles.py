@@ -5,8 +5,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Resp
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.agents.providers.agent_summary import agent_profile_response
-from backend.app.agents.service import AgentManagementService
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,
     IdempotencyService,
@@ -22,14 +20,16 @@ from backend.app.api.schemas.agents.profiles import (
     AgentProfileUpdateRequest,
     AgentProfileVersionResponse,
 )
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.agents.providers.agent_summary import agent_profile_response
+from backend.app.domains.agents.service import AgentManagementService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

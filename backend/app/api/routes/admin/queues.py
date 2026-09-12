@@ -12,8 +12,8 @@ from backend.app.api.schemas.platform.admin import (
     AdminQueueMetricsResponse,
     AdminRequeueDeadLetterResponse,
 )
-from backend.app.platform.admin.operations_summary import AdminOperationsSummaryService
-from backend.app.platform.admin.queue_operations import AdminQueueOperationsService
+from backend.app.core.admin.operations_summary import AdminOperationsSummaryService
+from backend.app.core.admin.queue_operations import AdminQueueOperationsService
 
 router = APIRouter()
 

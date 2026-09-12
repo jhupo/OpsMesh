@@ -12,46 +12,46 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.agents.models import AgentProfile
-from backend.app.capabilities.models import McpServer, McpToolAllowlist
-from backend.app.execution.operations.models import WorkerLease, WorkerNode
-from backend.app.execution.operations.timeline.service import (
-    TeamRuntimeTimelineService,
-    TimelineFilters,
-)
-from backend.app.execution.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
-from backend.app.execution.runtime.spaces.models import (
+from backend.app.core.admin.models import PlatformPolicy
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.db.session import get_db_session
+from backend.app.core.identity.models import User
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist
+from backend.app.domains.orchestration.approvals.models import Approval
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.domains.workspace.projects.export_models import WorkspaceExportJob
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.main import create_app
+from backend.app.observability.audit_models import AuditEvent
+from backend.app.runtime.environment.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
+from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
 )
-from backend.app.execution.self_hosted.models import (
+from backend.app.runtime.operations.models import WorkerLease, WorkerNode
+from backend.app.runtime.operations.timeline.service import (
+    TeamRuntimeTimelineService,
+    TimelineFilters,
+)
+from backend.app.runtime.self_hosted.models import (
     RuntimeCredential,
     SelfHostedJobClaim,
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.execution.workers.jobs import JobPayload, JobType
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.main import create_app
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.orchestration.approvals.models import Approval
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.platform.admin.models import PlatformPolicy
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.identity.models import User
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.platform.security.models import SecurityEvent
-from backend.app.workspace.projects.export_models import WorkspaceExportJob
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.workers.dependencies import get_worker_queue
+from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 TOKEN = "test-token"
 WORKER_HEARTBEAT_TOKEN = "worker-heartbeat-token"

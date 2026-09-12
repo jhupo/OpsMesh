@@ -11,30 +11,30 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.execution.operations.models import WorkerLease, WorkerNode
-from backend.app.execution.runtime.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
-from backend.app.execution.runtime.spaces.models import (
+from backend.app.core.admin.models import PlatformPolicy, PlatformPolicyEvent
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.db.session import get_db_session
+from backend.app.core.identity.models import User
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.orchestration.approvals.models import Approval
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.main import create_app
+from backend.app.runtime.environment.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
+from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
 )
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.execution.workers.jobs import JobPayload, JobType
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.main import create_app
-from backend.app.orchestration.approvals.models import Approval
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.tasks.models import Task
-from backend.app.platform.admin.models import PlatformPolicy, PlatformPolicyEvent
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.identity.models import User
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.platform.security.models import SecurityEvent
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.operations.models import WorkerLease, WorkerNode
+from backend.app.runtime.workers.dependencies import get_worker_queue
+from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 TOKEN = "test-token"
 ADMIN_TOKEN = "admin-token"
@@ -771,13 +771,13 @@ def test_admin_system_version_reports_current_package_version() -> None:
 
 
 def test_admin_check_updates_returns_latest_release(monkeypatch) -> None:
-    from backend.app.platform.admin.releases.cache import clear_release_update_cache
-    from backend.app.platform.admin.releases.models import (
+    from backend.app.core.admin.releases.cache import clear_release_update_cache
+    from backend.app.core.admin.releases.models import (
         ReleaseAsset,
         ReleaseUpdateCheck,
         ReleaseVersion,
     )
-    from backend.app.platform.admin.releases.service import ReleaseUpdateService
+    from backend.app.core.admin.releases.service import ReleaseUpdateService
 
     clear_release_update_cache()
 

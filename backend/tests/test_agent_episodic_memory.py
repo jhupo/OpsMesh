@@ -7,20 +7,20 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.types import JSON
 
-from backend.app.agents.memory.episodic import AgentEpisodicMemoryService
-from backend.app.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.agents.memory.policy import normalized_memory_policy
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.runtime.contracts import AgentRunResult
-from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.orchestration.approvals.models import Approval
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.tasks.feedback import TaskFeedbackService
-from backend.app.orchestration.tasks.models import Task
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
+from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.domains.agents.memory.policy import normalized_memory_policy
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import AgentRunResult
+from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
+from backend.app.domains.orchestration.approvals.models import Approval
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.tasks.feedback import TaskFeedbackService
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_memory_policy_rejects_removed_root_fields() -> None:

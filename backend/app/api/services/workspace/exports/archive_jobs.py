@@ -20,16 +20,18 @@ from backend.app.api.services.workspace.exports.archive_repository import (
 from backend.app.api.services.workspace.exports.archive_restore_drill import (
     WorkspaceArchiveRestoreDrillService,
 )
-from backend.app.execution.workers.jobs import JobPayload, JobType
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.observability.audit_service import AuditService
-from backend.app.workspace.projects.export_models import (
+from backend.app.domains.workspace.projects.export_models import (
     WorkspaceExportJob,
     WorkspaceExportJobStatus,
 )
-from backend.app.workspace.storage.storage import ObjectStorage
-from backend.app.workspace.storage.storage_transactions import CompensatingObjectStorageWrites
-from backend.app.workspace.tenants.models import Workspace
+from backend.app.domains.workspace.storage.storage import ObjectStorage
+from backend.app.domains.workspace.storage.storage_transactions import (
+    CompensatingObjectStorageWrites,
+)
+from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.observability.audit_service import AuditService
+from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 
 class WorkspaceArchiveExportJobService:

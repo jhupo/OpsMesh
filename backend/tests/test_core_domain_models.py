@@ -7,25 +7,25 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agents.models import AgentProfile
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.orchestration.runs.status import (
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.runs.status import (
     RunStatus,
     can_transition_run,
     require_run_transition,
 )
-from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.orchestration.tasks.service import TaskStateService
-from backend.app.orchestration.tasks.status import (
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.orchestration.tasks.service import TaskStateService
+from backend.app.domains.orchestration.tasks.status import (
     TaskStatus,
     can_transition_task,
     require_task_transition,
 )
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.observability.audit_models import AuditEvent
 
 
 def test_core_domain_round_trip() -> None:

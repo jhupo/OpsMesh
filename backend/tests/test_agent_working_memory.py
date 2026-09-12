@@ -6,16 +6,19 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.agents.memory.policy import WorkingMemoryPolicy
-from backend.app.agents.memory.working import AgentWorkingMemoryService, working_memory_context
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.runtime.contracts import AgentRuntimeToolResult
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.domains.agents.memory.policy import WorkingMemoryPolicy
+from backend.app.domains.agents.memory.working import (
+    AgentWorkingMemoryService,
+    working_memory_context,
+)
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import AgentRuntimeToolResult
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_working_memory_is_run_scoped_versioned_redacted_and_expirable() -> None:

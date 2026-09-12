@@ -5,14 +5,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.agents.messages.models import AgentMessage
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.providers.agent_summary import agent_profile_response
-from backend.app.agents.providers.model_api import configured_model_api, require_known_model_api
-from backend.app.agents.runtime.session_management import (
-    PersistentAgentSessionManagementService,
-)
-from backend.app.agents.service import AgentManagementService
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,
     IdempotencyService,
@@ -29,21 +21,32 @@ from backend.app.api.schemas.workspace.teams import (
     AgentTeamMemberResponse,
     AgentTeamMemberUpdateRequest,
 )
-from backend.app.observability.audit_service import AuditService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.workspace.teams.runtime.service import TeamRuntimeService
-from backend.app.workspace.teams.workspace_service import (
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.agents.messages.models import AgentMessage
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.providers.agent_summary import agent_profile_response
+from backend.app.domains.agents.providers.model_api import (
+    configured_model_api,
+    require_known_model_api,
+)
+from backend.app.domains.agents.runtime.session_management import (
+    PersistentAgentSessionManagementService,
+)
+from backend.app.domains.agents.service import AgentManagementService
+from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
+from backend.app.domains.workspace.teams.workspace_service import (
     TeamMemberCreateCommand,
     TeamMemberUpdateCommand,
     WorkspaceTeamService,
 )
+from backend.app.observability.audit_service import AuditService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

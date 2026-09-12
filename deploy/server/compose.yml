@@ -33,7 +33,7 @@ services:
     environment:
       <<: *environment
       OPSMESH_SERVICE_NAME: opsmesh-worker
-    command: [python, -m, backend.app.execution.workers.cli]
+    command: [python, -m, backend.app.runtime.workers.cli]
     # Only the runtime-management worker has daemon authority. Never expose this to API/runtimes.
     group_add: ['${OPSMESH_DOCKER_GID:?Set Docker socket group}']
     volumes:

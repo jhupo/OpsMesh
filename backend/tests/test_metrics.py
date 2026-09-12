@@ -18,11 +18,17 @@ from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
 from backend.app.api.middleware import _metrics_path
-from backend.app.execution.operations.metrics.workers import WorkerPrometheusMetrics
-from backend.app.execution.operations.models import WorkerLease, WorkerNode
-from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.execution.workers.jobs import JobPayload, JobType
+from backend.app.core.common.config import Settings
+from backend.app.core.common.metrics import MetricsRegistry, metrics_registry
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.db.session import get_db_session
+from backend.app.core.identity.models import User
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditIntegrityCheck
 from backend.app.observability.cost_models import (
@@ -30,17 +36,11 @@ from backend.app.observability.cost_models import (
     ModelUsageRecord,
     WorkspaceCostBudget,
 )
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.platform.common.config import Settings
-from backend.app.platform.common.metrics import MetricsRegistry, metrics_registry
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.identity.models import User
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.tenants.models import Workspace
+from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.operations.metrics.workers import WorkerPrometheusMetrics
+from backend.app.runtime.operations.models import WorkerLease, WorkerNode
+from backend.app.runtime.workers.jobs import JobPayload, JobType
 
 
 def test_metrics_registry_renders_counters_and_histograms() -> None:

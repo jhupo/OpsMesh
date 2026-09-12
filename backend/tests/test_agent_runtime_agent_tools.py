@@ -7,9 +7,10 @@ from uuid import uuid4
 import pytest
 from agents.tool_context import ToolContext
 
-import backend.app.agents.runtime.providers.openai_agents as openai_runtime
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.runtime.contracts import (
+import backend.app.domains.agents.runtime.providers.openai_agents as openai_runtime
+from backend.app.core.common.config import Settings
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,
@@ -18,17 +19,16 @@ from backend.app.agents.runtime.contracts import (
     AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
 )
-from backend.app.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
-from backend.app.execution.workers.jobs import JobPayload, JobType
-from backend.app.orchestration.requests.builder import RunRequestBuilder
-from backend.app.orchestration.runs.authorization_snapshot import (
+from backend.app.domains.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
+from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
+from backend.app.domains.orchestration.runs.authorization_snapshot import (
     RunAuthorizationSnapshotService,
 )
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.runs.result_payloads import run_output_payload
-from backend.app.orchestration.tasks.models import Task
-from backend.app.platform.common.config import Settings
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.result_payloads import run_output_payload
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.runtime.workers.jobs import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 

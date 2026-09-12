@@ -3,30 +3,33 @@ from uuid import uuid4
 
 import pytest
 
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.runtime.contracts import (
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
-from backend.app.execution.workers.jobs import JobPayload, JobType
-from backend.app.orchestration.models import SubworkflowInvocation
-from backend.app.orchestration.runs.eligibility import RunEligibilityService
-from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.runs.status import RunStatus
-from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.orchestration.workflows.conditions import evaluate_task_step_condition
-from backend.app.orchestration.workflows.data import (
+from backend.app.domains.orchestration.models import SubworkflowInvocation
+from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.domains.orchestration.runs.execution import (
+    RunExecutionDependencies,
+    RunExecutionService,
+)
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.domains.orchestration.workflows.conditions import evaluate_task_step_condition
+from backend.app.domains.orchestration.workflows.data import (
     WorkflowDataBindingError,
     resolve_workflow_inputs,
 )
-from backend.app.orchestration.workflows.plan_workflow_contracts import WorkflowNode
-from backend.app.orchestration.workflows.step_completion import TaskStepCompletionService
-from backend.app.orchestration.workflows.subworkflows import (
+from backend.app.domains.orchestration.workflows.plan_workflow_contracts import WorkflowNode
+from backend.app.domains.orchestration.workflows.step_completion import TaskStepCompletionService
+from backend.app.domains.orchestration.workflows.subworkflows import (
     SubworkflowExecutionError,
     SubworkflowExecutionService,
 )
+from backend.app.runtime.workers.jobs import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 

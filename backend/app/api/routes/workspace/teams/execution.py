@@ -18,26 +18,28 @@ from backend.app.api.schemas.workspace.teams import (
     AgentTeamOperatorActionRequest,
     AgentTeamOperatorActionResponse,
 )
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.execution.workers.jobs import JobType
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.errors import PermissionDeniedError
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.auth.service import AuthorizationService
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.security.redaction import redact_sensitive_payload
-from backend.app.workspace.teams.command_center import TeamCommandCenterService
-from backend.app.workspace.teams.execution_loop import (
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.errors import PermissionDeniedError
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.auth.service import AuthorizationService
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db.session import get_db_session
+from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.workspace.teams.command_center import TeamCommandCenterService
+from backend.app.domains.workspace.teams.execution_loop import (
     TeamExecutionLoopService,
     enqueue_team_execution_loop_job,
 )
-from backend.app.workspace.teams.operations.operator_actions import TeamOperatorActionService
-from backend.app.workspace.teams.workspace_service import (
+from backend.app.domains.workspace.teams.operations.operator_actions import (
+    TeamOperatorActionService,
+)
+from backend.app.domains.workspace.teams.workspace_service import (
     WorkspaceTeamService,
 )
+from backend.app.runtime.workers.dependencies import get_worker_queue
+from backend.app.runtime.workers.jobs import JobType
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

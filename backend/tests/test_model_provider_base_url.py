@@ -1,4 +1,4 @@
-from backend.app.agents.providers.policy import (
+from backend.app.domains.agents.providers.policy import (
     model_provider_base_url_host,
     normalize_openai_compatible_base_url,
 )

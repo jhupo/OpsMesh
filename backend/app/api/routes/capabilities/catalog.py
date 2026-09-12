@@ -13,16 +13,16 @@ from backend.app.api.schemas.capabilities.catalog import (
     TeamCapabilityPolicyUpdateRequest,
     WorkspaceCapabilityCatalogResponse,
 )
-from backend.app.capabilities.catalog.effective import EffectiveCapabilityCatalogService
-from backend.app.capabilities.catalog.service import WorkspaceCapabilityCatalogService
-from backend.app.capabilities.governance.policy import TeamCapabilityPolicyService
-from backend.app.capabilities.resources.service import CapabilityResourceService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.errors import DatabaseConflictError
-from backend.app.platform.db.session import get_db_session
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.errors import DatabaseConflictError
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.capabilities.catalog.effective import EffectiveCapabilityCatalogService
+from backend.app.domains.capabilities.catalog.service import WorkspaceCapabilityCatalogService
+from backend.app.domains.capabilities.governance.policy import TeamCapabilityPolicyService
+from backend.app.domains.capabilities.resources.service import CapabilityResourceService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])
 

@@ -22,28 +22,30 @@ from backend.app.api.schemas.workspace.teams import (
     AgentTeamUpdateRequest,
     WorkspaceTeamCommandCenterResponse,
 )
-from backend.app.capabilities.governance.policy import TeamCapabilityPolicyService
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.workspace.teams.command_center import TeamCommandCenterService
-from backend.app.workspace.teams.execution_overview import TeamExecutionOverviewService
-from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.teams.operations_console import TeamOperationsConsoleService
-from backend.app.workspace.teams.project_service import TeamProjectSpaceService
-from backend.app.workspace.teams.workspace_command_center import WorkspaceCommandCenterService
-from backend.app.workspace.teams.workspace_service import (
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.capabilities.governance.policy import TeamCapabilityPolicyService
+from backend.app.domains.workspace.teams.command_center import TeamCommandCenterService
+from backend.app.domains.workspace.teams.execution_overview import TeamExecutionOverviewService
+from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.domains.workspace.teams.operations_console import TeamOperationsConsoleService
+from backend.app.domains.workspace.teams.project_service import TeamProjectSpaceService
+from backend.app.domains.workspace.teams.workspace_command_center import (
+    WorkspaceCommandCenterService,
+)
+from backend.app.domains.workspace.teams.workspace_service import (
     TeamCreateCommand,
     TeamUpdateCommand,
     WorkspaceTeamService,
 )
+from backend.app.runtime.workers.dependencies import get_worker_queue
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

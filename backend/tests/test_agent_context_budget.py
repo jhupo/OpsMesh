@@ -1,10 +1,10 @@
 import pytest
 
-from backend.app.agents.memory.policy import ContextBudgetPolicy
-from backend.app.agents.profiles.payloads import normalize_create_payload
-from backend.app.agents.runtime.errors import AgentRuntimePolicyError
-from backend.app.agents.runtime.token_estimation import estimate_token_upper_bound
-from backend.app.orchestration.requests.context_budget import (
+from backend.app.domains.agents.memory.policy import ContextBudgetPolicy
+from backend.app.domains.agents.profiles.payloads import normalize_create_payload
+from backend.app.domains.agents.runtime.errors import AgentRuntimePolicyError
+from backend.app.domains.agents.runtime.token_estimation import estimate_token_upper_bound
+from backend.app.domains.orchestration.requests.context_budget import (
     ContextBudgetManager,
     ContextFragment,
     ContextPriority,

@@ -10,12 +10,12 @@ from backend.app.api.schemas.operations.notifications import (
     NotificationMarkReadResponse,
     NotificationResponse,
 )
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
 from backend.app.observability.notification_service import NotificationCenterService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/notifications",

@@ -10,8 +10,8 @@ from backend.app.api.schemas.platform.admin import (
     AdminQuarantineRuntimeSpaceResponse,
     AdminRuntimeSpaceResponse,
 )
-from backend.app.platform.admin.runtime_control import AdminRuntimeService
-from backend.app.platform.common.pagination import PageParams
+from backend.app.core.admin.runtime_control import AdminRuntimeService
+from backend.app.core.common.pagination import PageParams
 
 router = APIRouter()
 

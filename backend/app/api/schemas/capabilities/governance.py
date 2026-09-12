@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
-from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.core.security.redaction import redact_sensitive_payload
 
 
 class WorkspaceCapabilityGovernanceSkillResponse(BaseModel):

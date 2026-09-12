@@ -2,24 +2,24 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from backend.app.agents.models import AgentProfile
-from backend.app.orchestration.runs.eligibility import RunEligibilityService
-from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.orchestration.workflows.conditions import (
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.orchestration.workflows.conditions import (
     evaluate_task_step_condition,
     validate_condition,
 )
-from backend.app.orchestration.workflows.definition_commands import (
+from backend.app.domains.orchestration.workflows.definition_commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
 )
-from backend.app.orchestration.workflows.definitions import OrchestrationDefinitionService
-from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
-from backend.app.orchestration.workflows.plan_workflow_contracts import (
+from backend.app.domains.orchestration.workflows.definitions import OrchestrationDefinitionService
+from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
+from backend.app.domains.orchestration.workflows.plan_workflow_contracts import (
     WorkflowCondition,
     WorkflowNode,
 )
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.tests.test_capability_resources import (
     _client as _api_client,
 )
@@ -149,7 +149,7 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
         user.id,
     )
     service.publish_definition(workspace.id, definition.id, user.id)
-    from backend.app.orchestration.models import OrchestrationRevision
+    from backend.app.domains.orchestration.models import OrchestrationRevision
 
     service.update_definition(
         workspace.id,
@@ -172,7 +172,7 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
 
 
 def test_authored_plan_cannot_be_replaced_by_automatic_regeneration() -> None:
-    from backend.app.orchestration.tasks.plan_lifecycle import (
+    from backend.app.domains.orchestration.tasks.plan_lifecycle import (
         TaskPlanLifecycleService,
         TaskPlanRegenerateCommand,
     )

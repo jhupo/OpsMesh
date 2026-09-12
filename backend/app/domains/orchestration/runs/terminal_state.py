@@ -1,0 +1,140 @@
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
+from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.runs.state import RunStateService
+from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.domains.orchestration.tasks.service import TaskStateService
+from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
+from backend.app.domains.orchestration.tasks.step_service import TaskStepStateService
+from backend.app.domains.orchestration.tasks.step_status import TaskStepStatus
+from backend.app.domains.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
+from backend.app.runtime.workers.lease_lifecycle import mark_agent_run_worker_cancel_requested
+
+AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]
+ReleaseRunReservations = Callable[[AgentRun, datetime], None]
+
+
+@dataclass(slots=True)
+class RunTerminalStateService:
+    session: Session
+    append_event: AppendEvent
+    release_reservations: ReleaseRunReservations
+
+    def mark_run_cancelled(self, run: AgentRun, *, completed_at: datetime) -> int:
+        TaskPlanningAttemptService(self.session).finish_unsuccessful_run(
+            run, code="planner_cancelled", cancelled=True
+        )
+        RunStateService().transition(
+            run,
+            RunStatus.CANCELLED,
+            completed_at=completed_at,
+            error={
+                "code": "cancelled_by_user",
+                "message": "Run was cancelled by a workspace user",
+                "retryable": False,
+            },
+        )
+        worker_cancel_requests = self.record_worker_cancel_requested(
+            run,
+            requested_at=completed_at,
+        )
+        self.append_event(
+            run,
+            "run.cancelled",
+            "Run was cancelled by a workspace user",
+            {"worker_cancel_requests": worker_cancel_requests},
+        )
+        self.release_reservations(run, completed_at)
+        if run.task_step_id is not None:
+            step = self.session.scalar(
+                select(TaskStep).where(
+                    TaskStep.workspace_id == run.workspace_id,
+                    TaskStep.task_id == run.task_id,
+                    TaskStep.id == run.task_step_id,
+                )
+            )
+            if step is not None:
+                TaskStepStateService().transition(step, TaskStepStatus.CANCELLED)
+        AgentEpisodicMemoryService(self.session).capture_run_cancelled(run)
+        self._expire_working_memory(run)
+        return worker_cancel_requests
+
+    def mark_run_recovered_failed(
+        self,
+        run: AgentRun,
+        *,
+        code: str = "stale_worker_run",
+        message: str = "Worker stopped reporting before the run completed",
+        retryable: bool = True,
+        event_message: str = "Marked failed after worker lease expired",
+    ) -> None:
+        planning_failed = TaskPlanningAttemptService(self.session).finish_unsuccessful_run(
+            run, code="planner_worker_lost"
+        )
+        RunStateService().transition(
+            run,
+            RunStatus.FAILED,
+            completed_at=datetime.now(UTC),
+            error={
+                "code": code,
+                "message": message,
+                "retryable": retryable,
+            },
+        )
+        self.append_event(run, "run.recovered_failed", event_message, None)
+        completed_at = run.completed_at
+        if completed_at is None:
+            raise ValueError("Recovered failed run must have a completion timestamp")
+        self.release_reservations(run, completed_at)
+        if run.task_id is not None:
+            task = self.session.scalar(
+                select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
+            )
+            if task is not None and TaskStatus(task.status) not in TERMINAL_TASK_STATUSES:
+                TaskStateService().transition(
+                    task,
+                    TaskStatus.BLOCKED if planning_failed else TaskStatus.FAILED,
+                    completed_at=run.completed_at,
+                )
+                if run.task_step_id is not None:
+                    step = self.session.scalar(
+                        select(TaskStep).where(
+                            TaskStep.workspace_id == run.workspace_id,
+                            TaskStep.task_id == run.task_id,
+                            TaskStep.id == run.task_step_id,
+                        )
+                    )
+                    if step is not None:
+                        TaskStepStateService().transition(step, TaskStepStatus.FAILED)
+        AgentEpisodicMemoryService(self.session).capture_run_failed(
+            run,
+            run.error or {"code": code, "message": message, "retryable": retryable},
+        )
+        self._expire_working_memory(run)
+
+    def record_worker_cancel_requested(
+        self,
+        run: AgentRun,
+        *,
+        requested_at: datetime,
+    ) -> int:
+        return mark_agent_run_worker_cancel_requested(
+            self.session,
+            workspace_id=run.workspace_id,
+            run_id=run.id,
+            requested_at=requested_at,
+        )
+
+    def _expire_working_memory(self, run: AgentRun) -> None:
+        AgentWorkingMemoryService(self.session).expire_run(
+            workspace_id=run.workspace_id,
+            run_id=run.id,
+        )

@@ -4,9 +4,12 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from backend.app.workspace.storage.content import WorkspaceFileContentReader, WorkspaceFileReadError
-from backend.app.workspace.storage.models import WorkspaceFile
-from backend.app.workspace.storage.storage import LocalStorage
+from backend.app.domains.workspace.storage.content import (
+    WorkspaceFileContentReader,
+    WorkspaceFileReadError,
+)
+from backend.app.domains.workspace.storage.models import WorkspaceFile
+from backend.app.domains.workspace.storage.storage import LocalStorage
 
 
 def test_agent_file_reader_rejects_type_and_declared_or_actual_oversize(

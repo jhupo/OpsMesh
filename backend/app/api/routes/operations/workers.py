@@ -18,20 +18,20 @@ from backend.app.api.schemas.operations.overview import (
     WorkerNodeResponse,
     WorkerStatusUpdateRequest,
 )
-from backend.app.execution.operations.runtimes.cleanup import RuntimeCleanupService
-from backend.app.execution.operations.runtimes.leases import RuntimeLeaseOperationsService
-from backend.app.execution.operations.workers.heartbeats import WorkerHeartbeatOperationsService
-from backend.app.execution.operations.workers.lease_maintenance import WorkerLeaseMaintenanceService
-from backend.app.execution.operations.workers.lease_queries import WorkerLeaseQueryService
-from backend.app.execution.operations.workers.node_control import WorkerNodeControlService
-from backend.app.execution.operations.workers.node_repository import WorkerNodeRepository
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.security.service import SecurityAuditService
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.core.security.service import SecurityAuditService
+from backend.app.runtime.operations.runtimes.cleanup import RuntimeCleanupService
+from backend.app.runtime.operations.runtimes.leases import RuntimeLeaseOperationsService
+from backend.app.runtime.operations.workers.heartbeats import WorkerHeartbeatOperationsService
+from backend.app.runtime.operations.workers.lease_maintenance import WorkerLeaseMaintenanceService
+from backend.app.runtime.operations.workers.lease_queries import WorkerLeaseQueryService
+from backend.app.runtime.operations.workers.node_control import WorkerNodeControlService
+from backend.app.runtime.operations.workers.node_repository import WorkerNodeRepository
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

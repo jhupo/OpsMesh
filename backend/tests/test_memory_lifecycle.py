@@ -13,52 +13,57 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.types import JSON
 
-from backend.app.agents.memory.authorization import AuthorizedMemoryScope
-from backend.app.agents.memory.configuration import (
+from backend.app.core.common.config import Settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
+from backend.app.domains.agents.memory.configuration import (
     MemoryConfigurationConflictError,
     MemoryConfigurationUpdate,
     WorkspaceMemoryConfigurationService,
 )
-from backend.app.agents.memory.content import memory_content_fingerprint
-from backend.app.agents.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler
-from backend.app.agents.memory.embeddings import (
+from backend.app.domains.agents.memory.content import memory_content_fingerprint
+from backend.app.domains.agents.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler
+from backend.app.domains.agents.memory.embeddings import (
     MemoryEmbeddingResult,
     OpenAIMemoryEmbeddingProvider,
     WorkspaceMemoryEmbeddingProviderResolver,
 )
-from backend.app.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
-from backend.app.agents.memory.models import (
+from backend.app.domains.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
+from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEmbeddingEvent,
     WorkspaceMemoryEntry,
     WorkspaceMemoryLifecycleEvent,
     WorkspaceMemoryVersion,
 )
-from backend.app.agents.memory.policy import (
+from backend.app.domains.agents.memory.policy import (
     HybridMemoryRetrievalPolicy,
     MemoryLifecyclePolicy,
     default_lifecycle_policy,
     default_retrieval_policy,
 )
-from backend.app.agents.memory.search import (
+from backend.app.domains.agents.memory.search import (
     HybridMemorySearchBackend,
     MemorySearchDocument,
     MemorySearchHit,
     MemorySearchRequest,
 )
-from backend.app.agents.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
-from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
-from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.execution.workers.job_handlers.context import WorkerJobHandlerContext
-from backend.app.execution.workers.job_handlers.memory_embedding import MemoryEmbeddingJobHandler
-from backend.app.execution.workers.jobs import JobType
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.platform.common.config import Settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.platform.secrets.service import SecretEncryptionService
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.agents.memory.semantic import (
+    AgentSemanticMemoryService,
+    SemanticMemoryUpsert,
+)
+from backend.app.domains.agents.providers.credential_commands import (
+    ModelProviderCredentialCommandService,
+)
+from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.workers.job_handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.job_handlers.memory_embedding import MemoryEmbeddingJobHandler
+from backend.app.runtime.workers.jobs import JobType
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 
 def test_hybrid_retrieval_uses_weighted_rrf_and_deduplicates_content() -> None:

@@ -15,10 +15,10 @@ from backend.app.api.schemas.operations.self_hosted import (
     SelfHostedWorkerControlResponse,
     SelfHostedWorkerTrustResponse,
 )
-from backend.app.execution.self_hosted.service import SelfHostedRuntimeService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.runtime.self_hosted.service import SelfHostedRuntimeService
 
 router = APIRouter()
 

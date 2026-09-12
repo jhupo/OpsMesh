@@ -4,8 +4,8 @@ from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.admin.dependencies import admin_overview_service
 from backend.app.api.routes.admin.responses import page_response
 from backend.app.api.schemas.platform.admin import AdminOverviewResponse, AdminWorkspaceResponse
-from backend.app.platform.admin.overview import AdminOverviewService
-from backend.app.platform.common.pagination import PageParams
+from backend.app.core.admin.overview import AdminOverviewService
+from backend.app.core.common.pagination import PageParams
 
 router = APIRouter()
 

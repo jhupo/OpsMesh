@@ -3,20 +3,20 @@ from uuid import uuid4
 
 import pytest
 
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRuntimeContext
-from backend.app.orchestration.approvals.models import Approval
-from backend.app.orchestration.approvals.policy import (
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRuntimeContext
+from backend.app.domains.orchestration.approvals.models import Approval
+from backend.app.domains.orchestration.approvals.policy import (
     ApprovalPolicyDecision,
     ApprovalPolicyEngine,
     ApprovalPolicyInput,
     ApprovalPolicyOutcome,
 )
-from backend.app.orchestration.requests.request_approval import ModelRequestApprovalService
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.runs.status import RunStatus
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.workspace.reviews.model_request import ModelRequestReviewService
+from backend.app.domains.orchestration.requests.request_approval import ModelRequestApprovalService
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.workspace.reviews.model_request import ModelRequestReviewService
 
 
 def test_identical_policy_inputs_produce_the_same_decision_for_every_action_kind() -> None:

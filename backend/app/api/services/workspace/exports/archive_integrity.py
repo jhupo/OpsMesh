@@ -14,8 +14,8 @@ from backend.app.api.schemas.workspace.exports import SUPPORTED_WORKSPACE_EXPORT
 from backend.app.api.services.workspace.exports.archive_repository import (
     WorkspaceArchiveExportJobRepository,
 )
+from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.observability.audit_service import AuditService
-from backend.app.workspace.storage.storage import ObjectStorage
 
 
 class WorkspaceArchiveIntegrityService:

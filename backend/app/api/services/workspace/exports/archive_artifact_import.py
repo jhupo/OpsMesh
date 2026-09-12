@@ -19,10 +19,12 @@ from backend.app.api.services.workspace.imports.fields import (
     _uuid_or_none,
 )
 from backend.app.api.services.workspace.imports.resolution import _archive_resolution_action
-from backend.app.workspace.storage.artifact_models import Artifact
-from backend.app.workspace.storage.security import safe_filename
-from backend.app.workspace.storage.storage_transactions import CompensatingObjectStorageWrites
-from backend.app.workspace.tenants.models import Workspace
+from backend.app.domains.workspace.storage.artifact_models import Artifact
+from backend.app.domains.workspace.storage.security import safe_filename
+from backend.app.domains.workspace.storage.storage_transactions import (
+    CompensatingObjectStorageWrites,
+)
+from backend.app.domains.workspace.tenants.models import Workspace
 
 
 class WorkspaceArchiveArtifactImporter:

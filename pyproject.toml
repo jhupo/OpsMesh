@@ -126,14 +126,14 @@ allowed_importers = ["backend.app.api", "backend.app.main"]
 id = "infrastructure-no-api"
 name = "Shared infrastructure cannot depend on the API even indirectly"
 type = "forbidden"
-source_modules = ["backend.app.platform.common", "backend.app.platform.db", "backend.app.platform.redis"]
+source_modules = ["backend.app.core.common", "backend.app.core.db", "backend.app.core.redis"]
 forbidden_modules = ["backend.app.api"]
 
 [[tool.importlinter.contracts]]
 id = "pagination-no-transport"
 name = "Pagination inputs have no HTTP or database dependency"
 type = "forbidden"
-source_modules = ["backend.app.platform.common.pagination"]
+source_modules = ["backend.app.core.common.pagination"]
 forbidden_modules = ["backend.app.api", "fastapi", "starlette", "sqlalchemy"]
 
 [[tool.importlinter.contracts]]
@@ -148,18 +148,18 @@ id = "docker-sdk-boundary"
 name = "Docker daemon access stays in its infrastructure adapter"
 type = "protected"
 protected_modules = ["docker"]
-allowed_importers = ["backend.app.execution.runtime.backends.docker"]
+allowed_importers = ["backend.app.runtime.environment.backends.docker"]
 
 [[tool.importlinter.contracts]]
 id = "s3-sdk-boundary"
 name = "S3 SDK access stays in its storage adapter"
 type = "protected"
 protected_modules = ["boto3"]
-allowed_importers = ["backend.app.workspace.storage.storage"]
+allowed_importers = ["backend.app.domains.workspace.storage.storage"]
 
 [[tool.importlinter.contracts]]
 id = "provider-neutral-contracts"
 name = "Agent runtime contracts do not depend on vendor SDKs or HTTP transport"
 type = "forbidden"
-source_modules = ["backend.app.agents.runtime.contracts", "backend.app.agents.runtime.runtime"]
+source_modules = ["backend.app.domains.agents.runtime.contracts", "backend.app.domains.agents.runtime.sandbox"]
 forbidden_modules = ["agents", "openai", "anthropic", "claude_agent_sdk", "backend.app.api"]

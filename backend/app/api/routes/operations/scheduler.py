@@ -15,18 +15,18 @@ from backend.app.api.schemas.operations.overview import (
     SchedulerControlResponse,
     SchedulerPauseRequest,
 )
-from backend.app.execution.operations.scheduler import (
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.core.redis.cache import RedisJsonCache
+from backend.app.core.redis.dependencies import get_cache_service
+from backend.app.runtime.operations.scheduler import (
     SchedulerBacklogService,
     SchedulerBlockedStepService,
     SchedulerControlService,
 )
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.redis.cache import RedisJsonCache
-from backend.app.platform.redis.dependencies import get_cache_service
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

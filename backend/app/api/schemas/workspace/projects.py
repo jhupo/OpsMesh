@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
-from backend.app.platform.security.redaction import (
+from backend.app.core.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_payload_item,
     redact_text_fragments,

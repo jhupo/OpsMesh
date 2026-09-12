@@ -11,26 +11,26 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.agents.messages.service import AgentMailboxService
-from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.agents.messages import (
     AgentMessageCreateRequest,
     AgentMessageThreadCreateRequest,
 )
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.execution.workers.redis_queue import RedisQueue
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.db.session import get_db_session
+from backend.app.core.identity.models import User
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.domains.agents.messages.service import AgentMailboxService
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
-from backend.app.orchestration.tasks.models import Task
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.identity.models import User
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.workers.dependencies import get_worker_queue
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 TOKEN = "test-token"
 

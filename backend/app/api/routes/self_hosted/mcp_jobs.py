@@ -12,10 +12,10 @@ from backend.app.api.schemas.operations.self_hosted import (
     McpJobCompleteResponse,
     SelfHostedMcpJobResponse,
 )
-from backend.app.execution.self_hosted.dependencies import get_authenticated_worker
-from backend.app.execution.self_hosted.dispatch import SelfHostedDispatchService
-from backend.app.execution.self_hosted.mcp_jobs import SelfHostedMcpJobService
-from backend.app.execution.self_hosted.types import AuthenticatedWorker
+from backend.app.runtime.self_hosted.dependencies import get_authenticated_worker
+from backend.app.runtime.self_hosted.dispatch import SelfHostedDispatchService
+from backend.app.runtime.self_hosted.mcp_jobs import SelfHostedMcpJobService
+from backend.app.runtime.self_hosted.types import AuthenticatedWorker
 
 router = APIRouter()
 

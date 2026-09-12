@@ -8,12 +8,12 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceImportResponse,
 )
 from backend.app.api.services.workspace.exports.archive_import import WorkspaceArchiveImportService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db.session import get_db_session
-from backend.app.workspace.storage.storage import create_storage
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.workspace.storage.storage import create_storage
 
 router = APIRouter()
 

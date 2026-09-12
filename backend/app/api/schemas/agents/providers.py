@@ -3,12 +3,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, computed_field, field_serializer
 
-from backend.app.agents.providers.capabilities import resolve_model_capability
-from backend.app.agents.providers.metadata import sanitize_budget_metadata
-from backend.app.agents.providers.model_api import model_api_for_provider
-from backend.app.agents.providers.policy import model_provider_base_url_host
 from backend.app.api.schemas.common import ORMModel
-from backend.app.platform.secrets.service import hosted_secret_metadata
+from backend.app.core.secrets.service import hosted_secret_metadata
+from backend.app.domains.agents.providers.capabilities import resolve_model_capability
+from backend.app.domains.agents.providers.metadata import sanitize_budget_metadata
+from backend.app.domains.agents.providers.model_api import model_api_for_provider
+from backend.app.domains.agents.providers.policy import model_provider_base_url_host
 
 
 class ModelProviderCredentialCreateRequest(BaseModel):

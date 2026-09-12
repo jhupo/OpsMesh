@@ -8,31 +8,34 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.runtime.contracts import AgentRunResult, AgentRuntimeStructuredOutput
-from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.execution.workers.handlers import WorkerJobHandler
-from backend.app.execution.workers.jobs import JobPayload, JobType
-from backend.app.execution.workers.queue_consumer import consume_once
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.observability.cost_models import WorkspaceCostBudget
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.runs.service import RunOrchestrationService
-from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.orchestration.tasks.plan_lifecycle import (
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import (
+    AgentRunResult,
+    AgentRuntimeStructuredOutput,
+)
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.service import RunOrchestrationService
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.domains.orchestration.tasks.plan_lifecycle import (
     TaskPlanLifecycleService,
     TaskPlanRetryCommand,
 )
-from backend.app.orchestration.workflows.plan_future_plan_mutation import (
+from backend.app.domains.orchestration.workflows.plan_future_plan_mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
     TaskPlanMutationService,
 )
-from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
-from backend.app.orchestration.workflows.planning_completion import PlannerCompletionService
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.tenants.models import WorkspaceQuota
+from backend.app.domains.orchestration.workflows.plan_models import TaskPlanningAttempt
+from backend.app.domains.orchestration.workflows.planning_completion import PlannerCompletionService
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.workspace.tenants.models import WorkspaceQuota
+from backend.app.observability.cost_models import WorkspaceCostBudget
+from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.workers.handlers import WorkerJobHandler
+from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.queue_consumer import consume_once
+from backend.app.runtime.workers.redis_queue import RedisQueue
 from backend.tests.test_worker_run_execution import (
     _build_agent_request,
     _seed_workspace,

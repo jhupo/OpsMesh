@@ -6,8 +6,6 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.agents.memory.models import WorkspaceMemoryConfiguration
-from backend.app.agents.memory.policy import default_lifecycle_policy, default_retrieval_policy
 from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceCreateRequest,
     WorkspaceUpdateRequest,
@@ -18,18 +16,23 @@ from backend.app.api.services.workspace.lifecycle.settings import (
     semantic_resource_review_settings,
     validate_resource_review_settings,
 )
-from backend.app.observability.audit_service import AuditService
-from backend.app.platform.auth.permissions import WorkspaceRole
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.errors import commit_or_raise_conflict
-from backend.app.platform.db.pagination import page_scalars
-from backend.app.workspace.tenants.models import (
+from backend.app.core.auth.permissions import WorkspaceRole
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.errors import commit_or_raise_conflict
+from backend.app.core.db.pagination import page_scalars
+from backend.app.domains.agents.memory.models import WorkspaceMemoryConfiguration
+from backend.app.domains.agents.memory.policy import (
+    default_lifecycle_policy,
+    default_retrieval_policy,
+)
+from backend.app.domains.workspace.tenants.models import (
     Workspace,
     WorkspaceInvite,
     WorkspaceMember,
     WorkspaceQuota,
 )
+from backend.app.observability.audit_service import AuditService
 
 T = TypeVar("T")
 

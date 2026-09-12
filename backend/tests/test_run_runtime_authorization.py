@@ -7,37 +7,37 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.runtime.contracts import AgentRuntimeExecutionBinding
-from backend.app.capabilities.catalog.effective import (
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutionBinding
+from backend.app.domains.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
-from backend.app.capabilities.models import (
+from backend.app.domains.capabilities.models import (
     CapabilityResource,
     McpServer,
     McpToolAllowlist,
 )
-from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.execution.runtime.spaces.models import RuntimeSpace
-from backend.app.orchestration.requests.authorization import RunAuthorizationService
-from backend.app.orchestration.runs.models import (
+from backend.app.domains.orchestration.requests.authorization import RunAuthorizationService
+from backend.app.domains.orchestration.runs.models import (
     AgentRun,
     RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.runs.runtime_authorization import (
+from backend.app.domains.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     RunRuntimeAuthorizationService,
 )
-from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.platform.security.models import SecurityEvent
-from backend.app.workspace.storage.models import WorkspaceFile
-from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.domains.workspace.storage.models import WorkspaceFile
+from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.environment.spaces.models import RuntimeSpace
 
 
 def test_effective_runtime_and_file_resources_freeze_execution_binding() -> None:

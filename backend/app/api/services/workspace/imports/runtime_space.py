@@ -20,7 +20,7 @@ from backend.app.api.services.workspace.imports.resolution import (
     _resolved_quota_reserved_for_validation,
     _resolved_runtime_policy,
 )
-from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 
 
 class RuntimeSpaceMetadataImporter:

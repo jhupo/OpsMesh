@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette import status
 
-from backend.app.platform.common.errors import DomainError
+from backend.app.core.common.errors import DomainError
 
 
 def register_error_handlers(app: FastAPI) -> None:

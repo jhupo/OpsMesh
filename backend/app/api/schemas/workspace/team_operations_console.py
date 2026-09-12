@@ -10,7 +10,7 @@ from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskManagerQueueResponse,
 )
 from backend.app.api.schemas.workspace.team_execution import AgentTeamExecutionOverviewResponse
-from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.core.security.redaction import redact_sensitive_payload
 
 
 class AgentTeamOperationsConsoleTeamResponse(BaseModel):

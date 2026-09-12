@@ -8,14 +8,14 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.capabilities.tools.context import ToolContext
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.workspace.storage.models import WorkspaceFile
-from backend.app.workspace.storage.runtime_files import RuntimeFileService
-from backend.app.workspace.storage.storage import LocalStorage
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.domains.capabilities.tools.context import ToolContext
+from backend.app.domains.workspace.storage.models import WorkspaceFile
+from backend.app.domains.workspace.storage.runtime_files import RuntimeFileService
+from backend.app.domains.workspace.storage.storage import LocalStorage
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_runtime_file_staging_and_artifact_collection(tmp_path: Path) -> None:

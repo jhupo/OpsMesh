@@ -220,7 +220,7 @@ Override the targeted checks when needed:
 
 ```bash
 OPSMESH_REMOTE_PYTEST_ARGS="backend/tests/test_operations_api.py -k operations_overview" \
-OPSMESH_REMOTE_RUFF_ARGS="backend/app/execution/operations/service.py backend/tests/test_operations_api.py" \
+OPSMESH_REMOTE_RUFF_ARGS="backend/app/runtime/operations/service.py backend/tests/test_operations_api.py" \
 scripts/remote-backend-validation.sh
 ```
 

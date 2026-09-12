@@ -10,14 +10,14 @@ from backend.app.api.schemas.capabilities.marketplace import (
     TalentUpgradeStatusResponse,
     WorkspaceAgentInstallResponse,
 )
-from backend.app.capabilities.marketplace.responses import install_response
-from backend.app.capabilities.marketplace.talent_catalog import TalentCatalogService
-from backend.app.capabilities.marketplace.talent_upgrades import TalentInstallUpgradeService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.capabilities.marketplace.responses import install_response
+from backend.app.domains.capabilities.marketplace.talent_catalog import TalentCatalogService
+from backend.app.domains.capabilities.marketplace.talent_upgrades import TalentInstallUpgradeService
 
 router = APIRouter()
 

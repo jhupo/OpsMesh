@@ -8,9 +8,9 @@ from botocore.exceptions import ClientError
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
 
-from backend.app.platform.common.config import Settings
-from backend.app.workspace.storage import storage as storage_module
-from backend.app.workspace.storage.storage import (
+from backend.app.core.common.config import Settings
+from backend.app.domains.workspace.storage import storage as storage_module
+from backend.app.domains.workspace.storage.storage import (
     LocalStorage,
     S3Storage,
     StorageObjectTooLargeError,

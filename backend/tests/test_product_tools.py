@@ -11,26 +11,29 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agents.memory.authorization import AuthorizedMemoryScope
-from backend.app.agents.memory.indexing import WorkspaceMemoryIndexingService
-from backend.app.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.agents.memory.search import MemorySearchHit, MemorySearchRequest
-from backend.app.agents.messages.models import AgentMessage
-from backend.app.agents.models import AgentProfile
-from backend.app.capabilities.tools.context import ToolContext
-from backend.app.capabilities.tools.errors import ToolPermissionError, ToolResourceNotFoundError
-from backend.app.capabilities.tools.product_service import ProductToolService
-from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.workspace.storage.artifact_models import Artifact
-from backend.app.workspace.storage.models import WorkspaceFile
-from backend.app.workspace.storage.storage import LocalStorage
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
+from backend.app.domains.agents.memory.indexing import WorkspaceMemoryIndexingService
+from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.domains.agents.memory.search import MemorySearchHit, MemorySearchRequest
+from backend.app.domains.agents.messages.models import AgentMessage
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.capabilities.tools.context import ToolContext
+from backend.app.domains.capabilities.tools.errors import (
+    ToolPermissionError,
+    ToolResourceNotFoundError,
+)
+from backend.app.domains.capabilities.tools.product_service import ProductToolService
+from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.workspace.storage.artifact_models import Artifact
+from backend.app.domains.workspace.storage.models import WorkspaceFile
+from backend.app.domains.workspace.storage.storage import LocalStorage
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -> None:

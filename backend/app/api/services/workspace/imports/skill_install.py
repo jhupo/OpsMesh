@@ -16,7 +16,7 @@ from backend.app.api.services.workspace.imports.fields import (
     _string_list_field,
 )
 from backend.app.api.services.workspace.imports.resolution import _resolution_action
-from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
+from backend.app.domains.capabilities.models import Skill, WorkspaceSkillInstall
 
 
 class SkillInstallMetadataImporter:

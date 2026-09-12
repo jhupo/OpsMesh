@@ -6,11 +6,11 @@ from backend.app.api.schemas.capabilities.governance import (
     WorkspaceCapabilityGovernanceApplyResponse,
     WorkspaceCapabilityGovernanceResponse,
 )
-from backend.app.capabilities.governance.service import CapabilityGovernanceService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.db.session import get_db_session
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.capabilities.governance.service import CapabilityGovernanceService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])
 

@@ -5,21 +5,21 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.agents.runtime.session_management import (
-    PersistentAgentSessionManagementService,
-)
-from backend.app.agents.service import AgentManagementService
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.agents.profiles import (
     AgentSessionClearResponse,
     AgentSessionDetailResponse,
     AgentSessionSummaryResponse,
 )
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.agents.runtime.session_management import (
+    PersistentAgentSessionManagementService,
+)
+from backend.app.domains.agents.service import AgentManagementService
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/agents/{agent_id}",

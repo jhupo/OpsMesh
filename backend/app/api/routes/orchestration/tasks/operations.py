@@ -22,23 +22,31 @@ from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskOperatorActionResponse,
     TaskTimelineResponse,
 )
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.orchestration.tasks.control import TaskControlService
-from backend.app.orchestration.tasks.control_diagnostics import TaskControlDiagnosticsService
-from backend.app.orchestration.tasks.correction_diagnostics import TaskCorrectionDiagnosticsService
-from backend.app.orchestration.tasks.corrections import TaskCorrectionService
-from backend.app.orchestration.tasks.delivery_decisions import TaskDeliveryDecisionService
-from backend.app.orchestration.tasks.delivery_review import TaskDeliveryReviewService
-from backend.app.orchestration.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
-from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagnosticsService
-from backend.app.orchestration.tasks.observation import TaskObservationService
-from backend.app.orchestration.tasks.operator_actions import TaskOperatorActionService
-from backend.app.orchestration.tasks.timeline import TaskTimelineService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.db.session import get_db_session
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.orchestration.tasks.control import TaskControlService
+from backend.app.domains.orchestration.tasks.control_diagnostics import (
+    TaskControlDiagnosticsService,
+)
+from backend.app.domains.orchestration.tasks.correction_diagnostics import (
+    TaskCorrectionDiagnosticsService,
+)
+from backend.app.domains.orchestration.tasks.corrections import TaskCorrectionService
+from backend.app.domains.orchestration.tasks.delivery_decisions import TaskDeliveryDecisionService
+from backend.app.domains.orchestration.tasks.delivery_review import TaskDeliveryReviewService
+from backend.app.domains.orchestration.tasks.execution_diagnostics import (
+    TaskExecutionDiagnosticsService,
+)
+from backend.app.domains.orchestration.tasks.manager_diagnostics import (
+    TaskManagerDiagnosticsService,
+)
+from backend.app.domains.orchestration.tasks.observation import TaskObservationService
+from backend.app.domains.orchestration.tasks.operator_actions import TaskOperatorActionService
+from backend.app.domains.orchestration.tasks.timeline import TaskTimelineService
+from backend.app.runtime.workers.dependencies import get_worker_queue
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

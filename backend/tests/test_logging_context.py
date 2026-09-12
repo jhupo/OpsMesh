@@ -3,8 +3,8 @@ import logging
 import sys
 from uuid import uuid4
 
-from backend.app.platform.common.logging import RequestContextFilter, json_log_formatter
-from backend.app.platform.common.request_context import current_log_context, log_context
+from backend.app.core.common.logging import RequestContextFilter, json_log_formatter
+from backend.app.core.common.request_context import current_log_context, log_context
 
 
 def test_log_context_filter_adds_standard_fields_to_records() -> None:

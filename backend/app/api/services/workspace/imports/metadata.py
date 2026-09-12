@@ -25,8 +25,8 @@ from backend.app.api.services.workspace.imports.runtime_space import RuntimeSpac
 from backend.app.api.services.workspace.imports.skill_install import SkillInstallMetadataImporter
 from backend.app.api.services.workspace.imports.task import TaskMetadataImporter
 from backend.app.api.services.workspace.imports.team import TeamMetadataImporter
+from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService
-from backend.app.workspace.tenants.models import Workspace
 
 
 def _metadata_preview_token(request: WorkspaceImportRequest) -> str:

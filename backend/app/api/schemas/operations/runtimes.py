@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, computed_field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
-from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.core.security.redaction import redact_sensitive_payload
 
 
 class RuntimeTemplateResponse(ORMModel):

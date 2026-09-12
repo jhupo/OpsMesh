@@ -1,6 +1,6 @@
 import pytest
 
-from backend.app.agents.providers.contracts import provider_health_probes
+from backend.app.domains.agents.providers.contracts import provider_health_probes
 
 
 def test_provider_health_probes_preserve_order_and_deduplicate() -> None:

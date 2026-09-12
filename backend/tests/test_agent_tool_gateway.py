@@ -10,27 +10,31 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.runtime.contracts import (
+from backend.app.core.common.config import Settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolDefinition,
 )
-from backend.app.agents.runtime.tool_gateway import AgentToolGateway, ToolGatewayDenied
-from backend.app.agents.runtime.tools import BackendToolExecutor
-from backend.app.capabilities.catalog.effective import EffectiveCapabilityCatalogService
-from backend.app.capabilities.models import CapabilityResource, McpCredentialReference, McpServer
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.platform.common.config import Settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.platform.security.models import SecurityEvent
-from backend.app.workspace.reviews.models import ResourceReview
-from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.workspace.storage.models import WorkspaceFile
-from backend.app.workspace.storage.storage import LocalStorage
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.agents.runtime.tool_gateway import AgentToolGateway, ToolGatewayDenied
+from backend.app.domains.agents.runtime.tools import BackendToolExecutor
+from backend.app.domains.capabilities.catalog.effective import EffectiveCapabilityCatalogService
+from backend.app.domains.capabilities.models import (
+    CapabilityResource,
+    McpCredentialReference,
+    McpServer,
+)
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.workspace.reviews.models import ResourceReview
+from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.domains.workspace.storage.models import WorkspaceFile
+from backend.app.domains.workspace.storage.storage import LocalStorage
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 @pytest.fixture(autouse=True)

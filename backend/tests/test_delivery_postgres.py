@@ -11,8 +11,8 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
-from backend.app.platform.admin.updates.models import PlatformInstallation, PlatformUpdateEvent
-from backend.app.platform.admin.updates.service import UpdateService
+from backend.app.core.admin.updates.models import PlatformInstallation, PlatformUpdateEvent
+from backend.app.core.admin.updates.service import UpdateService
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("OPSMESH_DELIVERY_POSTGRES_TEST") != "1",

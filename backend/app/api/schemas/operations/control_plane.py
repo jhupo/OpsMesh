@@ -15,7 +15,7 @@ from backend.app.api.schemas.operations.outcomes import (
 )
 from backend.app.api.schemas.operations.queue import QueueLatencyResponse, QueueMetricsResponse
 from backend.app.api.schemas.operations.scheduler import OperationsSchedulerResponse
-from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.core.security.redaction import redact_sensitive_payload
 
 
 class OperationsOverviewResponse(BaseModel):

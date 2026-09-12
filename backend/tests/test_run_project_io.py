@@ -16,36 +16,36 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.capabilities.models import CapabilityResource
-from backend.app.execution.runtime.contracts import RuntimeCommandResult
-from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.orchestration.runs.models import (
+from backend.app.core.common.config import Settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.capabilities.models import CapabilityResource
+from backend.app.domains.orchestration.runs.models import (
     AgentRun,
     RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.tasks.models import Task
-from backend.app.platform.common.config import Settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.platform.security.models import SecurityEvent
-from backend.app.workspace.projects.models import (
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.projects.models import (
     AgentRunProjectIOState,
     WorkspaceProject,
     WorkspaceProjectConfigurationVersion,
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from backend.app.workspace.projects.run_snapshots import RunProjectSnapshotService
-from backend.app.workspace.projects.runtime_io import RunProjectIOService
-from backend.app.workspace.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.workspace.projects.serialization import sha256_json
-from backend.app.workspace.storage.artifact_models import Artifact
-from backend.app.workspace.storage.models import FileAccessEvent, WorkspaceFile
-from backend.app.workspace.storage.storage import LocalStorage
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.workspace.projects.run_snapshots import RunProjectSnapshotService
+from backend.app.domains.workspace.projects.runtime_io import RunProjectIOService
+from backend.app.domains.workspace.projects.runtime_io_errors import ProjectRunIOError
+from backend.app.domains.workspace.projects.serialization import sha256_json
+from backend.app.domains.workspace.storage.artifact_models import Artifact
+from backend.app.domains.workspace.storage.models import FileAccessEvent, WorkspaceFile
+from backend.app.domains.workspace.storage.storage import LocalStorage
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.observability.audit_models import AuditEvent
+from backend.app.runtime.environment.contracts import RuntimeCommandResult
+from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.tests.fixtures.project_authorization import authorize_project_run
 
 

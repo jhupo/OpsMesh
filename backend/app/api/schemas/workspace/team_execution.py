@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
-from backend.app.platform.security.redaction import (
+from backend.app.core.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_payload_item,
 )

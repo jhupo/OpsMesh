@@ -50,7 +50,7 @@ services:
       OPSMESH_REDIS_URL: redis://redis:6379/0
       OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
       OPSMESH_RUN_MIGRATIONS: "false"
-    command: ["python", "-m", "backend.app.execution.workers.cli"]
+    command: ["python", "-m", "backend.app.runtime.workers.cli"]
     volumes:
       - opsmesh_storage:/app/.opsmesh-storage
     depends_on:

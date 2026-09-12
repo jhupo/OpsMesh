@@ -205,9 +205,9 @@ stores only the stable correlation fields needed by queue payloads and logs.
 
 **Candidate:** [prometheus/client_python](https://github.com/prometheus/client_python)
 
-`backend/app/platform/common/metrics.py` publishes process, HTTP, and domain metrics through official Counter,
+`backend/app/core/common/metrics.py` publishes process, HTTP, and domain metrics through official Counter,
 Histogram, Gauge, and collector primitives. Domain collectors stay under
-`backend/app/execution/operations`,
+`backend/app/runtime/operations`,
 and route-template labels prevent request-ID path cardinality.
 
 ### Adopted: S3 SDK type contracts

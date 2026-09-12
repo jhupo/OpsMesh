@@ -5,37 +5,37 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from backend.app.capabilities.mcp.execution.types import McpExecutionError
-from backend.app.capabilities.mcp.transport.remote import (
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.egress import EgressUrlPolicy
+from backend.app.domains.capabilities.mcp.execution.types import McpExecutionError
+from backend.app.domains.capabilities.mcp.transport.remote import (
     HostedMcpToolAdapter,
     SseMcpToolAdapter,
     StreamableHttpMcpToolAdapter,
 )
-from backend.app.capabilities.mcp.transport.resolver import McpAdapterResolver
-from backend.app.capabilities.mcp.transport.stdio import DockerRuntimeStdioMcpToolAdapter
-from backend.app.capabilities.mcp.transport.stdio_credentials import (
+from backend.app.domains.capabilities.mcp.transport.resolver import McpAdapterResolver
+from backend.app.domains.capabilities.mcp.transport.stdio import DockerRuntimeStdioMcpToolAdapter
+from backend.app.domains.capabilities.mcp.transport.stdio_credentials import (
     self_hosted_stdio_environment_refs,
 )
-from backend.app.capabilities.mcp.transport.unsupported import UnsupportedMcpToolAdapter
-from backend.app.capabilities.models import McpCredentialReference, McpServer
-from backend.app.execution.runtime.contracts import (
+from backend.app.domains.capabilities.mcp.transport.unsupported import UnsupportedMcpToolAdapter
+from backend.app.domains.capabilities.models import McpCredentialReference, McpServer
+from backend.app.runtime.environment.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )
-from backend.app.execution.runtime.models import RuntimeCommand, WorkspaceRuntime
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.secrets.service import SecretEncryptionService
-from backend.app.platform.security.egress import EgressUrlPolicy
+from backend.app.runtime.environment.models import RuntimeCommand, WorkspaceRuntime
 
 
 def test_streamable_http_mcp_adapter_uses_official_client_session(monkeypatch) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(content=[_FakeContent({"type": "text", "text": "ok"})])])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.streamable_http_client",
+        "backend.app.domains.capabilities.mcp.transport.remote.streamable_http_client",
         sdk.streamable_http_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
+        "backend.app.domains.capabilities.mcp.transport.remote.ClientSession",
         sdk.client_session,
     )
     secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
@@ -107,11 +107,11 @@ def test_streamable_http_mcp_adapter_does_not_replay_failed_tool_call(monkeypatc
         ]
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.streamable_http_client",
+        "backend.app.domains.capabilities.mcp.transport.remote.streamable_http_client",
         sdk.streamable_http_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
+        "backend.app.domains.capabilities.mcp.transport.remote.ClientSession",
         sdk.client_session,
     )
     try:
@@ -144,11 +144,11 @@ def test_streamable_http_mcp_adapter_runs_inside_async_runner(
 ) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(structured_content={"ok": True})])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.streamable_http_client",
+        "backend.app.domains.capabilities.mcp.transport.remote.streamable_http_client",
         sdk.streamable_http_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
+        "backend.app.domains.capabilities.mcp.transport.remote.ClientSession",
         sdk.client_session,
     )
     adapter = StreamableHttpMcpToolAdapter(egress_policy=_local_test_egress_policy())
@@ -173,11 +173,11 @@ def test_streamable_http_mcp_adapter_runs_inside_async_runner(
 def test_streamable_http_mcp_adapter_sanitizes_remote_errors(monkeypatch) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(is_error=True)])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.streamable_http_client",
+        "backend.app.domains.capabilities.mcp.transport.remote.streamable_http_client",
         sdk.streamable_http_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
+        "backend.app.domains.capabilities.mcp.transport.remote.ClientSession",
         sdk.client_session,
     )
     try:
@@ -206,11 +206,11 @@ def test_streamable_http_mcp_adapter_sanitizes_remote_errors(monkeypatch) -> Non
 def test_hosted_mcp_adapter_delegates_to_official_remote_http_transport(monkeypatch) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(structured_content={"ok": True})])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.streamable_http_client",
+        "backend.app.domains.capabilities.mcp.transport.remote.streamable_http_client",
         sdk.streamable_http_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
+        "backend.app.domains.capabilities.mcp.transport.remote.ClientSession",
         sdk.client_session,
     )
     secret_service = SecretEncryptionService(secret="test-secret", key_id="test")

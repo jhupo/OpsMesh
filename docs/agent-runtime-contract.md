@@ -11,7 +11,7 @@ The product layer owns users, workspaces, tasks, permissions, runtimes, approval
 
 ## Product-Owned Runtime Contracts
 
-The adapter boundary is defined by `backend.app.agents.runtime.contracts`; orchestration code does not
+The adapter boundary is defined by `backend.app.domains.agents.runtime.contracts`; orchestration code does not
 accept SDK result, state, session, or stream-event objects. The contract includes:
 
 - `AgentRuntimeSession` for durable conversation history

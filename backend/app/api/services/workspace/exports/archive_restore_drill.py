@@ -14,9 +14,9 @@ from backend.app.api.services.workspace.exports.archive_repository import (
     WorkspaceArchiveExportJobRepository,
 )
 from backend.app.api.services.workspace.imports.preview import _import_preview_audit_metadata
+from backend.app.domains.workspace.storage.storage import ObjectStorage
+from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService
-from backend.app.workspace.storage.storage import ObjectStorage
-from backend.app.workspace.tenants.models import Workspace
 
 
 class WorkspaceArchiveRestoreDrillService:

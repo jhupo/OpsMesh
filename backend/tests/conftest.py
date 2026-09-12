@@ -4,7 +4,7 @@ from collections.abc import Iterator
 import pytest
 from sqlalchemy import Connection, Table, event
 
-from backend.app.platform.admin.updates.models import PlatformInstallation
+from backend.app.core.admin.updates.models import PlatformInstallation
 
 
 @pytest.fixture(autouse=True)

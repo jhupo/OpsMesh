@@ -17,7 +17,7 @@ team execution E2E after removing runtime fake runner behavior.
 ## Changes Prepared Locally
 
 - Removed runtime runner backend selection and `OPSMESH_AGENT_RUNNER_BACKEND`.
-- Deleted the production fake runner from the Agent SDK runtime (`backend/app/agents/runtime`).
+- Deleted the production fake runner from the Agent SDK runtime (`backend/app/domains/agents/runtime`).
 - API/worker execution now defaults to `OpenAIAgentsRunner`.
 - Tests use explicit deterministic test runners instead of runtime fake configuration.
 - Added task collaboration recovery plan/dry-run/apply APIs.
@@ -34,7 +34,7 @@ Latest local checks:
 
 ```bash
 uv run pytest backend/tests/test_worker_run_execution.py backend/tests/test_agent_runtime.py backend/tests/test_config.py backend/tests/test_deployment_assets.py backend/tests/test_workspace_api.py::test_api_team_task_e2e_runs_workers_and_accepts_delivery backend/tests/test_workspace_api.py::test_team_execution_loop_run_advances_actions_runs_and_finalization backend/tests/test_workspace_api.py::test_task_collaboration_recovery_plan_dry_run_and_apply_selected_actions backend/tests/test_workspace_api.py::test_task_delivery_decision_approves_or_requests_follow_up_and_redacts -q
-uv run ruff check scripts/real-team-e2e.py backend/app/agents/runtime/factory.py backend/app/platform/common/config.py backend/app/orchestration/runs/service.py backend/app/execution/workers/handlers.py backend/app/execution/workers/cli.py backend/app/orchestration/tasks/collaboration_recovery.py backend/app/api/routes/workspace_resources.py backend/app/api/schemas/tasks.py backend/tests/test_agent_runtime.py backend/tests/test_worker_run_execution.py backend/tests/test_workspace_api.py backend/tests/test_config.py backend/tests/test_deployment_assets.py
+uv run ruff check scripts/real-team-e2e.py backend/app/domains/agents/runtime/factory.py backend/app/core/common/config.py backend/app/domains/orchestration/runs/service.py backend/app/runtime/workers/handlers.py backend/app/runtime/workers/cli.py backend/app/domains/orchestration/tasks/collaboration_recovery.py backend/app/api/routes/workspace_resources.py backend/app/api/schemas/tasks.py backend/tests/test_agent_runtime.py backend/tests/test_worker_run_execution.py backend/tests/test_workspace_api.py backend/tests/test_config.py backend/tests/test_deployment_assets.py
 git diff --check
 ```
 

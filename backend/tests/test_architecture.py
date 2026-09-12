@@ -16,129 +16,60 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_consolidated_domains_have_one_source_owner() -> None:
     app = ROOT / "backend/app"
-    for name in (
-        "workspace/domains",
-        "workspace/projects",
-        "workspace/reviews",
-        "workspace/storage",
-        "workspace/teams",
-        "workspace/teams/execution",
-        "workspace/teams/operations",
-        "workspace/teams/projects",
-        "workspace/teams/providers",
-        "workspace/teams/organization",
-        "workspace/teams/runtime",
-        "workspace/tenants",
-        "platform/admin",
-        "platform/auth",
-        "platform/common",
-        "platform/db",
-        "platform/identity",
-        "platform/integrations",
-        "platform/integrations/webhooks",
-        "platform/rate_limits",
-        "platform/redis",
-        "platform/secrets",
-        "platform/security",
-        "execution/runtime",
-        "execution/runtime/backends",
-        "execution/runtime/commands",
-        "execution/runtime/lifecycle",
-        "execution/runtime/pool",
-        "execution/runtime/policies",
-        "execution/runtime/spaces",
-        "execution/runtime/spaces/reservations",
-        "execution/workers",
-        "execution/operations",
-        "execution/operations/metrics",
-        "execution/operations/queues",
-        "execution/operations/recovery",
-        "execution/operations/runtimes",
-        "execution/operations/timeline",
-        "execution/operations/workers",
-        "execution/self_hosted",
+    assert {
+        path.name
+        for path in app.iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    } == {
+        "api",
+        "core",
+        "domains",
         "observability",
-        "agents/runtime/providers",
-        "agents/runtime/runtime",
-        "orchestration/approvals",
-        "orchestration/requests",
-        "orchestration/runs",
-        "orchestration/tasks",
-        "orchestration/workflows",
+        "runtime",
+    }
+    assert {path.name for path in app.glob("*.py")} == {"__init__.py", "delivery.py", "main.py"}
+    for name in (
+        "core/admin",
+        "core/auth",
+        "core/common",
+        "core/db",
+        "core/identity",
+        "core/integrations",
+        "core/rate_limits",
+        "core/redis",
+        "core/secrets",
+        "core/security",
+        "domains/agents",
+        "domains/capabilities",
+        "domains/orchestration",
+        "domains/workspace",
+        "runtime/operations",
+        "runtime/self_hosted",
+        "runtime/workers",
+        "runtime/environment",
+        "observability",
     ):
         assert (app / name / "__init__.py").is_file(), name
     for name in (
-        "platform/core",
-        "admin",
-        "auth",
-        "core",
-        "db",
-        "domains",
-        "identity",
-        "projects",
-        "rate_limits",
-        "redis",
-        "reviews",
-        "secrets",
-        "security",
-        "storage",
-        "teams",
-        "webhooks",
-        "workspaces",
+        "agents",
+        "capabilities",
+        "orchestration",
+        "workspace",
+        "platform",
+        "execution",
         "runtime_manager",
-        "runtime",
-        "workers",
-        "operations",
-        "self_hosted",
-        "runtime/spaces",
-        "runtime/spaces/helpers.py",
-        "planning",
-        "teams/project_space",
-        "workers/queue",
-        "tools/product_tools",
-        "scheduled_jobs",
-        "runtime_spaces",
-        "runtimes",
-        "files",
-        "artifacts",
-        "exports",
-        "audit",
-        "costs",
-        "telemetry",
-        "notifications",
-        "agent_runtime",
-        "agent_messages",
-        "model_providers",
-        "memory",
-        "tools",
-        "marketplace",
-        "approvals",
-        "tasks",
-        "runs",
-        "orchestration/models_layer",
-        "orchestration/run_request",
-        "orchestration/planning",
-        "orchestration/policies",
-        "orchestration/state",
-        "orchestration/steps",
-        "orchestration/scheduler",
-        "orchestration/runtime",
-        "platform/common/typing.py",
-        "execution/operations/utils.py",
+        "core/platform",
     ):
         target = app / name
-        if target.suffix == ".py":
-            assert not target.exists(), name
-        else:
-            assert not list(target.rglob("*.py")), name
+        assert not target.exists(), name
 
 
 @pytest.mark.parametrize(
     "module",
     [
-        "backend.app.execution.operations.workers.lifecycle",
-        "backend.app.execution.operations.recovery.service",
-        "backend.app.workspace.teams.execution_loop",
+        "backend.app.runtime.operations.workers.lifecycle",
+        "backend.app.runtime.operations.recovery.service",
+        "backend.app.domains.workspace.teams.execution_loop",
     ],
 )
 def test_consolidated_services_import_in_a_fresh_process(module: str) -> None:
@@ -154,7 +85,7 @@ def test_consolidated_services_import_in_a_fresh_process(module: str) -> None:
 
 
 def test_team_consolidation_removes_superseded_sources() -> None:
-    teams = ROOT / "backend/app/workspace/teams"
+    teams = ROOT / "backend/app/domains/workspace/teams"
     for name in (
         "execution_loop_constants.py",
         "execution_loop_jobs.py",
@@ -170,10 +101,10 @@ def test_team_consolidation_removes_superseded_sources() -> None:
 
     app = ROOT / "backend/app"
     for name in (
-        "agents/messages/pagination.py",
-        "orchestration/tasks/control_payloads.py",
-        "execution/workers/job_handlers/base.py",
-        "workspace/teams/operating_context.py",
+        "domains/agents/messages/pagination.py",
+        "domains/orchestration/tasks/control_payloads.py",
+        "runtime/workers/job_handlers/base.py",
+        "domains/workspace/teams/operating_context.py",
         "api/services/workspace_export_constants.py",
         "api/schemas/redaction.py",
     ):
@@ -181,7 +112,7 @@ def test_team_consolidation_removes_superseded_sources() -> None:
 
 
 def test_team_features_are_nested_by_function() -> None:
-    teams = ROOT / "backend/app/workspace/teams"
+    teams = ROOT / "backend/app/domains/workspace/teams"
     expected = {
         "execution",
         "operations",
@@ -213,7 +144,7 @@ def test_team_features_are_nested_by_function() -> None:
 
 
 def test_runtime_features_are_nested_by_function() -> None:
-    runtime = ROOT / "backend/app/execution/runtime"
+    runtime = ROOT / "backend/app/runtime/environment"
     expected = {
         "backends",
         "commands",
@@ -266,7 +197,7 @@ def test_runtime_features_are_nested_by_function() -> None:
 
 
 def test_operations_features_are_nested_by_function() -> None:
-    operations = ROOT / "backend/app/execution/operations"
+    operations = ROOT / "backend/app/runtime/operations"
     expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}
     assert {path.name for path in operations.iterdir() if path.is_dir()} >= expected
     root_modules = {
@@ -397,7 +328,7 @@ def test_api_services_are_nested_by_function() -> None:
 
 
 def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
-    agents = ROOT / "backend/app/agents"
+    agents = ROOT / "backend/app/domains/agents"
     root_modules = {
         path.name
         for path in agents.iterdir()
@@ -422,7 +353,7 @@ def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
 
 
 def test_capability_modules_are_nested_by_function() -> None:
-    capabilities = ROOT / "backend/app/capabilities"
+    capabilities = ROOT / "backend/app/domains/capabilities"
     expected = {"catalog", "governance", "mcp", "marketplace", "resources", "skills", "tools"}
     assert {path.name for path in capabilities.iterdir() if path.is_dir()} >= expected
     root_modules = {
@@ -449,7 +380,7 @@ def test_capability_modules_are_nested_by_function() -> None:
 
 
 def test_mcp_modules_are_nested_by_function() -> None:
-    mcp = ROOT / "backend/app/capabilities/mcp"
+    mcp = ROOT / "backend/app/domains/capabilities/mcp"
     expected = {"catalog", "execution", "transport"}
     assert {path.name for path in mcp.iterdir() if path.is_dir()} >= expected
     assert {
@@ -548,27 +479,27 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
     ("module", "violation", "contract"),
     [
         (
-            "platform/db/pagination.py",
+            "core/db/pagination.py",
             "from backend.app.api.pagination import PageResponse",
             "Shared infrastructure cannot depend on the API even indirectly",
         ),
         (
-            "platform/common/pagination.py",
-            "from backend.app.agents.service import AgentManagementService",
+            "core/common/pagination.py",
+            "from backend.app.domains.agents.service import AgentManagementService",
             "Shared infrastructure cannot depend on the API even indirectly",
         ),
         (
-            "execution/workers/__init__.py",
+            "runtime/workers/__init__.py",
             "from backend.app.api.routes import health",
             "HTTP transport is only composed by the API entry point",
         ),
         (
-            "platform/common/pagination.py",
+            "core/common/pagination.py",
             "from fastapi import Query",
             "Pagination inputs have no HTTP or database dependency",
         ),
         (
-            "platform/common/pagination.py",
+            "core/common/pagination.py",
             "import pytest",
             "Production code cannot depend on the test framework",
         ),
@@ -583,7 +514,7 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
             "S3 SDK access stays in its storage adapter",
         ),
         (
-            "agents/runtime/contracts.py",
+            "domains/agents/runtime/contracts.py",
             "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from openai import OpenAI",
             "Agent runtime contracts do not depend on vendor SDKs or HTTP transport",
         ),

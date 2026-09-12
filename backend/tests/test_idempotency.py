@@ -9,7 +9,7 @@ from backend.app.api.idempotency import (
     IdempotencyService,
     run_idempotent_create,
 )
-from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.core.redis.keys import RedisKeyBuilder
 
 
 def test_idempotency_service_uses_structured_states() -> None:

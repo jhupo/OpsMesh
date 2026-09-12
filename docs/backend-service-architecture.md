@@ -16,8 +16,8 @@ queues and persisted state, and use the execution runtime manager for Docker-bac
 ### 1. Agent SDK Runtime Layer
 
 This layer adapts the supported provider SDKs into the product-owned runtime contract. OpenAI and
-Claude implementations live under `backend/app/agents/runtime/providers`; provider-neutral
-contracts and session/tool orchestration live under `backend/app/agents/runtime`.
+Claude implementations live under `backend/app/domains/agents/runtime/providers`; provider-neutral
+contracts and session/tool orchestration live under `backend/app/domains/agents/runtime`.
 
 Responsibilities:
 
@@ -97,8 +97,8 @@ Workers communicate with the API service through Postgres and Redis, not direct 
 ## Execution Runtime Manager
 
 The execution runtime manager is the backend module used by workers and platform administration
-APIs. Its source is `backend/app/execution/runtime`; worker queues and operational maintenance are
-sibling modules under `backend/app/execution`.
+APIs. Its source is `backend/app/runtime/environment`; worker queues and operational maintenance are
+sibling modules under `backend/app/runtime`.
 
 Responsibilities:
 
@@ -301,37 +301,38 @@ backend/
         self_hosted/ integrations/          # specialized transport boundaries
       schemas/{agents,capabilities,operations,orchestration,platform,workspace}
       services/workspace/{exports,imports,lifecycle}
-      agents/                                 # Agent profiles and nested runtime domains
-        profiles/ memory/ messages/ providers/ runtime/
-    capabilities/                           # Tools, MCP, marketplace, and policy
-      catalog/ governance/ resources/ skills/ marketplace/ tools/
-      mcp/{transport,catalog,execution}/    # shared MCP policy.py stays at this boundary
-    orchestration/                          # Requests, runs, approvals, tasks, workflows
-      approvals/ requests/ runs/ tasks/ workflows/
-    execution/                              # Runtime, workers, operations, self-hosted jobs
-      operations/                               # operator metrics, queues, recovery, runtimes, timeline, workers
-        metrics/ queues/ recovery/ runtimes/ timeline/ workers/
-      self_hosted/ workers/
-      runtime/                               # Runtime manager and isolated execution spaces
-        backends/ commands/ lifecycle/ pool/ policies/ spaces/
-    workspace/                              # Tenant, project, team, storage, and review domains
-      domains/ projects/ reviews/ storage/ tenants/
-      teams/                                # Public team services and stable domain models
-        execution/ operations/ projects/ providers/ organization/ runtime/
-    platform/                               # Auth, identity, persistence, security, integrations
+    core/                                   # Shared foundations and infrastructure adapters
       admin/ auth/ common/ db/ identity/ integrations/
       rate_limits/ redis/ secrets/ security/
+    domains/                                # Product-owned business domains
+      agents/                               # Profiles, memory, provider SDK runtime
+        profiles/ memory/ messages/ providers/ runtime/
+      capabilities/                         # Tools, MCP, marketplace, and policy
+        catalog/ governance/ resources/ skills/ marketplace/ tools/
+        mcp/{transport,catalog,execution}/  # shared policy.py stays at the MCP boundary
+      orchestration/                        # Requests, runs, approvals, tasks, workflows
+        approvals/ requests/ runs/ tasks/ workflows/
+      workspace/                            # Tenant, project, team, storage, and review domains
+        domains/ projects/ reviews/ storage/ tenants/
+        teams/{execution,operations,projects,providers,organization,runtime}/
+    runtime/                                # Runtime resources, workers, operations, self-hosted jobs
+      environment/{backends,commands,lifecycle,pool,policies,spaces}/
+      operations/{metrics,queues,recovery,runtimes,timeline,workers}/
+      self_hosted/ workers/
     observability/                          # Audit, cost, trace, and notification evidence
 ```
 
-The top-level directories are stable architectural boundaries. Feature-specific implementation
-packages are nested under the owning boundary instead of being siblings of the application itself.
+The five top-level directories are stable architectural boundaries. Product-owned business domains
+live under `domains`, infrastructure foundations under `core`, and execution resources under
+`runtime`; feature-specific implementation packages are nested under those owners instead of
+being siblings of the application itself.
 Within the team domain, implementation files are grouped by functional lifecycle (execution,
 operator surfaces, project assembly, provider readiness, organization policy, and runtime state);
 the package root contains only public service entrypoints and shared domain models.
 The execution runtime follows the same rule: backend adapters, command execution, lifecycle,
-pool leases, policies, and runtime spaces are nested under `execution/runtime`; the runtime root
-keeps only orchestration services and shared contracts/models.
+pool leases, policies, and runtime spaces are nested under `runtime/environment`; the runtime
+root keeps only the execution-layer boundaries (`environment`, `operations`, `workers`, and
+`self_hosted`).
 `api` remains a transport boundary, while `observability` remains top-level because every domain
 may emit audit, cost, trace, and notification evidence. `main.py` and `delivery.py` are process
 entrypoints and intentionally remain at the application root.

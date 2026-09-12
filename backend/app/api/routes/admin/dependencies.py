@@ -5,18 +5,18 @@ from typing import TYPE_CHECKING
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from backend.app.platform.admin.operations_summary import AdminOperationsSummaryService
-from backend.app.platform.admin.overview import AdminOverviewService
-from backend.app.platform.admin.policy_control import AdminPolicyService
-from backend.app.platform.admin.queue_operations import AdminQueueOperationsService
-from backend.app.platform.admin.runtime_control import AdminRuntimeService
-from backend.app.platform.admin.security_events import AdminSecurityEventService
-from backend.app.platform.admin.worker_policy_control import AdminWorkerPolicyControlService
-from backend.app.platform.admin.workers import AdminWorkerService
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.core.admin.operations_summary import AdminOperationsSummaryService
+from backend.app.core.admin.overview import AdminOverviewService
+from backend.app.core.admin.policy_control import AdminPolicyService
+from backend.app.core.admin.queue_operations import AdminQueueOperationsService
+from backend.app.core.admin.runtime_control import AdminRuntimeService
+from backend.app.core.admin.security_events import AdminSecurityEventService
+from backend.app.core.admin.worker_policy_control import AdminWorkerPolicyControlService
+from backend.app.core.admin.workers import AdminWorkerService
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db.session import get_db_session
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
 
 if TYPE_CHECKING:
     from redis import Redis

@@ -7,8 +7,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.pagination import page_scalars
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.pagination import page_scalars
 
 
 @pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1", "limit=invalid"])

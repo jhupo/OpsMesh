@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
   push:
     branches: [master]
-    paths: ['operator/**', 'deploy/**', 'Dockerfile*', 'docker-compose.yml', 'backend/app/platform/admin/updates/**', 'backend/migrations/**', '.github/workflows/**']
+    paths: ['operator/**', 'deploy/**', 'Dockerfile*', 'docker-compose.yml', 'backend/app/core/admin/updates/**', 'backend/migrations/**', '.github/workflows/**']
   pull_request:
-    paths: ['operator/**', 'deploy/**', 'Dockerfile*', 'docker-compose.yml', 'backend/app/platform/admin/updates/**', 'backend/migrations/**', '.github/workflows/**']
+    paths: ['operator/**', 'deploy/**', 'Dockerfile*', 'docker-compose.yml', 'backend/app/core/admin/updates/**', 'backend/migrations/**', '.github/workflows/**']
 permissions:
   contents: read
 jobs:
@@ -31,7 +31,7 @@ jobs:
           version: '0.12.10'
           python-version: '3.12'
       - run: uv sync --frozen --all-groups
-      - run: uv run mypy operator/opsmesh_operator backend/app/platform/admin/updates backend/app/api/routes/admin/updates.py
+      - run: uv run mypy operator/opsmesh_operator backend/app/core/admin/updates backend/app/api/routes/admin/updates.py
       - run: uv run pytest backend/tests/test_platform_updates.py backend/tests/test_operator_security.py backend/tests/test_release_delivery.py
       - name: Real PostgreSQL migrations and delivery contracts
         env:

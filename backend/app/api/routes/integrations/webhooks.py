@@ -11,24 +11,24 @@ from backend.app.api.schemas.platform.webhooks import (
     WebhookSubscriptionResponse,
     WebhookSubscriptionUpdateRequest,
 )
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.pagination import page_scalars
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.integrations.webhooks.models import WebhookDeliveryAttempt
-from backend.app.platform.integrations.webhooks.service import (
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.pagination import page_scalars
+from backend.app.core.db.session import get_db_session
+from backend.app.core.integrations.webhooks.models import WebhookDeliveryAttempt
+from backend.app.core.integrations.webhooks.service import (
     WebhookDeliveryReplayError,
     WebhookDeliveryReplayRateLimitError,
     WebhookDeliveryService,
     WebhookSubscriptionService,
 )
-from backend.app.platform.secrets.service import SecretEncryptionService
-from backend.app.platform.security.egress import EgressUrlValidationError
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.egress import EgressUrlValidationError
+from backend.app.runtime.workers.dependencies import get_worker_queue
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/webhook-subscriptions",

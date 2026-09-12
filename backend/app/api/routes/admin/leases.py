@@ -9,9 +9,9 @@ from backend.app.api.schemas.platform.admin import (
     AdminRuntimeLeaseResponse,
     AdminWorkerLeaseResponse,
 )
-from backend.app.platform.admin.runtime_control import AdminRuntimeService
-from backend.app.platform.admin.workers import AdminWorkerService
-from backend.app.platform.common.pagination import PageParams
+from backend.app.core.admin.runtime_control import AdminRuntimeService
+from backend.app.core.admin.workers import AdminWorkerService
+from backend.app.core.common.pagination import PageParams
 
 router = APIRouter()
 

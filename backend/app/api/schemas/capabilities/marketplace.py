@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.agents.profiles import AgentProfileResponse
 from backend.app.api.schemas.common import TimestampedModel
-from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.core.security.redaction import redact_sensitive_payload
 
 MarketplaceListingType = Literal["agent", "skill", "mcp_server", "plugin"]
 MarketplaceVisibility = Literal["private", "workspace", "public"]

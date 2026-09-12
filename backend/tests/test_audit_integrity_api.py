@@ -10,20 +10,20 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.execution.workers.dependencies import get_worker_queue
-from backend.app.execution.workers.handlers import WorkerJobHandler
-from backend.app.execution.workers.jobs import JobType
-from backend.app.execution.workers.redis_queue import RedisQueue
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.db.session import get_db_session
+from backend.app.core.identity.models import User
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent, AuditIntegrityCheck
 from backend.app.observability.audit_service import AuditService
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.identity.models import User
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.workers.dependencies import get_worker_queue
+from backend.app.runtime.workers.handlers import WorkerJobHandler
+from backend.app.runtime.workers.jobs import JobType
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 TOKEN = "audit-integrity-api-token"
 

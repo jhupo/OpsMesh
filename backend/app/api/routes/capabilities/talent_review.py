@@ -7,13 +7,13 @@ from backend.app.api.schemas.capabilities.marketplace import (
     TalentListingReviewCreateRequest,
     TalentListingReviewResponse,
 )
-from backend.app.capabilities.marketplace.responses import review_response
-from backend.app.capabilities.marketplace.talent_reviews import TalentReviewService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.db.errors import DatabaseConflictError
-from backend.app.platform.db.session import get_db_session
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.db.errors import DatabaseConflictError
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.capabilities.marketplace.responses import review_response
+from backend.app.domains.capabilities.marketplace.talent_reviews import TalentReviewService
 
 router = APIRouter()
 

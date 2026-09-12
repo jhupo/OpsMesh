@@ -10,13 +10,13 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from starlette import status
 
-from backend.app.execution.operations.models import WorkerNode
-from backend.app.platform.common.config import Settings
-from backend.app.platform.common.values import ensure_aware_utc
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.workspace.storage.storage import create_storage
+from backend.app.core.common.config import Settings
+from backend.app.core.common.values import ensure_aware_utc
+from backend.app.core.db.session import get_db_session
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.workspace.storage.storage import create_storage
+from backend.app.runtime.operations.models import WorkerNode
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

@@ -16,20 +16,20 @@ from backend.app.api.schemas.operations.overview import (
     QueueMetricsResponse,
     RequeueDeadLetterResponse,
 )
-from backend.app.execution.operations.queues.dead_letters import DeadLetterQueueService
-from backend.app.execution.operations.queues.governance import (
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db.session import get_db_session
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.runtime.operations.queues.dead_letters import DeadLetterQueueService
+from backend.app.runtime.operations.queues.governance import (
     QueueGovernanceDiagnosticsService,
     QueueGovernanceReconciliationService,
 )
-from backend.app.execution.operations.queues.insights import QueueInsightsService
-from backend.app.execution.operations.queues.metrics import QueueMetricsService
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.runtime.operations.queues.insights import QueueInsightsService
+from backend.app.runtime.operations.queues.metrics import QueueMetricsService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

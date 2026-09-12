@@ -9,11 +9,11 @@ from backend.app.api.schemas.capabilities.marketplace import (
     TalentListingResponse,
     TalentListingReviewResponse,
 )
-from backend.app.capabilities.marketplace.responses import review_response
-from backend.app.capabilities.marketplace.talent_catalog import TalentCatalogService
-from backend.app.capabilities.marketplace.talent_reviews import TalentReviewService
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.session import get_db_session
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.capabilities.marketplace.responses import review_response
+from backend.app.domains.capabilities.marketplace.talent_catalog import TalentCatalogService
+from backend.app.domains.capabilities.marketplace.talent_reviews import TalentReviewService
 
 router = APIRouter()
 

@@ -5,9 +5,6 @@ from fastapi import HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.agents.runtime.session_management import (
-    PersistentAgentSessionManagementService,
-)
 from backend.app.api.schemas.agents.profiles import (
     AgentSessionSummaryResponse,
 )
@@ -15,18 +12,21 @@ from backend.app.api.schemas.workspace.teams import (
     AgentTeamRuntimeControlRequest,
     AgentTeamRuntimeEnsureRequest,
 )
-from backend.app.execution.runtime.commands.queued_control import QueuedRuntimeControl
-from backend.app.execution.runtime.contracts import RuntimeLimits
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.common.config import Settings
-from backend.app.platform.security.redaction import redact_sensitive_payload
-from backend.app.workspace.teams.execution_loop import (
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.common.config import Settings
+from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.agents.runtime.session_management import (
+    PersistentAgentSessionManagementService,
+)
+from backend.app.domains.workspace.teams.execution_loop import (
     enqueue_team_execution_loop_job,
 )
-from backend.app.workspace.teams.workspace_service import (
+from backend.app.domains.workspace.teams.workspace_service import (
     WorkspaceTeamService,
 )
+from backend.app.runtime.environment.commands.queued_control import QueuedRuntimeControl
+from backend.app.runtime.environment.contracts import RuntimeLimits
+from backend.app.runtime.workers.redis_queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

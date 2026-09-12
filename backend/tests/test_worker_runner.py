@@ -14,62 +14,73 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.agents.messages.models import AgentMessage
-from backend.app.agents.models import AgentProfile
-from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
-from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRunResult
-from backend.app.agents.runtime.sessions import PersistentAgentSession
-from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
-from backend.app.execution.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
-from backend.app.execution.operations.workers.heartbeats import WorkerHeartbeatOperationsService
-from backend.app.execution.runtime.contracts import (
-    DockerRuntimeClient,
-    RuntimeCommandInputFile,
-    RuntimeCommandResult,
-    RuntimeCreateRequest,
+from backend.app.core.common.config import Settings
+from backend.app.core.common.request_context import current_log_context
+from backend.app.core.common.trace_context import TraceContext, trace_context
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.domains.agents.messages.models import AgentMessage
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.providers.credential_commands import (
+    ModelProviderCredentialCommandService,
 )
-from backend.app.execution.runtime.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.execution.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent
-from backend.app.execution.workers.handlers import WorkerJobHandler
-from backend.app.execution.workers.jobs import JobPayload, JobType
-from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.execution.workers.runner import (
-    WorkerMaintenanceSummary,
-    WorkerRunner,
-    WorkerRunnerConfig,
+from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
+from backend.app.domains.agents.runtime.sessions import PersistentAgentSession
+from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
+from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
+from backend.app.domains.orchestration.runs.authorization_snapshot import (
+    RunAuthorizationSnapshotService,
 )
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.runs.service import RunOrchestrationService
+from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.tasks.collaboration_state import (
+    TaskCollaborationStateService,
+)
+from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
+from backend.app.domains.orchestration.tasks.models import (
+    Task,
+    TaskEventOutbox,
+    TaskMessage,
+    TaskStep,
+)
+from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.workspace.projects.export_models import (
+    WorkspaceExportJob,
+    WorkspaceExportJobStatus,
+)
+from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
+from backend.app.domains.workspace.reviews.service import ResourceReview
+from backend.app.domains.workspace.teams.execution_loop import TeamExecutionLoopQueueService
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.observability.cost_models import (
     ModelPricingRule,
     ModelUsageRecord,
     WorkspaceCostBudget,
 )
-from backend.app.orchestration.requests.builder import RunRequestBuilder
-from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.orchestration.runs.service import RunOrchestrationService
-from backend.app.orchestration.runs.status import RunStatus
-from backend.app.orchestration.tasks.collaboration_state import TaskCollaborationStateService
-from backend.app.orchestration.tasks.events import RedisTaskEventBus
-from backend.app.orchestration.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep
-from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.platform.common.config import Settings
-from backend.app.platform.common.request_context import current_log_context
-from backend.app.platform.common.trace_context import TraceContext, trace_context
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User
-from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.platform.secrets.service import SecretEncryptionService
-from backend.app.workspace.projects.export_models import (
-    WorkspaceExportJob,
-    WorkspaceExportJobStatus,
+from backend.app.runtime.environment.contracts import (
+    DockerRuntimeClient,
+    RuntimeCommandInputFile,
+    RuntimeCommandResult,
+    RuntimeCreateRequest,
 )
-from backend.app.workspace.reviews.model_request import ModelRequestReview
-from backend.app.workspace.reviews.service import ResourceReview
-from backend.app.workspace.teams.execution_loop import TeamExecutionLoopQueueService
-from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.teams.runtime.service import TeamRuntimeService
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
+from backend.app.runtime.operations.workers.heartbeats import WorkerHeartbeatOperationsService
+from backend.app.runtime.workers.handlers import WorkerJobHandler
+from backend.app.runtime.workers.jobs import JobPayload, JobType
+from backend.app.runtime.workers.redis_queue import RedisQueue
+from backend.app.runtime.workers.runner import (
+    WorkerMaintenanceSummary,
+    WorkerRunner,
+    WorkerRunnerConfig,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -91,11 +102,11 @@ def approve_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(
-        "backend.app.workspace.reviews.service.ResourcePolicyReviewBuilder.review_tool_execution",
+        "backend.app.domains.workspace.reviews.service.ResourcePolicyReviewBuilder.review_tool_execution",
         fake_resource_review,
     )
     monkeypatch.setattr(
-        "backend.app.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
         fake_model_request_review,
     )
 
@@ -649,10 +660,12 @@ def test_worker_maintenance_enqueues_running_team_runtime_without_tasks() -> Non
 
 
 def test_runtime_scheduler_scans_do_not_update_another_workspace_team() -> None:
-    from backend.app.workspace.teams.execution.queue_dispatch import (
+    from backend.app.domains.workspace.teams.execution.queue_dispatch import (
         TeamExecutionLoopQueueDispatcher,
     )
-    from backend.app.workspace.teams.execution.runtime_candidates import _team_loop_candidate
+    from backend.app.domains.workspace.teams.execution.runtime_candidates import (
+        _team_loop_candidate,
+    )
 
     session_factory = _session_factory()
     _, team_id, user_id = _seed_runtime_team(session_factory)
@@ -1100,7 +1113,7 @@ def test_team_runtime_maintenance_consume_then_reschedules_on_next_cadence(
     queue = _queue()
     docker = FakeDockerClient()
     monkeypatch.setattr(
-        "backend.app.execution.workers.job_handlers.context.get_docker_runtime_client",
+        "backend.app.runtime.workers.job_handlers.context.get_docker_runtime_client",
         lambda: docker,
     )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(
@@ -1364,7 +1377,7 @@ def test_worker_runner_team_execution_loop_ensures_workspace_runtime(
     queue = _queue()
     docker = FakeDockerClient()
     monkeypatch.setattr(
-        "backend.app.execution.workers.job_handlers.context.get_docker_runtime_client",
+        "backend.app.runtime.workers.job_handlers.context.get_docker_runtime_client",
         lambda: docker,
     )
     workspace_id, team_id, user_id, _ = _seed_team_loop_task(
@@ -1417,7 +1430,7 @@ def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime(
     queue = _queue()
     docker = FakeDockerClient()
     monkeypatch.setattr(
-        "backend.app.execution.workers.job_handlers.context.get_docker_runtime_client",
+        "backend.app.runtime.workers.job_handlers.context.get_docker_runtime_client",
         lambda: docker,
     )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(
@@ -1497,7 +1510,7 @@ def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterat
     queue = _queue()
     docker = FakeDockerClient()
     monkeypatch.setattr(
-        "backend.app.execution.workers.job_handlers.context.get_docker_runtime_client",
+        "backend.app.runtime.workers.job_handlers.context.get_docker_runtime_client",
         lambda: docker,
     )
     workspace_id, team_id, user_id, _task_id = _seed_team_loop_task(
@@ -1572,7 +1585,7 @@ def test_team_runtime_scheduled_soak_across_thirty_minutes(
     queue = _queue()
     docker = FakeDockerClient()
     monkeypatch.setattr(
-        "backend.app.execution.workers.job_handlers.context.get_docker_runtime_client",
+        "backend.app.runtime.workers.job_handlers.context.get_docker_runtime_client",
         lambda: docker,
     )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(

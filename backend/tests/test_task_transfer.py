@@ -4,17 +4,9 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session
 
-from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.orchestration.tasks.overview import TaskTransferResponse
-from backend.app.orchestration.tasks.ownership import task_owner_can_execute_step
-from backend.app.orchestration.tasks.transfers import (
-    TaskTransferCommand,
-    TaskTransferDecision,
-    TaskTransferError,
-    TaskTransferService,
-)
-from backend.app.platform.db.base import Base
-from backend.app.platform.db.models import (  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.db.models import (  # noqa: F401
     AgentRun,
     AgentTeam,
     AgentTeamMember,
@@ -23,6 +15,14 @@ from backend.app.platform.db.models import (  # noqa: F401
     TaskTransfer,
     User,
     Workspace,
+)
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.orchestration.tasks.ownership import task_owner_can_execute_step
+from backend.app.domains.orchestration.tasks.transfers import (
+    TaskTransferCommand,
+    TaskTransferDecision,
+    TaskTransferError,
+    TaskTransferService,
 )
 
 

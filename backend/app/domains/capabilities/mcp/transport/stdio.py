@@ -1,0 +1,194 @@
+from __future__ import annotations
+
+import json
+from uuid import UUID
+
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.domains.capabilities.mcp.execution.types import (
+    McpExecutionError,
+    McpExecutionPending,
+)
+from backend.app.domains.capabilities.mcp.transport.payloads import (
+    MCP_PYTHON_SDK_PACKAGE,
+    MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
+    MCP_STDIO_CONTRACT_VERSION,
+    capability_report_from_sdk_output,
+    result_from_sdk_output,
+    stdio_command,
+    stdio_sdk_request,
+)
+from backend.app.domains.capabilities.mcp.transport.stdio_credentials import (
+    hosted_stdio_environment,
+    self_hosted_stdio_environment_refs,
+)
+from backend.app.domains.capabilities.models import McpCredentialReference, McpServer
+from backend.app.runtime.environment.contracts import RuntimeCommandInputFile
+from backend.app.runtime.environment.manager import RuntimeManager
+from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.self_hosted.mcp_jobs import SelfHostedMcpJobService
+
+
+class DockerRuntimeStdioMcpToolAdapter:
+    def __init__(
+        self,
+        *,
+        runtime_manager: RuntimeManager,
+        runtime: WorkspaceRuntime,
+        secret_service: SecretEncryptionService | None = None,
+        working_dir: str | None = None,
+    ) -> None:
+        self._runtime_manager = runtime_manager
+        self._runtime = runtime
+        self._secret_service = secret_service
+        self._working_dir = working_dir
+
+    async def call(
+        self,
+        *,
+        server: McpServer,
+        tool_name: str,
+        arguments: dict[str, object],
+        credential_refs: list[McpCredentialReference],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        command = stdio_command(server.connection)
+        await self.assert_sdk_ready(workspace_id=server.workspace_id)
+        request = stdio_sdk_request(
+            command=command,
+            tool_name=tool_name,
+            arguments=arguments,
+            timeout_seconds=timeout_seconds,
+            environment=hosted_stdio_environment(
+                credential_refs,
+                secret_service=self._secret_service,
+            ),
+        )
+        record = await self._runtime_manager.execute_command_async(
+            workspace_id=server.workspace_id,
+            runtime=self._runtime,
+            command=[
+                "python",
+                "-m",
+                "opsmesh_runtime.mcp_stdio_client",
+            ],
+            input_file=RuntimeCommandInputFile(
+                content=json.dumps(
+                    request,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8"),
+                argument_name="--request-file",
+            ),
+            working_dir=self._working_dir,
+        )
+        if record.status != "completed" or record.exit_code != 0:
+            raise McpExecutionError(
+                "Docker runtime MCP stdio command failed",
+                code="mcp_stdio_runtime_failed",
+            )
+        return result_from_sdk_output(record.stdout)
+
+    async def assert_sdk_ready(self, *, workspace_id: UUID) -> None:
+        cached_report = (self._runtime.capabilities or {}).get("mcp_stdio_sdk")
+        if _sdk_report_is_ready(cached_report):
+            return
+        record = await self._runtime_manager.execute_command_async(
+            workspace_id=workspace_id,
+            runtime=self._runtime,
+            command=[
+                "python",
+                "-m",
+                "opsmesh_runtime.mcp_stdio_client",
+                "--check",
+            ],
+            working_dir=self._working_dir,
+        )
+        if record.status != "completed" or record.exit_code != 0:
+            raise McpExecutionError(
+                "Docker runtime does not provide the official MCP Python SDK",
+                code="mcp_stdio_sdk_unavailable",
+            )
+        try:
+            report = capability_report_from_sdk_output(record.stdout)
+        except McpExecutionError as exc:
+            raise McpExecutionError(
+                "Docker runtime MCP SDK capability probe returned invalid output",
+                code="mcp_stdio_runtime_not_ready",
+            ) from exc
+        if not _sdk_report_is_ready(report):
+            raise McpExecutionError(
+                "Docker runtime MCP SDK is not ready",
+                code="mcp_stdio_runtime_not_ready",
+            )
+        self._runtime.capabilities = {
+            **dict(self._runtime.capabilities or {}),
+            "mcp_stdio_sdk": report,
+        }
+
+
+class SelfHostedStdioMcpToolAdapter:
+    def __init__(
+        self,
+        *,
+        service: SelfHostedMcpJobService,
+        runtime: WorkspaceRuntime,
+        agent_run_id: UUID,
+    ) -> None:
+        self._service = service
+        self._runtime = runtime
+        self._agent_run_id = agent_run_id
+
+    async def call(
+        self,
+        *,
+        server: McpServer,
+        tool_name: str,
+        arguments: dict[str, object],
+        credential_refs: list[McpCredentialReference],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        command = stdio_command(server.connection)
+        request = stdio_sdk_request(
+            command=command,
+            tool_name=tool_name,
+            arguments=arguments,
+            timeout_seconds=timeout_seconds,
+        )
+        payload: dict[str, object] = {
+            "contract_version": MCP_STDIO_CONTRACT_VERSION,
+            "transport": "stdio",
+            "sdk": {
+                "package": MCP_PYTHON_SDK_PACKAGE,
+                "entrypoint": MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
+            },
+            "request": request,
+            "environment_refs": self_hosted_stdio_environment_refs(credential_refs),
+        }
+        job = self._service.create_mcp_job(
+            workspace_id=server.workspace_id,
+            runtime_id=self._runtime.id,
+            agent_run_id=self._agent_run_id,
+            mcp_server_id=server.id,
+            tool_name=tool_name,
+            request_payload=payload,
+        )
+        raise McpExecutionPending(
+            "MCP tool is queued for self-hosted runtime execution",
+            code="mcp_self_hosted_job_queued",
+            response={
+                "mcp_job_id": str(job.id),
+                "runtime_id": str(self._runtime.id),
+                "transport": "stdio",
+            },
+        )
+
+
+def _sdk_report_is_ready(report: object) -> bool:
+    return (
+        isinstance(report, dict)
+        and report.get("status") == "ready"
+        and report.get("contract_version") == MCP_STDIO_CONTRACT_VERSION
+        and report.get("sdk_package") == MCP_PYTHON_SDK_PACKAGE
+        and report.get("stdio_client") == "available"
+        and report.get("client_session") == "available"
+    )

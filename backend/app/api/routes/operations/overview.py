@@ -18,25 +18,25 @@ from backend.app.api.schemas.operations.overview import (
     OperationsSelfHostedMachinesResponse,
     OperationsWorkerLifecycleResponse,
 )
-from backend.app.execution.operations.control_plane_service import OperationsControlPlaneService
-from backend.app.execution.operations.operation_capacity_payloads import (
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db.session import get_db_session
+from backend.app.core.redis.cache import RedisJsonCache
+from backend.app.core.redis.dependencies import get_cache_service, get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.runtime.operations.control_plane_service import OperationsControlPlaneService
+from backend.app.runtime.operations.operation_capacity_payloads import (
     OperationsCapacityPayloadService,
 )
-from backend.app.execution.operations.outcomes import OperationsOutcomeService
-from backend.app.execution.operations.overview_payloads import OperationsOverviewPayloadService
-from backend.app.execution.operations.run_activity import RunActivityPayloadService
-from backend.app.execution.operations.workers.lifecycle import WorkerLifecyclePayloadService
-from backend.app.execution.operations.workers.self_hosted_machines import (
+from backend.app.runtime.operations.outcomes import OperationsOutcomeService
+from backend.app.runtime.operations.overview_payloads import OperationsOverviewPayloadService
+from backend.app.runtime.operations.run_activity import RunActivityPayloadService
+from backend.app.runtime.operations.workers.lifecycle import WorkerLifecyclePayloadService
+from backend.app.runtime.operations.workers.self_hosted_machines import (
     OperationsSelfHostedMachineService,
 )
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.redis.cache import RedisJsonCache
-from backend.app.platform.redis.dependencies import get_cache_service, get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

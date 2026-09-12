@@ -16,23 +16,23 @@ from backend.app.api.schemas.orchestration.definitions import (
     OrchestrationRevisionResponse,
     OrchestrationValidationResponse,
 )
-from backend.app.orchestration.workflows.definition_commands import (
+from backend.app.core.auth.context import WorkspaceContext
+from backend.app.core.auth.dependencies import workspace_dependency
+from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.errors import DatabaseConflictError
+from backend.app.core.db.session import get_db_session
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.orchestration.workflows.definition_commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
 )
-from backend.app.orchestration.workflows.definitions import (
+from backend.app.domains.orchestration.workflows.definitions import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )
-from backend.app.platform.auth.context import WorkspaceContext
-from backend.app.platform.auth.dependencies import workspace_dependency
-from backend.app.platform.auth.permissions import WorkspaceAction
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.common.pagination import PageParams
-from backend.app.platform.db.errors import DatabaseConflictError
-from backend.app.platform.db.session import get_db_session
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.redis.keys import RedisKeyBuilder
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

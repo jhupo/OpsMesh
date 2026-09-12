@@ -7,19 +7,19 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.execution.runtime.contracts import (
+from backend.app.core.common.config import Settings
+from backend.app.core.db import models as registered_models  # noqa: F401
+from backend.app.core.db.base import Base
+from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.observability.audit_models import AuditEvent
+from backend.app.runtime.environment.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.execution.runtime.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
-from backend.app.execution.runtime.service import RuntimeControlService
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.platform.common.config import Settings
-from backend.app.platform.db import models as registered_models  # noqa: F401
-from backend.app.platform.db.base import Base
-from backend.app.platform.security.models import SecurityEvent
-from backend.app.workspace.tenants.models import Workspace
+from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.environment.service import RuntimeControlService
 
 
 class FakeDockerClient:

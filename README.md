@@ -379,20 +379,20 @@ backend/app/api/                              HTTP transport, schemas, and appli
 backend/app/api/routes/{...}/                 Routes grouped by agents, capabilities, operations, orchestration, platform, and workspace
 backend/app/api/schemas/{...}/                Transport contracts grouped by the same functional domains
 backend/app/api/services/workspace/{...}/     Workspace export, import, lifecycle, and file services
-backend/app/agents/                           Agent profiles, SDK runtime, memory, and providers
-backend/app/agents/{profiles,memory,messages,providers,runtime}/  Agent lifecycle and execution domains
-backend/app/agents/runtime/providers/         OpenAI and Claude SDK adapters
-backend/app/capabilities/                     Skills, MCP, tools, marketplace, and policy
-backend/app/capabilities/{catalog,governance,resources,skills,marketplace,tools}/  Capability feature modules
-backend/app/capabilities/mcp/{transport,catalog,execution}/  MCP transport, catalog, and execution modules; shared policy.py stays at the MCP boundary
-backend/app/orchestration/                    Requests, runs, approvals, tasks, and workflows
-backend/app/execution/                        Runtime, worker, operations, and self-hosted execution
-backend/app/execution/runtime/{...}/          Runtime backends, commands, lifecycle, pools, policies, and spaces
-backend/app/execution/operations/{...}/       Metrics, queues, recovery, runtimes, timeline, and worker operations
-backend/app/workspace/                        Workspace tenant, projects, teams, storage, and reviews
-backend/app/workspace/teams/{...}/            Team execution, operations, projects, providers, organization, and runtime modules
-backend/app/platform/                        Identity, auth, persistence, security, and integrations
-backend/app/platform/common/                 Provider-neutral config, pagination, values, and metrics primitives
+backend/app/domains/agents/                           Agent profiles, SDK runtime, memory, and providers
+backend/app/domains/agents/{profiles,memory,messages,providers,runtime}/  Agent lifecycle and execution domains
+backend/app/domains/agents/runtime/providers/         OpenAI and Claude SDK adapters
+backend/app/domains/capabilities/                     Skills, MCP, tools, marketplace, and policy
+backend/app/domains/capabilities/{catalog,governance,resources,skills,marketplace,tools}/  Capability feature modules
+backend/app/domains/capabilities/mcp/{transport,catalog,execution}/  MCP transport, catalog, and execution modules; shared policy.py stays at the MCP boundary
+backend/app/domains/orchestration/                    Requests, runs, approvals, tasks, and workflows
+backend/app/runtime/                        Runtime, worker, operations, and self-hosted execution
+backend/app/runtime/environment/{...}/          Runtime backends, commands, lifecycle, pools, policies, and spaces
+backend/app/runtime/operations/{...}/       Metrics, queues, recovery, runtimes, timeline, and worker operations
+backend/app/domains/workspace/                        Workspace tenant, projects, teams, storage, and reviews
+backend/app/domains/workspace/teams/{...}/            Team execution, operations, projects, providers, organization, and runtime modules
+backend/app/core/                        Identity, auth, persistence, security, and integrations
+backend/app/core/common/                 Provider-neutral config, pagination, values, and metrics primitives
 backend/app/observability/                    Audit, traces, costs, and notifications
 backend/migrations/           Alembic schema history
 backend/tests/                Unit and integration-style backend tests

@@ -13,12 +13,12 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveExportResult,
 )
 from backend.app.api.services.workspace.exports.builder import WorkspaceExportBuilder
+from backend.app.domains.workspace.storage.artifact_models import Artifact
+from backend.app.domains.workspace.storage.models import WorkspaceFile
+from backend.app.domains.workspace.storage.security import safe_filename
+from backend.app.domains.workspace.storage.storage import ObjectStorage
+from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService
-from backend.app.workspace.storage.artifact_models import Artifact
-from backend.app.workspace.storage.models import WorkspaceFile
-from backend.app.workspace.storage.security import safe_filename
-from backend.app.workspace.storage.storage import ObjectStorage
-from backend.app.workspace.tenants.models import Workspace
 
 
 class WorkspaceArchiveExportBuilder:

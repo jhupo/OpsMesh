@@ -7,13 +7,13 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.platform.auth.errors import AuthenticationError, PermissionDeniedError
-from backend.app.platform.auth.permissions import WorkspaceAction, role_allows
-from backend.app.platform.auth.service import AuthorizationService
-from backend.app.platform.common.config import Settings
-from backend.app.platform.db.base import Base
-from backend.app.platform.identity.models import User, UserAPIToken
-from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.core.auth.errors import AuthenticationError, PermissionDeniedError
+from backend.app.core.auth.permissions import WorkspaceAction, role_allows
+from backend.app.core.auth.service import AuthorizationService
+from backend.app.core.common.config import Settings
+from backend.app.core.db.base import Base
+from backend.app.core.identity.models import User, UserAPIToken
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_role_permissions_are_hierarchical() -> None:

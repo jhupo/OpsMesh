@@ -8,10 +8,14 @@ from fastapi.encoders import jsonable_encoder
 from redis import Redis
 from redis.exceptions import RedisError
 
-from backend.app.orchestration.tasks.events import RedisTaskEventBus, TaskEvent, TaskEventBus
-from backend.app.platform.common.config import Settings, get_settings
-from backend.app.platform.redis.dependencies import get_redis_client
-from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.orchestration.tasks.events import (
+    RedisTaskEventBus,
+    TaskEvent,
+    TaskEventBus,
+)
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]
