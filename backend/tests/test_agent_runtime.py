@@ -37,7 +37,7 @@ from backend.app.agent_runtime.providers.openai_tools import OpenAIToolBridge, r
 from backend.app.agent_runtime.runtime.contracts import SandboxManifest
 from backend.app.agent_runtime.sessions import PersistentAgentSessionRef, SQLAlchemyAgentSession
 from backend.app.agents.models import AgentProfile
-from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
+from backend.app.model_providers.policy import normalize_openai_compatible_base_url
 
 
 class DeterministicTestRunner:

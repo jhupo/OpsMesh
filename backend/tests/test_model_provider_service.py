@@ -27,7 +27,7 @@ from backend.app.model_providers.model_api import (
 )
 from backend.app.model_providers.models import ModelProviderCredential
 from backend.app.model_providers.resolution_service import ModelProviderResolutionService
-from backend.app.model_providers.service_models import (
+from backend.app.model_providers.contracts import (
     ModelProviderUnavailableError,
 )
 from backend.app.observability.audit_models import AuditEvent

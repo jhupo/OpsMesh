@@ -4,8 +4,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.model_providers.contracts import ResolvedModelProvider
 from backend.app.model_providers.resolver import ModelProviderResolver
-from backend.app.model_providers.service_models import ResolvedModelProvider
 from backend.app.secrets.service import SecretEncryptionService
 
 

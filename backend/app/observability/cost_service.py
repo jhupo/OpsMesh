@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agent_runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.core.trace_context import current_trace_context
-from backend.app.model_providers.provider_keys import canonical_model_provider
+from backend.app.model_providers.policy import canonical_model_provider
 from backend.app.observability.audit_service import AuditService
 from backend.app.observability.cost_models import (
     ModelPricingRule,

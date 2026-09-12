@@ -5,13 +5,13 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.model_providers.audit_writer import ModelProviderAuditWriter
+from backend.app.model_providers.contracts import ProviderProbeName
 from backend.app.model_providers.credential_queries import ModelProviderCredentialQueryService
 from backend.app.model_providers.health import (
     ModelProviderHealthCheckResult,
     ModelProviderHealthTarget,
     probe_model_provider,
 )
-from backend.app.model_providers.health_probes import ProviderProbeName
 from backend.app.model_providers.health_state import (
     apply_health_check_result,
     record_provider_failure,

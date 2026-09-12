@@ -7,10 +7,12 @@ from sqlalchemy.orm import Session
 from backend.app.model_providers.audit_payloads import budget_metadata_with_model_api
 from backend.app.model_providers.audit_writer import ModelProviderAuditWriter
 from backend.app.model_providers.credential_queries import ModelProviderCredentialQueryService
-from backend.app.model_providers.defaults import ModelProviderDefaultService
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.provider_keys import canonical_model_provider
-from backend.app.model_providers.validation import validated_base_url
+from backend.app.model_providers.policy import (
+    ModelProviderDefaultService,
+    canonical_model_provider,
+    validated_base_url,
+)
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.security.egress import (
     MODEL_PROVIDER_BASE_URL_POLICY,

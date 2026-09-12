@@ -15,12 +15,12 @@ from backend.app.model_providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
 )
-from backend.app.model_providers.provider_keys import (
+from backend.app.model_providers.policy import (
     canonical_model_provider,
     is_anthropic_provider,
     is_openai_compatible_provider,
 )
-from backend.app.model_providers.service_models import ResolvedModelProvider
+from backend.app.model_providers.contracts import ResolvedModelProvider
 from backend.app.security.redaction import redact_sensitive_payload
 
 OPENAI_RESPONSES_REVIEWER = "openai_responses"

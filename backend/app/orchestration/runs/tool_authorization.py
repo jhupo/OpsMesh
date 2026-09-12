@@ -21,7 +21,7 @@ from backend.app.capabilities.effective_catalog import (
     effective_catalog_fingerprint,
 )
 from backend.app.capabilities.schema_validation import validate_partial_parameters
-from backend.app.model_providers.provider_keys import (
+from backend.app.model_providers.policy import (
     is_anthropic_provider,
     is_openai_compatible_provider,
 )

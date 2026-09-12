@@ -21,7 +21,7 @@ from backend.app.memory.models import (
     WorkspaceMemoryEntry,
 )
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.provider_keys import (
+from backend.app.model_providers.policy import (
     canonical_model_provider,
     is_openai_compatible_provider,
 )

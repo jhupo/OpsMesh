@@ -10,7 +10,11 @@ from backend.app.agents.models import AgentProfile
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.models import Task, TaskStep
-from backend.app.teams.execution_overview_constants import ACTIVE_RUN_STATUSES
+from backend.app.teams.execution_overview_contracts import (
+    ACTIVE_RUN_STATUSES,
+    dedupe_strings,
+    string_list,
+)
 from backend.app.teams.execution_overview_members import (
     active_run_phase_counts,
     member_items,
@@ -19,7 +23,6 @@ from backend.app.teams.execution_overview_members import (
 )
 from backend.app.teams.execution_overview_repository import TeamExecutionOverviewRepository
 from backend.app.teams.execution_overview_summary import overview_summary
-from backend.app.teams.execution_overview_utils import dedupe_strings, string_list
 
 
 class TeamExecutionOverviewService:

@@ -22,7 +22,7 @@ from backend.app.core.trace_context import (
     new_trace_context,
     telemetry_span,
 )
-from backend.app.operations.worker_capacity_snapshot import WorkerCapacitySnapshotService
+from backend.app.operations.worker_capacity import WorkerCapacitySnapshotService
 from backend.app.operations.worker_heartbeats import WorkerHeartbeatOperationsService
 from backend.app.workers.capacity import worker_can_run_job
 from backend.app.workers.handlers import WorkerJobHandler

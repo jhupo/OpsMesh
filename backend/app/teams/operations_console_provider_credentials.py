@@ -5,11 +5,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.model_providers.availability import (
-    credential_is_selectable,
-    credential_not_selectable_reasons,
-)
-from backend.app.model_providers.base_url import model_provider_base_url_host
 from backend.app.model_providers.capabilities import (
     list_model_capabilities,
     resolve_model_capability,
@@ -25,6 +20,11 @@ from backend.app.model_providers.model_api import (
     model_api_options_for_provider,
 )
 from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.model_providers.policy import (
+    credential_is_selectable,
+    credential_not_selectable_reasons,
+    model_provider_base_url_host,
+)
 
 
 def _model_provider_credential_option_payload(

@@ -9,12 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runtime.space_events import RuntimeSpaceEventLog
+from backend.app.runtime.space_helpers import RuntimeSpaceQuotaCounter
 from backend.app.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.space_reservation_quota_counter import RuntimeSpaceQuotaCounter
 from backend.app.runtime.space_reservation_usage import reservation_usage
 
 

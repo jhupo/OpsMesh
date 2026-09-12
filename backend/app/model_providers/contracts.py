@@ -1,6 +1,24 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from typing import Literal
+from uuid import UUID
 
 from pydantic import TypeAdapter, ValidationError
+
+
+@dataclass(frozen=True)
+class ResolvedModelProvider:
+    provider: str | None
+    model: str
+    base_url: str | None
+    api_key: str | None
+    model_api: str | None
+    credential_id: UUID | None
+
+
+class ModelProviderUnavailableError(ValueError):
+    pass
 
 ProviderProbeName = Literal["models", "inference"]
 _PROBES = TypeAdapter(tuple[ProviderProbeName, ...])

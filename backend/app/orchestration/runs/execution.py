@@ -27,7 +27,7 @@ from backend.app.approvals.pending_tools import PendingToolInvocationService
 from backend.app.approvals.service import ApprovalService
 from backend.app.approvals.waiting import ApprovalWaitingService
 from backend.app.core.config import Settings, get_settings
-from backend.app.model_providers.service_models import ModelProviderUnavailableError
+from backend.app.model_providers.contracts import ModelProviderUnavailableError
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.run_gateway import ModelRunGateway

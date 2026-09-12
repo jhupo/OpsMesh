@@ -5,13 +5,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.model_providers.availability import credential_is_selectable
-from backend.app.model_providers.model_api import model_api_for_provider
-from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.service_models import (
+from backend.app.model_providers.contracts import (
     ModelProviderUnavailableError,
     ResolvedModelProvider,
 )
+from backend.app.model_providers.model_api import model_api_for_provider
+from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.model_providers.policy import credential_is_selectable
 from backend.app.secrets.service import SecretEncryptionService
 
 

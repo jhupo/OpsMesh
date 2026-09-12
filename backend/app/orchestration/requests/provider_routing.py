@@ -10,7 +10,7 @@ from backend.app.core.typing import optional_string, uuid_or_none
 from backend.app.model_providers.health_service import ModelProviderHealthService
 from backend.app.model_providers.model_api import canonical_model_api
 from backend.app.model_providers.resolution_service import ModelProviderResolutionService
-from backend.app.model_providers.service_models import ModelProviderUnavailableError
+from backend.app.model_providers.contracts import ModelProviderUnavailableError
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.provider_audit import ModelProviderAuditService
 from backend.app.orchestration.requests.request_reviewing import model_provider_fallback_policy

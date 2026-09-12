@@ -8,8 +8,6 @@ from backend.app.teams.execution_overview_contracts import (
     SpecialistReassignment,
     StaffingGap,
     SummaryAction,
-)
-from backend.app.teams.execution_overview_utils import (
     dedupe_strings,
     severity_rank,
     string_list,

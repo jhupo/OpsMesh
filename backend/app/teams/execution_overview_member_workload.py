@@ -7,11 +7,11 @@ from backend.app.agents.models import AgentProfile
 from backend.app.runs.activity import run_activity
 from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.tasks.models import TaskStep
-from backend.app.teams.execution_overview_constants import (
+from backend.app.teams.execution_overview_contracts import (
     ACTIVE_RUN_STATUSES,
     ACTIVE_STEP_STATUSES,
+    MemberWorkload,
 )
-from backend.app.teams.execution_overview_contracts import MemberWorkload
 from backend.app.teams.models import AgentTeamMember
 
 

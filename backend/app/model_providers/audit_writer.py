@@ -5,13 +5,13 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.model_providers.audit_payloads import model_api_audit_payload
-from backend.app.model_providers.base_url import model_provider_base_url_host
 from backend.app.model_providers.health import ModelProviderHealthCheckResult
 from backend.app.model_providers.health_state import (
     provider_credential_audit_metadata,
     provider_health_audit_metadata,
 )
 from backend.app.model_providers.models import ModelProviderCredential
+from backend.app.model_providers.policy import model_provider_base_url_host
 from backend.app.observability.audit_service import AuditService
 
 

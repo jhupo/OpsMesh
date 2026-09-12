@@ -12,7 +12,7 @@ from backend.app.memory.models import (
     WorkspaceMemoryEntry,
 )
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.provider_keys import canonical_model_provider
+from backend.app.model_providers.policy import canonical_model_provider
 from backend.app.workers.jobs import JobPayload, JobType
 from backend.app.workers.redis_queue import RedisQueue
 

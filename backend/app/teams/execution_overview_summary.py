@@ -9,18 +9,16 @@ from backend.app.teams.execution_overview_bottlenecks import (
     delivery_health,
     summary_bottlenecks,
 )
-from backend.app.teams.execution_overview_constants import RISK_LEVELS
 from backend.app.teams.execution_overview_contracts import (
+    RISK_LEVELS,
     MemberWorkload,
     SpecialistReassignment,
     StaffingGap,
     SummaryAction,
-)
-from backend.app.teams.execution_overview_interventions import operator_intervention_plan
-from backend.app.teams.execution_overview_utils import (
     string_list,
     uuid_list,
 )
+from backend.app.teams.execution_overview_interventions import operator_intervention_plan
 
 
 def overview_summary(

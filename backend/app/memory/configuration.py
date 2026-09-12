@@ -16,7 +16,7 @@ from backend.app.memory.policy import (
     memory_lifecycle_policy,
 )
 from backend.app.model_providers.models import ModelProviderCredential
-from backend.app.model_providers.provider_keys import is_openai_compatible_provider
+from backend.app.model_providers.policy import is_openai_compatible_provider
 from backend.app.observability.audit_service import AuditService
 
 EMBEDDING_DIMENSIONS = 1_536

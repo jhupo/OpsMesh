@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.agents import AgentProfileResponse
-from backend.app.model_providers.base_url import model_provider_base_url_host
+from backend.app.model_providers.policy import model_provider_base_url_host
 from backend.app.model_providers.capabilities import resolve_model_capability
 from backend.app.model_providers.metadata import budget_is_exhausted
 from backend.app.model_providers.model_api import (

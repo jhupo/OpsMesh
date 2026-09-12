@@ -45,7 +45,7 @@ from backend.app.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryRetri
 from backend.app.model_providers.credential_commands import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.model_providers.service_models import (
+from backend.app.model_providers.contracts import (
     ModelProviderUnavailableError,
 )
 from backend.app.observability.audit_models import AuditEvent

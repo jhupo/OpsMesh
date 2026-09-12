@@ -61,7 +61,7 @@ def provider_health_audit_metadata(
     result: ModelProviderHealthCheckResult,
 ) -> dict[str, object]:
     from backend.app.model_providers.audit_payloads import model_api_audit_payload
-    from backend.app.model_providers.base_url import model_provider_base_url_host
+    from backend.app.model_providers.policy import model_provider_base_url_host
     from backend.app.security.redaction import redact_sensitive_payload
 
     return {
@@ -80,7 +80,7 @@ def provider_credential_audit_metadata(
     credential: ModelProviderCredential,
 ) -> dict[str, object]:
     from backend.app.model_providers.audit_payloads import model_api_audit_payload
-    from backend.app.model_providers.base_url import model_provider_base_url_host
+    from backend.app.model_providers.policy import model_provider_base_url_host
 
     return {
         "name": credential.name,

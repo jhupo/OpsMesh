@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from typing import TextIO
 
-from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
+from backend.app.model_providers.policy import normalize_openai_compatible_base_url
 
 
 @dataclass(frozen=True)

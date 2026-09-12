@@ -10,12 +10,12 @@ from openai import AsyncOpenAI
 from backend.app.agent_runtime.contracts import AgentRunRequest
 from backend.app.agent_runtime.providers.openai_session import OpenAISessionAdapter
 from backend.app.agent_runtime.token_estimation import estimate_token_upper_bound
-from backend.app.model_providers.base_url import normalize_openai_compatible_base_url
+from backend.app.model_providers.policy import normalize_openai_compatible_base_url
 from backend.app.model_providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     canonical_model_api,
 )
-from backend.app.model_providers.provider_keys import canonical_model_provider
+from backend.app.model_providers.policy import canonical_model_provider
 
 
 @asynccontextmanager

@@ -10,14 +10,14 @@ import openai
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
-from backend.app.model_providers.health_probes import ProviderProbeName
+from backend.app.model_providers.contracts import ProviderProbeName
 from backend.app.model_providers.model_api import (
     ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
     canonical_model_api,
 )
-from backend.app.model_providers.provider_keys import canonical_model_provider
+from backend.app.model_providers.policy import canonical_model_provider
 
 ProviderHealthStatus = Literal["healthy", "degraded", "unhealthy"]
 ProbeOperation = Callable[[], Awaitable[dict[str, object]]]

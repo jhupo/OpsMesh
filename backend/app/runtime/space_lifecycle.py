@@ -6,13 +6,13 @@ from sqlalchemy.orm import Session
 from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.runtime.space_blockers import RuntimeSpaceBlockerService
 from backend.app.runtime.space_events import RuntimeSpaceEventLog
+from backend.app.runtime.space_helpers import non_empty_string_or_none
 from backend.app.runtime.space_models import RuntimeSpace
 from backend.app.runtime.space_quotas import RuntimeSpaceQuotaService
 from backend.app.runtime.space_reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
 from backend.app.runtime.space_targets import RuntimeSpaceTargetService
-from backend.app.runtime.space_utils import non_empty_string_or_none
 
 
 class RuntimeSpaceLifecycleService:
