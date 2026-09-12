@@ -38,7 +38,7 @@ from backend.app.platform.common.pagination import PageParams
 from backend.app.platform.db.session import get_db_session
 from backend.app.platform.redis.dependencies import get_redis_client
 from backend.app.platform.redis.keys import RedisKeyBuilder
-from backend.app.workspace.teams.runtime import TeamRuntimeService
+from backend.app.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.workspace.teams.workspace_service import (
     TeamMemberCreateCommand,
     TeamMemberUpdateCommand,

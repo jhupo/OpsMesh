@@ -33,7 +33,7 @@ from backend.app.orchestration.workflows.planning_team_project_plan import (
     step_dependencies_for_package,
 )
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.workspace.teams.snapshots import build_team_snapshot
+from backend.app.workspace.teams.runtime.snapshots import build_team_snapshot
 
 MUTABLE_STEP_STATUSES = frozenset({TaskStepStatus.QUEUED.value, TaskStepStatus.BLOCKED.value})
 FINAL_STEP_STATUSES = frozenset(

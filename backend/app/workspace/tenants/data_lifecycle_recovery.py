@@ -5,12 +5,19 @@ from backend.app.workspace.projects.export_models import (
     WorkspaceExportJob,
     WorkspaceExportJobStatus,
 )
-from backend.app.workspace.tenants.data_lifecycle_constants import RECOVERY_READINESS_APPLY_ACTIONS
 from backend.app.workspace.tenants.data_lifecycle_policy import _age_days
 from backend.app.workspace.tenants.data_lifecycle_settings import (
     _safe_int,
     _string_list,
     _unique_strings,
+)
+
+RECOVERY_READINESS_APPLY_ACTIONS = frozenset(
+    {
+        "run_archive_export",
+        "run_restore_import_test",
+        "verify_latest_archive_integrity",
+    }
 )
 
 

@@ -5,11 +5,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.teams.operating_context_repository import (
+from backend.app.workspace.teams.organization.context_repository import (
     TeamOperatingContextRepository,
 )
-from backend.app.workspace.teams.operating_policy_payloads import operating_policy_payload
-from backend.app.workspace.teams.team_memory_context import memory_summary_payload
+from backend.app.workspace.teams.organization.policy_payloads import operating_policy_payload
+from backend.app.workspace.teams.runtime.memory_context import memory_summary_payload
 
 
 class TeamOperatingContextService:

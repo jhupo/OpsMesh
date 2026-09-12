@@ -11,7 +11,7 @@ from backend.app.observability.audit_service import AuditService
 from backend.app.platform.common.pagination import PageParams
 from backend.app.platform.db.pagination import page_scalars
 from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.teams.org_chart import TeamOrgChartBuilder
+from backend.app.workspace.teams.organization.org_chart import TeamOrgChartBuilder
 
 
 @dataclass(frozen=True, slots=True)

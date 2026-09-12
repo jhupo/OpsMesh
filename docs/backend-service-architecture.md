@@ -306,7 +306,9 @@ backend/
     execution/                              # Runtime, workers, operations, self-hosted jobs
       operations/ runtime/ self_hosted/ workers/
     workspace/                              # Tenant, project, team, storage, and review domains
-      domains/ projects/ reviews/ storage/ teams/ tenants/
+      domains/ projects/ reviews/ storage/ tenants/
+      teams/                                # Public team services and stable domain models
+        execution/ operations/ projects/ providers/ organization/ runtime/
     platform/                               # Auth, identity, persistence, security, integrations
       admin/ auth/ common/ db/ identity/ integrations/
       rate_limits/ redis/ secrets/ security/
@@ -315,6 +317,9 @@ backend/
 
 The top-level directories are stable architectural boundaries. Feature-specific implementation
 packages are nested under the owning boundary instead of being siblings of the application itself.
+Within the team domain, implementation files are grouped by functional lifecycle (execution,
+operator surfaces, project assembly, provider readiness, organization policy, and runtime state);
+the package root contains only public service entrypoints and shared domain models.
 `api` remains a transport boundary, while `observability` remains top-level because every domain
 may emit audit, cost, trace, and notification evidence. `main.py` and `delivery.py` are process
 entrypoints and intentionally remain at the application root.

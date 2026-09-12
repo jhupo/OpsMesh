@@ -8,25 +8,25 @@ from backend.app.execution.runtime.quotas import RuntimeQuotaExceededError
 from backend.app.execution.runtime.safety import RuntimeSafetyError
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.workspace.teams.command_center import TeamCommandCenterService
-from backend.app.workspace.teams.execution_loop_finalization import TeamExecutionFinalizationService
-from backend.app.workspace.teams.execution_loop_payloads import (
+from backend.app.workspace.teams.execution.loop_finalization import TeamExecutionFinalizationService
+from backend.app.workspace.teams.execution.loop_payloads import (
     _advanced,
     _iteration_summary,
 )
-from backend.app.workspace.teams.execution_loop_queue import (
+from backend.app.workspace.teams.execution.loop_queue import (
     TeamExecutionLoopEnqueueSummary,
     TeamExecutionLoopQueueService,
 )
-from backend.app.workspace.teams.execution_loop_runtime_candidates import (
-    _runtime_status,
-)
-from backend.app.workspace.teams.execution_loop_status import TeamExecutionLoopStatusService
-from backend.app.workspace.teams.execution_loop_support import (
+from backend.app.workspace.teams.execution.loop_status import TeamExecutionLoopStatusService
+from backend.app.workspace.teams.execution.loop_support import (
     TeamExecutionLoopIterationRecorder,
     TeamExecutionLoopRepository,
     enqueue_team_execution_loop_job,
 )
-from backend.app.workspace.teams.runtime import (
+from backend.app.workspace.teams.execution.runtime_candidates import (
+    _runtime_status,
+)
+from backend.app.workspace.teams.runtime.service import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,
     TEAM_RUNTIME_STOPPED,

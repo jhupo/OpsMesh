@@ -16,7 +16,7 @@ from backend.app.platform.common.pagination import PageParams
 from backend.app.platform.db.pagination import page_scalars
 from backend.app.workspace.projects.models import WorkspaceProject
 from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.teams.snapshots import build_team_snapshot
+from backend.app.workspace.teams.runtime.snapshots import build_team_snapshot
 
 
 @dataclass(frozen=True, slots=True)

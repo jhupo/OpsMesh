@@ -6,12 +6,12 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.workspace.teams.execution_overview import TeamExecutionOverviewService
-from backend.app.workspace.teams.workspace_command_center_actions import cross_project_action_plan
-from backend.app.workspace.teams.workspace_command_center_load import WorkspaceEmployeeLoadBuilder
-from backend.app.workspace.teams.workspace_command_center_repository import (
+from backend.app.workspace.teams.operations.workspace_actions import cross_project_action_plan
+from backend.app.workspace.teams.operations.workspace_load import WorkspaceEmployeeLoadBuilder
+from backend.app.workspace.teams.operations.workspace_repository import (
     WorkspaceCommandCenterRepository,
 )
-from backend.app.workspace.teams.workspace_command_center_views import (
+from backend.app.workspace.teams.operations.workspace_views import (
     blocked_reasons,
     summary,
     task_items,

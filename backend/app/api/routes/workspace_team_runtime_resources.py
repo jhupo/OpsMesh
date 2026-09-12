@@ -25,7 +25,7 @@ from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction
 from backend.app.platform.common.config import Settings, get_settings
 from backend.app.platform.db.session import get_db_session
-from backend.app.workspace.teams.runtime import TeamRuntimeService
+from backend.app.workspace.teams.runtime.service import TeamRuntimeService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

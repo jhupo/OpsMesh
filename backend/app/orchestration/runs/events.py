@@ -12,7 +12,7 @@ from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task
 from backend.app.platform.common.values import dict_or_empty, json_safe_payload
 from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.teams.runtime import TeamRuntimeService
+from backend.app.workspace.teams.runtime.service import TeamRuntimeService
 
 
 @dataclass(slots=True)

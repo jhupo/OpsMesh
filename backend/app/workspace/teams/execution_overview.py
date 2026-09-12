@@ -10,23 +10,23 @@ from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.workspace.teams.execution_overview_contracts import (
+from backend.app.workspace.teams.execution.member_reassignment import (
+    specialist_reassignments,
+)
+from backend.app.workspace.teams.execution.member_staffing import staffing_gaps
+from backend.app.workspace.teams.execution.member_workload import (
+    active_run_phase_counts,
+    member_items,
+)
+from backend.app.workspace.teams.execution.overview_contracts import (
     ACTIVE_RUN_STATUSES,
     dedupe_strings,
     string_list,
 )
-from backend.app.workspace.teams.execution_overview_member_reassignment import (
-    specialist_reassignments,
-)
-from backend.app.workspace.teams.execution_overview_member_staffing import staffing_gaps
-from backend.app.workspace.teams.execution_overview_member_workload import (
-    active_run_phase_counts,
-    member_items,
-)
-from backend.app.workspace.teams.execution_overview_repository import (
+from backend.app.workspace.teams.execution.overview_repository import (
     TeamExecutionOverviewRepository,
 )
-from backend.app.workspace.teams.execution_overview_summary import overview_summary
+from backend.app.workspace.teams.execution.overview_summary import overview_summary
 
 
 class TeamExecutionOverviewService:

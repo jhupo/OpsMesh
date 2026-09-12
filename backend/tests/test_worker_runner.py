@@ -68,7 +68,7 @@ from backend.app.workspace.reviews.model_request import ModelRequestReview
 from backend.app.workspace.reviews.service import ResourceReview
 from backend.app.workspace.teams.execution_loop import TeamExecutionLoopQueueService
 from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.teams.runtime import TeamRuntimeService
+from backend.app.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
@@ -649,10 +649,10 @@ def test_worker_maintenance_enqueues_running_team_runtime_without_tasks() -> Non
 
 
 def test_runtime_scheduler_scans_do_not_update_another_workspace_team() -> None:
-    from backend.app.workspace.teams.execution_loop_queue_dispatch import (
+    from backend.app.workspace.teams.execution.queue_dispatch import (
         TeamExecutionLoopQueueDispatcher,
     )
-    from backend.app.workspace.teams.execution_loop_runtime_candidates import _team_loop_candidate
+    from backend.app.workspace.teams.execution.runtime_candidates import _team_loop_candidate
 
     session_factory = _session_factory()
     _, team_id, user_id = _seed_runtime_team(session_factory)

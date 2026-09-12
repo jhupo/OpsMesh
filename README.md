@@ -382,6 +382,7 @@ backend/app/capabilities/                     Skills, MCP, tools, marketplace, a
 backend/app/orchestration/                    Requests, runs, approvals, tasks, and workflows
 backend/app/execution/                        Runtime, worker, operations, and self-hosted execution
 backend/app/workspace/                        Workspace tenant, projects, teams, storage, and reviews
+backend/app/workspace/teams/{...}/            Team execution, operations, projects, providers, organization, and runtime modules
 backend/app/platform/                        Identity, auth, persistence, security, and integrations
 backend/app/observability/                    Audit, traces, costs, and notifications
 backend/migrations/           Alembic schema history

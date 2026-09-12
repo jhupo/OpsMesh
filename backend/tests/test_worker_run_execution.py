@@ -5,6 +5,9 @@ from uuid import UUID, uuid4
 
 import fakeredis
 import pytest
+from backend.app.orchestration.runs.authorization_integrity import (
+    authorization_snapshot_fingerprint,
+)
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -64,9 +67,6 @@ from backend.app.orchestration.requests.request_reviewing import (
     model_request_review_input,
 )
 from backend.app.orchestration.runs.activity import activity_phase
-from backend.app.orchestration.runs.authorization_integrity import (
-    authorization_snapshot_fingerprint,
-)
 from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
@@ -101,7 +101,7 @@ from backend.app.workspace.reviews.models import ResourceReview
 from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.workspace.storage.artifact_models import Artifact
 from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.teams.runtime import TeamRuntimeService
+from backend.app.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.workspace.tenants.models import (
     Workspace,
     WorkspaceMember,

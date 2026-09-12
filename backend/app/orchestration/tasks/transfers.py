@@ -21,7 +21,7 @@ from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUE
 from backend.app.platform.security.redaction import redact_sensitive_payload, redact_text_fragments
 from backend.app.workspace.storage.artifact_models import Artifact
 from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.teams.snapshots import build_team_snapshot
+from backend.app.workspace.teams.runtime.snapshots import build_team_snapshot
 
 TRANSFER_PENDING = "pending"
 TRANSFER_ACCEPTED = "accepted"

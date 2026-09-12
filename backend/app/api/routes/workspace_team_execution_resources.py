@@ -34,7 +34,7 @@ from backend.app.workspace.teams.execution_loop import (
     TeamExecutionLoopService,
     enqueue_team_execution_loop_job,
 )
-from backend.app.workspace.teams.operator_actions import TeamOperatorActionService
+from backend.app.workspace.teams.operations.operator_actions import TeamOperatorActionService
 from backend.app.workspace.teams.workspace_service import (
     WorkspaceTeamService,
 )

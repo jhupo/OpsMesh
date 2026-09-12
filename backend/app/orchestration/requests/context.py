@@ -11,7 +11,7 @@ from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
 from backend.app.platform.security.redaction import redact_sensitive_text
 from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.teams.runtime import TeamRuntimeService
+from backend.app.workspace.teams.runtime.service import TeamRuntimeService
 
 
 @dataclass(slots=True)

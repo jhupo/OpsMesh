@@ -15,26 +15,26 @@ from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.workspace.teams.command_center import TeamCommandCenterService
 from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspace.teams.operations_console_controls import (
+from backend.app.workspace.teams.operations.console_controls import (
     _controls_payload,
     _readiness_payload,
 )
-from backend.app.workspace.teams.operations_console_mailbox import TeamOperationsMailboxReader
-from backend.app.workspace.teams.operations_console_payloads import (
+from backend.app.workspace.teams.operations.console_mailbox import TeamOperationsMailboxReader
+from backend.app.workspace.teams.operations.console_payloads import (
     _command_center_payload,
     _session_payload,
     _team_payload,
 )
-from backend.app.workspace.teams.operations_console_provider_summary import (
-    _agent_model_provider_payload,
-)
-from backend.app.workspace.teams.operations_console_providers import TeamProviderManagementBuilder
-from backend.app.workspace.teams.operations_console_runtime_payloads import (
+from backend.app.workspace.teams.operations.console_runtime_payloads import (
     _runtime_payload,
     _team_loop_queue_payload,
 )
-from backend.app.workspace.teams.runtime import TeamRuntimeService
-from backend.app.workspace.teams.scheduling_blocks import scheduled_run_blocking_summary
+from backend.app.workspace.teams.operations.provider_management import TeamProviderManagementBuilder
+from backend.app.workspace.teams.operations.provider_summary import (
+    _agent_model_provider_payload,
+)
+from backend.app.workspace.teams.runtime.scheduling_blocks import scheduled_run_blocking_summary
+from backend.app.workspace.teams.runtime.service import TeamRuntimeService
 
 PROVIDER_RUN_STATUSES = ACTIVE_RUN_STATUSES
 

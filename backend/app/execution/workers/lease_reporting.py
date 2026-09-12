@@ -10,7 +10,7 @@ from backend.app.execution.operations.worker_lease_writer import WorkerLeaseWrit
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.runner_models import WorkerRunnerConfig
 from backend.app.platform.common.trace_context import current_trace_metadata
-from backend.app.workspace.teams.runtime import TeamRuntimeService
+from backend.app.workspace.teams.runtime.service import TeamRuntimeService
 
 logger = logging.getLogger(__name__)
 

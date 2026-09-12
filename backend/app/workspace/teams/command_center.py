@@ -9,28 +9,30 @@ from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagnosticsService
-from backend.app.workspace.teams.command_center_action_plan import (
+from backend.app.workspace.teams.execution_overview import TeamExecutionOverviewService
+from backend.app.workspace.teams.operations.command_center_action_plan import (
     _merged_action_plan,
     _provider_action_plan,
     _runtime_action_plan,
 )
-from backend.app.workspace.teams.command_center_apply import TeamCommandCenterActionApplier
-from backend.app.workspace.teams.command_center_grouping import _group_applicable_actions
-from backend.app.workspace.teams.command_center_payloads import (
+from backend.app.workspace.teams.operations.command_center_apply import (
+    TeamCommandCenterActionApplier,
+)
+from backend.app.workspace.teams.operations.command_center_grouping import _group_applicable_actions
+from backend.app.workspace.teams.operations.command_center_payloads import (
     _provider_readiness_blocked,
     _runtime_payload,
     _scheduled_run_payload,
     _summary,
 )
-from backend.app.workspace.teams.command_center_utils import (
+from backend.app.workspace.teams.operations.command_center_utils import (
     _dict,
     _list,
     _string_list,
 )
-from backend.app.workspace.teams.execution_overview import TeamExecutionOverviewService
 from backend.app.workspace.teams.provider_readiness_service import TeamProviderReadinessService
-from backend.app.workspace.teams.runtime import TeamRuntimeService
-from backend.app.workspace.teams.scheduling_blocks import scheduled_run_blocking_summary
+from backend.app.workspace.teams.runtime.scheduling_blocks import scheduled_run_blocking_summary
+from backend.app.workspace.teams.runtime.service import TeamRuntimeService
 
 
 class TeamCommandCenterService:

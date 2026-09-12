@@ -22,6 +22,12 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "workspace/reviews",
         "workspace/storage",
         "workspace/teams",
+        "workspace/teams/execution",
+        "workspace/teams/operations",
+        "workspace/teams/projects",
+        "workspace/teams/providers",
+        "workspace/teams/organization",
+        "workspace/teams/runtime",
         "workspace/tenants",
         "platform/admin",
         "platform/auth",
@@ -103,8 +109,13 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "orchestration/steps",
         "orchestration/scheduler",
         "orchestration/runtime",
+        "platform/common/typing.py",
     ):
-        assert not list((app / name).rglob("*.py")), name
+        target = app / name
+        if target.suffix == ".py":
+            assert not target.exists(), name
+        else:
+            assert not list(target.rglob("*.py")), name
 
 
 @pytest.mark.parametrize(
@@ -152,6 +163,38 @@ def test_team_consolidation_removes_superseded_sources() -> None:
         "api/schemas/redaction.py",
     ):
         assert not (app / name).exists(), name
+
+
+def test_team_features_are_nested_by_function() -> None:
+    teams = ROOT / "backend/app/workspace/teams"
+    expected = {
+        "execution",
+        "operations",
+        "projects",
+        "providers",
+        "organization",
+        "runtime",
+    }
+    assert {path.name for path in teams.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.stem
+        for path in teams.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules <= {
+        "models",
+        "command_center",
+        "execution_loop",
+        "execution_overview",
+        "operating_context_service",
+        "operations_console",
+        "project_service",
+        "provider_readiness_service",
+        "runtime",
+        "workspace_command_center",
+        "workspace_service",
+    }
+    assert (teams / "runtime/service.py").is_file()
 
 
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:

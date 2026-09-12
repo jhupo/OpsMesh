@@ -5,13 +5,13 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.workspace.teams.models import AgentTeamMember
-from backend.app.workspace.teams.provider_readiness_member import (
+from backend.app.workspace.teams.providers.member import (
     TeamProviderReadinessMemberBuilder,
 )
-from backend.app.workspace.teams.provider_readiness_repository import (
+from backend.app.workspace.teams.providers.repository import (
     TeamProviderReadinessRepository,
 )
-from backend.app.workspace.teams.provider_readiness_summary import provider_readiness_summary
+from backend.app.workspace.teams.providers.summary import provider_readiness_summary
 
 
 class TeamProviderReadinessService:

@@ -133,6 +133,8 @@ the OpsMesh control plane.
 - `backend/app/orchestration`: requests, runs, approvals, tasks, and workflows.
 - `backend/app/execution`: runtime resources, Docker pools, workers, operations, and self-hosted jobs.
 - `backend/app/workspace`: tenant/workspace lifecycle, projects, teams, storage, domains, and reviews.
+  Team internals are nested by function under `workspace/teams/{execution,operations,projects,providers,organization,runtime}`;
+  root team files are only domain models or public service entrypoints.
 - `backend/app/platform`: authentication, identity, shared common foundations, database, Redis, security, secrets,
   administration, and external delivery integrations.
 - `backend/app/observability`: audit, cost, trace, and notification evidence.

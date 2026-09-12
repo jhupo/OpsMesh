@@ -5,13 +5,13 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.workspace.teams.project_assemblers import build_project_space_response
-from backend.app.workspace.teams.project_matching import (
+from backend.app.workspace.teams.projects.assemblers import build_project_space_response
+from backend.app.workspace.teams.projects.matching import (
     memory_entry_matches_project,
     workspace_file_matches_project,
 )
-from backend.app.workspace.teams.project_repository import TeamProjectSpaceRepository
-from backend.app.workspace.teams.project_types import (
+from backend.app.workspace.teams.projects.repository import TeamProjectSpaceRepository
+from backend.app.workspace.teams.projects.types import (
     ProjectSpaceRecords,
     relationship_ids,
     runtime_space_ids,

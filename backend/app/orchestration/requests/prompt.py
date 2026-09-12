@@ -14,7 +14,7 @@ from backend.app.orchestration.workflows.plan_agent_plan import is_agent_plannin
 from backend.app.orchestration.workflows.plan_project_plan_validation import is_pm_summary_step
 from backend.app.platform.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.workspace.teams.models import AgentTeam
-from backend.app.workspace.teams.runtime import TeamRuntimeService
+from backend.app.workspace.teams.runtime.service import TeamRuntimeService
 
 
 @dataclass(slots=True)

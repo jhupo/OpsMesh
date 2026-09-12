@@ -2143,7 +2143,7 @@ def test_team_execution_loop_finalize_closes_approved_tasks_only(system_executio
     assert approved_task.status == "running"
 
     if system_execution:
-        from backend.app.workspace.teams.execution_loop_finalization import (
+        from backend.app.workspace.teams.execution.loop_finalization import (
             TeamExecutionFinalizationService,
         )
 
