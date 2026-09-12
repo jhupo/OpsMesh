@@ -4,14 +4,14 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.exports import (
+from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveIntegrityResponse,
     WorkspaceArchiveRestoreDrillRequest,
     WorkspaceExportJobResponse,
     WorkspaceRestoreDrillResponse,
 )
-from backend.app.api.services.exports import WorkspaceExportService
+from backend.app.api.services.workspace.exports.service import WorkspaceExportService
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.platform.auth.context import WorkspaceContext

@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.runtime_spaces import RuntimeSpaceDiagnosticsResponse
+from backend.app.api.schemas.operations.runtime_spaces import RuntimeSpaceDiagnosticsResponse
 from backend.app.execution.runtime.spaces.diagnostics import RuntimeSpaceDiagnosticsService
 from backend.app.execution.runtime.spaces.lifecycle import RuntimeSpaceLifecycleService
 from backend.app.execution.runtime.spaces.models import (

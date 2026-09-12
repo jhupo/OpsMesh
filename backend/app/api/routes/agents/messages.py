@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.messages.service import AgentMailboxService
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.agent_messages import (
+from backend.app.api.schemas.agents.messages import (
     AgentInboxSummaryResponse,
     AgentMailboxSummaryResponse,
     AgentMessageCreateRequest,

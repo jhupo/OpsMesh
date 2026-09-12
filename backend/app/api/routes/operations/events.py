@@ -9,13 +9,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.audit import (
-    AuditEventResponse,
-    AuditIntegrityCheckResponse,
-    AuditIntegrityStatusResponse,
-    AuditIntegrityVerificationQueuedResponse,
-)
-from backend.app.api.schemas.operations import (
+from backend.app.api.schemas.operations.overview import (
     AuditEventFilterResponse,
     FailedJobInspectionResponse,
     RunEventFilterResponse,
@@ -27,7 +21,13 @@ from backend.app.api.schemas.operations import (
     StaleRunRecoveryResponse,
     StaleRunsDiagnosticsResponse,
 )
-from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
+from backend.app.api.schemas.orchestration.runs import AgentRunResponse, RunEventResponse
+from backend.app.api.schemas.platform.audit import (
+    AuditEventResponse,
+    AuditIntegrityCheckResponse,
+    AuditIntegrityStatusResponse,
+    AuditIntegrityVerificationQueuedResponse,
+)
 from backend.app.execution.operations.events import OperationsEventQueryService
 from backend.app.execution.operations.recovery.diagnostics import StaleRunDiagnosticsService
 from backend.app.execution.operations.recovery.service import StaleRunRecoveryService

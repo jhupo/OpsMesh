@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.self_hosted import (
+from backend.app.api.schemas.operations.self_hosted import (
     ArtifactUploadRequest,
     EnrollmentTokenCreateRequest,
     JobCompleteRequest,

@@ -3,7 +3,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.self_hosted import ArtifactUploadRequest, LocalFileReferenceRequest
+from backend.app.api.schemas.operations.self_hosted import (
+    ArtifactUploadRequest,
+    LocalFileReferenceRequest,
+)
 from backend.app.execution.self_hosted.models import LocalFileReference, SelfHostedArtifactUpload
 from backend.app.execution.self_hosted.policy import positive_policy_int
 from backend.app.execution.self_hosted.types import AuthenticatedWorker

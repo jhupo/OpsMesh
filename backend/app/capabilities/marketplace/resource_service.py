@@ -6,7 +6,7 @@ from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.marketplace import (
+from backend.app.api.schemas.capabilities.marketplace import (
     MarketplaceInstallRequest,
     MarketplaceListingCreateRequest,
 )

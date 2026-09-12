@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.marketplace import TalentListingCreateRequest
+from backend.app.api.schemas.capabilities.marketplace import TalentListingCreateRequest
 from backend.app.capabilities.marketplace.listing_payloads import (
     AGENT_SNAPSHOT_METADATA_KEY,
     agent_marketplace_snapshot,

@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.memory_policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.marketplace import HireTalentRequest, HireTaskTalentRequest
+from backend.app.api.schemas.capabilities.marketplace import (
+    HireTalentRequest,
+    HireTaskTalentRequest,
+)
 from backend.app.capabilities.marketplace.listing_payloads import listing_agent_definition
 from backend.app.capabilities.marketplace.models import TalentListing, WorkspaceAgentInstall
 from backend.app.capabilities.marketplace.recommendations import (

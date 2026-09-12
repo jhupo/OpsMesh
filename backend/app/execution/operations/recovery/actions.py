@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from backend.app.api.schemas.operation_queue import StaleRunRecoveryItemResponse
+from backend.app.api.schemas.operations.queue import StaleRunRecoveryItemResponse
 from backend.app.execution.operations.recovery.domain import stale_run_failure_message
 from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.models import AgentRun

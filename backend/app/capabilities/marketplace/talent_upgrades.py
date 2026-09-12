@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.marketplace import (
+from backend.app.api.schemas.capabilities.marketplace import (
     TalentInstallPinRequest,
     TalentInstallUpgradeRequest,
     TalentListingResponse,

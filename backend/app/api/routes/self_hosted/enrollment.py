@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.app.api.routes.self_hosted.dependencies import self_hosted_service
 from backend.app.api.routes.self_hosted.responses import enrollment_token_response
-from backend.app.api.schemas.self_hosted import (
+from backend.app.api.schemas.operations.self_hosted import (
     EnrollmentTokenCreateRequest,
     EnrollmentTokenCreateResponse,
 )

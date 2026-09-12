@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from backend.app.api.schemas.exports import (
+from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveRestoreDrillRequest,
 )

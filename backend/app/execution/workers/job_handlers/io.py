@@ -1,4 +1,4 @@
-from backend.app.api.services.exports import WorkspaceExportService
+from backend.app.api.services.workspace.exports.service import WorkspaceExportService
 from backend.app.execution.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.platform.integrations.webhooks.service import WebhookDeliveryService

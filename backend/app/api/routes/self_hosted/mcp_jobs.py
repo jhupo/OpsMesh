@@ -6,7 +6,7 @@ from backend.app.api.routes.self_hosted.dependencies import (
     self_hosted_dispatch_service,
     self_hosted_mcp_job_service,
 )
-from backend.app.api.schemas.self_hosted import (
+from backend.app.api.schemas.operations.self_hosted import (
     McpJobClaimResponse,
     McpJobCompleteRequest,
     McpJobCompleteResponse,

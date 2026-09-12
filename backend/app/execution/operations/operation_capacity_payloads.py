@@ -6,7 +6,7 @@ from uuid import UUID
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operation_capacity import (
+from backend.app.api.schemas.operations.capacity import (
     OperationsCapacityResponse,
     OperationsRuntimeCapacityResponse,
 )

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations import (
+from backend.app.api.schemas.operations.overview import (
     OperationsCapacityResponse,
     OperationsControlPlaneResponse,
     OperationsMcpJobsResponse,

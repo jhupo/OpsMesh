@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
-from backend.app.api.schemas.tasks import TaskCreateRequest
+from backend.app.api.schemas.orchestration.tasks.overview import TaskCreateRequest
 from backend.app.execution.workers.handlers import WorkerJobHandler
 from backend.app.execution.workers.queue_consumer import consume_once
 from backend.app.execution.workers.redis_queue import RedisQueue

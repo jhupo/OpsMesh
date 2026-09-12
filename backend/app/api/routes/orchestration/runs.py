@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.audit import AuditEventResponse
-from backend.app.api.schemas.runs import (
+from backend.app.api.schemas.orchestration.runs import (
     AgentRunProjectIOStateResponse,
     AgentRunProjectSnapshotResponse,
     AgentRunResponse,
     RunEventResponse,
 )
-from backend.app.api.services.workspace_reads import WorkspaceReadService
+from backend.app.api.schemas.platform.audit import AuditEventResponse
+from backend.app.api.services.workspace.lifecycle.reads import WorkspaceReadService
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.runs.control import RunControlService

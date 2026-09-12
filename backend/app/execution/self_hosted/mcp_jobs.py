@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.self_hosted import McpJobCompleteRequest
+from backend.app.api.schemas.operations.self_hosted import McpJobCompleteRequest
 from backend.app.capabilities.models import McpServer
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.self_hosted.events import SelfHostedEventRecorder

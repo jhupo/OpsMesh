@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.notifications import (
+from backend.app.api.schemas.operations.notifications import (
     NotificationCountsResponse,
     NotificationMarkReadRequest,
     NotificationMarkReadResponse,

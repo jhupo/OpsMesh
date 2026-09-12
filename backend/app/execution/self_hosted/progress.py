@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.self_hosted import ProgressEventRequest
+from backend.app.api.schemas.operations.self_hosted import ProgressEventRequest
 from backend.app.execution.self_hosted.events import SelfHostedEventRecorder
 from backend.app.execution.self_hosted.types import AuthenticatedWorker
 from backend.app.orchestration.runs.models import AgentRun, RunEvent

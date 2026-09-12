@@ -5,7 +5,7 @@ from uuid import UUID
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operation_control_plane import OperationsOverviewResponse
+from backend.app.api.schemas.operations.control_plane import OperationsOverviewResponse
 from backend.app.execution.operations.data_lifecycle_rollup import (
     WorkspaceDataLifecycleRollupService,
 )

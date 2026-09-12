@@ -7,7 +7,7 @@ from sqlalchemy import select
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.messages.service import AgentMailboxService
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.agent_messages import (
+from backend.app.api.schemas.agents.messages import (
     AgentMessageCreateRequest,
     AgentMessageResponse,
     AgentMessageThreadCreateRequest,

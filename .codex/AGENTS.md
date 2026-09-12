@@ -129,7 +129,11 @@ the OpsMesh control plane.
 
 - `backend/app/api`: API transport, schemas, dependencies, and application-facing services.
   Routes are grouped by functional boundary under `api/routes/{admin,agents,capabilities,operations,orchestration,platform,workspace}`;
-  self-hosted and integration routes remain explicit nested boundaries.
+  self-hosted and integration routes remain explicit nested boundaries. Schema contracts use the
+  corresponding `api/schemas/{agents,capabilities,operations,orchestration,platform,workspace}`
+  packages, with only `common.py` at the schema root. Workspace-facing application services are
+  grouped under `api/services/workspace/{exports,imports,lifecycle}` rather than using filename
+  prefixes in the service root.
 - `backend/app/agents`: agent profiles plus nested SDK runtime, memory, message, and provider domains.
 - `backend/app/capabilities`: skills, MCP, credentials, policy, diagnostics, marketplace, and tools.
 - `backend/app/orchestration`: requests, runs, approvals, tasks, and workflows.

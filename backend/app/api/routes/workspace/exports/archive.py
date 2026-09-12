@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.exports import WorkspaceArchiveExportRequest
-from backend.app.api.services.exports import WorkspaceExportService
+from backend.app.api.schemas.workspace.exports import WorkspaceArchiveExportRequest
+from backend.app.api.services.workspace.exports.service import WorkspaceExportService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

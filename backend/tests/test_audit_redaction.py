@@ -9,7 +9,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.requests import Request
 
-from backend.app.api.services.workspace_reads import WorkspaceReadService
+from backend.app.api.services.workspace.lifecycle.reads import WorkspaceReadService
 from backend.app.observability.audit_integrity import AuditIntegrityService
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.observability.audit_service import AuditService

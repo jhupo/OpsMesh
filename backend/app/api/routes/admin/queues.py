@@ -6,7 +6,7 @@ from backend.app.api.routes.admin.dependencies import (
     admin_operations_summary_service,
     admin_queue_operations_service,
 )
-from backend.app.api.schemas.admin import (
+from backend.app.api.schemas.platform.admin import (
     AdminDeadLetterJobsResponse,
     AdminOperationsSummaryResponse,
     AdminQueueMetricsResponse,

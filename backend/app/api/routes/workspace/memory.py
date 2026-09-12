@@ -14,7 +14,7 @@ from backend.app.agents.memory.semantic import (
     SemanticMemoryConflictError,
     SemanticMemoryUpsert,
 )
-from backend.app.api.schemas.memory import (
+from backend.app.api.schemas.agents.memory import (
     MemoryEmbeddingEventListResponse,
     MemoryEmbeddingEventResponse,
     MemoryEmbeddingRetryResponse,

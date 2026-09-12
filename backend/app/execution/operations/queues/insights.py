@@ -6,7 +6,7 @@ from uuid import UUID
 
 from redis import Redis
 
-from backend.app.api.schemas.operation_queue import OperationsQueueInsightsResponse
+from backend.app.api.schemas.operations.queue import OperationsQueueInsightsResponse
 from backend.app.execution.operations.queues.insight_buckets import QueueInsightBucketBuilder
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.execution.workers.redis_queue import RedisQueue

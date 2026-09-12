@@ -10,7 +10,7 @@ from backend.app.agents.runtime.session_management import (
 )
 from backend.app.agents.service import AgentManagementService
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.agents import (
+from backend.app.api.schemas.agents.profiles import (
     AgentSessionClearResponse,
     AgentSessionDetailResponse,
     AgentSessionSummaryResponse,

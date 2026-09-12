@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.tasks import TaskControlActionRequest
+from backend.app.api.schemas.orchestration.tasks.overview import TaskControlActionRequest
 from backend.app.execution.workers.lease_lifecycle import mark_agent_run_worker_cancel_requested
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.runs.models import AgentRun

@@ -6,8 +6,8 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.orchestration import OrchestrationApplyRequest
-from backend.app.api.schemas.tasks import (
+from backend.app.api.schemas.orchestration.definitions import OrchestrationApplyRequest
+from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskPlanDiagnosticsResponse,
     TaskPlanMutationRequest,
     TaskPlanRegenerateRequest,

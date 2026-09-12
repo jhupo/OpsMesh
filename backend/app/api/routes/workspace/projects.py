@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.projects import (
+from backend.app.api.schemas.workspace.projects import (
     WorkspaceProjectConfigurationVersionResponse,
     WorkspaceProjectCreateRequest,
     WorkspaceProjectDetailResponse,

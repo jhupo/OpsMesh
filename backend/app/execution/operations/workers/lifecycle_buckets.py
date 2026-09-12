@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from backend.app.api.schemas.operation_capacity import WorkerLifecycleBucketResponse
+from backend.app.api.schemas.operations.capacity import WorkerLifecycleBucketResponse
 from backend.app.execution.operations.models import WorkerLease, WorkerNode
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.platform.common.values import age_seconds, ensure_aware_utc, string_list

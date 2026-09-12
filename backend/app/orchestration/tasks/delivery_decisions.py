@@ -7,7 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.memory.episodic import AgentEpisodicMemoryService
-from backend.app.api.schemas.tasks import TaskCorrectionRequest, TaskDeliveryDecisionRequest
+from backend.app.api.schemas.orchestration.tasks.overview import (
+    TaskCorrectionRequest,
+    TaskDeliveryDecisionRequest,
+)
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.models import AgentRun

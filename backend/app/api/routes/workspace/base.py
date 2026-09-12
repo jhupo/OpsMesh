@@ -10,12 +10,12 @@ from backend.app.api.idempotency import (
     run_idempotent_create,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.workspaces import (
+from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceCreateRequest,
     WorkspaceResponse,
     WorkspaceUpdateRequest,
 )
-from backend.app.api.services.workspaces import WorkspaceService
+from backend.app.api.services.workspace.lifecycle.workspaces import WorkspaceService
 from backend.app.platform.auth.context import AuthenticatedUser, WorkspaceContext
 from backend.app.platform.auth.dependencies import (
     account_action_dependency,

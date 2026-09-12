@@ -377,6 +377,8 @@ plan, so the whole phase is not yet complete.
 ```text
 backend/app/api/                              HTTP transport, schemas, and application services
 backend/app/api/routes/{...}/                 Routes grouped by agents, capabilities, operations, orchestration, platform, and workspace
+backend/app/api/schemas/{...}/                Transport contracts grouped by the same functional domains
+backend/app/api/services/workspace/{...}/     Workspace export, import, lifecycle, and file services
 backend/app/agents/                           Agent profiles, SDK runtime, memory, and providers
 backend/app/agents/runtime/providers/         OpenAI and Claude SDK adapters
 backend/app/capabilities/                     Skills, MCP, tools, marketplace, and policy

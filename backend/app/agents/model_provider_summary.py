@@ -22,7 +22,7 @@ from backend.app.agents.providers.resolution import (
     ModelProviderResolutionService,
     ModelProviderResolutionSnapshot,
 )
-from backend.app.api.schemas.agents import AgentProfileResponse
+from backend.app.api.schemas.agents.profiles import AgentProfileResponse
 
 
 class AgentModelProviderHealth(TypedDict):

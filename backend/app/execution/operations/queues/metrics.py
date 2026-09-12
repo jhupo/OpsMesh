@@ -5,7 +5,7 @@ from uuid import UUID
 
 from redis import Redis
 
-from backend.app.api.schemas.operations import QueueMetricsResponse
+from backend.app.api.schemas.operations.overview import QueueMetricsResponse
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.platform.common.values import ensure_aware_utc

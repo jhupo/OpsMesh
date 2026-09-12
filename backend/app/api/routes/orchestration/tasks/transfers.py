@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.tasks import (
+from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskTransferCreateRequest,
     TaskTransferDecisionRequest,
     TaskTransferResponse,

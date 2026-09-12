@@ -5,7 +5,7 @@ from backend.app.api.routes.self_hosted.responses import (
     heartbeat_response,
     runtime_registration_response,
 )
-from backend.app.api.schemas.self_hosted import (
+from backend.app.api.schemas.operations.self_hosted import (
     RuntimeRegistrationRequest,
     RuntimeRegistrationResponse,
     WorkerHeartbeatRequest,

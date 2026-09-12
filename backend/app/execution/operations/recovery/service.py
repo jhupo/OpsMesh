@@ -6,7 +6,7 @@ from uuid import UUID
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operation_queue import (
+from backend.app.api.schemas.operations.queue import (
     StaleRunRecoveryResponse,
 )
 from backend.app.execution.operations.recovery.actions import (

@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.providers.models import ModelProviderCredential
-from backend.app.api.schemas.marketplace import MarketplaceInstallRequest
+from backend.app.api.schemas.capabilities.marketplace import MarketplaceInstallRequest
 from backend.app.capabilities.marketplace.models import (
     MarketplaceListing,
     TalentListing,

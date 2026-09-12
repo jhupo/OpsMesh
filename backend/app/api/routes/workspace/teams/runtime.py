@@ -10,7 +10,7 @@ from backend.app.api.routes.workspace.teams.common import (
     _queued_runtime_control,
     _team_runtime_limits,
 )
-from backend.app.api.schemas.teams import (
+from backend.app.api.schemas.workspace.teams import (
     AgentTeamRuntimeBindRequest,
     AgentTeamRuntimeControlRequest,
     AgentTeamRuntimeEnsureRequest,

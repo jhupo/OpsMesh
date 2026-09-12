@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.self_hosted import JobCompleteRequest
+from backend.app.api.schemas.operations.self_hosted import JobCompleteRequest
 from backend.app.execution.self_hosted.events import SelfHostedEventRecorder
 from backend.app.execution.self_hosted.jobs import SelfHostedJobFinalizer
 from backend.app.execution.self_hosted.models import SelfHostedJobClaim

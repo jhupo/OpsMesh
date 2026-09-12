@@ -18,13 +18,13 @@ from backend.app.api.routes.orchestration.tasks.streaming import (
     _task_stream_complete,
     get_task_event_bus,
 )
-from backend.app.api.schemas.tasks import (
+from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskFeedbackRequest,
     TaskLiveStatusResponse,
     TaskMessageResponse,
     TaskPlanningAttemptResponse,
 )
-from backend.app.api.services.workspace_reads import WorkspaceReadService
+from backend.app.api.services.workspace.lifecycle.reads import WorkspaceReadService
 from backend.app.orchestration.tasks.events import TaskEventBus
 from backend.app.orchestration.tasks.feedback import TaskFeedbackService
 from backend.app.orchestration.tasks.live_status import TaskLiveStatusService

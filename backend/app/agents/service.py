@@ -27,7 +27,7 @@ from backend.app.agents.payloads import (
 from backend.app.agents.profile_commands import AgentProfileCommandService
 from backend.app.agents.queries import AgentProfileQueryService
 from backend.app.agents.versions import AgentVersionRecorder
-from backend.app.api.schemas.agents import (
+from backend.app.api.schemas.agents.profiles import (
     AgentProfileCloneRequest,
     AgentProfileCreateRequest,
     AgentProfileRollbackRequest,

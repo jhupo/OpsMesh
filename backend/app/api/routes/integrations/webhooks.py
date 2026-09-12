@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.webhooks import (
+from backend.app.api.schemas.platform.webhooks import (
     WebhookDeliveryAttemptResponse,
     WebhookSigningSecretRotateRequest,
     WebhookSubscriptionCreateRequest,

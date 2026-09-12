@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.domains import (
+from backend.app.api.schemas.workspace.domains import (
     DomainItemCreateRequest,
     DomainProjectCreateRequest,
     ReviewCommentCreateRequest,

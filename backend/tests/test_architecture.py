@@ -336,6 +336,66 @@ def test_api_routes_are_nested_by_function() -> None:
         assert not (routes / name).exists(), name
 
 
+def test_api_schemas_are_nested_by_function() -> None:
+    schemas = ROOT / "backend/app/api/schemas"
+    expected = {
+        "agents",
+        "capabilities",
+        "operations",
+        "orchestration",
+        "platform",
+        "workspace",
+    }
+    assert {path.name for path in schemas.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.name
+        for path in schemas.iterdir()
+        if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
+    }
+    assert root_modules == {"common.py"}
+    for name in (
+        "agents.py",
+        "agent_messages.py",
+        "model_providers.py",
+        "operation_capacity.py",
+        "operation_events.py",
+        "operations.py",
+        "runs.py",
+        "tasks.py",
+        "team_core.py",
+        "workspaces.py",
+    ):
+        assert not (schemas / name).exists(), name
+
+
+def test_api_services_are_nested_by_function() -> None:
+    services = ROOT / "backend/app/api/services"
+    expected = {
+        "workspace",
+        "workspace/exports",
+        "workspace/imports",
+        "workspace/lifecycle",
+    }
+    for name in expected:
+        assert (services / name / "__init__.py").is_file(), name
+    assert {
+        path.name
+        for path in services.iterdir()
+        if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
+    } == set()
+    for name in (
+        "exports.py",
+        "files.py",
+        "workspaces.py",
+        "workspace_archive_import.py",
+        "workspace_import_preview.py",
+        "workspace_members.py",
+    ):
+        assert not (services / name).exists(), name
+    for name in ("tokens.py", "metadata_context.py", "metadata_support.py"):
+        assert not (services / "workspace/imports" / name).exists(), name
+
+
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:
     missing = []
     for path in (ROOT / "backend/app").rglob("*.py"):

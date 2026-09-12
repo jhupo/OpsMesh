@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 from backend.app.agents.runtime.session_management import (
     PersistentAgentSessionManagementService,
 )
-from backend.app.api.schemas.agents import (
+from backend.app.api.schemas.agents.profiles import (
     AgentSessionSummaryResponse,
 )
-from backend.app.api.schemas.teams import (
+from backend.app.api.schemas.workspace.teams import (
     AgentTeamRuntimeControlRequest,
     AgentTeamRuntimeEnsureRequest,
 )

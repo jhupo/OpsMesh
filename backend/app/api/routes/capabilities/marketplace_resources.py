@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.marketplace import (
+from backend.app.api.schemas.capabilities.marketplace import (
     MarketplaceInstallRequest,
     MarketplaceListingCreateRequest,
     MarketplaceListingResponse,

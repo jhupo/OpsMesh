@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.workspaces import (
+from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceExecutionSlotSummaryResponse,
     WorkspaceQuotaResponse,
     WorkspaceQuotaUpsertRequest,
 )
-from backend.app.api.services.workspace_quotas import WorkspaceQuotaService
-from backend.app.api.services.workspaces import WorkspaceService
+from backend.app.api.services.workspace.lifecycle.quotas import WorkspaceQuotaService
+from backend.app.api.services.workspace.lifecycle.workspaces import WorkspaceService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

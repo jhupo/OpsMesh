@@ -20,10 +20,10 @@ from backend.app.api.idempotency import (
 )
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.agents.errors import agent_management_http_error
-from backend.app.api.schemas.agents import (
+from backend.app.api.schemas.agents.profiles import (
     AgentProfileResponse,
 )
-from backend.app.api.schemas.teams import (
+from backend.app.api.schemas.workspace.teams import (
     AgentTeamMemberCreateRequest,
     AgentTeamMemberModelProviderUpdateRequest,
     AgentTeamMemberResponse,

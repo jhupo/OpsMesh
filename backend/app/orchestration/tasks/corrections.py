@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.tasks import TaskCorrectionRequest
+from backend.app.api.schemas.orchestration.tasks.overview import TaskCorrectionRequest
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.tasks.message_append import TaskMessageAppendService

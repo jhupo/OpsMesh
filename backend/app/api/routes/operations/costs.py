@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.costs import (
+from backend.app.api.schemas.operations.costs import (
     CostSummaryResponse,
     ModelPricingRuleCreateRequest,
     ModelPricingRuleResponse,

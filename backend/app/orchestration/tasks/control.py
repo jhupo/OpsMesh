@@ -6,7 +6,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.tasks import TaskControlActionRequest, TaskCorrectionRequest
+from backend.app.api.schemas.orchestration.tasks.overview import (
+    TaskControlActionRequest,
+    TaskCorrectionRequest,
+)
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.control import RunControlService

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.runtime_spaces import (
+from backend.app.api.schemas.operations.runtime_spaces import (
     RuntimeSpaceControlResponse,
     RuntimeSpaceCreateRequest,
     RuntimeSpaceDiagnosticsResponse,

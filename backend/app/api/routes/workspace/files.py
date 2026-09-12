@@ -6,14 +6,14 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.memory.jobs import enqueue_workspace_memory_index_job
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.files import (
+from backend.app.api.schemas.workspace.files import (
     ArtifactHistoryResponse,
     ArtifactResponse,
     FinalOutputArtifactHistoryResponse,
     WorkspaceFileResponse,
     WorkspaceFileRuntimePolicyRequest,
 )
-from backend.app.api.services.files import WorkspaceFileService
+from backend.app.api.services.workspace.files import WorkspaceFileService
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.platform.auth.context import WorkspaceContext

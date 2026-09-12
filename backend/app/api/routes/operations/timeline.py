@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations import (
+from backend.app.api.schemas.operations.overview import (
     TeamRuntimeTimelineResponse,
 )
 from backend.app.execution.operations.timeline.models import TimelineFilters

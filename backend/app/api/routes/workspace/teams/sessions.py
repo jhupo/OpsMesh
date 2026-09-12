@@ -14,7 +14,7 @@ from backend.app.api.routes.workspace.teams.common import (
     _require_team_session,
     _set_team_session_status_response,
 )
-from backend.app.api.schemas.agents import (
+from backend.app.api.schemas.agents.profiles import (
     AgentSessionClearResponse,
     AgentSessionDetailResponse,
     AgentSessionSummaryResponse,

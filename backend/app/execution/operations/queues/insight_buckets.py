@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from backend.app.api.schemas.operation_queue import (
+from backend.app.api.schemas.operations.queue import (
     QueueJobTypeBucketResponse,
     QueuePriorityBucketResponse,
 )

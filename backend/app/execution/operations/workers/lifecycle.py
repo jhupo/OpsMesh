@@ -7,7 +7,7 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operation_capacity import OperationsWorkerLifecycleResponse
+from backend.app.api.schemas.operations.capacity import OperationsWorkerLifecycleResponse
 from backend.app.execution.operations.models import WorkerLease, WorkerNode
 from backend.app.execution.operations.workers.lifecycle_buckets import (
     WorkerLifecycleBucketAccumulator,

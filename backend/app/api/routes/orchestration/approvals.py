@@ -4,7 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.approvals import ApprovalDecisionRequest, ApprovalResponse
+from backend.app.api.schemas.orchestration.approvals import (
+    ApprovalDecisionRequest,
+    ApprovalResponse,
+)
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.approvals.decisions import ApprovalDecisionService

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
-from backend.app.api.services.exports import WorkspaceExportService
+from backend.app.api.services.workspace.exports.service import WorkspaceExportService
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.workspace.tenants.data_lifecycle_policy import _backup_policy
 from backend.app.workspace.tenants.data_lifecycle_repository import WorkspaceDataLifecycleRepository

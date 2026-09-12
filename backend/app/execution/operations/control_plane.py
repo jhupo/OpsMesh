@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from backend.app.api.schemas.operation_capacity import (
+from backend.app.api.schemas.operations.capacity import (
     OperationsRuntimeCapacityResponse,
     WorkerCapacityAggregateResponse,
 )
-from backend.app.api.schemas.operation_control_plane import (
+from backend.app.api.schemas.operations.control_plane import (
     OperationsControlPlaneIssueResponse,
     OperationsSelfHostedMachinesResponse,
 )
-from backend.app.api.schemas.operation_outcomes import (
+from backend.app.api.schemas.operations.outcomes import (
     OperationsMcpJobsResponse,
     OperationsOutcomesResponse,
 )
-from backend.app.api.schemas.operation_queue import QueueLatencyResponse
-from backend.app.api.schemas.operation_scheduler import OperationsSchedulerResponse
+from backend.app.api.schemas.operations.queue import QueueLatencyResponse
+from backend.app.api.schemas.operations.scheduler import OperationsSchedulerResponse
 
 
 def control_plane_health(issues: list[OperationsControlPlaneIssueResponse]) -> str:

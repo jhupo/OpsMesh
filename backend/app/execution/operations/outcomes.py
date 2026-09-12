@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations import (
+from backend.app.api.schemas.operations.overview import (
     ApprovalBacklogResponse,
     McpJobStatusBucketResponse,
     McpJobToolBucketResponse,

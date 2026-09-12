@@ -5,7 +5,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.tasks import TaskTransferResponse
+from backend.app.api.schemas.orchestration.tasks.overview import TaskTransferResponse
 from backend.app.orchestration.tasks.ownership import task_owner_can_execute_step
 from backend.app.orchestration.tasks.transfers import (
     TaskTransferCommand,

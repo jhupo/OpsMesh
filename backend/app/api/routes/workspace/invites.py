@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.workspaces import (
+from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceInviteAcceptRequest,
     WorkspaceInviteAcceptResponse,
     WorkspaceInviteCreateRequest,
@@ -12,17 +12,17 @@ from backend.app.api.schemas.workspaces import (
     WorkspaceInviteResponse,
     WorkspaceMemberResponse,
 )
-from backend.app.api.services.workspace_errors import (
+from backend.app.api.services.workspace.lifecycle.errors import (
     WorkspaceInviteConflictError,
     WorkspaceInviteNotFoundError,
     WorkspaceInvitePermissionError,
     WorkspaceMemberPermissionError,
 )
-from backend.app.api.services.workspace_invites import (
+from backend.app.api.services.workspace.lifecycle.invites import (
     WorkspaceInviteService,
     fingerprint_invite_token,
 )
-from backend.app.api.services.workspaces import WorkspaceService
+from backend.app.api.services.workspace.lifecycle.workspaces import WorkspaceService
 from backend.app.platform.auth.context import AuthenticatedUser, WorkspaceContext
 from backend.app.platform.auth.dependencies import get_current_user, workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

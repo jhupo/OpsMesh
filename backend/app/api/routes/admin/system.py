@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.app.api.routes.admin.dependencies import RedisClient
-from backend.app.api.schemas.admin import (
+from backend.app.api.schemas.platform.admin import (
     AdminReleaseUpdateCheckResponse,
     AdminReleaseVersionResponse,
     AdminSystemConfigurationResponse,

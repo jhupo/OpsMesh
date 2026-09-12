@@ -13,7 +13,7 @@ from backend.app.agents.providers.credential_queries import (
 )
 from backend.app.agents.providers.health_service import ModelProviderHealthService
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.model_providers import (
+from backend.app.api.schemas.agents.providers import (
     ModelProviderCredentialCreateRequest,
     ModelProviderCredentialResponse,
     ModelProviderCredentialRotateKeyRequest,

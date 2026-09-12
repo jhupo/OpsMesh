@@ -17,7 +17,7 @@ from backend.app.agents.payloads import (
 from backend.app.agents.reviews import AgentProfileReviewService
 from backend.app.agents.runtime.guardrails import runtime_controls_snapshot
 from backend.app.agents.versions import AgentVersionRecorder
-from backend.app.api.schemas.agents import (
+from backend.app.api.schemas.agents.profiles import (
     AgentProfileCreateRequest,
     AgentProfileUpdateRequest,
 )

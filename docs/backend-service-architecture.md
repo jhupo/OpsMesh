@@ -299,6 +299,8 @@ backend/
     api/                                    # HTTP transport and API-facing services
       routes/{admin,agents,capabilities,operations,orchestration,platform,workspace}
         self_hosted/ integrations/          # specialized transport boundaries
+      schemas/{agents,capabilities,operations,orchestration,platform,workspace}
+      services/workspace/{exports,imports,lifecycle}
     agents/                                 # Agent profiles and nested runtime domains
       memory/ messages/ providers/ runtime/
     capabilities/                           # Tools, MCP, marketplace, and policy

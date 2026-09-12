@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.auth import (
+from backend.app.api.schemas.platform.auth import (
     CurrentUserResponse,
     CurrentUserUpdateRequest,
     PasswordChangeRequest,

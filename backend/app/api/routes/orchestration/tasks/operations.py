@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.tasks import (
+from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskControlActionRequest,
     TaskControlActionResponse,
     TaskControlDiagnosticsResponse,

@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from backend.app.agents.messages.contracts import MailboxStore
 from backend.app.agents.messages.models import THREAD_STATUSES, AgentMessageThread
-from backend.app.api.schemas.agent_messages import AgentMessageThreadCreateRequest
+from backend.app.api.schemas.agents.messages import AgentMessageThreadCreateRequest
 
 
 def thread_create_payload(data: AgentMessageThreadCreateRequest) -> dict[str, object]:

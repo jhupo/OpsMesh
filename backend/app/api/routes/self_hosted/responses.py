@@ -1,4 +1,4 @@
-from backend.app.api.schemas.self_hosted import (
+from backend.app.api.schemas.operations.self_hosted import (
     EnrollmentTokenCreateResponse,
     RuntimeRegistrationResponse,
     SelfHostedWorkerControlResponse,

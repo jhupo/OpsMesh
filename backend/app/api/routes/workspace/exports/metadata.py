@@ -4,13 +4,13 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.exports import (
+from backend.app.api.schemas.workspace.exports import (
     WorkspaceExportRequest,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
 )
-from backend.app.api.services.exports import WorkspaceExportService
-from backend.app.api.services.workspace_metadata_import import WorkspaceMetadataImportService
+from backend.app.api.services.workspace.exports.service import WorkspaceExportService
+from backend.app.api.services.workspace.imports.metadata import WorkspaceMetadataImportService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

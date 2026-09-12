@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operation_capacity import RuntimeProviderCapacityResponse
+from backend.app.api.schemas.operations.capacity import RuntimeProviderCapacityResponse
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.workflows.statuses import CAPACITY_CONSUMING_RUN_STATUS_VALUES

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.app.api.schemas.marketplace import TalentRecommendationRequest
+from backend.app.api.schemas.capabilities.marketplace import TalentRecommendationRequest
 from backend.app.capabilities.marketplace.models import TalentListing
 from backend.app.orchestration.tasks.models import Task
 from backend.app.platform.common.values import string_list, string_or_default

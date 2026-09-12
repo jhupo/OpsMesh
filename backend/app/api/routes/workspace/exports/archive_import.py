@@ -3,11 +3,11 @@ import json
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.exports import (
+from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportResponse,
 )
-from backend.app.api.services.workspace_archive_import import WorkspaceArchiveImportService
+from backend.app.api.services.workspace.exports.archive_import import WorkspaceArchiveImportService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

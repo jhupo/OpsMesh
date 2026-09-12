@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operation_capacity import (
+from backend.app.api.schemas.operations.capacity import (
     WorkerCapacityAggregateResponse,
     WorkerTypeCapacityResponse,
 )

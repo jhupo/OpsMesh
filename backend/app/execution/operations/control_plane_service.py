@@ -6,7 +6,7 @@ from uuid import UUID
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operation_control_plane import OperationsControlPlaneResponse
+from backend.app.api.schemas.operations.control_plane import OperationsControlPlaneResponse
 from backend.app.execution.operations.control_plane import (
     control_plane_health,
     control_plane_issues,

@@ -11,7 +11,7 @@ from backend.app.api.idempotency import (
     run_idempotent_create,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.teams import (
+from backend.app.api.schemas.workspace.teams import (
     AgentTeamCommandCenterResponse,
     AgentTeamCreateRequest,
     AgentTeamExecutionOverviewResponse,

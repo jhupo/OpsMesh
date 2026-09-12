@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.admin.dependencies import admin_runtime_service
 from backend.app.api.routes.admin.responses import page_response
-from backend.app.api.schemas.admin import (
+from backend.app.api.schemas.platform.admin import (
     AdminQuarantineRuntimeSpaceRequest,
     AdminQuarantineRuntimeSpaceResponse,
     AdminRuntimeSpaceResponse,

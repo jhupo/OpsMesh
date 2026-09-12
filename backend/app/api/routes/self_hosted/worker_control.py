@@ -7,7 +7,7 @@ from backend.app.api.routes.self_hosted.responses import (
     worker_control_response,
     worker_trust_response,
 )
-from backend.app.api.schemas.self_hosted import (
+from backend.app.api.schemas.operations.self_hosted import (
     RuntimeCredentialRevokeRequest,
     SelfHostedConnectorManifestResponse,
     SelfHostedWorkerCleanupResponse,

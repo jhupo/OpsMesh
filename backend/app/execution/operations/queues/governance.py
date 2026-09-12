@@ -8,7 +8,7 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operation_queue import (
+from backend.app.api.schemas.operations.queue import (
     QueueGovernanceDiagnosticsResponse,
     QueueGovernanceIssueResponse,
     QueueGovernanceReconcileAction,

@@ -7,7 +7,7 @@ from backend.app.agents.providers.model_api import (
 )
 from backend.app.agents.runtime.contracts import AgentRuntimeCapability
 from backend.app.agents.runtime.factory import build_agent_runtime_registry
-from backend.app.api.schemas.model_providers import (
+from backend.app.api.schemas.agents.providers import (
     AgentRuntimeAdapterCapabilityResponse,
     AgentRuntimeCapabilityFeatureResponse,
     ModelCapabilityResponse,

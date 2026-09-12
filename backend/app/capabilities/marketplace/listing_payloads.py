@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.agents import AgentProfileCreateRequest
+from backend.app.api.schemas.agents.profiles import AgentProfileCreateRequest
 from backend.app.api.schemas.capabilities.mcp_servers import (
     McpServerCreateRequest,
     McpToolAllowRequest,

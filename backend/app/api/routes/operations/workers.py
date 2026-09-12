@@ -9,7 +9,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.operations import (
+from backend.app.api.schemas.operations.overview import (
     RuntimeCleanupResponse,
     RuntimeLeaseResponse,
     WorkerHeartbeatRequest,

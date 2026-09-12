@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operation_control_plane import (
+from backend.app.api.schemas.operations.control_plane import (
     OperationsRunActivityResponse,
     RunActivityOldestRunResponse,
     RunActivityPhaseBucketResponse,

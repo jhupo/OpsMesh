@@ -8,9 +8,7 @@ from backend.app.api.routes.self_hosted.dependencies import (
     self_hosted_project_file_service,
     self_hosted_run_completion_service,
 )
-from backend.app.api.schemas.files import ArtifactResponse
-from backend.app.api.schemas.runs import RunEventResponse
-from backend.app.api.schemas.self_hosted import (
+from backend.app.api.schemas.operations.self_hosted import (
     JobClaimResponse,
     JobCompleteRequest,
     JobCompleteResponse,
@@ -18,6 +16,8 @@ from backend.app.api.schemas.self_hosted import (
     SelfHostedJobResponse,
     SelfHostedProjectContractResponse,
 )
+from backend.app.api.schemas.orchestration.runs import RunEventResponse
+from backend.app.api.schemas.workspace.files import ArtifactResponse
 from backend.app.execution.self_hosted.dependencies import get_authenticated_worker
 from backend.app.execution.self_hosted.dispatch import SelfHostedDispatchService
 from backend.app.execution.self_hosted.job_completion import SelfHostedRunCompletionService

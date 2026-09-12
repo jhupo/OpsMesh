@@ -11,7 +11,7 @@ from backend.app.api.idempotency import (
     run_idempotent_create,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.orchestration import (
+from backend.app.api.schemas.orchestration.definitions import (
     OrchestrationDefinitionResponse,
     OrchestrationRevisionResponse,
     OrchestrationValidationResponse,

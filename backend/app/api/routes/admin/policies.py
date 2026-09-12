@@ -6,7 +6,7 @@ from backend.app.api.routes.admin.dependencies import (
     admin_worker_policy_service,
 )
 from backend.app.api.routes.admin.responses import page_response
-from backend.app.api.schemas.admin import (
+from backend.app.api.schemas.platform.admin import (
     AdminPlatformPolicyEventResponse,
     AdminPlatformPolicyResponse,
     AdminRiskyExecutionPolicyUpdateRequest,
