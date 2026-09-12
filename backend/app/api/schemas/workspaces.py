@@ -12,7 +12,6 @@ from pydantic import (
 )
 
 from backend.app.api.schemas.common import TimestampedModel
-from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.reviews.constants import (
     DEFAULT_RESOURCE_REVIEW_MODEL,
     MODEL_REQUEST_REVIEW_SETTINGS_KEY,
@@ -21,6 +20,7 @@ from backend.app.reviews.constants import (
     RESOURCE_REVIEW_SETTINGS_KEY,
     SEMANTIC_REVIEW_SETTINGS_KEY,
 )
+from backend.app.security.redaction import redact_sensitive_payload
 
 _RESOURCE_REVIEW_SCOPE_KEYS = frozenset(
     {

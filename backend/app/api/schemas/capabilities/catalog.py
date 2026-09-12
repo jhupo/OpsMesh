@@ -11,8 +11,8 @@ from pydantic import (
 )
 
 from backend.app.api.schemas.common import TimestampedModel
-from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.capabilities.schema_validation import reject_embedded_secrets
+from backend.app.security.redaction import redact_sensitive_payload
 
 ResourceType = Literal[
     "file_collection",

@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import field_serializer
 
 from backend.app.api.schemas.common import ORMModel
-from backend.app.api.schemas.redaction import redact_sensitive_payload
+from backend.app.security.redaction import redact_sensitive_payload
 
 
 class AuditEventResponse(ORMModel):

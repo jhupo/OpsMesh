@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from backend.app.api.schemas.common import TimestampedModel
-from backend.app.api.schemas.redaction import redact_sensitive_payload
+from backend.app.security.redaction import redact_sensitive_payload
 
 
 class OrchestrationApplyRequest(BaseModel):

@@ -1,6 +1,6 @@
 from urllib.parse import urlparse
 
-from backend.app.api.schemas.redaction import is_sensitive_payload_key
+from backend.app.security.redaction import is_sensitive_payload_key
 
 
 def redacted_connection(connection: dict[str, object]) -> dict[str, object]:

@@ -101,6 +101,7 @@ def test_team_consolidation_removes_superseded_sources() -> None:
         "workers/job_handlers/base.py",
         "teams/operating_context.py",
         "api/services/workspace_export_constants.py",
+        "api/schemas/redaction.py",
     ):
         assert not (app / name).exists(), name
 

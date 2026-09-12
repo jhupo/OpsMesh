@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, field_serializer
 
-from backend.app.api.schemas.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
 class McpToolDescriptor(BaseModel):

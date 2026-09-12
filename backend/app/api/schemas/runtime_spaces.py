@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
-from backend.app.api.schemas.redaction import redact_sensitive_payload
+from backend.app.security.redaction import redact_sensitive_payload
 
 RuntimeSpaceScope = Literal["workspace", "team", "task"]
 RuntimeSpaceStatus = Literal["active", "paused", "disabled", "quarantined", "archived"]

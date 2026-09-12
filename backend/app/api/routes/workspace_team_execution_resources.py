@@ -6,7 +6,6 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.routes.workspace_team_common import _queued_runtime_control
-from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.api.schemas.teams import (
     AgentTeamCommandCenterApplyRequest,
     AgentTeamCommandCenterApplyResponse,
@@ -26,6 +25,7 @@ from backend.app.auth.permissions import WorkspaceAction
 from backend.app.auth.service import AuthorizationService
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.session import get_db_session
+from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.execution_loop import (
     TeamExecutionLoopService,
@@ -273,4 +273,3 @@ async def apply_team_operator_action(
     if response is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamOperatorActionResponse.model_validate(response)
-

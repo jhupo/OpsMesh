@@ -11,10 +11,10 @@ from backend.app.api.schemas.operations import (
     WorkerLeaseResponse,
     WorkerNodeResponse,
 )
-from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.api.schemas.runtime_spaces import RuntimeSpaceResponse
 from backend.app.api.schemas.runtimes import WorkspaceRuntimeResponse
 from backend.app.api.schemas.workspaces import WorkspaceResponse
+from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.workers.jobs import JobPayload
 
 

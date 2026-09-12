@@ -11,7 +11,6 @@ from backend.app.agent_runtime.session_management import (
 from backend.app.api.schemas.agents import (
     AgentSessionSummaryResponse,
 )
-from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.api.schemas.teams import (
     AgentTeamRuntimeControlRequest,
     AgentTeamRuntimeEnsureRequest,
@@ -20,6 +19,7 @@ from backend.app.auth.context import WorkspaceContext
 from backend.app.core.config import Settings
 from backend.app.runtime.contracts import RuntimeLimits
 from backend.app.runtime.queued_control import QueuedRuntimeControl
+from backend.app.security.redaction import redact_sensitive_payload
 from backend.app.teams.execution_loop import (
     enqueue_team_execution_loop_job,
 )
@@ -131,4 +131,3 @@ def _set_team_session_status_response(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team session not found")
     db_session.commit()
     return AgentSessionSummaryResponse.model_validate(summary)
-

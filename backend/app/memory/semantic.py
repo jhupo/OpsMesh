@@ -9,12 +9,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.api.schemas.redaction import redact_sensitive_payload
 from backend.app.memory.configuration import initial_embedding_status
 from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryVersion
 from backend.app.runs.models import AgentRun
-from backend.app.security.redaction import redact_text_fragments
+from backend.app.security.redaction import redact_sensitive_payload, redact_text_fragments
 from backend.app.teams.models import AgentTeam
 
 SEMANTIC_SCOPE_TYPES = frozenset({"workspace", "team", "agent"})
