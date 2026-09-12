@@ -787,17 +787,25 @@ def test_shared_normalization_and_run_queries_have_single_owners() -> None:
     query_source = query_module.read_text(encoding="utf-8")
     assert "def active_task_ids_by_agent(" in query_source
     assert "def task_for_run(" in query_source
+    authorization = app / "domains/orchestration/requests/authorization.py"
+    authorization_source = authorization.read_text(encoding="utf-8")
+    assert "def authorized_task_for_run(" in authorization_source
+    assert "def authorized_profile_for_run(" in authorization_source
     for path in (
         app / "domains/orchestration/workflows/scheduling/capacity.py",
         app / "domains/workspace/teams/execution/overview_repository.py",
         app / "domains/orchestration/runs/memory.py",
         app / "domains/orchestration/runs/task_progress.py",
+        app / "domains/orchestration/requests/builder.py",
+        app / "domains/orchestration/requests/sessions.py",
     ):
         source = path.read_text(encoding="utf-8")
         assert "def active_task_ids_by_agent(" not in source
         assert "def workspace_active_task_ids_by_agent(" not in source
         assert "def _task_for_run(" not in source
         assert "def task_for_run(" not in source
+        assert "def authorized_task_for_run(" not in source
+        assert "def authorized_profile_for_run(" not in source
     assert not any(
         "def _as_utc(" in path.read_text(encoding="utf-8")
         for path in app.rglob("*.py")

@@ -190,6 +190,11 @@ Self-hosted worker trust evaluation follows the same rule: enrollment/trust owns
 `worker_trust_state` decision, while operations only assembles its response. The former duplicate
 operations implementation was removed.
 
+Run request construction applies the same ownership rule. Task/profile lookup and workspace
+authorization checks are implemented once in `domains/orchestration/requests/authorization.py`;
+the model request builder and persistent-session service call those functions directly instead of
+maintaining parallel validation methods.
+
 The architecture gate now asserts these ownership rules, including the absence of local `_as_utc`
 implementations and the presence of the canonical run-query/value modules. Focused architecture,
 authentication, memory lifecycle, cost, operations, team-capacity and execution-loop tests passed;

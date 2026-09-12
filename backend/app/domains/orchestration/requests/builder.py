@@ -32,6 +32,8 @@ from backend.app.domains.capabilities.mcp.transport.resolver import McpAdapterRe
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.domains.orchestration.requests.authorization import (
     RunAuthorizationService,
+    authorized_profile_for_run,
+    authorized_task_for_run,
     file_scope_ids_for_snapshot,
     resource_grants_for_snapshot,
     tool_continuations_for_run,
@@ -101,8 +103,8 @@ class RunRequestBuilder:
         model_provider_override: dict[str, Any] | None = None,
     ) -> AgentRunRequest:
         self.validate_job_scope(run, job)
-        task = self.authorized_task_for_run(run)
-        profile = self.authorized_profile_for_run(run)
+        task = authorized_task_for_run(self.session, run)
+        profile = authorized_profile_for_run(self.session, run)
         if profile is None:
             profile = AgentProfile(
                 workspace_id=run.workspace_id,
@@ -393,8 +395,8 @@ class RunRequestBuilder:
     ) -> tuple[AgentRuntimeContext, AgentRuntimeToolExecutor]:
         """Build frozen authorization for direct workflow tools without a model call."""
         self.validate_job_scope(run, job)
-        task = self.authorized_task_for_run(run)
-        profile = self.authorized_profile_for_run(run)
+        task = authorized_task_for_run(self.session, run)
+        profile = authorized_profile_for_run(self.session, run)
         if task is None or profile is None:
             raise ValueError("Direct workflow tools require a scoped task agent")
         snapshot = self.authorization_snapshot_for_run(run)
@@ -532,26 +534,6 @@ class RunRequestBuilder:
 
     def secret_service(self) -> SecretEncryptionService:
         return self.model_providers.secret_service()
-
-    def authorized_task_for_run(self, run: AgentRun) -> Task | None:
-        if run.task_id is None:
-            return None
-        task = self.session.get(Task, run.task_id)
-        if task is None:
-            raise ValueError("Run task not found")
-        if task.workspace_id != run.workspace_id:
-            raise ValueError("Run task workspace mismatch")
-        return task
-
-    def authorized_profile_for_run(self, run: AgentRun) -> AgentProfile | None:
-        if run.agent_profile_id is None:
-            return None
-        profile = self.session.get(AgentProfile, run.agent_profile_id)
-        if profile is None:
-            raise ValueError("Run agent profile not found")
-        if profile.workspace_id != run.workspace_id:
-            raise ValueError("Run agent profile workspace mismatch")
-        return profile
 
     def model_provider_for_run(
         self,

@@ -11,6 +11,10 @@ from backend.app.domains.agents.runtime.sessions.models import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
 )
+from backend.app.domains.orchestration.requests.authorization import (
+    authorized_profile_for_run,
+    authorized_task_for_run,
+)
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
@@ -96,8 +100,8 @@ class RunRequestSessionService:
         conversation_id = sdk_continuation_conversation_id(run)
         if conversation_id is None:
             return
-        task = self.authorized_task_for_session_sync(run)
-        profile = self.authorized_profile_for_session_sync(run)
+        task = authorized_task_for_run(self.session, run)
+        profile = authorized_profile_for_run(self.session, run)
         if profile is None:
             return
         session_ref = self.persistent_session_ref_for_run(run, task, profile)
@@ -134,26 +138,6 @@ class RunRequestSessionService:
             scope_type=scope_type,
             scope_id=scope_id,
         )
-
-    def authorized_task_for_session_sync(self, run: AgentRun) -> Task | None:
-        if run.task_id is None:
-            return None
-        task = self.session.get(Task, run.task_id)
-        if task is None:
-            raise ValueError("Run task not found")
-        if task.workspace_id != run.workspace_id:
-            raise ValueError("Run task workspace mismatch")
-        return task
-
-    def authorized_profile_for_session_sync(self, run: AgentRun) -> AgentProfile | None:
-        if run.agent_profile_id is None:
-            return None
-        profile = self.session.get(AgentProfile, run.agent_profile_id)
-        if profile is None:
-            raise ValueError("Run agent profile not found")
-        if profile.workspace_id != run.workspace_id:
-            raise ValueError("Run agent profile workspace mismatch")
-        return profile
 
 
 def sdk_continuation_last_response_id(run: AgentRun | None) -> str | None:

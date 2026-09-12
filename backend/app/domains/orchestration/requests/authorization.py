@@ -48,6 +48,28 @@ def expect_optional_uuid(
         raise ValueError(f"Authorization snapshot {key} mismatch")
 
 
+def authorized_task_for_run(session: Session, run: AgentRun) -> Task | None:
+    if run.task_id is None:
+        return None
+    task = session.get(Task, run.task_id)
+    if task is None:
+        raise ValueError("Run task not found")
+    if task.workspace_id != run.workspace_id:
+        raise ValueError("Run task workspace mismatch")
+    return task
+
+
+def authorized_profile_for_run(session: Session, run: AgentRun) -> AgentProfile | None:
+    if run.agent_profile_id is None:
+        return None
+    profile = session.get(AgentProfile, run.agent_profile_id)
+    if profile is None:
+        raise ValueError("Run agent profile not found")
+    if profile.workspace_id != run.workspace_id:
+        raise ValueError("Run agent profile workspace mismatch")
+    return profile
+
+
 @dataclass(slots=True)
 class RunAuthorizationService:
     session: Session
