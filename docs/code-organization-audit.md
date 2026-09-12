@@ -195,6 +195,10 @@ authorization checks are implemented once in `domains/orchestration/requests/aut
 the model request builder and persistent-session service call those functions directly instead of
 maintaining parallel validation methods.
 
+Run-event retrieval is likewise centralized in `domains/orchestration/runs/queries.py`: latest-event
+projections and full event timelines share the same workspace-scoped query owner. Observation
+repositories and timeline assembly no longer carry duplicate event-loading methods.
+
 The architecture gate now asserts these ownership rules, including the absence of local `_as_utc`
 implementations and the presence of the canonical run-query/value modules. Focused architecture,
 authentication, memory lifecycle, cost, operations, team-capacity and execution-loop tests passed;

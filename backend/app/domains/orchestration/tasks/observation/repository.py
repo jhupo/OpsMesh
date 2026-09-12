@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.queries import run_events_for_runs
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.tasks.observation.models import (
     TaskObservationRecords,
@@ -34,7 +35,7 @@ class TaskObservationRepository:
             runs=runs,
             messages=messages,
             artifacts=artifacts,
-            run_events=self.list_run_events(workspace_id, runs),
+            run_events=run_events_for_runs(self._session, workspace_id, runs),
             agents=self.agent_map(workspace_id, steps, runs, messages),
         )
 
@@ -71,18 +72,6 @@ class TaskObservationRepository:
                 select(Artifact)
                 .where(Artifact.workspace_id == workspace_id, Artifact.task_id == task_id)
                 .order_by(Artifact.created_at.asc())
-            )
-        )
-
-    def list_run_events(self, workspace_id: UUID, runs: list[AgentRun]) -> list[RunEvent]:
-        run_ids = [run.id for run in runs]
-        if not run_ids:
-            return []
-        return list(
-            self._session.scalars(
-                select(RunEvent)
-                .where(RunEvent.workspace_id == workspace_id, RunEvent.agent_run_id.in_(run_ids))
-                .order_by(RunEvent.created_at.asc(), RunEvent.sequence.asc())
             )
         )
 

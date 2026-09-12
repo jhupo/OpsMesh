@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.values import stringify_or_none
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.runs.queries import run_events_for_runs
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.tasks.observation.timeline_events import (
     artifact_timeline_event,
@@ -43,7 +44,7 @@ class TaskTimelineService:
 
         steps = self._steps(workspace_id, task_id)
         runs = self._runs(workspace_id, task_id)
-        run_events = self._run_events(workspace_id, runs)
+        run_events = run_events_for_runs(self._session, workspace_id, runs)
         messages = self._messages(workspace_id, task_id)
         artifacts = self._artifacts(workspace_id, task_id)
         agents = self._agents(workspace_id, steps, runs, messages, artifacts)
@@ -172,18 +173,6 @@ class TaskTimelineService:
                 select(AgentRun)
                 .where(AgentRun.workspace_id == workspace_id, AgentRun.task_id == task_id)
                 .order_by(AgentRun.created_at.asc())
-            )
-        )
-
-    def _run_events(self, workspace_id: UUID, runs: list[AgentRun]) -> list[RunEvent]:
-        run_ids = [run.id for run in runs]
-        if not run_ids:
-            return []
-        return list(
-            self._session.scalars(
-                select(RunEvent)
-                .where(RunEvent.workspace_id == workspace_id, RunEvent.agent_run_id.in_(run_ids))
-                .order_by(RunEvent.created_at.asc(), RunEvent.sequence.asc())
             )
         )
 

@@ -66,3 +66,21 @@ def latest_events_by_run(
     for event in events:
         latest.setdefault(event.agent_run_id, event)
     return latest
+
+
+def run_events_for_runs(
+    session: Session,
+    workspace_id: UUID,
+    runs: list[AgentRun],
+) -> list[RunEvent]:
+    """Return all events for the supplied runs in execution order."""
+    run_ids = [run.id for run in runs]
+    if not run_ids:
+        return []
+    return list(
+        session.scalars(
+            select(RunEvent)
+            .where(RunEvent.workspace_id == workspace_id, RunEvent.agent_run_id.in_(run_ids))
+            .order_by(RunEvent.created_at.asc(), RunEvent.sequence.asc())
+        )
+    )
