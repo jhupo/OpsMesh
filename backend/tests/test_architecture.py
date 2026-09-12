@@ -91,6 +91,7 @@ def test_team_consolidation_removes_superseded_sources() -> None:
         "project_dashboard_constants.py",
         "provider_readiness.py",
         "provider_readiness_constants.py",
+        "agent_messages/pagination.py",
     ):
         assert not (teams / name).exists(), name
 
