@@ -9,12 +9,12 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.capabilities.mcp_observability import McpToolCallLogRequest
 from backend.app.capabilities.governance.agent_policy import agent_allowed_mcp_tool_names
-from backend.app.capabilities.mcp.payloads import (
+from backend.app.capabilities.mcp.catalog.helpers import require_mcp_server
+from backend.app.capabilities.mcp.execution.payloads import (
     error_code,
     hash_from_payload,
     response_hash_from_payload,
 )
-from backend.app.capabilities.mcp.server_helpers import require_mcp_server
 from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.platform.common.pagination import PageParams

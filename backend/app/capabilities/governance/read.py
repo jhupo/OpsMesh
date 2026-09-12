@@ -16,7 +16,7 @@ from backend.app.capabilities.governance.rules import (
     skill_governance_actions,
     string_list,
 )
-from backend.app.capabilities.mcp.catalog_service import McpCatalogService
+from backend.app.capabilities.mcp.catalog.service import McpCatalogService
 from backend.app.capabilities.models import WorkspaceSkillInstall
 from backend.app.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from backend.app.platform.common.config import Settings, get_settings

@@ -9,11 +9,11 @@ from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult
 
-from backend.app.capabilities.mcp.adapter_payloads import (
+from backend.app.capabilities.mcp.execution.types import McpExecutionError
+from backend.app.capabilities.mcp.transport.payloads import (
     string_dict_setting,
     string_setting,
 )
-from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.models import McpCredentialReference, McpServer
 from backend.app.platform.secrets.service import SecretEncryptionService
 from backend.app.platform.security.egress import (

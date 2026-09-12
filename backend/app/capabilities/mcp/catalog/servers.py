@@ -13,13 +13,13 @@ from backend.app.api.schemas.capabilities.mcp_servers import (
     McpToolAllowRequest,
     McpToolAllowUpdateRequest,
 )
-from backend.app.capabilities.mcp.catalog import McpCatalogServer
-from backend.app.capabilities.mcp.catalog_service import McpCatalogService
-from backend.app.capabilities.mcp.server_helpers import (
+from backend.app.capabilities.mcp.catalog.catalog import McpCatalogServer
+from backend.app.capabilities.mcp.catalog.helpers import (
     mcp_health_error,
     require_mcp_server,
 )
-from backend.app.capabilities.mcp.server_rules import connection_summary
+from backend.app.capabilities.mcp.catalog.rules import connection_summary
+from backend.app.capabilities.mcp.catalog.service import McpCatalogService
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.capabilities.resources.schema import (
     normalize_object_schema,

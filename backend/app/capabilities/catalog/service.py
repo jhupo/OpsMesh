@@ -10,7 +10,7 @@ from backend.app.api.schemas.capabilities.catalog import (
     WorkspaceCapabilityCatalogResponse,
 )
 from backend.app.capabilities.catalog.product_tools import PRODUCT_TOOL_CATALOG
-from backend.app.capabilities.mcp.servers import McpServerService
+from backend.app.capabilities.mcp.catalog.servers import McpServerService
 from backend.app.capabilities.resources.service import CapabilityResourceService
 
 

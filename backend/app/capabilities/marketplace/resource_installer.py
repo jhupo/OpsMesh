@@ -10,7 +10,7 @@ from backend.app.capabilities.marketplace.listing_payloads import (
     mcp_tool_requests_from_listing,
 )
 from backend.app.capabilities.marketplace.models import MarketplaceListing
-from backend.app.capabilities.mcp.servers import McpServerService
+from backend.app.capabilities.mcp.catalog.servers import McpServerService
 from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
 from backend.app.observability.audit_service import AuditService
 from backend.app.platform.common.config import Settings

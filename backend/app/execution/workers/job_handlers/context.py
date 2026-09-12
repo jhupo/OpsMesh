@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.agents.runtime.contracts import AgentRuntimeExecutor
-from backend.app.capabilities.mcp.adapters import (
+from backend.app.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )

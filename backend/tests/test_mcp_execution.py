@@ -13,13 +13,13 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.capabilities.catalog.effective import effective_catalog_fingerprint
-from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
-from backend.app.capabilities.mcp.execution_service import McpToolExecutionService
-from backend.app.capabilities.mcp.remote_adapters import SseMcpToolAdapter
-from backend.app.capabilities.mcp.types import (
+from backend.app.capabilities.mcp.execution.service import McpToolExecutionService
+from backend.app.capabilities.mcp.execution.types import (
     McpExecutionError,
     McpExecutionRequest,
 )
+from backend.app.capabilities.mcp.transport.remote import SseMcpToolAdapter
+from backend.app.capabilities.mcp.transport.resolver import McpAdapterResolver
 from backend.app.capabilities.models import (
     McpCredentialReference,
     McpServer,
@@ -818,11 +818,11 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
     session.commit()
     sdk = _FakeSseSdk(_FakeSdkCallToolResult(structured_content={"status": "created"}))
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.remote_adapters.sse_client",
+        "backend.app.capabilities.mcp.transport.remote.sse_client",
         sdk.sse_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.remote_adapters.ClientSession",
+        "backend.app.capabilities.mcp.transport.remote.ClientSession",
         sdk.client_session,
     )
 
@@ -863,11 +863,11 @@ def test_mcp_sse_adapter_normalizes_remote_errors(monkeypatch) -> None:
 
     sdk = _FakeSseSdk(_FakeSdkCallToolResult(is_error=True))
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.remote_adapters.sse_client",
+        "backend.app.capabilities.mcp.transport.remote.sse_client",
         sdk.sse_client,
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.remote_adapters.ClientSession",
+        "backend.app.capabilities.mcp.transport.remote.ClientSession",
         sdk.client_session,
     )
 

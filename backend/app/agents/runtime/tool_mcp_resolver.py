@@ -7,11 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.runtime.contracts import AgentRuntimeContext
-from backend.app.capabilities.mcp.adapters import (
+from backend.app.capabilities.mcp.execution.types import McpExecutionError
+from backend.app.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
-from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.models import McpServer
 from backend.app.execution.runtime.backends.registry import build_runtime_backend_registry
 from backend.app.execution.runtime.contracts import DockerRuntimeClient

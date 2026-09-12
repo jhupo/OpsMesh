@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.governance.agent_policy import agent_allowed_mcp_tool_names
-from backend.app.capabilities.mcp.catalog import (
+from backend.app.capabilities.mcp.catalog.catalog import (
     McpCatalogServer,
     McpCatalogTool,
     McpCatalogUsage,
@@ -16,15 +16,15 @@ from backend.app.capabilities.mcp.catalog import (
     empty_mcp_usage,
     rollup_mcp_usage,
 )
-from backend.app.capabilities.mcp.policy import (
-    MCP_LIMIT_COUNTED_STATUSES,
-    mcp_tool_policy_summary,
-)
-from backend.app.capabilities.mcp.server_rules import (
+from backend.app.capabilities.mcp.catalog.rules import (
     connection_summary,
     credential_status,
     execution_mode,
     mcp_blocked_reasons,
+)
+from backend.app.capabilities.mcp.policy import (
+    MCP_LIMIT_COUNTED_STATUSES,
+    mcp_tool_policy_summary,
 )
 from backend.app.capabilities.models import (
     McpCredentialReference,

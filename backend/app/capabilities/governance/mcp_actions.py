@@ -13,14 +13,14 @@ from backend.app.capabilities.governance.rules import (
     mcp_server_should_be_governance_disabled,
     mcp_server_should_refresh_health,
 )
-from backend.app.capabilities.mcp.catalog import McpCatalogServer
-from backend.app.capabilities.mcp.catalog_service import McpCatalogService
-from backend.app.capabilities.mcp.server_rules import (
+from backend.app.capabilities.mcp.catalog.catalog import McpCatalogServer
+from backend.app.capabilities.mcp.catalog.rules import (
     connection_summary as _connection_summary,
 )
-from backend.app.capabilities.mcp.server_rules import (
+from backend.app.capabilities.mcp.catalog.rules import (
     mcp_server_probeable as _mcp_server_probeable,
 )
+from backend.app.capabilities.mcp.catalog.service import McpCatalogService
 from backend.app.capabilities.models import McpToolAllowlist
 from backend.app.observability.audit_service import AuditService
 from backend.app.platform.common.config import Settings, get_settings

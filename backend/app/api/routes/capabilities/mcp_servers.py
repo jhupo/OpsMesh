@@ -20,8 +20,8 @@ from backend.app.api.schemas.capabilities.mcp_servers import (
     McpToolAllowResponse,
     McpToolAllowUpdateRequest,
 )
-from backend.app.capabilities.mcp.catalog import McpCatalogServer, McpCatalogUsage
-from backend.app.capabilities.mcp.servers import McpServerService
+from backend.app.capabilities.mcp.catalog.catalog import McpCatalogServer, McpCatalogUsage
+from backend.app.capabilities.mcp.catalog.servers import McpServerService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction

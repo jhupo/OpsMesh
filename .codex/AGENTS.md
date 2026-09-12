@@ -138,8 +138,10 @@ the OpsMesh control plane.
   `providers`, and SDK `runtime` domains. Profile helpers do not remain as root-level prefixed files;
   agent memory policies live with the other memory policies.
 - `backend/app/capabilities`: public capability models/service plus nested `catalog`, `governance`,
-  `resources`, `skills`, `mcp`, `marketplace`, and `tools` modules. Cross-cutting capability policy
-  and validation code belongs to the named feature package, not a root-level utility file.
+  `resources`, `skills`, `marketplace`, and `tools` modules. MCP is further split into
+  `mcp/{transport,catalog,execution}`. The MCP boundary keeps its one shared `policy.py` module
+  at that boundary because health and limit rules are consumed by both catalog and execution;
+  transport, catalog, and execution implementation files remain nested by function.
 - `backend/app/orchestration`: requests, runs, approvals, tasks, and workflows.
 - `backend/app/execution`: runtime resources, Docker pools, workers, operations, and self-hosted jobs.
   Runtime internals are grouped under `execution/runtime/{backends,commands,lifecycle,pool,policies,spaces}`;

@@ -7,20 +7,20 @@ from opentelemetry.trace import SpanKind
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.capabilities.mcp.adapters import (
-    McpToolAdapter,
-    McpToolAdapterResolver,
-)
-from backend.app.capabilities.mcp.execution_approvals import McpToolApprovalRequester
-from backend.app.capabilities.mcp.execution_blocking import McpExecutionBlocker
-from backend.app.capabilities.mcp.execution_context import snapshot_audit_metadata
-from backend.app.capabilities.mcp.execution_invocation import McpToolInvoker
-from backend.app.capabilities.mcp.execution_policy import resolve_mcp_execution_policy
-from backend.app.capabilities.mcp.execution_validation import McpExecutionValidator
-from backend.app.capabilities.mcp.policy import MCP_LIMIT_COUNTED_STATUSES
-from backend.app.capabilities.mcp.types import (
+from backend.app.capabilities.mcp.execution.approvals import McpToolApprovalRequester
+from backend.app.capabilities.mcp.execution.blocking import McpExecutionBlocker
+from backend.app.capabilities.mcp.execution.context import snapshot_audit_metadata
+from backend.app.capabilities.mcp.execution.invocation import McpToolInvoker
+from backend.app.capabilities.mcp.execution.policy import resolve_mcp_execution_policy
+from backend.app.capabilities.mcp.execution.types import (
     McpExecutionRequest,
     McpExecutionResult,
+)
+from backend.app.capabilities.mcp.execution.validation import McpExecutionValidator
+from backend.app.capabilities.mcp.policy import MCP_LIMIT_COUNTED_STATUSES
+from backend.app.capabilities.mcp.transport.contracts import (
+    McpToolAdapter,
+    McpToolAdapterResolver,
 )
 from backend.app.capabilities.models import McpToolCallLog
 from backend.app.orchestration.approvals.policy import ApprovalPolicyEngine

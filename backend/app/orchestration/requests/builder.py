@@ -23,7 +23,7 @@ from backend.app.agents.runtime.sessions import (
 )
 from backend.app.agents.runtime.state_store import AgentRunStateStore
 from backend.app.agents.runtime.tools import BackendToolExecutor
-from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
+from backend.app.capabilities.mcp.transport.resolver import McpAdapterResolver
 from backend.app.execution.runtime.backends.registry import build_runtime_backend_registry
 from backend.app.execution.runtime.contracts import DockerRuntimeClient
 from backend.app.execution.runtime.models import WorkspaceRuntime

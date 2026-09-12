@@ -4,13 +4,13 @@ from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID
 
-from backend.app.capabilities.mcp.policy import mcp_health_check_stale
-from backend.app.capabilities.mcp.server_rules import (
+from backend.app.capabilities.mcp.catalog.rules import (
     credential_status as _credential_status,
 )
-from backend.app.capabilities.mcp.server_rules import (
+from backend.app.capabilities.mcp.catalog.rules import (
     execution_mode as _execution_mode,
 )
+from backend.app.capabilities.mcp.policy import mcp_health_check_stale
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
 
 

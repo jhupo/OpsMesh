@@ -445,7 +445,28 @@ def test_capability_modules_are_nested_by_function() -> None:
         "workspace_skill_lifecycle.py",
     ):
         assert not (capabilities / name).exists(), name
-    assert (capabilities / "mcp/execution_service.py").is_file()
+    assert (capabilities / "mcp/execution/service.py").is_file()
+
+
+def test_mcp_modules_are_nested_by_function() -> None:
+    mcp = ROOT / "backend/app/capabilities/mcp"
+    expected = {"catalog", "execution", "transport"}
+    assert {path.name for path in mcp.iterdir() if path.is_dir()} >= expected
+    assert {
+        path.name
+        for path in mcp.iterdir()
+        if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
+    } == {"policy.py"}
+    for name in (
+        "adapters.py",
+        "adapter_payloads.py",
+        "adapter_resolver.py",
+        "execution_service.py",
+        "execution_invocation.py",
+        "servers.py",
+        "types.py",
+    ):
+        assert not (mcp / name).exists(), name
 
 
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:

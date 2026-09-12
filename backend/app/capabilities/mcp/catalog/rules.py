@@ -1,7 +1,7 @@
 from datetime import timedelta
 from urllib.parse import urlparse
 
-from backend.app.capabilities.mcp.catalog import McpCatalogTool
+from backend.app.capabilities.mcp.catalog.catalog import McpCatalogTool
 from backend.app.capabilities.mcp.policy import mcp_health_check_stale
 from backend.app.capabilities.models import McpServer
 

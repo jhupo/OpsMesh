@@ -10,7 +10,7 @@ from backend.app.api.schemas.capabilities.mcp_credentials import (
     McpCredentialReferenceRotateRequest,
     McpCredentialReferenceUpdateRequest,
 )
-from backend.app.capabilities.mcp.credentials import McpCredentialService
+from backend.app.capabilities.mcp.catalog.credentials import McpCredentialService
 from backend.app.platform.auth.context import WorkspaceContext
 from backend.app.platform.auth.dependencies import workspace_dependency
 from backend.app.platform.auth.permissions import WorkspaceAction
