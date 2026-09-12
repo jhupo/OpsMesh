@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field, computed_field, field_serializer
 from backend.app.api.schemas.common import ORMModel
 from backend.app.api.schemas.redaction import redact_sensitive_payload
 
+SUPPORTED_WORKSPACE_EXPORT_FORMAT = "workspace-export.v1"
+
 
 class WorkspaceExportRequest(BaseModel):
     include_agents: bool = True

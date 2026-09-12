@@ -91,11 +91,18 @@ def test_team_consolidation_removes_superseded_sources() -> None:
         "project_dashboard_constants.py",
         "provider_readiness.py",
         "provider_readiness_constants.py",
+    ):
+        assert not (teams / name).exists(), name
+
+    app = ROOT / "backend/app"
+    for name in (
         "agent_messages/pagination.py",
         "tasks/control_payloads.py",
         "workers/job_handlers/base.py",
+        "teams/operating_context.py",
+        "api/services/workspace_export_constants.py",
     ):
-        assert not (teams / name).exists(), name
+        assert not (app / name).exists(), name
 
 
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:

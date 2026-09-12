@@ -7,7 +7,7 @@ from uuid import UUID
 from backend.app.agent_messages.models import AgentMessageThread
 from backend.app.agent_runtime.sessions import PersistentAgentSession
 from backend.app.teams.models import AgentTeam
-from backend.app.teams.operating_context import TeamOperatingContextService
+from backend.app.teams.operating_context_service import TeamOperatingContextService
 from backend.app.teams.runtime_constants import (
     TEAM_RUNTIME_STOPPED,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,

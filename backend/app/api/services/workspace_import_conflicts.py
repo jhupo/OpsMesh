@@ -1,9 +1,7 @@
 from backend.app.api.schemas.exports import (
+    SUPPORTED_WORKSPACE_EXPORT_FORMAT,
     WorkspaceExportResponse,
     WorkspaceImportConflict,
-)
-from backend.app.api.services.workspace_export_constants import (
-    SUPPORTED_WORKSPACE_EXPORT_FORMAT,
 )
 
 
