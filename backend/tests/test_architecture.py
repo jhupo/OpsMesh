@@ -59,6 +59,38 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         assert not list((app / name).rglob("*.py")), name
 
 
+@pytest.mark.parametrize(
+    "module",
+    [
+        "backend.app.operations.worker_lifecycle",
+        "backend.app.operations.stale_run_recovery",
+        "backend.app.teams.execution_loop",
+    ],
+)
+def test_consolidated_services_import_in_a_fresh_process(module: str) -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", f"import importlib; importlib.import_module({module!r})"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_team_consolidation_removes_superseded_sources() -> None:
+    teams = ROOT / "backend/app/teams"
+    for name in (
+        "execution_loop_constants.py",
+        "execution_loop_jobs.py",
+        "execution_loop_recorder.py",
+        "execution_loop_repository.py",
+        "execution_overview_members.py",
+    ):
+        assert not (teams / name).exists(), name
+
+
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:
     missing = []
     for path in (ROOT / "backend/app").rglob("*.py"):

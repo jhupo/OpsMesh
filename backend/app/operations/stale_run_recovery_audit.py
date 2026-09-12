@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_service import AuditService
-from backend.app.operations.stale_run_recovery import StaleRunRecoveryCounts
+from backend.app.operations.stale_run_recovery_actions import StaleRunRecoveryCounts
 from backend.app.operations.utils import non_empty_string_or_none
 from backend.app.runs.status import RunStatus
 

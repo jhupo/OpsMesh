@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from backend.app.api.schemas.operation_queue import StaleRunRecoveryItemResponse
 from backend.app.operations.stale_run_domain import stale_run_failure_message
-from backend.app.operations.stale_run_recovery import StaleRunRecoveryCounts
 from backend.app.orchestration.runs.control import RunControlService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus
+
+
+@dataclass(slots=True)
+class StaleRunRecoveryCounts:
+    requeued: int = 0
+    failed_closed: int = 0
+    items: list[StaleRunRecoveryItemResponse] = field(default_factory=list)
 
 
 class StaleRunRecoveryActionExecutor:

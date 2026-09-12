@@ -4,12 +4,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from backend.app.api.schemas.operation_capacity import WorkerLifecycleBucketResponse
+from backend.app.core.typing import string_list
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.operations.utils import age_seconds, ensure_aware_utc
-from backend.app.operations.worker_lifecycle import job_worker_types
 from backend.app.workers.jobs import JobPayload
 
 TERMINAL_LEASE_STATUSES = {"completed", "failed", "expired"}
+
+
+def job_worker_types(job: JobPayload) -> list[str]:
+    worker_types = string_list(job.routing.get("worker_types"))
+    return worker_types or ["unrouted"]
 
 
 @dataclass(slots=True)

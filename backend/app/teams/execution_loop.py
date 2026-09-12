@@ -8,7 +8,6 @@ from backend.app.runtime.quotas import RuntimeQuotaExceededError
 from backend.app.runtime.safety import RuntimeSafetyError
 from backend.app.teams.command_center import TeamCommandCenterService
 from backend.app.teams.execution_loop_finalization import TeamExecutionFinalizationService
-from backend.app.teams.execution_loop_jobs import enqueue_team_execution_loop_job
 from backend.app.teams.execution_loop_payloads import (
     _advanced,
     _iteration_summary,
@@ -17,12 +16,15 @@ from backend.app.teams.execution_loop_queue import (
     TeamExecutionLoopEnqueueSummary,
     TeamExecutionLoopQueueService,
 )
-from backend.app.teams.execution_loop_recorder import TeamExecutionLoopIterationRecorder
-from backend.app.teams.execution_loop_repository import TeamExecutionLoopRepository
 from backend.app.teams.execution_loop_runtime_candidates import (
     _runtime_status,
 )
 from backend.app.teams.execution_loop_status import TeamExecutionLoopStatusService
+from backend.app.teams.execution_loop_support import (
+    TeamExecutionLoopIterationRecorder,
+    TeamExecutionLoopRepository,
+    enqueue_team_execution_loop_job,
+)
 from backend.app.teams.runtime import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,

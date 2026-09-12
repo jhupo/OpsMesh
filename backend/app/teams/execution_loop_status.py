@@ -14,7 +14,7 @@ from backend.app.teams.execution_loop_payloads import (
     _int_from,
     _without_finalizable_review_actions,
 )
-from backend.app.teams.execution_loop_repository import TeamExecutionLoopRepository
+from backend.app.teams.execution_loop_support import TeamExecutionLoopRepository
 
 
 class ExecutionLoopStatusSummary(TypedDict):

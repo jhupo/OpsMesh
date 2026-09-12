@@ -7,13 +7,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_service import AuditService
+from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runs.models import AgentRun
 from backend.app.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.tasks.service import TaskStateService
 from backend.app.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
-from backend.app.teams.execution_loop_constants import ACTIVE_RUN_STATUSES, COMPLETED_STEP_STATUSES
 from backend.app.teams.execution_loop_payloads import _final_output_from_acceptance, _result
+from backend.app.teams.execution_loop_support import COMPLETED_STEP_STATUSES
 from backend.app.teams.models import AgentTeam
 
 

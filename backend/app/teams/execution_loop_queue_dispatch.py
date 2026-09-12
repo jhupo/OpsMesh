@@ -6,13 +6,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.teams.execution_loop_jobs import enqueue_team_execution_loop_job
 from backend.app.teams.execution_loop_runtime_candidates import (
     TeamLoopCandidate,
     _increment_skip_reason,
     _record_runtime_scheduler_scan,
     _scheduler_scan_candidate,
 )
+from backend.app.teams.execution_loop_support import enqueue_team_execution_loop_job
 from backend.app.teams.models import AgentTeam
 from backend.app.workers.redis_queue import RedisQueue
 

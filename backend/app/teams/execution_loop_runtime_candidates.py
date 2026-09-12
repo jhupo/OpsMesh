@@ -7,7 +7,7 @@ from uuid import UUID
 
 from backend.app.core.typing import datetime_or_none, positive_int_or_default
 from backend.app.runtime.models import WorkspaceRuntime
-from backend.app.teams.execution_loop_constants import TEAM_RUNTIME_DEFAULT_LOOP_INTERVAL_SECONDS
+from backend.app.teams.execution_loop_support import TEAM_RUNTIME_DEFAULT_LOOP_INTERVAL_SECONDS
 from backend.app.teams.models import AgentTeam
 from backend.app.teams.runtime import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,

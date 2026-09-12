@@ -57,7 +57,6 @@ from backend.app.agent_runtime.providers.openai_settings import OpenAIModelSetti
 from backend.app.agent_runtime.providers.openai_streaming import run_openai_streamed
 from backend.app.agent_runtime.providers.openai_tools import OpenAIToolBridge
 from backend.app.agent_runtime.usage import runtime_usage
-from backend.app.model_providers.policy import normalize_openai_compatible_base_url
 from backend.app.model_providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
@@ -65,6 +64,7 @@ from backend.app.model_providers.model_api import (
 )
 from backend.app.model_providers.policy import (
     is_openai_compatible_provider,
+    normalize_openai_compatible_base_url,
 )
 
 

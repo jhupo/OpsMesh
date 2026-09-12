@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -8,7 +7,6 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.operation_queue import (
-    StaleRunRecoveryItemResponse,
     StaleRunRecoveryResponse,
 )
 from backend.app.operations.stale_run_domain import normalized_stale_run_statuses
@@ -20,13 +18,6 @@ from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.redis.keys import RedisKeyBuilder
 from backend.app.workers.redis_queue import RedisQueue
-
-
-@dataclass(slots=True)
-class StaleRunRecoveryCounts:
-    requeued: int = 0
-    failed_closed: int = 0
-    items: list[StaleRunRecoveryItemResponse] = field(default_factory=list)
 
 
 class StaleRunRecoveryService:

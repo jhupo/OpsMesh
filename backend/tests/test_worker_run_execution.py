@@ -42,11 +42,11 @@ from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.memory.content import memory_content_fingerprint
 from backend.app.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryRetrievalEvent
-from backend.app.model_providers.credential_commands import (
-    ModelProviderCredentialCommandService,
-)
 from backend.app.model_providers.contracts import (
     ModelProviderUnavailableError,
+)
+from backend.app.model_providers.credential_commands import (
+    ModelProviderCredentialCommandService,
 )
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.requests.builder import RunRequestBuilder

@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.operation_capacity import OperationsWorkerLifecycleResponse
-from backend.app.core.typing import string_list
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.operations.worker_lifecycle_buckets import WorkerLifecycleBucketAccumulator
 from backend.app.redis.keys import RedisKeyBuilder
@@ -62,11 +61,6 @@ def worker_finish_lifecycle_event(status: str) -> str:
     return "completed"
 
 
-
-
-
-
-
 class WorkerLifecyclePayloadService:
     def __init__(
         self,
@@ -96,19 +90,12 @@ class WorkerLifecyclePayloadService:
         )
 
 
-
-
-
-
-
 class WorkerLifecycleQueryService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
     def worker_nodes_by_worker_id(self) -> dict[str, WorkerNode]:
-        return {
-            node.worker_id: node for node in self._session.scalars(select(WorkerNode)).all()
-        }
+        return {node.worker_id: node for node in self._session.scalars(select(WorkerNode)).all()}
 
     def worker_leases(self, workspace_id: UUID) -> list[WorkerLease]:
         return list(
@@ -116,11 +103,6 @@ class WorkerLifecycleQueryService:
                 select(WorkerLease).where(WorkerLease.workspace_id == workspace_id)
             ).all()
         )
-
-
-
-
-
 
 
 class WorkerLifecycleQueueReader:
@@ -141,8 +123,3 @@ class WorkerLifecycleQueueReader:
     ) -> list[JobPayload]:
         queue = RedisQueue(self._redis, self._keys, queue_name)
         return [job for job in queue.peek(limit=limit) if job.workspace_id == workspace_id]
-
-
-def job_worker_types(job: JobPayload) -> list[str]:
-    worker_types = string_list(job.routing.get("worker_types"))
-    return worker_types or ["unrouted"]

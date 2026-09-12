@@ -10,6 +10,7 @@ from anthropic import Anthropic, AnthropicError
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from backend.app.model_providers.contracts import ResolvedModelProvider
 from backend.app.model_providers.model_api import (
     ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
@@ -20,7 +21,6 @@ from backend.app.model_providers.policy import (
     is_anthropic_provider,
     is_openai_compatible_provider,
 )
-from backend.app.model_providers.contracts import ResolvedModelProvider
 from backend.app.security.redaction import redact_sensitive_payload
 
 OPENAI_RESPONSES_REVIEWER = "openai_responses"

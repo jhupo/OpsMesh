@@ -5,12 +5,12 @@ from typing import Any
 
 import pytest
 
+from backend.app.model_providers.contracts import ResolvedModelProvider
 from backend.app.model_providers.model_api import (
     ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
 )
-from backend.app.model_providers.contracts import ResolvedModelProvider
 from backend.app.reviews.llm import (
     ANTHROPIC_MESSAGES_REVIEWER,
     OPENAI_CHAT_REVIEWER,
