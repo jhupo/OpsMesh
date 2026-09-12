@@ -11,8 +11,8 @@ from backend.app.orchestration.requests.utils import dict_copy, json_safe
 from backend.app.orchestration.runs.event_writer import RunEventWriter
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task
-from backend.app.teams.models import AgentTeam
-from backend.app.teams.runtime import TeamRuntimeService
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.teams.runtime import TeamRuntimeService
 
 
 @dataclass(slots=True)

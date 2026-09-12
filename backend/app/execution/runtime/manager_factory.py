@@ -2,9 +2,9 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
 from backend.app.execution.runtime.contracts import DockerRuntimeClient
 from backend.app.execution.runtime.manager import RuntimeManager
+from backend.app.platform.common.config import Settings
 
 
 class RuntimeManagerFactory:

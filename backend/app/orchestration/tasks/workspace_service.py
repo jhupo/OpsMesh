@@ -4,8 +4,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.pagination import PageParams
-from backend.app.db.pagination import page_scalars
 from backend.app.execution.runtime.space_service import RuntimeSpaceService
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_service import AuditService
@@ -14,9 +12,11 @@ from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.workflows.definitions import OrchestrationDefinitionService
 from backend.app.orchestration.workflows.plan_attempts import TaskPlanningAttemptService
-from backend.app.projects.models import WorkspaceProject
-from backend.app.teams.models import AgentTeam
-from backend.app.teams.snapshots import build_team_snapshot
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.pagination import page_scalars
+from backend.app.workspace.projects.models import WorkspaceProject
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.teams.snapshots import build_team_snapshot
 
 
 @dataclass(frozen=True, slots=True)

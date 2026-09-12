@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
-from backend.app.admin.risky_policy_values import RiskyExecutionPolicy
 from backend.app.execution.runtime.egress import RuntimeEgressPolicy
 from backend.app.execution.runtime.models import RuntimeTemplate
+from backend.app.platform.admin.risky_policy_values import RiskyExecutionPolicy
 
 
 class RuntimeSafetyError(ValueError):

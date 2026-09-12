@@ -10,8 +10,8 @@ from backend.app.orchestration.tasks.observation_utils import (
     status_from_message_type,
     str_or_none,
 )
-from backend.app.security.redaction import redact_sensitive_payload
-from backend.app.storage.artifact_models import Artifact
+from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.workspace.storage.artifact_models import Artifact
 
 
 class TaskObservationOverviewCards:

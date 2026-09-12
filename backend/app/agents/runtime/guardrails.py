@@ -19,7 +19,7 @@ from backend.app.agents.runtime.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimeOutputValidationError,
 )
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 MAX_GUARDRAILS_PER_STAGE = 20
 MAX_BLOCKED_TERMS = 100

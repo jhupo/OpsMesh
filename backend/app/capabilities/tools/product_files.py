@@ -11,19 +11,19 @@ from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
 from backend.app.capabilities.tools.product_events import ProductToolEventRecorder
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import TaskStep
-from backend.app.storage.artifact_models import Artifact
-from backend.app.storage.artifact_persistence import (
+from backend.app.workspace.storage.artifact_models import Artifact
+from backend.app.workspace.storage.artifact_persistence import (
     ArtifactPersistenceError,
     ArtifactPersistenceService,
 )
-from backend.app.storage.content import (
+from backend.app.workspace.storage.content import (
     WorkspaceFileContent,
     WorkspaceFileContentReader,
     WorkspaceFileReadError,
 )
-from backend.app.storage.models import WorkspaceFile
-from backend.app.storage.runtime_policy import runtime_file_denial_code
-from backend.app.storage.security import safe_filename
+from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.workspace.storage.runtime_policy import runtime_file_denial_code
+from backend.app.workspace.storage.security import safe_filename
 
 
 class WorkspaceFileProductTools(ProductToolEventRecorder):

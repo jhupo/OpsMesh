@@ -14,7 +14,7 @@ from backend.app.execution.operations.timeline_utils import (
     within,
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.teams.models import AgentTeam
+from backend.app.workspace.teams.models import AgentTeam
 
 
 class TeamRuntimeSchedulerTimelineCollector:

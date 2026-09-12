@@ -15,7 +15,7 @@ from backend.app.orchestration.tasks.service import TaskStateService
 from backend.app.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
 from backend.app.orchestration.tasks.step_service import TaskStepStateService
 from backend.app.orchestration.tasks.step_status import FINAL_STEP_STATUSES, TaskStepStatus
-from backend.app.workspaces.quotas import WorkspaceQuotaService
+from backend.app.workspace.tenants.quotas import WorkspaceQuotaService
 
 
 class ApprovalRunGateService:

@@ -21,7 +21,7 @@ from backend.app.execution.operations.self_hosted_machines import (
     OperationsSelfHostedMachineService,
 )
 from backend.app.execution.operations.worker_capacity import OperationsWorkerCapacityService
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 class OperationsControlPlaneService:

@@ -18,19 +18,19 @@ from backend.app.api.schemas.agent_messages import (
     AgentMessageCreateRequest,
     AgentMessageThreadCreateRequest,
 )
-from backend.app.core.config import Settings, get_settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.orchestration.tasks.models import Task
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.teams.models import AgentTeam
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.dependencies import get_redis_client
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
 

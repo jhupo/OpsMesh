@@ -14,9 +14,9 @@ from backend.app.capabilities.marketplace.models import (
     TalentListing,
     WorkspaceAgentInstall,
 )
-from backend.app.core.pagination import PageParams
-from backend.app.db.pagination import page_scalars
-from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.pagination import page_scalars
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
 
 
 class TalentMarketplaceRepository:

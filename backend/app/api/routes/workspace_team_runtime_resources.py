@@ -16,16 +16,16 @@ from backend.app.api.schemas.teams import (
     AgentTeamRuntimeEnsureRequest,
     AgentTeamRuntimeResponse,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.core.config import Settings, get_settings
-from backend.app.db.session import get_db_session
 from backend.app.execution.runtime.quotas import RuntimeQuotaExceededError
 from backend.app.execution.runtime.safety import RuntimeSafetyError
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.teams.runtime import TeamRuntimeService
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db.session import get_db_session
+from backend.app.workspace.teams.runtime import TeamRuntimeService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

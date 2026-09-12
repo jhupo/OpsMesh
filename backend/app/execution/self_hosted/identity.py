@@ -13,7 +13,6 @@ from backend.app.api.schemas.self_hosted import (
     RuntimeRegistrationRequest,
     WorkerHeartbeatRequest,
 )
-from backend.app.core.config import Settings
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.space_models import RuntimeSpace
 from backend.app.execution.self_hosted.attestation import (
@@ -31,6 +30,7 @@ from backend.app.execution.self_hosted.types import (
     CreatedEnrollmentToken,
     RegisteredRuntime,
 )
+from backend.app.platform.common.config import Settings
 
 
 class SelfHostedIdentityService:

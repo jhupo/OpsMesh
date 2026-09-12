@@ -13,7 +13,6 @@ from backend.app.api.schemas.runtime_spaces import (
     RuntimeSpaceResponse,
     RuntimeSpaceRuntimeDiagnosticResponse,
 )
-from backend.app.core.typing import string_list
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.space_models import (
     RuntimeSpace,
@@ -22,6 +21,7 @@ from backend.app.execution.runtime.space_models import (
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.blocked_reasons import explain_blocked_reason
+from backend.app.platform.common.typing import string_list
 
 
 class RuntimeSpaceDiagnosticsService:

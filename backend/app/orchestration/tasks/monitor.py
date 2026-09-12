@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.typing import dict_or_empty, int_or_zero, string_list
 from backend.app.orchestration.tasks.control_state import task_control_state
 from backend.app.orchestration.tasks.execution_diagnostics import TaskExecutionDiagnosticsService
 from backend.app.orchestration.tasks.live_status import TaskLiveStatusService
@@ -14,6 +13,7 @@ from backend.app.orchestration.tasks.manager_contracts import ManagerDiagnostics
 from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagnosticsService
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.timeline import TaskTimelineService
+from backend.app.platform.common.typing import dict_or_empty, int_or_zero, string_list
 
 
 class TaskExecutionStatusService:

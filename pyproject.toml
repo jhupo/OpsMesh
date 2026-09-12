@@ -126,14 +126,14 @@ allowed_importers = ["backend.app.api", "backend.app.main"]
 id = "infrastructure-no-api"
 name = "Shared infrastructure cannot depend on the API even indirectly"
 type = "forbidden"
-source_modules = ["backend.app.core", "backend.app.db", "backend.app.redis"]
+source_modules = ["backend.app.platform.common", "backend.app.platform.db", "backend.app.platform.redis"]
 forbidden_modules = ["backend.app.api"]
 
 [[tool.importlinter.contracts]]
 id = "pagination-no-transport"
 name = "Pagination inputs have no HTTP or database dependency"
 type = "forbidden"
-source_modules = ["backend.app.core.pagination"]
+source_modules = ["backend.app.platform.common.pagination"]
 forbidden_modules = ["backend.app.api", "fastapi", "starlette", "sqlalchemy"]
 
 [[tool.importlinter.contracts]]
@@ -155,7 +155,7 @@ id = "s3-sdk-boundary"
 name = "S3 SDK access stays in its storage adapter"
 type = "protected"
 protected_modules = ["boto3"]
-allowed_importers = ["backend.app.storage.storage"]
+allowed_importers = ["backend.app.workspace.storage.storage"]
 
 [[tool.importlinter.contracts]]
 id = "provider-neutral-contracts"

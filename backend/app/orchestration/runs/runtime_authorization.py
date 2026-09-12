@@ -12,9 +12,9 @@ from backend.app.execution.runtime.runtime_policy import policy_disables_network
 from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceBinding
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.storage.models import WorkspaceFile
-from backend.app.teams.models import AgentTeam
-from backend.app.teams.runtime_refs import team_bound_runtime_id
+from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.teams.runtime_refs import team_bound_runtime_id
 
 RUNTIME_READY_STATUSES = frozenset({"active", "running"})
 

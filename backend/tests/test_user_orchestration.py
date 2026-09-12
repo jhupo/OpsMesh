@@ -19,7 +19,7 @@ from backend.app.orchestration.workflows.plan_workflow_contracts import (
     WorkflowCondition,
     WorkflowNode,
 )
-from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.tests.test_capability_resources import (
     _client as _api_client,
 )

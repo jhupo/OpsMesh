@@ -6,8 +6,6 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.runtime_spaces import RuntimeSpaceDiagnosticsResponse
-from backend.app.core.pagination import PageParams
-from backend.app.db.pagination import page_scalars
 from backend.app.execution.runtime.space_diagnostics import RuntimeSpaceDiagnosticsService
 from backend.app.execution.runtime.space_lifecycle import RuntimeSpaceLifecycleService
 from backend.app.execution.runtime.space_models import (
@@ -26,6 +24,8 @@ from backend.app.execution.runtime.space_reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
 from backend.app.execution.runtime.space_targets import RuntimeSpaceTargetService
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.pagination import page_scalars
 
 T = TypeVar("T")
 

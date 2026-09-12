@@ -3,7 +3,10 @@ from __future__ import annotations
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 
-from backend.app.security.redaction import is_sensitive_payload_key, is_sensitive_payload_value
+from backend.app.platform.security.redaction import (
+    is_sensitive_payload_key,
+    is_sensitive_payload_value,
+)
 
 SAFE_REFERENCE_KEYS = frozenset(
     {

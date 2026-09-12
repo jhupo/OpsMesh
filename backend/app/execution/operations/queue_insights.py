@@ -11,7 +11,7 @@ from backend.app.execution.operations.queue_insight_buckets import QueueInsightB
 from backend.app.execution.operations.utils import age_seconds
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 @dataclass(frozen=True, slots=True)

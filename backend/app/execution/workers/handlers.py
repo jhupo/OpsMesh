@@ -7,7 +7,6 @@ from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
-from backend.app.core.config import Settings
 from backend.app.execution.runtime.contracts import DockerRuntimeClient
 from backend.app.execution.workers.job_handlers import (
     AgentRunJobHandler,
@@ -27,6 +26,7 @@ from backend.app.execution.workers.job_handlers import (
 from backend.app.execution.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
+from backend.app.platform.common.config import Settings
 
 
 class WorkerJobTypeHandler(Protocol):

@@ -13,8 +13,8 @@ from backend.app.agents.providers.policy import (
     canonical_model_provider,
     validated_base_url,
 )
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.security.egress import (
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.platform.security.egress import (
     MODEL_PROVIDER_BASE_URL_POLICY,
     EgressUrlPolicy,
 )

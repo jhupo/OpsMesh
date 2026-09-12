@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.execution.runtime.models import RuntimeTemplate
 from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceBinding
 from backend.app.orchestration.tasks.models import Task
-from backend.app.teams.models import AgentTeam
+from backend.app.workspace.teams.models import AgentTeam
 
 TARGET_TYPES_BY_SCOPE = {
     "workspace": "workspace",

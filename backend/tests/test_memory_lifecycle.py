@@ -48,17 +48,17 @@ from backend.app.agents.memory.search import (
 from backend.app.agents.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
 from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.core.config import Settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
 from backend.app.execution.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.execution.workers.job_handlers.memory_embedding import MemoryEmbeddingJobHandler
 from backend.app.execution.workers.jobs import JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.identity.models import User
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_hybrid_retrieval_uses_weighted_rrf_and_deduplicates_content() -> None:

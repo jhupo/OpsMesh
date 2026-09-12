@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.memory.embedding_jobs import WorkspaceMemoryEmbeddingScheduler
 from backend.app.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
-from backend.app.core.config import Settings
 from backend.app.execution.operations.runtime_cleanup import RuntimeCleanupService
 from backend.app.execution.operations.worker_lease_maintenance import WorkerLeaseMaintenanceService
 from backend.app.execution.runtime.dependencies import get_docker_runtime_client
@@ -21,10 +20,11 @@ from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.orchestration.tasks.events import RedisTaskEventBus
-from backend.app.storage.storage import create_storage
-from backend.app.teams.execution_loop import TeamExecutionLoopQueueService
-from backend.app.webhooks.service import WebhookDeliveryScheduler
-from backend.app.workspaces.data_lifecycle import WorkspaceDataLifecycleService
+from backend.app.platform.common.config import Settings
+from backend.app.platform.integrations.webhooks.service import WebhookDeliveryScheduler
+from backend.app.workspace.storage.storage import create_storage
+from backend.app.workspace.teams.execution_loop import TeamExecutionLoopQueueService
+from backend.app.workspace.tenants.data_lifecycle import WorkspaceDataLifecycleService
 
 logger = logging.getLogger(__name__)
 

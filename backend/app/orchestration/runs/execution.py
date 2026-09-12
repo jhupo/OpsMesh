@@ -23,7 +23,6 @@ from backend.app.agents.runtime.errors import (
 )
 from backend.app.agents.runtime.factory import build_agent_runtime_registry
 from backend.app.agents.runtime.state_store import AgentRunStateStore
-from backend.app.core.config import Settings, get_settings
 from backend.app.execution.runtime.contracts import DockerRuntimeClient
 from backend.app.execution.runtime.run_environment import (
     RunRuntimeEnvironmentService,
@@ -49,9 +48,10 @@ from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.orchestration.workflows.data import resolve_workflow_inputs
 from backend.app.orchestration.workflows.subworkflows import SubworkflowExecutionService
-from backend.app.projects.runtime_io import RunProjectIOService
-from backend.app.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.storage.storage import ObjectStorage
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.workspace.projects.runtime_io import RunProjectIOService
+from backend.app.workspace.projects.runtime_io_errors import ProjectRunIOError
+from backend.app.workspace.storage.storage import ObjectStorage
 
 TERMINAL_RUN_STATUSES = {
     RunStatus.COMPLETED,

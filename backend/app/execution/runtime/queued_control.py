@@ -2,12 +2,12 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
 from backend.app.execution.runtime.contracts import RuntimeExecutionMode, RuntimeLimits
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.service import RuntimeControlService
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
+from backend.app.platform.common.config import Settings
 
 
 class QueuedRuntimeControl:

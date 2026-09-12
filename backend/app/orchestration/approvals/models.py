@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, Uniqu
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from backend.app.platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class Approval(UUIDPrimaryKeyMixin, Base):

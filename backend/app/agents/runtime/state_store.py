@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.runtime.contracts import AgentRuntimeResumeState
 from backend.app.orchestration.runs.models import AgentRunStateSnapshot
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.secrets.service import SecretEncryptionService
 
 MAX_SERIALIZED_RUN_STATE_BYTES = 8 * 1024 * 1024
 RESUMABLE_STATE_STATUSES = frozenset({"paused", "approved", "rejected"})

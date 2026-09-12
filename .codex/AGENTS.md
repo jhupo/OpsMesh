@@ -128,16 +128,14 @@ the OpsMesh control plane.
 ## Repository Map
 
 - `backend/app/api`: API routes, schemas, dependencies, and transport-facing services.
-- `backend/app/agent_runtime`: Agents SDK adapters, sessions, tools, and runtime contracts.
-- `backend/app/orchestration`: run construction, authorization snapshots, and lifecycle.
-- `backend/app/agents`, `backend/app/teams`, `backend/app/tasks`: core product domains.
-- `backend/app/capabilities`: skills, MCP, credentials, policy, diagnostics, and execution.
-- `backend/app/runtime`: runtime models, Docker lifecycle, pools, and host-resource cleanup.
-- `backend/app/runtime/space_*`: placement, quotas, reservations, and leases.
-- `backend/app/storage`: file and artifact persistence and physical storage adapters.
+- `backend/app/agents`: agent profiles plus nested SDK runtime, memory, message, and provider domains.
+- `backend/app/capabilities`: skills, MCP, credentials, policy, diagnostics, marketplace, and tools.
+- `backend/app/orchestration`: requests, runs, approvals, tasks, and workflows.
+- `backend/app/execution`: runtime resources, Docker pools, workers, operations, and self-hosted jobs.
+- `backend/app/workspace`: tenant/workspace lifecycle, projects, teams, storage, domains, and reviews.
+- `backend/app/platform`: authentication, identity, shared common foundations, database, Redis, security, secrets,
+  administration, and external delivery integrations.
 - `backend/app/observability`: audit, cost, trace, and notification evidence.
-- `backend/app/self_hosted`: user-owned runtime protocol, trust, and job lifecycle.
-- `backend/app/workers`: queues, handlers, worker lifecycle, and maintenance.
 - `backend/migrations`: Alembic migrations.
 - `backend/tests`: unit and integration-style tests.
 - `deploy`: VPS/systemd and monitoring assets.

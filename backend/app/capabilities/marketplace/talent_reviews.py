@@ -11,10 +11,10 @@ from backend.app.api.schemas.marketplace import (
 )
 from backend.app.capabilities.marketplace.models import TalentListingReview
 from backend.app.capabilities.marketplace.talent_repository import TalentMarketplaceRepository
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import commit_or_raise_conflict
-from backend.app.db.pagination import page_scalars
 from backend.app.observability.audit_service import AuditService
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import commit_or_raise_conflict
+from backend.app.platform.db.pagination import page_scalars
 
 
 class TalentReviewService:

@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from backend.app.core.maintenance import MaintenanceJob, MaintenanceRunner
+from backend.app.platform.common.maintenance import MaintenanceJob, MaintenanceRunner
 
 
 def test_maintenance_runner_runs_jobs_due_on_start() -> None:

@@ -28,7 +28,7 @@ from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.operator_dependencies import (
     manager_agent_id as resolve_manager_agent_id,
 )
-from backend.app.teams.models import AgentTeam
+from backend.app.workspace.teams.models import AgentTeam
 
 
 class TaskManagerDiagnosticsService:

@@ -15,16 +15,16 @@ from backend.app.api.schemas.teams import (
     AgentTeamRuntimeControlRequest,
     AgentTeamRuntimeEnsureRequest,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.core.config import Settings
 from backend.app.execution.runtime.contracts import RuntimeLimits
 from backend.app.execution.runtime.queued_control import QueuedRuntimeControl
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.security.redaction import redact_sensitive_payload
-from backend.app.teams.execution_loop import (
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.common.config import Settings
+from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.workspace.teams.execution_loop import (
     enqueue_team_execution_loop_job,
 )
-from backend.app.teams.workspace_service import (
+from backend.app.workspace.teams.workspace_service import (
     WorkspaceTeamService,
 )
 

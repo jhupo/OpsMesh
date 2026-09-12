@@ -22,14 +22,14 @@ from backend.app.api.schemas.model_providers import (
     ModelProviderHealthCheckResponse,
     ModelProviderUsageAuditResponse,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.db.session import get_db_session
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.security.egress import EgressUrlValidationError
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.platform.security.egress import EgressUrlValidationError
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-credentials",

@@ -6,8 +6,15 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.api.schemas.tasks import TaskTransferResponse
-from backend.app.db.base import Base
-from backend.app.db.models import (  # noqa: F401
+from backend.app.orchestration.tasks.ownership import task_owner_can_execute_step
+from backend.app.orchestration.tasks.transfers import (
+    TaskTransferCommand,
+    TaskTransferDecision,
+    TaskTransferError,
+    TaskTransferService,
+)
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.models import (  # noqa: F401
     AgentRun,
     AgentTeam,
     AgentTeamMember,
@@ -16,13 +23,6 @@ from backend.app.db.models import (  # noqa: F401
     TaskTransfer,
     User,
     Workspace,
-)
-from backend.app.orchestration.tasks.ownership import task_owner_can_execute_step
-from backend.app.orchestration.tasks.transfers import (
-    TaskTransferCommand,
-    TaskTransferDecision,
-    TaskTransferError,
-    TaskTransferService,
 )
 
 

@@ -6,20 +6,20 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.typing import (
-    dict_list,
-    dict_or_empty,
-    string_list,
-    string_or_default,
-    uuid_or_none,
-)
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.conditions import condition_step_references
 from backend.app.orchestration.workflows.plan_member_matching import MemberMatchingService
 from backend.app.orchestration.workflows.plan_org_structure import build_org_structure
 from backend.app.orchestration.workflows.plan_project_plan_members import snapshot_agent_ids
-from backend.app.security.redaction import redact_sensitive_text
+from backend.app.platform.common.typing import (
+    dict_list,
+    dict_or_empty,
+    string_list,
+    string_or_default,
+    uuid_or_none,
+)
+from backend.app.platform.security.redaction import redact_sensitive_text
 
 
 @dataclass(frozen=True)

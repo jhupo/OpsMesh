@@ -5,7 +5,7 @@ from sqlalchemy import CheckConstraint, ForeignKey, Index, String, UniqueConstra
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from backend.app.platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class WorkerHeartbeat(UUIDPrimaryKeyMixin, TimestampMixin, Base):

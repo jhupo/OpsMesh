@@ -24,7 +24,7 @@ from backend.app.agents.runtime.sessions import (
     FROZEN_SESSION_STATUS,
     PersistentAgentSession,
 )
-from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.platform.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
 class PersistentAgentSessionManagementService:

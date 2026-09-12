@@ -16,9 +16,9 @@ from backend.app.capabilities.mcp.payloads import (
 )
 from backend.app.capabilities.mcp.server_helpers import require_mcp_server
 from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
-from backend.app.core.pagination import PageParams
-from backend.app.db.pagination import page_scalars
 from backend.app.orchestration.runs.models import AgentRun
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.pagination import page_scalars
 
 
 class McpToolCallLogQueryService:

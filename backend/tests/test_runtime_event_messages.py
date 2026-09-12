@@ -2,8 +2,8 @@ from uuid import uuid4
 
 from backend.app.agents.runtime.contracts import AgentRuntimeEvent
 from backend.app.agents.runtime.event_mapping import RuntimeEventTaskMessageMapper
-from backend.app.db import models  # noqa: F401
 from backend.app.orchestration.runs.models import AgentRun
+from backend.app.platform.db import models  # noqa: F401
 
 
 def test_runtime_event_messages_redact_body_and_nested_secret_values() -> None:

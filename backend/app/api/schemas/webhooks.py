@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, HttpUrl, computed_field, field_validator, model_validator
 
 from backend.app.api.schemas.common import ORMModel
-from backend.app.security.redaction import redact_sensitive_payload_item
+from backend.app.platform.security.redaction import redact_sensitive_payload_item
 
 
 class WebhookSubscriptionCreateRequest(BaseModel):

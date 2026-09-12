@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from backend.app.api.schemas.capabilities.mcp_redaction import redacted_connection
 from backend.app.api.schemas.common import TimestampedModel
-from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.platform.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
 class McpServerCreateRequest(BaseModel):

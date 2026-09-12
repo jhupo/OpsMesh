@@ -1,8 +1,8 @@
 from uuid import UUID
 
-from backend.app.core.typing import dict_list, string_list
 from backend.app.orchestration.tasks.manager_contracts import FollowUpCycle, ManagerSteps
 from backend.app.orchestration.tasks.models import TaskMessage, TaskStep
+from backend.app.platform.common.typing import dict_list, string_list
 
 
 def handoff_chain(

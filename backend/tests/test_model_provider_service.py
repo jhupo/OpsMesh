@@ -26,13 +26,13 @@ from backend.app.agents.providers.model_api import (
 )
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.providers.resolution_service import ModelProviderResolutionService
-from backend.app.core.pagination import PageParams
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_agent_model_api_override_is_limited_to_provider_supported_protocols() -> None:

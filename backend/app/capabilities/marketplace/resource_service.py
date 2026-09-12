@@ -20,18 +20,18 @@ from backend.app.capabilities.marketplace.models import (
 )
 from backend.app.capabilities.marketplace.resource_installer import MarketplaceResourceInstaller
 from backend.app.capabilities.models import McpServer, Skill
-from backend.app.core.config import Settings
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import (
+from backend.app.observability.audit_service import AuditService
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import (
     DatabaseConflictError,
     commit_or_raise_conflict,
     flush_or_raise_conflict,
 )
-from backend.app.db.pagination import page_scalars
-from backend.app.observability.audit_service import AuditService
-from backend.app.reviews.approval_service import ResourceReviewApprovalService
-from backend.app.reviews.models import ResourceReview
-from backend.app.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.platform.db.pagination import page_scalars
+from backend.app.workspace.reviews.approval_service import ResourceReviewApprovalService
+from backend.app.workspace.reviews.models import ResourceReview
+from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
 
 
 class MarketplaceService:

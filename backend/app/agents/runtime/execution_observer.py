@@ -9,7 +9,7 @@ from backend.app.agents.runtime.contracts import (
     AgentRuntimeStreamEvent,
     AgentRuntimeStreamEventKind,
 )
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 @dataclass(slots=True)

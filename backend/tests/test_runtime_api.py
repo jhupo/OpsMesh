@@ -10,12 +10,6 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.admin.models import PlatformPolicy
-from backend.app.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.core.config import Settings, get_settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
 from backend.app.execution.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -28,9 +22,15 @@ from backend.app.execution.runtime.space_models import RuntimeSpace
 from backend.app.execution.workers.handlers import WorkerJobHandler
 from backend.app.execution.workers.jobs import JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.admin.models import PlatformPolicy
+from backend.app.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
 
@@ -499,7 +499,7 @@ def _client(
     from fakeredis import FakeRedis
 
     from backend.app.execution.workers.dependencies import get_worker_queue
-    from backend.app.redis.keys import RedisKeyBuilder
+    from backend.app.platform.redis.keys import RedisKeyBuilder
 
     def override_db_session() -> Generator[Session, None, None]:
         request_session = session_factory()

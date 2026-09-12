@@ -13,8 +13,8 @@ from backend.app.capabilities.capability_governance_rules import (
     GOVERNANCE_APPLY_ACTIONS,
     governance_actions,
 )
-from backend.app.core.config import Settings, get_settings
 from backend.app.observability.audit_service import AuditService
+from backend.app.platform.common.config import Settings, get_settings
 
 
 class CapabilityGovernanceService:

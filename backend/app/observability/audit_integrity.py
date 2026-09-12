@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.observability.audit_models import AuditIntegrityCheck
 from backend.app.observability.audit_service import AuditService
-from backend.app.workspaces.models import Workspace
+from backend.app.workspace.tenants.models import Workspace
 
 
 @dataclass(frozen=True)

@@ -12,8 +12,8 @@ from backend.app.capabilities.capability_governance_rules import (
     string_list,
 )
 from backend.app.capabilities.skill_tool_diagnostics import SkillToolDiagnosticsService
-from backend.app.core.config import Settings, get_settings
 from backend.app.observability.audit_service import AuditService
+from backend.app.platform.common.config import Settings, get_settings
 
 
 class CapabilityGovernanceAgentActionService:

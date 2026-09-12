@@ -18,14 +18,14 @@ from backend.app.capabilities.mcp.stdio_credentials import (
 from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.mcp.unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpCredentialReference, McpServer
-from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.execution.runtime.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )
 from backend.app.execution.runtime.models import RuntimeCommand, WorkspaceRuntime
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.security.egress import EgressUrlPolicy
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.platform.security.egress import EgressUrlPolicy
 
 
 def test_streamable_http_mcp_adapter_uses_official_client_session(monkeypatch) -> None:

@@ -30,9 +30,9 @@ from backend.app.orchestration.workflows.plan_future_plan_mutation import (
 )
 from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.orchestration.workflows.planning_completion import PlannerCompletionService
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspaces.models import WorkspaceQuota
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.tenants.models import WorkspaceQuota
 from backend.tests.test_worker_run_execution import (
     _build_agent_request,
     _seed_workspace,

@@ -12,8 +12,6 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.admin.models import PlatformPolicy
-from backend.app.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.capabilities.effective_catalog import effective_catalog_fingerprint
 from backend.app.capabilities.execution import McpToolExecutionService
 from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
@@ -29,10 +27,6 @@ from backend.app.capabilities.models import (
     McpToolCallLog,
 )
 from backend.app.capabilities.tools.errors import ToolPermissionError, ToolResourceNotFoundError
-from backend.app.core.config import Settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
@@ -40,10 +34,16 @@ from backend.app.orchestration.runs.authorization_integrity import (
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.reviews.models import ResourceReview
-from backend.app.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.security.models import SecurityEvent
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.admin.models import PlatformPolicy
+from backend.app.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
+from backend.app.platform.common.config import Settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.platform.security.models import SecurityEvent
+from backend.app.workspace.reviews.models import ResourceReview
+from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 @pytest.fixture(autouse=True)

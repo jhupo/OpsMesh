@@ -18,20 +18,20 @@ from backend.app.agents.runtime.sessions import (
     PersistentAgentSession,
     PersistentAgentSessionItem,
 )
-from backend.app.core.config import Settings, get_settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.reviews.service import ResourceReview
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.dependencies import get_redis_client
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.reviews.service import ResourceReview
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
 
@@ -47,7 +47,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
+        "backend.app.workspace.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
         fake_review,
     )
 
@@ -560,7 +560,7 @@ def test_agent_update_requires_resource_review_for_high_impact_changes(monkeypat
         )
 
     monkeypatch.setattr(
-        "backend.app.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
+        "backend.app.workspace.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
         review_agent_profile,
     )
 

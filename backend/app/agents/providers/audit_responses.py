@@ -1,7 +1,7 @@
 from backend.app.agents.providers.model_api import canonical_model_api
 from backend.app.api.schemas.model_providers import ModelProviderUsageAuditResponse
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.security.redaction import redact_sensitive_payload_item
+from backend.app.platform.security.redaction import redact_sensitive_payload_item
 
 _SENSITIVE_METADATA_KEYS = {
     "api_key",

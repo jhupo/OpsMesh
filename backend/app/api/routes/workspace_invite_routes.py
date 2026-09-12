@@ -23,14 +23,14 @@ from backend.app.api.services.workspace_invites import (
     fingerprint_invite_token,
 )
 from backend.app.api.services.workspaces import WorkspaceService
-from backend.app.auth.context import AuthenticatedUser, WorkspaceContext
-from backend.app.auth.dependencies import get_current_user, workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import DatabaseConflictError
-from backend.app.db.session import get_db_session
-from backend.app.security.service import SecurityAuditService
+from backend.app.platform.auth.context import AuthenticatedUser, WorkspaceContext
+from backend.app.platform.auth.dependencies import get_current_user, workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import DatabaseConflictError
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.security.service import SecurityAuditService
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 

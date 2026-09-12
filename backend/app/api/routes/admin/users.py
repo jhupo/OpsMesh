@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.admin import AdminUserResponse, AdminUserStatusUpdateRequest
-from backend.app.core.pagination import PageParams
-from backend.app.db.session import get_db_session
-from backend.app.identity.admin_service import IdentityAdminService
-from backend.app.security.service import SecurityAuditService
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.admin_service import IdentityAdminService
+from backend.app.platform.security.service import SecurityAuditService
 
 router = APIRouter()
 

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.runs import AgentRunResponse
 from backend.app.execution.workers.jobs import JobPayload
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 class QueueMetricsResponse(BaseModel):

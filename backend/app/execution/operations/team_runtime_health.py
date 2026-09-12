@@ -5,8 +5,8 @@ from uuid import UUID
 
 from backend.app.execution.operations.utils import ensure_aware_utc
 from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.teams.models import AgentTeam
-from backend.app.teams.runtime import (
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.teams.runtime import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
     TEAM_RUNTIME_STATUS_KEY,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,

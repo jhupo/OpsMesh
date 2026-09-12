@@ -25,15 +25,15 @@ from backend.app.api.schemas.tasks import (
     TaskPlanningAttemptResponse,
 )
 from backend.app.api.services.workspace_reads import WorkspaceReadService
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.core.pagination import PageParams
-from backend.app.core.trace_context import current_trace_metadata
-from backend.app.db.session import get_db_session
 from backend.app.orchestration.tasks.events import TaskEventBus
 from backend.app.orchestration.tasks.feedback import TaskFeedbackService
 from backend.app.orchestration.tasks.live_status import TaskLiveStatusService
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.common.trace_context import current_trace_metadata
+from backend.app.platform.db.session import get_db_session
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

@@ -21,8 +21,8 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 from sqlalchemy import Engine
 
-from backend.app.core.config import Settings
-from backend.app.core.logging import RequestContextFilter, json_log_formatter
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.logging import RequestContextFilter, json_log_formatter
 
 _instrument_lock = Lock()
 _global_provider: TracerProvider | None = None

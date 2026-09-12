@@ -7,7 +7,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.self_hosted.models import SelfHostedJobClaim
 from backend.app.execution.self_hosted.types import AuthenticatedWorker
@@ -15,24 +14,25 @@ from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
-from backend.app.projects.file_boundaries import (
+from backend.app.platform.common.config import Settings
+from backend.app.workspace.projects.file_boundaries import (
     ProjectBoundaryViolation,
     ProjectFileBoundaryService,
 )
-from backend.app.projects.models import AgentRunProjectSnapshot
-from backend.app.projects.output_artifacts import ProjectOutputArtifactWriter
-from backend.app.projects.run_manifest import (
+from backend.app.workspace.projects.models import AgentRunProjectSnapshot
+from backend.app.workspace.projects.output_artifacts import ProjectOutputArtifactWriter
+from backend.app.workspace.projects.run_manifest import (
     RunProjectManifest,
     RunProjectOutput,
     public_run_project_manifest,
 )
-from backend.app.projects.run_snapshots import RunProjectSnapshotService
-from backend.app.projects.runtime_io_errors import ProjectRunIOError
-from backend.app.projects.runtime_io_state import ProjectIOStateService
-from backend.app.projects.runtime_staging import ProjectInputArchiveBuilder
-from backend.app.storage.artifact_models import Artifact
-from backend.app.storage.models import FileAccessEvent
-from backend.app.storage.storage import ObjectStorage, create_storage
+from backend.app.workspace.projects.run_snapshots import RunProjectSnapshotService
+from backend.app.workspace.projects.runtime_io_errors import ProjectRunIOError
+from backend.app.workspace.projects.runtime_io_state import ProjectIOStateService
+from backend.app.workspace.projects.runtime_staging import ProjectInputArchiveBuilder
+from backend.app.workspace.storage.artifact_models import Artifact
+from backend.app.workspace.storage.models import FileAccessEvent
+from backend.app.workspace.storage.storage import ObjectStorage, create_storage
 
 
 @dataclass(frozen=True, slots=True)

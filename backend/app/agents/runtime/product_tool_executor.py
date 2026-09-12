@@ -38,14 +38,14 @@ from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_NAMES as 
 from backend.app.capabilities.tools.context import ToolContext
 from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
 from backend.app.capabilities.tools.product_service import ProductToolService
-from backend.app.core.config import Settings
-from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.orchestration.approvals.service import ApprovalService
 from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.security.redaction import redact_sensitive_text
-from backend.app.storage.storage import ObjectStorage, create_storage
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.trace_context import current_trace_context, telemetry_span
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.platform.security.redaction import redact_sensitive_text
+from backend.app.workspace.storage.storage import ObjectStorage, create_storage
 
 __all__ = ["PRODUCT_TOOL_NAMES", "ProductToolExecutor"]
 

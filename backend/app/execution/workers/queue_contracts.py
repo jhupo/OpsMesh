@@ -7,7 +7,7 @@ from uuid import UUID
 from redis import Redis
 
 from backend.app.execution.workers.jobs import JobPayload
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 class ProcessingEntry(TypedDict):

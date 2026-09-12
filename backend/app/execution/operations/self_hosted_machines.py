@@ -12,7 +12,6 @@ from backend.app.api.schemas.operation_control_plane import (
     OperationsSelfHostedMachineResponse,
     OperationsSelfHostedMachinesResponse,
 )
-from backend.app.core.typing import string_list
 from backend.app.execution.operations.utils import age_seconds, positive_int_or_none
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.self_hosted.models import (
@@ -25,6 +24,7 @@ from backend.app.execution.self_hosted.trust import (
     worker_capability_attestation_state,
     worker_host_isolation_verified,
 )
+from backend.app.platform.common.typing import string_list
 
 
 def self_hosted_policy_summary(capabilities: dict[str, object]) -> dict[str, object]:

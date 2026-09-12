@@ -4,13 +4,13 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from backend.app.db import models  # noqa: F401 - register ORM relationship targets
 from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.orchestration.workflows.scheduler_team_capacity import (
     TeamMemberCapacityResolver,
     manager_capacity_context,
 )
-from backend.app.teams.models import AgentTeam
+from backend.app.platform.db import models  # noqa: F401 - register ORM relationship targets
+from backend.app.workspace.teams.models import AgentTeam
 
 
 def test_team_capacity_rejects_mixed_workspace_batch_before_querying() -> None:

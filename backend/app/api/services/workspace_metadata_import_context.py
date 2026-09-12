@@ -5,7 +5,7 @@ from backend.app.api.schemas.exports import (
     WorkspaceImportConflict,
     WorkspaceImportRequest,
 )
-from backend.app.workspaces.models import Workspace
+from backend.app.workspace.tenants.models import Workspace
 
 
 @dataclass(slots=True)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.orchestration.tasks.models import TaskMessage
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 def risk_flags_from_payload(payload: dict[str, object]) -> list[dict[str, object]]:

@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections import Counter
 from uuid import UUID
 
-from backend.app.core.typing import dict_list, dict_or_empty, int_or_zero, string_list
 from backend.app.orchestration.tasks.operator_actions import TASK_OPERATOR_ACTIONS
+from backend.app.platform.common.typing import dict_list, dict_or_empty, int_or_zero, string_list
 
 RECOVERY_PLAN_SOURCES = {
     "collaboration_state",

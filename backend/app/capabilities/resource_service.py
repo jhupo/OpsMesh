@@ -22,16 +22,16 @@ from backend.app.capabilities.schema_validation import (
     reject_embedded_secrets,
     validate_parameters,
 )
-from backend.app.core.errors import DomainError, NotFoundError
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.space_models import RuntimeSpace
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
-from backend.app.storage.models import WorkspaceFile
-from backend.app.teams.models import AgentTeam
+from backend.app.platform.common.errors import DomainError, NotFoundError
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.workspace.teams.models import AgentTeam
 
 OwnedResource = TypeVar(
     "OwnedResource",

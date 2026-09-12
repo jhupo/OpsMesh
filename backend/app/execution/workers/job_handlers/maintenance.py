@@ -6,7 +6,7 @@ from backend.app.execution.workers.job_handlers.context import WorkerJobHandlerC
 from backend.app.execution.workers.job_routing import positive_float
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.observability.audit_integrity import AuditIntegrityService
-from backend.app.secrets.rotation import HostedSecretReencryptService
+from backend.app.platform.secrets.rotation import HostedSecretReencryptService
 
 
 class SecretReencryptJobHandler:

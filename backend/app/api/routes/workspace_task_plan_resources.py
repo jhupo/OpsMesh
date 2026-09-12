@@ -14,10 +14,6 @@ from backend.app.api.schemas.tasks import (
     TaskPlanRetryRequest,
     TaskResponse,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.db.session import get_db_session
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.runs.service import RunOrchestrationService
@@ -37,6 +33,10 @@ from backend.app.orchestration.workflows.plan_future_plan_mutation import (
     TaskPlanMutationError,
     TaskPlanMutationService,
 )
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.db.session import get_db_session
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

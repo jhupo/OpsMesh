@@ -15,7 +15,7 @@ from backend.app.agents.runtime.contracts import AgentRunResult
 from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskMessage
-from backend.app.security.redaction import redact_text_fragments
+from backend.app.platform.security.redaction import redact_text_fragments
 
 RUN_COMPLETED_ENTRY_TYPE = "agent_run_completed"
 RUN_FAILED_ENTRY_TYPE = "agent_run_failed"

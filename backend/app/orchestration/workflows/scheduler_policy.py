@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.runs.state_resource_usage import scheduler_numeric_limits
-from backend.app.workspaces.models import Workspace
+from backend.app.workspace.tenants.models import Workspace
 
 
 @dataclass(frozen=True)

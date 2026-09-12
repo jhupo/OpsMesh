@@ -7,11 +7,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.payloads import AGENT_PROFILE_REVIEW_FIELDS, profile_snapshot
-from backend.app.core.config import Settings
-from backend.app.reviews.approval_service import ResourceReviewApprovalService
-from backend.app.reviews.constants import REVIEW_TYPE_AGENT_PROFILE
-from backend.app.reviews.models import ResourceReview
-from backend.app.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.platform.common.config import Settings
+from backend.app.workspace.reviews.approval_service import ResourceReviewApprovalService
+from backend.app.workspace.reviews.constants import REVIEW_TYPE_AGENT_PROFILE
+from backend.app.workspace.reviews.models import ResourceReview
+from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
 
 
 class AgentProfileReviewService:

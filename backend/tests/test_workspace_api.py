@@ -26,10 +26,6 @@ from backend.app.agents.providers.health import (
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agents.runtime.sessions import PersistentAgentSession, PersistentAgentSessionItem
-from backend.app.auth.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
-from backend.app.core.config import Settings, get_settings
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
 from backend.app.execution.operations.timeline import TeamRuntimeTimelineService, TimelineFilters
 from backend.app.execution.runtime.contracts import (
     DockerRuntimeClient,
@@ -50,7 +46,6 @@ from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.queue_consumer import consume_once
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.execution.workers.scheduled_models import WorkspaceScheduledJob
-from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
@@ -68,22 +63,27 @@ from backend.app.orchestration.tasks.observation import TaskObservationService
 from backend.app.orchestration.tasks.status import TaskStatus
 from backend.app.orchestration.tasks.timeline import TaskTimelineService
 from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.reviews.model_request import ModelRequestReview
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.security.models import SecurityEvent
-from backend.app.storage.artifact_models import Artifact
-from backend.app.storage.models import WorkspaceFile
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.teams.operations_console import TeamOperationsConsoleService
-from backend.app.workspaces.models import (
+from backend.app.platform.auth.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.dependencies import get_redis_client
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.platform.security.models import SecurityEvent
+from backend.app.workspace.reviews.model_request import ModelRequestReview
+from backend.app.workspace.storage.artifact_models import Artifact
+from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.teams.operations_console import TeamOperationsConsoleService
+from backend.app.workspace.tenants.models import (
     Workspace,
     WorkspaceInvite,
     WorkspaceMember,
     WorkspaceQuota,
 )
-from backend.app.workspaces.quotas import WorkspaceQuotaService
+from backend.app.workspace.tenants.quotas import WorkspaceQuotaService
 
 TOKEN = "test-token"
 
@@ -2143,7 +2143,9 @@ def test_team_execution_loop_finalize_closes_approved_tasks_only(system_executio
     assert approved_task.status == "running"
 
     if system_execution:
-        from backend.app.teams.execution_loop_finalization import TeamExecutionFinalizationService
+        from backend.app.workspace.teams.execution_loop_finalization import (
+            TeamExecutionFinalizationService,
+        )
 
         applied_body = TeamExecutionFinalizationService(session).finalize_ready_tasks(
             workspace_id=workspace.id,
@@ -6328,7 +6330,7 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery(
         )
 
     monkeypatch.setattr(
-        "backend.app.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.workspace.reviews.model_request.ModelRequestReviewService.review_request",
         approve_model_request,
     )
 

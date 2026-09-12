@@ -5,7 +5,7 @@ from sqlalchemy import Select, select
 
 from backend.app.agents.messages.contracts import MailboxStore
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.core.pagination import PageParams
+from backend.app.platform.common.pagination import PageParams
 
 T = TypeVar("T")
 

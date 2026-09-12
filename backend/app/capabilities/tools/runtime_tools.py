@@ -3,13 +3,13 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.capabilities.tools.context import ToolContext
-from backend.app.core.config import Settings
 from backend.app.execution.runtime.manager import RuntimeManager
 from backend.app.execution.runtime.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.orchestration.approvals.service import ApprovalService
 from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
 from backend.app.orchestration.runs.event_writer import RunEventWriter
+from backend.app.platform.common.config import Settings
 
 
 @dataclass(frozen=True)

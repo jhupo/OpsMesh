@@ -9,13 +9,13 @@ from backend.app.api.schemas.operation_capacity import (
     WorkerCapacityAggregateResponse,
     WorkerTypeCapacityResponse,
 )
-from backend.app.core.typing import int_or_zero
 from backend.app.execution.operations.models import WorkerLease, WorkerNode
 from backend.app.execution.operations.utils import positive_int
 from backend.app.execution.operations.worker_lease_queries import WorkerLeaseQueryService
 from backend.app.execution.operations.worker_lifecycle import RUNNING_LEASE_STATUSES
 from backend.app.execution.operations.worker_node_repository import WorkerNodeRepository
 from backend.app.execution.workers.jobs import JobType
+from backend.app.platform.common.typing import int_or_zero
 
 
 @dataclass(frozen=True)

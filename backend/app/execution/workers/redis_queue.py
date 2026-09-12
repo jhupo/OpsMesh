@@ -7,14 +7,14 @@ from dataclasses import dataclass
 from opentelemetry.trace import SpanKind
 from redis import Redis
 
-from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.execution.workers.queue_leases import QueueLeaseMixin
 from backend.app.execution.workers.queue_queries import QueueInspectionMixin
 from backend.app.execution.workers.queue_retries import QueueRetryMixin
 from backend.app.execution.workers.queue_scripts import ENQUEUE_SCRIPT
 from backend.app.execution.workers.queue_serialization import QueueSerializationMixin
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.common.trace_context import current_trace_context, telemetry_span
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 @dataclass(frozen=True)

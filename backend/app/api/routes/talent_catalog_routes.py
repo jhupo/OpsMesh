@@ -12,8 +12,8 @@ from backend.app.api.schemas.marketplace import (
 from backend.app.capabilities.marketplace.responses import review_response
 from backend.app.capabilities.marketplace.talent_catalog import TalentCatalogService
 from backend.app.capabilities.marketplace.talent_reviews import TalentReviewService
-from backend.app.core.pagination import PageParams
-from backend.app.db.session import get_db_session
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.session import get_db_session
 
 router = APIRouter()
 

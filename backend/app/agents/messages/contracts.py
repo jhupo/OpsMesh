@@ -6,7 +6,7 @@ from sqlalchemy import Select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.core.pagination import PageParams
+from backend.app.platform.common.pagination import PageParams
 
 T = TypeVar("T")
 

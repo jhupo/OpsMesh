@@ -1,18 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.app.admin.releases.service import ReleaseUpdateService
 from backend.app.api.routes.admin.dependencies import RedisClient
 from backend.app.api.schemas.admin import (
     AdminReleaseUpdateCheckResponse,
     AdminReleaseVersionResponse,
     AdminSystemConfigurationResponse,
 )
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.executors import blocking_executor_snapshot
-from backend.app.core.resources import recommend_runtime_resources
-from backend.app.db.session import database_pool_snapshot
-from backend.app.redis.client import redis_pool_snapshot
-from backend.app.redis.dependencies import get_redis_client
+from backend.app.platform.admin.releases.service import ReleaseUpdateService
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.executors import blocking_executor_snapshot
+from backend.app.platform.common.resources import recommend_runtime_resources
+from backend.app.platform.db.session import database_pool_snapshot
+from backend.app.platform.redis.client import redis_pool_snapshot
+from backend.app.platform.redis.dependencies import get_redis_client
 
 router = APIRouter()
 

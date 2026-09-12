@@ -20,10 +20,6 @@ from sqlalchemy.pool import StaticPool
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.providers.models import ModelProviderCredential
-from backend.app.core.config import Settings, get_settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
 from backend.app.execution.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -35,20 +31,27 @@ from backend.app.execution.runtime.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.notification_models import WorkspaceNotification
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.projects.export_models import WorkspaceExportJob
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.storage.artifact_models import Artifact
-from backend.app.storage.models import WorkspaceFile
-from backend.app.storage.storage import LocalStorage
-from backend.app.teams.models import AgentTeam
-from backend.app.webhooks.models import WebhookDeliveryAttempt, WebhookSubscription
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.platform.integrations.webhooks.models import (
+    WebhookDeliveryAttempt,
+    WebhookSubscription,
+)
+from backend.app.platform.redis.dependencies import get_redis_client
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.workspace.projects.export_models import WorkspaceExportJob
+from backend.app.workspace.storage.artifact_models import Artifact
+from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.workspace.storage.storage import LocalStorage
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
 SOURCE_MARKER = "source-secret-marker"

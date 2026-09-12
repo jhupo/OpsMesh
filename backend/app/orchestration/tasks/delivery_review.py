@@ -8,9 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.core.typing import int_or_zero, string_list
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.storage.artifact_models import Artifact
+from backend.app.platform.common.typing import int_or_zero, string_list
+from backend.app.workspace.storage.artifact_models import Artifact
 
 
 class TaskDeliveryReviewService:

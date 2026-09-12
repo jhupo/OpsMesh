@@ -6,10 +6,10 @@ from backend.app.api.schemas.self_hosted import (
     EnrollmentTokenCreateRequest,
     EnrollmentTokenCreateResponse,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
 from backend.app.execution.self_hosted.service import SelfHostedRuntimeService
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
 
 router = APIRouter()
 

@@ -11,11 +11,11 @@ from backend.app.api.schemas.exports import (
 )
 from backend.app.api.services.exports import WorkspaceExportService
 from backend.app.api.services.workspace_metadata_import import WorkspaceMetadataImportService
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.db.session import get_db_session
-from backend.app.storage.security import content_disposition_attachment
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.db.session import get_db_session
+from backend.app.workspace.storage.security import content_disposition_attachment
 
 router = APIRouter()
 

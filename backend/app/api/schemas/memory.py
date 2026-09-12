@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 SemanticScope = Literal["workspace", "team", "agent"]
 SemanticKnowledgeType = Literal["fact", "configuration", "policy", "procedure"]

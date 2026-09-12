@@ -11,7 +11,7 @@ from backend.app.agents.providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
 )
-from backend.app.reviews.llm import (
+from backend.app.workspace.reviews.llm import (
     ANTHROPIC_MESSAGES_REVIEWER,
     OPENAI_CHAT_REVIEWER,
     OPENAI_RESPONSES_REVIEWER,

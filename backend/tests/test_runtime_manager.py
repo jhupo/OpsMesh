@@ -12,9 +12,6 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.config import Settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
 from backend.app.execution.runtime.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -41,9 +38,12 @@ from backend.app.execution.runtime.space_models import (
     RuntimeSpaceReservation,
 )
 from backend.app.execution.runtime.space_service import RuntimeSpaceService
-from backend.app.security.models import SecurityEvent
-from backend.app.teams.models import AgentTeam
-from backend.app.workspaces.models import Workspace
+from backend.app.platform.common.config import Settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.security.models import SecurityEvent
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.tenants.models import Workspace
 
 
 class FakeDockerClient(DockerRuntimeClient):

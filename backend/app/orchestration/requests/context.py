@@ -9,9 +9,9 @@ from backend.app.agents.messages.service import AgentMailboxService
 from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
-from backend.app.security.redaction import redact_sensitive_text
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.teams.runtime import TeamRuntimeService
+from backend.app.platform.security.redaction import redact_sensitive_text
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.teams.runtime import TeamRuntimeService
 
 
 @dataclass(slots=True)

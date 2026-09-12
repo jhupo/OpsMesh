@@ -7,8 +7,8 @@ from backend.app.execution.runtime.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.execution.runtime.space_models import RuntimeSpaceEvent
 from backend.app.orchestration.runs.event_writer import RunEventWriter
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.security.models import SecurityEvent
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.models import SecurityEvent
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 class SelfHostedEventRecorder:

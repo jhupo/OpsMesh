@@ -19,16 +19,16 @@ from backend.app.agents.memory.semantic import (
 )
 from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.core.config import Settings, get_settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
-from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.teams.models import AgentTeam
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.dependencies import get_redis_client
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 TOKEN = "test-internal-token"
 

@@ -8,7 +8,7 @@ from backend.app.agents.providers.metadata import sanitize_budget_metadata
 from backend.app.agents.providers.model_api import model_api_for_provider
 from backend.app.agents.providers.policy import model_provider_base_url_host
 from backend.app.api.schemas.common import ORMModel
-from backend.app.secrets.service import hosted_secret_metadata
+from backend.app.platform.secrets.service import hosted_secret_metadata
 
 
 class ModelProviderCredentialCreateRequest(BaseModel):

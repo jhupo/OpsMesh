@@ -11,12 +11,12 @@ from backend.app.capabilities.mcp.adapter_payloads import (
     MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
     MCP_STDIO_CONTRACT_VERSION,
 )
-from backend.app.core.config import Settings
-from backend.app.core.typing import string_list
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.self_hosted.models import RuntimeCredential, SelfHostedWorker
 from backend.app.execution.self_hosted.policy import positive_policy_int
-from backend.app.workspaces.models import Workspace
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.typing import string_list
+from backend.app.workspace.tenants.models import Workspace
 
 
 @dataclass(frozen=True)

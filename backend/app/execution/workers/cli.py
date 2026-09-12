@@ -7,14 +7,14 @@ import socket
 from threading import Event
 
 from backend.app.agents.runtime.factory import build_agent_runtime_registry
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.logging import configure_logging
-from backend.app.db.session import SessionLocal, engine
 from backend.app.execution.workers.runner import WorkerRunner
 from backend.app.execution.workers.runner_models import WorkerRunnerConfig
 from backend.app.observability.tracing import configure_worker_telemetry
 from backend.app.orchestration.runs.service import build_default_queue
-from backend.app.redis.client import redis_client
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.logging import configure_logging
+from backend.app.platform.db.session import SessionLocal, engine
+from backend.app.platform.redis.client import redis_client
 
 logger = logging.getLogger(__name__)
 

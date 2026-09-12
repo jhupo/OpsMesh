@@ -16,19 +16,19 @@ from backend.app.api.schemas.workspaces import (
     WorkspaceUpdateRequest,
 )
 from backend.app.api.services.workspaces import WorkspaceService
-from backend.app.auth.context import AuthenticatedUser, WorkspaceContext
-from backend.app.auth.dependencies import (
+from backend.app.platform.auth.context import AuthenticatedUser, WorkspaceContext
+from backend.app.platform.auth.dependencies import (
     account_action_dependency,
     get_current_user,
     workspace_dependency,
 )
-from backend.app.auth.permissions import AccountAction, WorkspaceAction
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import DatabaseConflictError
-from backend.app.db.session import get_db_session
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.auth.permissions import AccountAction, WorkspaceAction
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import DatabaseConflictError
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.redis.dependencies import get_redis_client
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

@@ -7,14 +7,14 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.plan_member_matching import MemberMatchingService
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_member_matching_ranks_by_role_and_skill_weight() -> None:

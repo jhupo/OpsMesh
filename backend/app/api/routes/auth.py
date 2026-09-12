@@ -15,15 +15,15 @@ from backend.app.api.schemas.auth import (
     UserLoginRequest,
     UserRegisterRequest,
 )
-from backend.app.auth.context import AuthenticatedUser
-from backend.app.auth.dependencies import account_action_dependency
-from backend.app.auth.errors import AuthenticationError, PermissionDeniedError
-from backend.app.auth.permissions import AccountAction
-from backend.app.auth.service import AuthorizationService
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.errors import ConflictError
-from backend.app.db.session import get_db_session
-from backend.app.security.service import SecurityAuditService
+from backend.app.platform.auth.context import AuthenticatedUser
+from backend.app.platform.auth.dependencies import account_action_dependency
+from backend.app.platform.auth.errors import AuthenticationError, PermissionDeniedError
+from backend.app.platform.auth.permissions import AccountAction
+from backend.app.platform.auth.service import AuthorizationService
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.errors import ConflictError
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.security.service import SecurityAuditService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

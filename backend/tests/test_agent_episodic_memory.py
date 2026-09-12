@@ -13,14 +13,14 @@ from backend.app.agents.memory_policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRunResult
 from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.feedback import TaskFeedbackService
 from backend.app.orchestration.tasks.models import Task
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_memory_policy_rejects_removed_root_fields() -> None:

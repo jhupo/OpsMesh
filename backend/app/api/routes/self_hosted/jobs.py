@@ -27,7 +27,7 @@ from backend.app.execution.self_hosted.project_files import (
     SelfHostedProjectFileService,
 )
 from backend.app.execution.self_hosted.types import AuthenticatedWorker
-from backend.app.projects.runtime_io_errors import ProjectRunIOError
+from backend.app.workspace.projects.runtime_io_errors import ProjectRunIOError
 
 router = APIRouter()
 

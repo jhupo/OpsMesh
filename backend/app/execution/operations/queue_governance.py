@@ -21,7 +21,7 @@ from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.runs.status import RunStatus
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 def job_ids(jobs: list[JobPayload], *, limit: int = 25) -> list[UUID]:

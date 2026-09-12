@@ -21,10 +21,6 @@ from backend.app.agents.providers.credential_commands import ModelProviderCreden
 from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.agents.runtime.sessions import PersistentAgentSession
 from backend.app.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
-from backend.app.core.config import Settings
-from backend.app.core.request_context import current_log_context
-from backend.app.core.trace_context import TraceContext, trace_context
-from backend.app.db.base import Base
 from backend.app.execution.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.execution.operations.worker_heartbeats import WorkerHeartbeatOperationsService
 from backend.app.execution.runtime.contracts import (
@@ -43,7 +39,6 @@ from backend.app.execution.workers.runner import (
     WorkerRunner,
     WorkerRunnerConfig,
 )
-from backend.app.identity.models import User
 from backend.app.observability.cost_models import (
     ModelPricingRule,
     ModelUsageRecord,
@@ -58,16 +53,21 @@ from backend.app.orchestration.tasks.collaboration_state import TaskCollaboratio
 from backend.app.orchestration.tasks.events import RedisTaskEventBus
 from backend.app.orchestration.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.projects.export_models import WorkspaceExportJob
-from backend.app.projects.export_status import WorkspaceExportJobStatus
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.reviews.model_request import ModelRequestReview
-from backend.app.reviews.service import ResourceReview
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.teams.execution_loop import TeamExecutionLoopQueueService
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.teams.runtime import TeamRuntimeService
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.request_context import current_log_context
+from backend.app.platform.common.trace_context import TraceContext, trace_context
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.projects.export_models import WorkspaceExportJob
+from backend.app.workspace.projects.export_status import WorkspaceExportJobStatus
+from backend.app.workspace.reviews.model_request import ModelRequestReview
+from backend.app.workspace.reviews.service import ResourceReview
+from backend.app.workspace.teams.execution_loop import TeamExecutionLoopQueueService
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.teams.runtime import TeamRuntimeService
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 @pytest.fixture(autouse=True)
@@ -89,11 +89,11 @@ def approve_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(
-        "backend.app.reviews.service.ResourcePolicyReviewBuilder.review_tool_execution",
+        "backend.app.workspace.reviews.service.ResourcePolicyReviewBuilder.review_tool_execution",
         fake_resource_review,
     )
     monkeypatch.setattr(
-        "backend.app.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.workspace.reviews.model_request.ModelRequestReviewService.review_request",
         fake_model_request_review,
     )
 
@@ -647,8 +647,10 @@ def test_worker_maintenance_enqueues_running_team_runtime_without_tasks() -> Non
 
 
 def test_runtime_scheduler_scans_do_not_update_another_workspace_team() -> None:
-    from backend.app.teams.execution_loop_queue_dispatch import TeamExecutionLoopQueueDispatcher
-    from backend.app.teams.execution_loop_runtime_candidates import _team_loop_candidate
+    from backend.app.workspace.teams.execution_loop_queue_dispatch import (
+        TeamExecutionLoopQueueDispatcher,
+    )
+    from backend.app.workspace.teams.execution_loop_runtime_candidates import _team_loop_candidate
 
     session_factory = _session_factory()
     _, team_id, user_id = _seed_runtime_team(session_factory)

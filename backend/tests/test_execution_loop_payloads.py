@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from backend.app.teams.execution_loop_payloads import _without_finalizable_review_actions
+from backend.app.workspace.teams.execution_loop_payloads import _without_finalizable_review_actions
 
 
 def test_review_action_keeps_only_tasks_that_still_need_review() -> None:

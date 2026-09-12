@@ -22,10 +22,6 @@ from backend.app.api.schemas.tasks import (
     TaskOperatorActionResponse,
     TaskTimelineResponse,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.db.session import get_db_session
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.orchestration.tasks.control import TaskControlService
@@ -39,6 +35,10 @@ from backend.app.orchestration.tasks.manager_diagnostics import TaskManagerDiagn
 from backend.app.orchestration.tasks.observation import TaskObservationService
 from backend.app.orchestration.tasks.operator_actions import TaskOperatorActionService
 from backend.app.orchestration.tasks.timeline import TaskTimelineService
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.db.session import get_db_session
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

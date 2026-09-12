@@ -7,8 +7,8 @@ from uuid import UUID
 from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import TaskMessage, TaskStep
-from backend.app.security.redaction import redact_sensitive_payload
-from backend.app.storage.artifact_models import Artifact
+from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.workspace.storage.artifact_models import Artifact
 
 
 def step_timeline_event(

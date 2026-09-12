@@ -9,7 +9,7 @@ from backend.app.api.schemas.operations import QueueMetricsResponse
 from backend.app.execution.operations.utils import ensure_aware_utc
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 class QueueMetricsService:

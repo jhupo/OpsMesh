@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Un
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from backend.app.platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class Capability(UUIDPrimaryKeyMixin, TimestampMixin, Base):

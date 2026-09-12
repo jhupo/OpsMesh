@@ -6,8 +6,8 @@ from threading import Event, Lock
 import fakeredis
 import pytest
 
-from backend.app.redis.cache import RedisJsonCache
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.cache import RedisJsonCache
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 def test_cache_set_and_get_json_value_with_prefixed_key() -> None:

@@ -12,9 +12,9 @@ from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.data import resolve_workflow_inputs
 from backend.app.orchestration.workflows.plan_agent_plan import is_agent_planning_step
 from backend.app.orchestration.workflows.planning_task_step_review import is_pm_summary_step
-from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.teams.models import AgentTeam
-from backend.app.teams.runtime import TeamRuntimeService
+from backend.app.platform.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.teams.runtime import TeamRuntimeService
 
 
 @dataclass(slots=True)

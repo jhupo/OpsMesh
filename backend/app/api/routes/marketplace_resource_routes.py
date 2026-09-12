@@ -11,15 +11,15 @@ from backend.app.api.schemas.marketplace import (
     MarketplaceListingType,
     WorkspaceMarketplaceInstallResponse,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
 from backend.app.capabilities.marketplace.resource_service import MarketplaceService
 from backend.app.capabilities.marketplace.responses import marketplace_install_response
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import DatabaseConflictError
-from backend.app.db.session import get_db_session
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import DatabaseConflictError
+from backend.app.platform.db.session import get_db_session
 
 router = APIRouter()
 

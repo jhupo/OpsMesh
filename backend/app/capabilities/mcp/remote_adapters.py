@@ -15,8 +15,8 @@ from backend.app.capabilities.mcp.adapter_payloads import (
 )
 from backend.app.capabilities.mcp.types import McpExecutionError
 from backend.app.capabilities.models import McpCredentialReference, McpServer
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.security.egress import (
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.platform.security.egress import (
     MCP_EGRESS_URL_POLICY,
     EgressUrlPolicy,
     EgressUrlValidationError,

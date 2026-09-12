@@ -9,7 +9,7 @@ from backend.app.execution.self_hosted.policy import positive_policy_int
 from backend.app.execution.self_hosted.types import AuthenticatedWorker
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.storage.security import safe_filename, validate_storage_key
+from backend.app.workspace.storage.security import safe_filename, validate_storage_key
 
 
 class SelfHostedArtifactService:

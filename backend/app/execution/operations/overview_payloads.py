@@ -11,7 +11,7 @@ from backend.app.execution.operations.data_lifecycle_rollup import (
 )
 from backend.app.execution.operations.overview_queries import OperationsOverviewQueryService
 from backend.app.execution.operations.queue_metrics import QueueMetricsService
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 class OperationsOverviewPayloadService:

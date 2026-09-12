@@ -29,10 +29,10 @@ from backend.app.orchestration.workflows.step_scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.projects.run_snapshots import RunProjectSnapshotService
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.teams.models import AgentTeam
-from backend.app.teams.snapshots import build_team_snapshot
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.workspace.projects.run_snapshots import RunProjectSnapshotService
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.teams.snapshots import build_team_snapshot
 
 __all__ = [
     "RunOrchestrationService",

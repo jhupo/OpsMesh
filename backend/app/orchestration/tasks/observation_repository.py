@@ -9,7 +9,7 @@ from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.observation_models import TaskObservationRecords
-from backend.app.storage.artifact_models import Artifact
+from backend.app.workspace.storage.artifact_models import Artifact
 
 
 class TaskObservationRepository:

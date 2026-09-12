@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 
-from backend.app.core.typing import string_list
 from backend.app.execution.runtime.space_models import RuntimeSpace
 from backend.app.orchestration.runs.models import AgentRun
+from backend.app.platform.common.typing import string_list
 
 
 def positive_policy_int(value: object) -> int | None:

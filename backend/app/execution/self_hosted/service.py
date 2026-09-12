@@ -11,7 +11,6 @@ from backend.app.api.schemas.self_hosted import (
     RuntimeRegistrationRequest,
     WorkerHeartbeatRequest,
 )
-from backend.app.core.config import Settings
 from backend.app.execution.self_hosted.artifacts import SelfHostedArtifactService
 from backend.app.execution.self_hosted.dispatch import SelfHostedDispatchService
 from backend.app.execution.self_hosted.events import SelfHostedEventRecorder
@@ -39,6 +38,7 @@ from backend.app.execution.self_hosted.types import (
 )
 from backend.app.execution.self_hosted.worker_control import SelfHostedWorkerControlService
 from backend.app.orchestration.runs.models import AgentRun
+from backend.app.platform.common.config import Settings
 
 
 class SelfHostedRuntimeService:

@@ -10,7 +10,7 @@ from backend.app.capabilities.mcp.remote_adapters import (
 )
 from backend.app.capabilities.mcp.unsupported_adapter import UnsupportedMcpToolAdapter
 from backend.app.capabilities.models import McpServer
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.secrets.service import SecretEncryptionService
 
 
 @dataclass(frozen=True)

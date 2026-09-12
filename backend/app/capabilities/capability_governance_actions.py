@@ -13,7 +13,7 @@ from backend.app.capabilities.capability_governance_mcp_actions import (
 from backend.app.capabilities.capability_governance_skill_actions import (
     CapabilityGovernanceSkillActionService,
 )
-from backend.app.core.config import Settings, get_settings
+from backend.app.platform.common.config import Settings, get_settings
 
 
 class CapabilityGovernanceActionService:

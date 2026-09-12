@@ -9,18 +9,10 @@ from threading import Event
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.admin.updates.service import maintenance_enabled
 from backend.app.agents.runtime.contracts import AgentRuntimeExecutor
 from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
-)
-from backend.app.core.config import Settings
-from backend.app.core.request_context import log_context
-from backend.app.core.trace_context import (
-    current_trace_context,
-    new_trace_context,
-    telemetry_span,
 )
 from backend.app.execution.operations.worker_capacity import WorkerCapacitySnapshotService
 from backend.app.execution.operations.worker_heartbeats import WorkerHeartbeatOperationsService
@@ -37,6 +29,14 @@ from backend.app.execution.workers.maintenance import (
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.execution.workers.run_state import WorkerRunState
 from backend.app.execution.workers.runner_models import WorkerRunnerConfig, WorkerRunSummary
+from backend.app.platform.admin.updates.service import maintenance_enabled
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.request_context import log_context
+from backend.app.platform.common.trace_context import (
+    current_trace_context,
+    new_trace_context,
+    telemetry_span,
+)
 
 logger = logging.getLogger(__name__)
 

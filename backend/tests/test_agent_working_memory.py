@@ -10,12 +10,12 @@ from backend.app.agents.memory.working import AgentWorkingMemoryService, working
 from backend.app.agents.memory_policy import WorkingMemoryPolicy
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.contracts import AgentRuntimeToolResult
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_working_memory_is_run_scoped_versioned_redacted_and_expirable() -> None:

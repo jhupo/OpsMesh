@@ -16,7 +16,7 @@ from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.project_files import DockerRunProjectFilesystem
 from backend.app.execution.runtime.sdk_process import RuntimeSdkProcess
 from backend.app.execution.self_hosted.mcp_jobs import SelfHostedMcpJobService
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.secrets.service import SecretEncryptionService
 
 
 @dataclass(frozen=True)

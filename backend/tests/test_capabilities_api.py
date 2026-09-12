@@ -16,18 +16,18 @@ from backend.app.agents.models import AgentProfile
 from backend.app.agents.providers.credential_commands import ModelProviderCredentialCommandService
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.capabilities.models import McpCredentialReference, McpServer, McpToolCallLog, Skill
-from backend.app.core.config import Settings, get_settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
-from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.reviews.llm import LlmReviewResult, StructuredResourceReview
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.reviews.llm import LlmReviewResult, StructuredResourceReview
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
 
@@ -42,7 +42,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
             signals={"reviewer": "llm", "verdict": "approve"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+    monkeypatch.setattr("backend.app.workspace.reviews.llm.LlmResourceReviewer.review", fake_review)
 
 
 def test_capability_skill_and_mcp_control_plane() -> None:
@@ -257,7 +257,7 @@ def test_llm_resource_review_can_require_admin_approval(monkeypatch) -> None:
             },
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+    monkeypatch.setattr("backend.app.workspace.reviews.llm.LlmResourceReviewer.review", fake_review)
 
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
@@ -315,7 +315,7 @@ def test_operator_cannot_approve_resource_review(monkeypatch) -> None:
             signals={"reviewer": "llm", "verdict": "needs_admin_review"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+    monkeypatch.setattr("backend.app.workspace.reviews.llm.LlmResourceReviewer.review", fake_review)
 
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
@@ -416,7 +416,7 @@ def test_resource_review_uses_admin_configured_review_model(monkeypatch) -> None
             signals={"reviewer": "llm", "verdict": "approve"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+    monkeypatch.setattr("backend.app.workspace.reviews.llm.LlmResourceReviewer.review", fake_review)
 
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
@@ -475,7 +475,7 @@ def test_resource_review_defaults_to_codex_auto_review_model(monkeypatch) -> Non
             signals={"reviewer": "llm", "verdict": "approve"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+    monkeypatch.setattr("backend.app.workspace.reviews.llm.LlmResourceReviewer.review", fake_review)
 
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
@@ -506,7 +506,9 @@ def test_private_skill_creation_skips_resource_review_by_default(monkeypatch) ->
             signals={"reviewer": "llm", "verdict": "review"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+    monkeypatch.setattr(
+        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+    )
 
     response = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
@@ -544,7 +546,9 @@ def test_private_resource_review_can_be_enabled_per_workspace(monkeypatch) -> No
             signals={"reviewer": "llm", "verdict": "review"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+    monkeypatch.setattr(
+        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+    )
 
     response = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/skills",
@@ -582,7 +586,9 @@ def test_private_agent_creation_skips_resource_review_by_default(monkeypatch) ->
             signals={"reviewer": "llm", "verdict": "review"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+    monkeypatch.setattr(
+        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+    )
 
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
@@ -613,7 +619,9 @@ def test_private_agent_review_can_be_enabled_per_workspace(monkeypatch) -> None:
             signals={"reviewer": "llm", "verdict": "review"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+    monkeypatch.setattr(
+        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+    )
 
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
@@ -643,7 +651,9 @@ def test_private_mcp_resources_skip_resource_review_by_default(monkeypatch) -> N
             signals={"reviewer": "llm", "verdict": "review"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+    monkeypatch.setattr(
+        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+    )
 
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
@@ -694,7 +704,9 @@ def test_private_mcp_server_review_can_be_enabled_per_workspace(monkeypatch) -> 
             signals={"reviewer": "llm", "verdict": "review"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+    monkeypatch.setattr(
+        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+    )
 
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",

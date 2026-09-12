@@ -40,9 +40,6 @@ from backend.app.capabilities.models import (
     Skill,
     WorkspaceSkillInstall,
 )
-from backend.app.core.config import Settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.space_models import (
     RuntimeSpace,
@@ -54,7 +51,6 @@ from backend.app.execution.workers.handlers import WorkerJobHandler
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.queue_consumer import consume_once
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.identity.models import User
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,
@@ -94,15 +90,19 @@ from backend.app.orchestration.workflows.step_scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.reviews.model_request import ModelRequestReview
-from backend.app.reviews.models import ResourceReview
-from backend.app.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.storage.artifact_models import Artifact
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.teams.runtime import TeamRuntimeService
-from backend.app.workspaces.models import (
+from backend.app.platform.common.config import Settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.reviews.model_request import ModelRequestReview
+from backend.app.workspace.reviews.models import ResourceReview
+from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.workspace.storage.artifact_models import Artifact
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.teams.runtime import TeamRuntimeService
+from backend.app.workspace.tenants.models import (
     Workspace,
     WorkspaceMember,
     WorkspaceQuota,
@@ -134,7 +134,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         fake_resource_review,
     )
     monkeypatch.setattr(
-        "backend.app.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.workspace.reviews.model_request.ModelRequestReviewService.review_request",
         fake_model_request_review,
     )
 
@@ -3094,7 +3094,7 @@ def test_model_request_review_routes_sensitive_input_to_admin_approval(
         )
 
     monkeypatch.setattr(
-        "backend.app.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.workspace.reviews.model_request.ModelRequestReviewService.review_request",
         blocking_review,
     )
     session = _session()

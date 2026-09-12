@@ -12,7 +12,7 @@ from backend.app.orchestration.runs.authorization_integrity import (
 )
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
-from backend.app.storage.models import WorkspaceFile
+from backend.app.workspace.storage.models import WorkspaceFile
 
 
 def authorize_project_run(

@@ -11,14 +11,14 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.operations import (
     TeamRuntimeTimelineResponse,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.db.session import get_db_session
 from backend.app.execution.operations.timeline import TeamRuntimeTimelineService
 from backend.app.execution.operations.timeline_models import TimelineFilters
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.db.session import get_db_session
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

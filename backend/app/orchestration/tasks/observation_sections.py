@@ -16,7 +16,7 @@ from backend.app.orchestration.tasks.observation_cards import (
 )
 from backend.app.orchestration.tasks.observation_domain import TaskObservationDomainCards
 from backend.app.orchestration.tasks.observation_quality_cards import TaskObservationQualityCards
-from backend.app.storage.artifact_models import Artifact
+from backend.app.workspace.storage.artifact_models import Artifact
 
 
 class TaskObservationSectionBuilder:

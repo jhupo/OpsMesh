@@ -13,11 +13,11 @@ from backend.app.capabilities.marketplace.recommendations import (
     missing_work_package_by_id,
 )
 from backend.app.capabilities.marketplace.talent_repository import TalentMarketplaceRepository
-from backend.app.core.typing import string_or_default
-from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.orchestration.tasks.models import Task, TaskMessage
+from backend.app.platform.common.typing import string_or_default
+from backend.app.platform.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 
 
 class TalentHiringService:

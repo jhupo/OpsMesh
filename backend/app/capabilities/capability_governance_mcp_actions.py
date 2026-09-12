@@ -22,9 +22,9 @@ from backend.app.capabilities.mcp.server_rules import (
     mcp_server_probeable as _mcp_server_probeable,
 )
 from backend.app.capabilities.models import McpToolAllowlist
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
 from backend.app.observability.audit_service import AuditService
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
 
 
 class CapabilityGovernanceMcpActionService:

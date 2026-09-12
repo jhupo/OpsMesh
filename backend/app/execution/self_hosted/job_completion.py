@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.self_hosted import JobCompleteRequest
-from backend.app.core.config import Settings
 from backend.app.execution.self_hosted.events import SelfHostedEventRecorder
 from backend.app.execution.self_hosted.jobs import SelfHostedJobFinalizer
 from backend.app.execution.self_hosted.models import SelfHostedJobClaim
@@ -16,6 +15,7 @@ from backend.app.execution.self_hosted.types import AuthenticatedWorker
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.state import RunStateService
 from backend.app.orchestration.runs.status import RunStatus
+from backend.app.platform.common.config import Settings
 
 
 class SelfHostedRunCompletionService:

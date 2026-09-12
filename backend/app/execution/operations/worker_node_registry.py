@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from backend.app.admin.policy_reader import PlatformPolicyService
 from backend.app.execution.operations.models import WorkerNode
 from backend.app.execution.operations.worker_capacity import (
     bounded_worker_capacity,
@@ -12,6 +11,7 @@ from backend.app.execution.operations.worker_capacity import (
     next_worker_node_status,
 )
 from backend.app.execution.operations.worker_node_repository import WorkerNodeRepository
+from backend.app.platform.admin.policy_reader import PlatformPolicyService
 
 
 class WorkerNodeRegistry:

@@ -8,7 +8,7 @@ from uuid import UUID
 
 from redis import Redis
 
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 STATE_IN_PROGRESS = "in_progress"
 STATE_SUCCEEDED = "succeeded"

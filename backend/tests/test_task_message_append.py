@@ -6,15 +6,15 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.orchestration.tasks.message_append import (
     TASK_MESSAGE_CREATED_EVENT_TYPE,
     TaskMessageAppendService,
 )
 from backend.app.orchestration.tasks.models import Task, TaskEventOutbox, TaskMessage
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_task_message_append_assigns_ordered_sequences_and_payloads() -> None:

@@ -18,24 +18,24 @@ from backend.app.api.schemas.teams import (
     AgentTeamOperatorActionRequest,
     AgentTeamOperatorActionResponse,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.errors import PermissionDeniedError
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.auth.service import AuthorizationService
-from backend.app.core.config import Settings, get_settings
-from backend.app.db.session import get_db_session
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.jobs import JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.security.redaction import redact_sensitive_payload
-from backend.app.teams.command_center import TeamCommandCenterService
-from backend.app.teams.execution_loop import (
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.errors import PermissionDeniedError
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.auth.service import AuthorizationService
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.security.redaction import redact_sensitive_payload
+from backend.app.workspace.teams.command_center import TeamCommandCenterService
+from backend.app.workspace.teams.execution_loop import (
     TeamExecutionLoopService,
     enqueue_team_execution_loop_job,
 )
-from backend.app.teams.operator_actions import TeamOperatorActionService
-from backend.app.teams.workspace_service import (
+from backend.app.workspace.teams.operator_actions import TeamOperatorActionService
+from backend.app.workspace.teams.workspace_service import (
     WorkspaceTeamService,
 )
 

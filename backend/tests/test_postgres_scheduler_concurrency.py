@@ -11,8 +11,6 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
 from backend.app.execution.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
@@ -25,13 +23,15 @@ from backend.app.execution.workers.scheduled_models import (
     WorkspaceScheduledJobEvent,
 )
 from backend.app.execution.workers.scheduled_types import ScheduledJobMaintenanceSummary
-from backend.app.identity.models import User
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 POSTGRES_TEST_URL_ENV = "OPSMESH_TEST_POSTGRES_URL"
 

@@ -5,12 +5,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.responses import PlainTextResponse
 
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.metrics import metrics_registry
-from backend.app.db.session import get_db_session
 from backend.app.execution.operations.prometheus_metrics import OperationsPrometheusMetricsService
-from backend.app.redis.dependencies import RedisClient, get_redis_client
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.metrics import metrics_registry
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.redis.dependencies import RedisClient, get_redis_client
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 router = APIRouter()
 

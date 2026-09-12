@@ -18,17 +18,11 @@ from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
 from backend.app.api.middleware import _metrics_path
-from backend.app.core.config import Settings
-from backend.app.core.metrics import MetricsRegistry, metrics_registry
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
 from backend.app.execution.operations.models import WorkerLease, WorkerNode
 from backend.app.execution.operations.prometheus_worker_metrics import WorkerPrometheusMetrics
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.execution.workers.jobs import JobPayload, JobType
-from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditIntegrityCheck
 from backend.app.observability.cost_models import (
@@ -37,10 +31,16 @@ from backend.app.observability.cost_models import (
     WorkspaceCostBudget,
 )
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.teams.models import AgentTeam
-from backend.app.workspaces.models import Workspace
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.metrics import MetricsRegistry, metrics_registry
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.dependencies import get_redis_client
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.tenants.models import Workspace
 
 
 def test_metrics_registry_renders_counters_and_histograms() -> None:

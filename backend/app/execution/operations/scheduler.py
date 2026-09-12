@@ -17,15 +17,15 @@ from backend.app.api.schemas.operations import (
     SchedulerPolicyResponse,
     SchedulerPriorityBucketResponse,
 )
-from backend.app.core.pagination import PageParams
-from backend.app.core.typing import string_list
 from backend.app.execution.operations.utils import ensure_aware_utc, positive_int_or_none
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.blocked_reasons import explain_blocked_reason
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.workspaces.models import Workspace
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.common.typing import string_list
+from backend.app.workspace.tenants.models import Workspace
 
 
 class SchedulerPolicyService:

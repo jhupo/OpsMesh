@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConst
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from backend.app.platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class AgentProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -93,4 +93,4 @@ class AgentProfileVersion(UUIDPrimaryKeyMixin, Base):
     agent_profile: Mapped[AgentProfile] = relationship(back_populates="versions")
 
 
-from backend.app.teams.models import AgentTeamMember  # noqa: E402
+from backend.app.workspace.teams.models import AgentTeamMember  # noqa: E402

@@ -25,7 +25,7 @@ from backend.app.api.services.workspace_skill_install_import import SkillInstall
 from backend.app.api.services.workspace_task_import import TaskMetadataImporter
 from backend.app.api.services.workspace_team_import import TeamMetadataImporter
 from backend.app.observability.audit_service import AuditService
-from backend.app.workspaces.models import Workspace
+from backend.app.workspace.tenants.models import Workspace
 
 
 class WorkspaceMetadataImportService:

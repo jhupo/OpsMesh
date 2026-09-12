@@ -11,15 +11,15 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.models import McpServer, McpToolAllowlist
-from backend.app.core.config import Settings, get_settings
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
-from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.storage.models import WorkspaceFile
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 TOKEN = "capability-resource-test-token"
 

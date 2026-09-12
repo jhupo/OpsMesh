@@ -22,7 +22,7 @@ from backend.app.api.services.workspace_metadata_import_context import (
     WorkspaceMetadataImportContext,
 )
 from backend.app.api.services.workspace_metadata_import_support import resolved_dependency_id
-from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
 
 
 class TeamMetadataImporter:

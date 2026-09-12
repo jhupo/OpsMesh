@@ -1,10 +1,10 @@
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings, get_settings
-from backend.app.db.session import get_db_session
 from backend.app.execution.self_hosted.service import SelfHostedRuntimeService
 from backend.app.execution.self_hosted.types import AuthenticatedWorker
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db.session import get_db_session
 
 DB_SESSION_DEPENDENCY = Depends(get_db_session)
 SETTINGS_DEPENDENCY = Depends(get_settings)

@@ -12,9 +12,9 @@ from backend.app.api.schemas.model_providers import (
     AgentRuntimeCapabilityFeatureResponse,
     ModelCapabilityResponse,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-capabilities",

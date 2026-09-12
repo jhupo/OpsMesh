@@ -12,9 +12,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.db.pagination import page_scalars
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.models import OrchestrationDefinition, OrchestrationRevision
 from backend.app.orchestration.runs.models import AgentRun
@@ -38,8 +35,11 @@ from backend.app.orchestration.workflows.planning_team_project_plan import (
     ProjectPlanStepMaterializer,
 )
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.teams.models import AgentTeam
-from backend.app.teams.snapshots import build_team_snapshot
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.platform.db.pagination import page_scalars
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.teams.snapshots import build_team_snapshot
 
 
 class OrchestrationDefinitionError(ValueError):

@@ -25,19 +25,19 @@ from backend.app.capabilities.schema_validation import (
     normalize_object_schema,
     reject_embedded_secrets,
 )
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.errors import DomainError
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.observability.audit_service import AuditService
-from backend.app.reviews.approval_service import ResourceReviewApprovalService
-from backend.app.reviews.constants import (
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.errors import DomainError
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.workspace.reviews.approval_service import ResourceReviewApprovalService
+from backend.app.workspace.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_MCP_SERVER,
     REVIEW_TYPE_MCP_TOOL_ALLOWLIST,
 )
-from backend.app.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
 
 
 class McpServerService:

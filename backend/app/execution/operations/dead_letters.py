@@ -7,7 +7,7 @@ from redis import Redis
 from backend.app.api.schemas.operations import DeadLetterJobsResponse
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 class DeadLetterQueueService:

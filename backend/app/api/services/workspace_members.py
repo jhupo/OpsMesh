@@ -15,11 +15,11 @@ from backend.app.api.services.workspace_errors import (
     WorkspaceMemberPermissionError,
 )
 from backend.app.api.services.workspace_snapshots import member_snapshot
-from backend.app.auth.permissions import WorkspaceRole
-from backend.app.db.errors import commit_or_raise_conflict
-from backend.app.identity.models import User
 from backend.app.observability.audit_service import AuditService
-from backend.app.workspaces.models import WorkspaceMember
+from backend.app.platform.auth.permissions import WorkspaceRole
+from backend.app.platform.db.errors import commit_or_raise_conflict
+from backend.app.platform.identity.models import User
+from backend.app.workspace.tenants.models import WorkspaceMember
 
 
 class WorkspaceMemberService:

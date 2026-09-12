@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.execution.operations.models import WorkerHeartbeat
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.security.models import SecurityEvent
+from backend.app.platform.security.models import SecurityEvent
 
 
 class OperationsOverviewQueryService:

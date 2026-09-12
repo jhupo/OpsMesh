@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.trace_context import with_current_trace_metadata
 from backend.app.execution.operations.models import WorkerHeartbeat
 from backend.app.execution.operations.worker_capacity import (
     worker_capacity,
@@ -14,6 +13,7 @@ from backend.app.execution.operations.worker_capacity import (
 )
 from backend.app.execution.operations.worker_lease_heartbeats import WorkerLeaseHeartbeatRecorder
 from backend.app.execution.operations.worker_node_registry import WorkerNodeRegistry
+from backend.app.platform.common.trace_context import with_current_trace_metadata
 
 
 class WorkerHeartbeatOperationsService:

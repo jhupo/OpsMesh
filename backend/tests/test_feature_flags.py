@@ -1,5 +1,5 @@
-from backend.app.core.config import Settings
-from backend.app.core.feature_flags import (
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.feature_flags import (
     FeatureFlagService,
     enabled_feature_flags,
     normalize_feature_flag_key,

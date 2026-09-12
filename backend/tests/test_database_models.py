@@ -12,13 +12,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateTable
 
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
 from backend.app.execution.operations.models import WorkerLease
 from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.identity.models import User
 from backend.app.orchestration.tasks.models import TaskEventOutbox
-from backend.app.workspaces.models import Workspace, WorkspaceMember, WorkspaceQuota
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember, WorkspaceQuota
 
 
 def test_workspace_membership_round_trip() -> None:

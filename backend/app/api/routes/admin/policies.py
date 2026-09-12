@@ -1,7 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.app.admin.policy_control import AdminPolicyService
-from backend.app.admin.worker_policy_control import AdminWorkerPolicyControlService
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.admin.dependencies import (
     admin_policy_service,
@@ -14,7 +12,9 @@ from backend.app.api.schemas.admin import (
     AdminRiskyExecutionPolicyUpdateRequest,
     AdminWorkerControlPolicyUpdateRequest,
 )
-from backend.app.core.pagination import PageParams
+from backend.app.platform.admin.policy_control import AdminPolicyService
+from backend.app.platform.admin.worker_policy_control import AdminWorkerPolicyControlService
+from backend.app.platform.common.pagination import PageParams
 
 router = APIRouter()
 

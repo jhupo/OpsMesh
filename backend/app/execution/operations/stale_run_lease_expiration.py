@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.trace_context import current_trace_metadata
 from backend.app.execution.operations.models import WorkerLease
 from backend.app.execution.operations.worker_lifecycle import (
     RUNNING_LEASE_STATUSES,
@@ -14,6 +13,7 @@ from backend.app.execution.operations.worker_lifecycle import (
     worker_lifecycle_event,
 )
 from backend.app.execution.workers.jobs import JobType
+from backend.app.platform.common.trace_context import current_trace_metadata
 
 
 class StaleRunLeaseExpirationService:

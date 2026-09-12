@@ -67,7 +67,7 @@ from backend.app.agents.runtime.guardrails import (
     validated_structured_output,
 )
 from backend.app.agents.runtime.usage import runtime_usage
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 _SDK_TOOL_PREFIX = "mcp__opsmesh__"
 _SESSION_NAMESPACE = UUID("6bd4b8b9-8a4b-49db-9b6c-d0b7d7da4be6")

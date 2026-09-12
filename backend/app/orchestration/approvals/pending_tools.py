@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.runtime.contracts import AgentRuntimeApprovalDecision
 from backend.app.orchestration.approvals.models import PendingToolInvocation
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 @dataclass(frozen=True, slots=True)

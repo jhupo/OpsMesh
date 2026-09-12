@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.execution.runtime.contracts import RuntimeLimits
 from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.workspaces.models import Workspace
+from backend.app.workspace.tenants.models import Workspace
 
 
 @dataclass(frozen=True)

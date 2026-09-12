@@ -3,16 +3,16 @@ import os
 
 import pytest
 
-from backend.app.core.config import Settings
-from backend.app.core.executors import (
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.executors import (
     blocking_executor_snapshot,
     get_blocking_executor,
     run_blocking,
     shutdown_blocking_executor,
 )
-from backend.app.core.resources import recommend_runtime_resources
-from backend.app.db.session import create_database_engine, database_pool_snapshot
-from backend.app.redis.client import create_redis_client, redis_pool_snapshot
+from backend.app.platform.common.resources import recommend_runtime_resources
+from backend.app.platform.db.session import create_database_engine, database_pool_snapshot
+from backend.app.platform.redis.client import create_redis_client, redis_pool_snapshot
 
 
 def test_settings_defaults_are_local_development_friendly(monkeypatch: pytest.MonkeyPatch) -> None:

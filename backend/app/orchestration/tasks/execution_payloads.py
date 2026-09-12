@@ -3,7 +3,7 @@ from uuid import UUID
 from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import TaskStep
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 def build_step_payload(

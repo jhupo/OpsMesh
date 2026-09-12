@@ -3,7 +3,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, computed_field, model_validator
 
 from backend.app.api.schemas.common import TimestampedModel
-from backend.app.secrets.service import (
+from backend.app.platform.secrets.service import (
     external_vault_reference_metadata,
     hosted_secret_metadata,
     vault_reference_kind,

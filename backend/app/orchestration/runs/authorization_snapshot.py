@@ -33,7 +33,7 @@ from backend.app.orchestration.workflows.plan_agent_plan import (
     is_agent_planning_step,
     planner_output_schema,
 )
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 @dataclass(slots=True)

@@ -16,7 +16,7 @@ from backend.app.execution.operations.runtime_provider_capacity import (
 )
 from backend.app.execution.operations.runtime_space_saturation import RuntimeSpaceSaturationService
 from backend.app.execution.operations.worker_capacity import OperationsWorkerCapacityService
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 class OperationsCapacityPayloadService:

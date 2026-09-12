@@ -4,13 +4,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.exports import WorkspaceArchiveExportRequest
 from backend.app.api.services.exports import WorkspaceExportService
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.core.config import Settings, get_settings
-from backend.app.db.session import get_db_session
-from backend.app.storage.security import content_disposition_attachment
-from backend.app.storage.storage import create_storage
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db.session import get_db_session
+from backend.app.workspace.storage.security import content_disposition_attachment
+from backend.app.workspace.storage.storage import create_storage
 
 router = APIRouter()
 

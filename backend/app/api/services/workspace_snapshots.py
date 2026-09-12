@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from backend.app.workspaces.models import WorkspaceInvite, WorkspaceMember, WorkspaceQuota
+from backend.app.workspace.tenants.models import WorkspaceInvite, WorkspaceMember, WorkspaceQuota
 
 
 def quota_snapshot(quota: WorkspaceQuota) -> dict[str, object]:

@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.capabilities.models import McpServer
-from backend.app.security.redaction import redact_sensitive_text
+from backend.app.platform.security.redaction import redact_sensitive_text
 
 
 def require_mcp_server(session: Session, workspace_id: UUID, server_id: UUID) -> McpServer:

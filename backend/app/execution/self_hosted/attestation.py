@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import UUID
 
-from backend.app.core.config import Settings
+from backend.app.platform.common.config import Settings
 
 CAPABILITY_ATTESTATION_PROTOCOL = "opsmesh.self_hosted.attestation.v1"
 CAPABILITY_ATTESTATION_MAX_AGE = timedelta(minutes=10)

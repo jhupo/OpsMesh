@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from backend.app.core.typing import string_list
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.space_models import RuntimeSpace
 from backend.app.execution.runtime.space_reservation_attachment import (
@@ -31,7 +30,8 @@ from backend.app.orchestration.requests.authorization import RunAuthorizationSer
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.runtime_authorization import RunRuntimeAuthorizationService
 from backend.app.orchestration.tasks.models import Task
-from backend.app.workspaces.quotas import WorkspaceQuotaService
+from backend.app.platform.common.typing import string_list
+from backend.app.workspace.tenants.quotas import WorkspaceQuotaService
 
 
 class SelfHostedWorkerEligibilityService:

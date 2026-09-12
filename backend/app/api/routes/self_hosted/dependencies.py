@@ -1,8 +1,6 @@
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings, get_settings
-from backend.app.db.session import get_db_session
 from backend.app.execution.self_hosted.dispatch import SelfHostedDispatchService
 from backend.app.execution.self_hosted.events import SelfHostedEventRecorder
 from backend.app.execution.self_hosted.job_completion import SelfHostedRunCompletionService
@@ -11,6 +9,8 @@ from backend.app.execution.self_hosted.mcp_jobs import SelfHostedMcpJobService
 from backend.app.execution.self_hosted.progress import SelfHostedProgressService
 from backend.app.execution.self_hosted.project_files import SelfHostedProjectFileService
 from backend.app.execution.self_hosted.service import SelfHostedRuntimeService
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db.session import get_db_session
 
 
 def self_hosted_service(

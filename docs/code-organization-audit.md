@@ -10,18 +10,34 @@ imports, dynamic patch targets, architecture gates and documentation together, w
 
 | Area | Current owner | Change |
 | --- | --- | --- |
-| Runtime models, backends, pools and lifecycle | runtime | Former runtime_manager and runtimes share one owner. |
-| Placement quotas and reservations | runtime/space_* | Former runtime_spaces and runtime/spaces, now direct modules. |
+| Runtime models, backends, pools and lifecycle | execution/runtime | Former runtime_manager and runtimes share one owner. |
+| Placement quotas and reservations | execution/runtime/space_* | Former runtime_spaces and runtime/spaces, now direct modules. |
 | Audit, costs, traces and notification delivery | observability | Direct modules, with explicit audit_, cost_ and notification_ names. |
-| Object storage, file metadata and artifact persistence | storage | Former files and artifacts; one byte-storage boundary. |
-| Project snapshots, staging policy and export metadata | projects | Project-domain policy remains separate from storage drivers. |
-| Provider SDK implementation and helpers | agent_runtime/providers | OpenAI helpers and Claude runner no longer have separate sibling packages. |
-| Vendor-neutral execution environment | agent_runtime/runtime | Former sandbox; distinct from the infrastructure runtime resource owner. |
+| Object storage, file metadata and artifact persistence | workspace/storage | Former files and artifacts; one byte-storage boundary. |
+| Project snapshots, staging policy and export metadata | workspace/projects | Project-domain policy remains separate from storage drivers. |
+| Provider SDK implementation and helpers | agents/runtime/providers | OpenAI helpers and Claude runner no longer have separate sibling packages. |
+| Vendor-neutral execution environment | agents/runtime/runtime | Former sandbox; distinct from the infrastructure runtime resource owner. |
 | Run execution and state application | orchestration/runs | Includes runtime authorization and execution state helpers. |
 | Plan validation, scheduling and step lifecycle | orchestration/workflows | Former planning, policies, steps and scheduler micro-packages consolidated. |
 | Authorized request construction and provider gateway | orchestration/requests | Former run_request and models_layer; these are services, not database models. |
 | Orchestration database entities | orchestration/models.py | Kept as a module; creating a one-file models package would add needless depth. |
 | Planning attempts, feasibility, ownership and project plans | orchestration/workflows/plan_* | Former top-level planning; one orchestration owner for automatic and user-authored work. |
+
+### Platform foundations and shared helpers
+
+`backend/app/platform/common` is the single owner for cross-domain, provider-neutral foundations:
+configuration, logging, metrics, request/trace context, pagination contracts, typed value
+normalization, resource sizing, executors, and maintenance primitives. These modules deliberately
+remain small when they define a stable contract used by several domains; they are not a generic
+catch-all package. There is no root-level `utils.py`. Helpers belong in the narrowest typed module
+that owns their behavior (for example `common/typing.py` for value coercion and
+`common/trace_context.py` for propagation). This keeps imports discoverable and prevents unrelated
+business logic from accumulating in a dumping ground.
+
+Platform persistence and security adapters remain nested under `platform/db`, `platform/redis`,
+`platform/security`, `platform/secrets`, `platform/auth`, `platform/identity`, `platform/admin`,
+and `platform/integrations/webhooks`. They are infrastructure boundaries, not application-level
+utility folders.
 
 ## Edge-domain consolidation
 
@@ -47,6 +63,18 @@ imports, dynamic patch targets, architecture gates and documentation together, w
 - API routes and schema groups retain their authentication and transport grouping.
 - auth, identity, security, secrets, db, self_hosted and workspaces are separate security or
   lifecycle owners; the target tree was not an instruction to erase these domains.
+
+## File-level review policy
+
+The inventory for the current tree contains many implementation files because the product has
+durable state, policy, and recovery contracts. A file is retained when it owns an independently
+tested model, service, adapter, or lifecycle state machine; line count alone is not a reason to
+merge it. The review removes dead modules, one-line forwarding modules, and constants that have no
+independent ownership. Related behavior is grouped by function inside its domain (for example
+runtime placement, queue operations, project I/O, and team execution), while large state machines
+remain separate to keep transactions and failure semantics visible. API route aggregators are kept
+only where they compose a real transport feature group. No compatibility aliases are used for
+removed paths.
 
 ## Defects repaired during migration
 

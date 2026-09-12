@@ -18,10 +18,10 @@ from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep, 
 from backend.app.orchestration.tasks.ownership import is_platform_owned_step, owner_version
 from backend.app.orchestration.workflows.plan_models import TaskPlanningAttempt
 from backend.app.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.security.redaction import redact_sensitive_payload, redact_text_fragments
-from backend.app.storage.artifact_models import Artifact
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.teams.snapshots import build_team_snapshot
+from backend.app.platform.security.redaction import redact_sensitive_payload, redact_text_fragments
+from backend.app.workspace.storage.artifact_models import Artifact
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.teams.snapshots import build_team_snapshot
 
 TRANSFER_PENDING = "pending"
 TRANSFER_ACCEPTED = "accepted"

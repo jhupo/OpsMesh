@@ -4,7 +4,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.runtime.contracts import AgentRunRequest
-from backend.app.core.config import Settings
 from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from backend.app.orchestration.approvals.service import ApprovalService
@@ -20,6 +19,7 @@ from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.service import TaskStateService
 from backend.app.orchestration.tasks.status import TaskStatus
+from backend.app.platform.common.config import Settings
 
 
 @dataclass(slots=True)

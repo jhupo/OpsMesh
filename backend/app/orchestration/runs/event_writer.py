@@ -4,9 +4,9 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.trace_context import with_current_trace_metadata
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.platform.common.trace_context import with_current_trace_metadata
+from backend.app.platform.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
 class RunEventWriter:

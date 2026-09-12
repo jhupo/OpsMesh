@@ -13,7 +13,7 @@ def select_tests(changed: list[str]) -> list[str]:
     candidates = list(Path("backend/tests").glob("test_*.py"))
     for name in changed:
         path = Path(name)
-        if name.startswith(("operator/", "backend/app/admin/updates/")):
+        if name.startswith(("operator/", "backend/app/platform/admin/updates/")):
             tests.update(
                 {
                     "backend/tests/test_operator_security.py",

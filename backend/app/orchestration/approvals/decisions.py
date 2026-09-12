@@ -5,7 +5,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.memory.episodic import AgentEpisodicMemoryService
-from backend.app.core.config import get_settings
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_service import AuditService
@@ -13,8 +12,9 @@ from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.orchestration.approvals.run_gate import ApprovalRunGateService
 from backend.app.orchestration.runs.models import AgentRunStateSnapshot
-from backend.app.reviews.resource_review_targets import ResourceReviewDecisionService
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.common.config import get_settings
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.reviews.resource_review_targets import ResourceReviewDecisionService
 
 
 class ApprovalDecisionService:

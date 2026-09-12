@@ -11,24 +11,24 @@ from backend.app.api.schemas.webhooks import (
     WebhookSubscriptionResponse,
     WebhookSubscriptionUpdateRequest,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.db.pagination import page_scalars
-from backend.app.db.session import get_db_session
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.security.egress import EgressUrlValidationError
-from backend.app.webhooks.models import WebhookDeliveryAttempt
-from backend.app.webhooks.service import (
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.pagination import page_scalars
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.integrations.webhooks.models import WebhookDeliveryAttempt
+from backend.app.platform.integrations.webhooks.service import (
     WebhookDeliveryReplayError,
     WebhookDeliveryReplayRateLimitError,
     WebhookDeliveryService,
     WebhookSubscriptionService,
 )
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.platform.security.egress import EgressUrlValidationError
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/webhook-subscriptions",

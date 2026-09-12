@@ -10,11 +10,11 @@ from backend.app.api.services.workspace_archive_blob_reader import WorkspaceArch
 from backend.app.api.services.workspace_import_checksum import _validated_checksum
 from backend.app.api.services.workspace_import_fields import _dict_field, _string_field
 from backend.app.api.services.workspace_import_resolution import _archive_resolution_action
-from backend.app.storage.models import WorkspaceFile
-from backend.app.storage.runtime_policy import validate_file_runtime_policy
-from backend.app.storage.security import safe_filename
-from backend.app.storage.storage_transactions import CompensatingObjectStorageWrites
-from backend.app.workspaces.models import Workspace
+from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.workspace.storage.runtime_policy import validate_file_runtime_policy
+from backend.app.workspace.storage.security import safe_filename
+from backend.app.workspace.storage.storage_transactions import CompensatingObjectStorageWrites
+from backend.app.workspace.tenants.models import Workspace
 
 
 class WorkspaceArchiveFileImporter:

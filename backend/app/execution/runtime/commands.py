@@ -5,13 +5,13 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
 from backend.app.execution.runtime.manager_factory import RuntimeManagerFactory
 from backend.app.execution.runtime.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
 from backend.app.execution.runtime.queries import RuntimeControlQueryService
 from backend.app.execution.runtime.security_events import RuntimeSecurityEventRecorder
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
+from backend.app.platform.common.config import Settings
 
 
 class RuntimeCommandService:

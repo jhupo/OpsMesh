@@ -24,7 +24,6 @@ from backend.app.agents.runtime.sessions import (
 from backend.app.agents.runtime.state_store import AgentRunStateStore
 from backend.app.agents.runtime.tools import BackendToolExecutor
 from backend.app.capabilities.mcp.adapter_resolver import McpAdapterResolver
-from backend.app.core.config import Settings
 from backend.app.execution.runtime.backend_registry import build_runtime_backend_registry
 from backend.app.execution.runtime.contracts import DockerRuntimeClient
 from backend.app.execution.runtime.models import WorkspaceRuntime
@@ -55,8 +54,9 @@ from backend.app.orchestration.runs.runtime_authorization import RunRuntimeAutho
 from backend.app.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
 from backend.app.orchestration.runs.tool_authorization import hydrate_agent_tools
 from backend.app.orchestration.tasks.models import Task
-from backend.app.projects.runtime_context import project_runtime_context
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.common.config import Settings
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.projects.runtime_context import project_runtime_context
 
 
 @dataclass(slots=True)

@@ -6,11 +6,11 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.admin.policy_reader import PlatformPolicyService
-from backend.app.admin.risky_policy_values import RiskyExecutionPolicy
-from backend.app.core.config import Settings
-from backend.app.reviews.model_request import ModelRequestReviewService
-from backend.app.reviews.tool_execution import ToolExecutionReviewService
+from backend.app.platform.admin.policy_reader import PlatformPolicyService
+from backend.app.platform.admin.risky_policy_values import RiskyExecutionPolicy
+from backend.app.platform.common.config import Settings
+from backend.app.workspace.reviews.model_request import ModelRequestReviewService
+from backend.app.workspace.reviews.tool_execution import ToolExecutionReviewService
 
 
 class ApprovalPolicyOutcome(StrEnum):

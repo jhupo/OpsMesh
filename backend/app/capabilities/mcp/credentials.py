@@ -12,20 +12,20 @@ from backend.app.api.schemas.capabilities.mcp_credentials import (
 )
 from backend.app.capabilities.mcp.server_helpers import require_mcp_server
 from backend.app.capabilities.models import McpCredentialReference
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.db.pagination import page_scalars
 from backend.app.observability.audit_service import AuditService
-from backend.app.reviews.approval_service import ResourceReviewApprovalService
-from backend.app.reviews.constants import (
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.platform.db.pagination import page_scalars
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.reviews.approval_service import ResourceReviewApprovalService
+from backend.app.workspace.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE,
 )
-from backend.app.reviews.models import ResourceReview
-from backend.app.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.workspace.reviews.models import ResourceReview
+from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
 
 
 class McpCredentialService:

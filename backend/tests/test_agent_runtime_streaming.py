@@ -19,13 +19,13 @@ from backend.app.agents.runtime.contracts import (
 from backend.app.agents.runtime.errors import AgentRuntimeCancelledError
 from backend.app.agents.runtime.providers.claude_runner import ClaudeAgentSDKRunner
 from backend.app.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.orchestration.runs.cancellation import DatabaseRunCancellation
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.status import RunStatus
-from backend.app.workspaces.models import Workspace
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.tenants.models import Workspace
 
 
 class TriggerCancellation:

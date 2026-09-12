@@ -15,7 +15,7 @@ from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision
 from backend.app.orchestration.approvals.service import ApprovalService
 from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 @dataclass(slots=True)

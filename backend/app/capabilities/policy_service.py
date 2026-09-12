@@ -14,9 +14,9 @@ from backend.app.api.schemas.capabilities.catalog import (
 )
 from backend.app.capabilities.catalog_service import WorkspaceCapabilityCatalogService
 from backend.app.capabilities.schema_validation import validate_partial_parameters
-from backend.app.core.errors import DomainError, NotFoundError
 from backend.app.observability.audit_service import AuditService
-from backend.app.teams.models import AgentTeam
+from backend.app.platform.common.errors import DomainError, NotFoundError
+from backend.app.workspace.teams.models import AgentTeam
 
 PolicyKey = TypeVar("PolicyKey", str, UUID)
 

@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 class McpToolCallLogRequest(BaseModel):

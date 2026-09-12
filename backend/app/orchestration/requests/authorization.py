@@ -36,7 +36,7 @@ from backend.app.orchestration.runs.runtime_authorization import (
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.tasks.ownership import task_owner_can_execute_step
-from backend.app.security.models import SecurityEvent
+from backend.app.platform.security.models import SecurityEvent
 
 
 @dataclass(slots=True)

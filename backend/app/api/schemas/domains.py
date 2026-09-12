@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.api.schemas.common import TimestampedModel
 from backend.app.api.schemas.tasks import TaskResponse
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 class DomainProjectCreateRequest(BaseModel):

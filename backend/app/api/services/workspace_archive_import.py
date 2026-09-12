@@ -18,12 +18,12 @@ from backend.app.api.services.workspace_archive_file_import import WorkspaceArch
 from backend.app.api.services.workspace_import_preview import _populate_import_preview
 from backend.app.api.services.workspace_metadata_import import WorkspaceMetadataImportService
 from backend.app.observability.audit_service import AuditService
-from backend.app.storage.storage import ObjectStorage
-from backend.app.storage.storage_transactions import (
+from backend.app.workspace.storage.storage import ObjectStorage
+from backend.app.workspace.storage.storage_transactions import (
     CompensatingObjectStorageWrites,
     ObjectStorageCompensationError,
 )
-from backend.app.workspaces.models import Workspace
+from backend.app.workspace.tenants.models import Workspace
 
 
 class WorkspaceArchiveImportService:

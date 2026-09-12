@@ -18,19 +18,19 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
 from backend.app.api.schemas.tasks import TaskCreateRequest
-from backend.app.core.config import Settings, get_settings
-from backend.app.db.session import SessionLocal
 from backend.app.execution.workers.handlers import WorkerJobHandler
 from backend.app.execution.workers.queue_consumer import consume_once
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.identity.models import User
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.redis.client import redis_client
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db.session import SessionLocal
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.client import redis_client
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 @dataclass(frozen=True)

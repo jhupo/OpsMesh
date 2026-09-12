@@ -28,12 +28,6 @@ from backend.app.api.schemas.operations import (
     StaleRunsDiagnosticsResponse,
 )
 from backend.app.api.schemas.runs import AgentRunResponse, RunEventResponse
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.db.session import get_db_session
 from backend.app.execution.operations.events import OperationsEventQueryService
 from backend.app.execution.operations.stale_run_diagnostics import StaleRunDiagnosticsService
 from backend.app.execution.operations.stale_run_recovery import StaleRunRecoveryService
@@ -42,8 +36,14 @@ from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.observability.audit_integrity import AuditIntegrityService
 from backend.app.observability.audit_service import AuditService
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.redis.dependencies import get_redis_client
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

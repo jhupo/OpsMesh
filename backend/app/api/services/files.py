@@ -7,16 +7,16 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.memory.indexing import WorkspaceMemoryIndexingService
-from backend.app.core.pagination import PageParams
-from backend.app.db.pagination import page_scalars
 from backend.app.observability.audit_service import AuditService
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.storage.artifact_models import Artifact
-from backend.app.storage.models import FileAccessEvent, WorkspaceFile
-from backend.app.storage.runtime_policy import validate_file_runtime_policy
-from backend.app.storage.security import safe_filename
-from backend.app.storage.storage import ObjectStorage
-from backend.app.storage.storage_transactions import CompensatingObjectStorageWrites
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.pagination import page_scalars
+from backend.app.workspace.storage.artifact_models import Artifact
+from backend.app.workspace.storage.models import FileAccessEvent, WorkspaceFile
+from backend.app.workspace.storage.runtime_policy import validate_file_runtime_policy
+from backend.app.workspace.storage.security import safe_filename
+from backend.app.workspace.storage.storage import ObjectStorage
+from backend.app.workspace.storage.storage_transactions import CompensatingObjectStorageWrites
 
 T = TypeVar("T")
 

@@ -8,8 +8,6 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.runs.status import (
@@ -24,8 +22,10 @@ from backend.app.orchestration.tasks.status import (
     can_transition_task,
     require_task_transition,
 )
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_core_domain_round_trip() -> None:

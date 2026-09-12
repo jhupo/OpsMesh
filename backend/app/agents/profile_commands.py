@@ -21,8 +21,8 @@ from backend.app.api.schemas.agents import (
     AgentProfileCreateRequest,
     AgentProfileUpdateRequest,
 )
-from backend.app.core.config import Settings
-from backend.app.reviews.constants import (
+from backend.app.platform.common.config import Settings
+from backend.app.workspace.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
 )

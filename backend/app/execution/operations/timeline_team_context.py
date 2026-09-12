@@ -13,7 +13,7 @@ from backend.app.execution.operations.timeline_utils import (
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
-from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
 
 
 class TeamRuntimeTimelineContext:

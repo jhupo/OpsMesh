@@ -1,6 +1,5 @@
 from uuid import uuid4
 
-from backend.app.core.config import Settings
 from backend.app.execution.workers.job_handlers.agent_run import AgentRunJobHandler
 from backend.app.execution.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.execution.workers.jobs import JobPayload, JobType
@@ -8,6 +7,7 @@ from backend.app.orchestration.runs.execution import (
     RunExecutionDependencies,
     RunExecutionService,
 )
+from backend.app.platform.common.config import Settings
 
 
 def test_agent_run_handler_passes_worker_docker_client_to_execution_service(monkeypatch) -> None:

@@ -5,7 +5,6 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.metrics import GaugeMetric
 from backend.app.execution.operations.team_runtime_health import (
     team_runtime_health_for_metrics,
     team_runtime_metadata,
@@ -13,7 +12,8 @@ from backend.app.execution.operations.team_runtime_health import (
 )
 from backend.app.execution.operations.utils import non_negative_int
 from backend.app.execution.runtime.models import WorkspaceRuntime
-from backend.app.teams.models import AgentTeam
+from backend.app.platform.common.metrics import GaugeMetric
+from backend.app.workspace.teams.models import AgentTeam
 
 
 class TeamRuntimePrometheusMetrics:

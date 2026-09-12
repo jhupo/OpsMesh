@@ -16,7 +16,7 @@ from backend.app.agents.memory.policy import MemoryLifecyclePolicy, memory_lifec
 from backend.app.agents.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
 from backend.app.agents.models import AgentProfile
 from backend.app.observability.audit_service import AuditService
-from backend.app.teams.models import AgentTeam
+from backend.app.workspace.teams.models import AgentTeam
 
 
 @dataclass(frozen=True, slots=True)

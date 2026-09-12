@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.providers.contracts import ResolvedModelProvider
 from backend.app.agents.providers.resolver import ModelProviderResolver
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.secrets.service import SecretEncryptionService
 
 
 class ModelProviderResolutionService:

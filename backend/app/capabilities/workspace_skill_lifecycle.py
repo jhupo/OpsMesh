@@ -22,11 +22,11 @@ from backend.app.capabilities.workspace_skill_lifecycle_helpers import (
     require_same_skill_key,
     require_workspace_install,
 )
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.db.pagination import page_scalars
 from backend.app.observability.audit_service import AuditService
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.platform.db.pagination import page_scalars
 
 T = TypeVar("T")
 

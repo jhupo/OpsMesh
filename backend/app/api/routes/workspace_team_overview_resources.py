@@ -22,24 +22,24 @@ from backend.app.api.schemas.teams import (
     AgentTeamUpdateRequest,
     WorkspaceTeamCommandCenterResponse,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
 from backend.app.capabilities.policy_service import TeamCapabilityPolicyService
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.db.session import get_db_session
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.teams.command_center import TeamCommandCenterService
-from backend.app.teams.execution_overview import TeamExecutionOverviewService
-from backend.app.teams.models import AgentTeam
-from backend.app.teams.operations_console import TeamOperationsConsoleService
-from backend.app.teams.project_service import TeamProjectSpaceService
-from backend.app.teams.workspace_command_center import WorkspaceCommandCenterService
-from backend.app.teams.workspace_service import (
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.redis.dependencies import get_redis_client
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.workspace.teams.command_center import TeamCommandCenterService
+from backend.app.workspace.teams.execution_overview import TeamExecutionOverviewService
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.teams.operations_console import TeamOperationsConsoleService
+from backend.app.workspace.teams.project_service import TeamProjectSpaceService
+from backend.app.workspace.teams.workspace_command_center import WorkspaceCommandCenterService
+from backend.app.workspace.teams.workspace_service import (
     TeamCreateCommand,
     TeamUpdateCommand,
     WorkspaceTeamService,

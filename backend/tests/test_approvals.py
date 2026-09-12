@@ -20,15 +20,9 @@ from backend.app.agents.runtime.contracts import (
 )
 from backend.app.agents.runtime.state_store import AgentRunStateStore
 from backend.app.capabilities.models import McpServer
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
 from backend.app.execution.workers.dependencies import get_worker_queue
 from backend.app.execution.workers.jobs import JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit_models import AuditEvent
 from backend.app.orchestration.approvals.agent_tool_interruptions import (
@@ -47,15 +41,21 @@ from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.status import RunStatus
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.redis.keys import RedisKeyBuilder
-from backend.app.reviews.constants import (
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.keys import RedisKeyBuilder
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     RESOURCE_STATUS_REJECTED,
     REVIEW_TYPE_MCP_SERVER,
 )
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_approval_approve_enqueues_resume_job() -> None:

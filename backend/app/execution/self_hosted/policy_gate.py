@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from backend.app.admin.policy_reader import PlatformPolicyService
+from backend.app.platform.admin.policy_reader import PlatformPolicyService
 
 
 class SelfHostedPolicyGate:

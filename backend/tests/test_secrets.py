@@ -1,4 +1,4 @@
-from backend.app.secrets.service import (
+from backend.app.platform.secrets.service import (
     SecretEncryptionService,
     external_vault_reference_metadata,
     redact_secret_provider_configs,

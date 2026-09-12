@@ -18,11 +18,8 @@ from backend.app.capabilities.models import (
     McpServer,
     McpToolAllowlist,
 )
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.runtime.space_models import RuntimeSpace
-from backend.app.identity.models import User
 from backend.app.orchestration.requests.authorization import RunAuthorizationService
 from backend.app.orchestration.runs.authorization_integrity import (
     authorization_snapshot_fingerprint,
@@ -33,10 +30,13 @@ from backend.app.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationService,
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.security.models import SecurityEvent
-from backend.app.storage.models import WorkspaceFile
-from backend.app.teams.models import AgentTeam
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.platform.security.models import SecurityEvent
+from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_effective_runtime_and_file_resources_freeze_execution_binding() -> None:

@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.providers.policy import canonical_model_provider
 from backend.app.agents.runtime.contracts import AgentRunRequest, AgentRunResult
-from backend.app.core.trace_context import current_trace_context
 from backend.app.observability.audit_service import AuditService
 from backend.app.observability.cost_models import (
     ModelPricingRule,
@@ -20,6 +19,7 @@ from backend.app.observability.cost_models import (
 )
 from backend.app.observability.cost_usage import NormalizedModelUsage, normalize_model_usage
 from backend.app.orchestration.runs.models import AgentRun
+from backend.app.platform.common.trace_context import current_trace_context
 
 _MILLION = Decimal(1_000_000)
 _COST_QUANTUM = Decimal("0.000000000001")

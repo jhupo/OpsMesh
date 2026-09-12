@@ -36,7 +36,7 @@ from backend.app.capabilities.skill_tool_availability import (
     WorkspaceSkillToolAvailability,
     skill_tool_availability,
 )
-from backend.app.core.config import Settings, get_settings
+from backend.app.platform.common.config import Settings, get_settings
 
 
 @dataclass(frozen=True)

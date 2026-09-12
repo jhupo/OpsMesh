@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.providers.model_api import canonical_model_api
 from backend.app.agents.providers.resolution_service import ModelProviderResolutionService
-from backend.app.core.config import Settings
 from backend.app.orchestration.requests.authorization import RunAuthorizationService
 from backend.app.orchestration.requests.utils import (
     effective_resolved_model_api,
@@ -15,7 +14,8 @@ from backend.app.orchestration.requests.utils import (
     uuid_or_none,
 )
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.common.config import Settings
+from backend.app.platform.secrets.service import SecretEncryptionService
 
 
 @dataclass(slots=True)

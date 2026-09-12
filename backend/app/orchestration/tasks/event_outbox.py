@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.orchestration.tasks.events import TaskEventBus
 from backend.app.orchestration.tasks.models import TaskEventOutbox
-from backend.app.webhooks.service import WebhookDeliveryService
+from backend.app.platform.integrations.webhooks.service import WebhookDeliveryService
 
 TASK_EVENT_OUTBOX_PENDING = "pending"
 TASK_EVENT_OUTBOX_PUBLISHED = "published"

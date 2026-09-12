@@ -17,8 +17,24 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_consolidated_domains_have_one_source_owner() -> None:
     app = ROOT / "backend/app"
     for name in (
+        "workspace/domains",
+        "workspace/projects",
+        "workspace/reviews",
+        "workspace/storage",
+        "workspace/teams",
+        "workspace/tenants",
+        "platform/admin",
+        "platform/auth",
+        "platform/common",
+        "platform/db",
+        "platform/identity",
+        "platform/integrations",
+        "platform/integrations/webhooks",
+        "platform/rate_limits",
+        "platform/redis",
+        "platform/secrets",
+        "platform/security",
         "execution/runtime",
-        "storage",
         "execution/workers",
         "execution/operations",
         "execution/self_hosted",
@@ -33,6 +49,23 @@ def test_consolidated_domains_have_one_source_owner() -> None:
     ):
         assert (app / name / "__init__.py").is_file(), name
     for name in (
+        "platform/core",
+        "admin",
+        "auth",
+        "core",
+        "db",
+        "domains",
+        "identity",
+        "projects",
+        "rate_limits",
+        "redis",
+        "reviews",
+        "secrets",
+        "security",
+        "storage",
+        "teams",
+        "webhooks",
+        "workspaces",
         "runtime_manager",
         "runtime",
         "workers",
@@ -79,7 +112,7 @@ def test_consolidated_domains_have_one_source_owner() -> None:
     [
         "backend.app.execution.operations.worker_lifecycle",
         "backend.app.execution.operations.stale_run_recovery",
-        "backend.app.teams.execution_loop",
+        "backend.app.workspace.teams.execution_loop",
     ],
 )
 def test_consolidated_services_import_in_a_fresh_process(module: str) -> None:
@@ -95,7 +128,7 @@ def test_consolidated_services_import_in_a_fresh_process(module: str) -> None:
 
 
 def test_team_consolidation_removes_superseded_sources() -> None:
-    teams = ROOT / "backend/app/teams"
+    teams = ROOT / "backend/app/workspace/teams"
     for name in (
         "execution_loop_constants.py",
         "execution_loop_jobs.py",
@@ -113,8 +146,8 @@ def test_team_consolidation_removes_superseded_sources() -> None:
     for name in (
         "agents/messages/pagination.py",
         "orchestration/tasks/control_payloads.py",
-        "workers/job_handlers/base.py",
-        "teams/operating_context.py",
+        "execution/workers/job_handlers/base.py",
+        "workspace/teams/operating_context.py",
         "api/services/workspace_export_constants.py",
         "api/schemas/redaction.py",
     ):
@@ -200,27 +233,27 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
     ("module", "violation", "contract"),
     [
         (
-            "db/pagination.py",
+            "platform/db/pagination.py",
             "from backend.app.api.pagination import PageResponse",
             "Shared infrastructure cannot depend on the API even indirectly",
         ),
         (
-            "core/pagination.py",
+            "platform/common/pagination.py",
             "from backend.app.agents.service import AgentManagementService",
             "Shared infrastructure cannot depend on the API even indirectly",
         ),
         (
-        "execution/workers/__init__.py",
+            "execution/workers/__init__.py",
             "from backend.app.api.routes import health",
             "HTTP transport is only composed by the API entry point",
         ),
         (
-            "core/pagination.py",
+            "platform/common/pagination.py",
             "from fastapi import Query",
             "Pagination inputs have no HTTP or database dependency",
         ),
         (
-            "core/pagination.py",
+            "platform/common/pagination.py",
             "import pytest",
             "Production code cannot depend on the test framework",
         ),

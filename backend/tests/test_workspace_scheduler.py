@@ -10,15 +10,12 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.agents.models import AgentProfile
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
 from backend.app.execution.runtime.space_models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
 from backend.app.execution.runtime.space_service import RuntimeSpaceService
-from backend.app.identity.models import User
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.runs.authorization_snapshot import RunAuthorizationSnapshotService
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
@@ -36,14 +33,17 @@ from backend.app.orchestration.workflows.step_scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspaces.models import (
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.tenants.models import (
     Workspace,
     WorkspaceMember,
     WorkspaceQuota,
     WorkspaceReservation,
 )
-from backend.app.workspaces.quotas import WorkspaceQuotaService
+from backend.app.workspace.tenants.quotas import WorkspaceQuotaService
 
 
 def test_workspace_scheduler_orders_steps_by_task_priority_and_run_quota() -> None:

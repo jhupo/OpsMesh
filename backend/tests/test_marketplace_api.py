@@ -27,18 +27,18 @@ from backend.app.capabilities.models import (
     Skill,
     WorkspaceSkillInstall,
 )
-from backend.app.core.config import Settings, get_settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.db.errors import DatabaseConflictError
-from backend.app.db.session import get_db_session
-from backend.app.identity.models import User
 from backend.app.main import create_app
 from backend.app.orchestration.tasks.models import Task, TaskMessage
-from backend.app.redis.dependencies import get_redis_client
-from backend.app.reviews.llm import LlmReviewResult
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.errors import DatabaseConflictError
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.identity.models import User
+from backend.app.platform.redis.dependencies import get_redis_client
+from backend.app.workspace.reviews.llm import LlmReviewResult
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 TOKEN = "test-token"
 
@@ -53,7 +53,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
             signals={"reviewer": "llm", "verdict": "approve"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", fake_review)
+    monkeypatch.setattr("backend.app.workspace.reviews.llm.LlmResourceReviewer.review", fake_review)
 
 
 def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
@@ -191,7 +191,9 @@ def test_private_plugin_listing_skips_resource_review_by_default(monkeypatch) ->
             signals={"reviewer": "llm", "verdict": "review"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+    monkeypatch.setattr(
+        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+    )
 
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/marketplace-listings",
@@ -227,7 +229,9 @@ def test_private_plugin_review_can_be_enabled_per_workspace(monkeypatch) -> None
             signals={"reviewer": "llm", "verdict": "review"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+    monkeypatch.setattr(
+        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+    )
 
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/marketplace-listings",
@@ -489,7 +493,9 @@ def test_public_plugin_listing_requires_resource_review_before_market_visibility
             signals={"reviewer": "codex-auto-review", "verdict": "review"},
         )
 
-    monkeypatch.setattr("backend.app.reviews.llm.LlmResourceReviewer.review", require_review)
+    monkeypatch.setattr(
+        "backend.app.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+    )
 
     created = client.post(
         f"/api/v1/workspaces/{workspace.id}/marketplace-listings",

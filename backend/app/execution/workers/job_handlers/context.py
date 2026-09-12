@@ -7,11 +7,11 @@ from backend.app.capabilities.mcp.adapters import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
-from backend.app.core.config import Settings
 from backend.app.execution.runtime.contracts import DockerRuntimeClient
 from backend.app.execution.runtime.dependencies import get_docker_runtime_client
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.common.config import Settings
+from backend.app.platform.secrets.service import SecretEncryptionService
 
 
 @dataclass(frozen=True, slots=True)

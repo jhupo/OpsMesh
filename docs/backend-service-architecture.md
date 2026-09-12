@@ -7,18 +7,22 @@ The currently enforced module rules and their limits are documented in
 middleware lives in API. The linter verifies infrastructure independence and SDK adapter boundaries
 on every CI run; it does not imply that every proposed domain boundary below is already enforced.
 
-The backend should be split into clear responsibility domains. The API service should not directly execute long-running agent work. Workers should execute runs asynchronously, communicate through queues and persisted state, and use the runtime manager for Docker-backed execution.
+The backend is split into a small set of top-level responsibility domains. The API service does not
+execute long-running agent work directly. Workers execute runs asynchronously, communicate through
+queues and persisted state, and use the execution runtime manager for Docker-backed execution.
 
 ## Three Backend Domains
 
-### 1. OpenAI Agents Runtime Layer
+### 1. Agent SDK Runtime Layer
 
-This layer adapts `openai-agents-python` into our product.
+This layer adapts the supported provider SDKs into the product-owned runtime contract. OpenAI and
+Claude implementations live under `backend/app/agents/runtime/providers`; provider-neutral
+contracts and session/tool orchestration live under `backend/app/agents/runtime`.
 
 Responsibilities:
 
-- build SDK `Agent` objects from database `agent_profiles`
-- build `Runner` configuration
+- build provider SDK agents from database `agent_profiles`
+- build provider runner configuration
 - map product tools to SDK tools
 - map skills into agent instructions and runtime files
 - configure handoffs and agents-as-tools
@@ -80,8 +84,8 @@ Worker responsibilities:
 - load workspace, task, agent, and policy state from Postgres
 - acquire Redis locks
 - build runtime context
-- call the OpenAI Agents Runtime Layer
-- route tool execution through Runtime Manager
+- call the Agent SDK Runtime Layer
+- route tool execution through the Execution Runtime Manager
 - write run events
 - update task and run status
 - collect artifacts
@@ -90,9 +94,11 @@ Worker responsibilities:
 
 Workers communicate with the API service through Postgres and Redis, not direct in-memory calls.
 
-## Runtime Manager
+## Execution Runtime Manager
 
-Runtime Manager is a backend service module used by workers and admin APIs.
+The execution runtime manager is the backend module used by workers and platform administration
+APIs. Its source is `backend/app/execution/runtime`; worker queues and operational maintenance are
+sibling modules under `backend/app/execution`.
 
 Responsibilities:
 
@@ -108,7 +114,8 @@ Responsibilities:
 - run health checks
 - cleanup stale resources
 
-Runtime Manager is not the same as the OpenAI Agents Runtime Layer. It executes system-level work inside isolated containers.
+The Execution Runtime Manager is not the same as the Agent SDK Runtime Layer. It executes
+system-level work inside isolated containers or another approved runtime backend.
 
 ## Communication Flow
 
@@ -126,12 +133,12 @@ Worker
     |
     +--> Postgres: load workspace/task/agent/policy
     +--> Redis Lock: lock run execution
-    +--> OpenAI Agents Runtime Layer
+    +--> Agent SDK Runtime Layer
     |        |
     |        v
     |   openai-agents-python Runner
     |
-    +--> Runtime Manager
+    +--> Execution Runtime Manager
              |
              v
         Docker Runtime
@@ -237,9 +244,9 @@ Workers must re-load all resource data from Postgres. Job payloads are not trust
 6. Worker acquires run lock.
 7. Worker loads workspace, task, team, agent profile, tools, skills, and policy.
 8. Worker chooses runtime mode.
-9. Worker asks Runtime Manager to apply the selected isolated, pooled, or persistent mode.
+9. Worker asks the Execution Runtime Manager to apply the selected isolated, pooled, or persistent mode.
 10. Worker builds SDK Agent and Runner config.
-11. Worker starts OpenAI Agents SDK run.
+11. Worker starts the selected provider Agent SDK run.
 12. Tool calls are routed to hosted tools, MCP, product tools, or Docker runtime.
 13. Worker streams and persists run events.
 14. If approval is needed, worker marks run `waiting_approval` and exits.
@@ -284,30 +291,38 @@ Docker owns temporary execution state:
 
 Docker must not be the only place where important final state exists.
 
-## Module Boundary Proposal
+## Implemented Module Boundary
 
 ```text
 backend/
   app/
-    api/                    # Product Backend Service Layer
-    auth/
-    workspaces/
-    agents/                 # Agent management CRUD
-    teams/
-    tasks/
-    approvals/
-    runtime/                # Runtime models, Docker control, pools and placement
-    storage/                # File/artifact persistence and storage drivers
-    orchestration/          # Agent Management And Orchestration Layer
-    agent_runtime/          # OpenAI Agents Runtime Layer
-    workers/
-    db/
-    redis/
-    events/
+    api/                                    # HTTP transport and API-facing services
+    agents/                                 # Agent profiles and nested runtime domains
+      memory/ messages/ providers/ runtime/
+    capabilities/                           # Tools, MCP, marketplace, and policy
+      mcp/ marketplace/ tools/
+    orchestration/                          # Requests, runs, approvals, tasks, workflows
+      approvals/ requests/ runs/ tasks/ workflows/
+    execution/                              # Runtime, workers, operations, self-hosted jobs
+      operations/ runtime/ self_hosted/ workers/
+    workspace/                              # Tenant, project, team, storage, and review domains
+      domains/ projects/ reviews/ storage/ teams/ tenants/
+    platform/                               # Auth, identity, persistence, security, integrations
+      admin/ auth/ common/ db/ identity/ integrations/
+      rate_limits/ redis/ secrets/ security/
+    observability/                          # Audit, cost, trace, and notification evidence
 ```
+
+The top-level directories are stable architectural boundaries. Feature-specific implementation
+packages are nested under the owning boundary instead of being siblings of the application itself.
+`api` remains a transport boundary, while `observability` remains top-level because every domain
+may emit audit, cost, trace, and notification evidence. `main.py` and `delivery.py` are process
+entrypoints and intentionally remain at the application root.
 
 ## Key Rule
 
-The API layer answers user requests. The orchestration layer decides what should happen. The OpenAI Agents layer runs model workflows. The worker layer performs long-running execution. The runtime manager executes dangerous work inside Docker.
+The API layer answers user requests. The orchestration layer decides what should happen. The Agent
+SDK layer runs provider workflows. The execution worker layer performs long-running work. The
+runtime manager executes dangerous work inside an approved isolated backend such as Docker.
 
 These boundaries should stay separate even if they start in one deployable backend process.

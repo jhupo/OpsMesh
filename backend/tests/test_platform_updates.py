@@ -9,13 +9,13 @@ from opsmesh_operator.update_state import Journal, UpdatePlan
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.admin.updates import daemon
-from backend.app.admin.updates.models import (
+from backend.app.platform.admin.updates import daemon
+from backend.app.platform.admin.updates.models import (
     PlatformInstallation,
     PlatformUpdateEvent,
     PlatformUpdateJob,
 )
-from backend.app.admin.updates.service import UpdateService, maintenance_enabled
+from backend.app.platform.admin.updates.service import UpdateService, maintenance_enabled
 from backend.tests.test_admin_api import _admin_headers, _client
 
 

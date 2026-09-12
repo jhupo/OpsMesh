@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from backend.app.security.redaction import redact_text_fragments
+from backend.app.platform.security.redaction import redact_text_fragments
 
 
 def main() -> int:

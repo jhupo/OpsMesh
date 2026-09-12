@@ -10,14 +10,14 @@ from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
 from backend.app.capabilities.tools.product_files import WorkspaceFileProductTools
 from backend.app.capabilities.tools.product_mailbox import AgentMailboxProductTools
 from backend.app.capabilities.tools.product_memory import WorkspaceMemoryProductTools
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.storage.artifact_persistence import ArtifactPersistenceService
-from backend.app.storage.content import (
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.workspace.storage.artifact_persistence import ArtifactPersistenceService
+from backend.app.workspace.storage.content import (
     DEFAULT_AGENT_FILE_READ_MAX_BYTES,
     DEFAULT_AGENT_READABLE_CONTENT_TYPES,
     WorkspaceFileContentReader,
 )
-from backend.app.storage.storage import ObjectStorage
+from backend.app.workspace.storage.storage import ObjectStorage
 
 
 class ProductToolService(

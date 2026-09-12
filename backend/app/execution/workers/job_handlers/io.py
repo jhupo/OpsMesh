@@ -1,8 +1,8 @@
 from backend.app.api.services.exports import WorkspaceExportService
 from backend.app.execution.workers.job_handlers.context import WorkerJobHandlerContext
 from backend.app.execution.workers.jobs import JobPayload
-from backend.app.storage.storage import create_storage
-from backend.app.webhooks.service import WebhookDeliveryService
+from backend.app.platform.integrations.webhooks.service import WebhookDeliveryService
+from backend.app.workspace.storage.storage import create_storage
 
 
 class WorkspaceArchiveExportJobHandler:

@@ -14,7 +14,7 @@ from backend.app.orchestration.tasks.message_append import TaskMessageAppendServ
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.orchestration.tasks.service import TaskStateService
 from backend.app.orchestration.tasks.status import TaskStatus
-from backend.app.storage.artifact_models import Artifact
+from backend.app.workspace.storage.artifact_models import Artifact
 
 STEP_STATUS_QUEUED = "queued"
 

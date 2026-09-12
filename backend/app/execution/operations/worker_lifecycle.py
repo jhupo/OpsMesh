@@ -14,7 +14,7 @@ from backend.app.execution.operations.worker_lifecycle_buckets import (
 )
 from backend.app.execution.workers.jobs import JobPayload
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 RUNNING_LEASE_STATUSES = {"running"}
 LIFECYCLE_EVENTS_LIMIT = 50

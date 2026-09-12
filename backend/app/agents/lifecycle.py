@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.payloads import profile_snapshot
 from backend.app.agents.versions import AgentVersionRecorder
-from backend.app.reviews.constants import (
+from backend.app.workspace.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     RESOURCE_STATUS_REJECTED,

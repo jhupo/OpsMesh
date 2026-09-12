@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
-from backend.app.core.errors import DomainError
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.resources import RunResourceReservationService
@@ -20,7 +19,8 @@ from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.tasks.ownership import task_owner_can_execute_step
 from backend.app.orchestration.workflows.scheduler_main import WorkspaceScheduler
 from backend.app.orchestration.workflows.step_dependencies import dependencies_satisfied
-from backend.app.projects.run_snapshots import RunProjectSnapshotService
+from backend.app.platform.common.errors import DomainError
+from backend.app.workspace.projects.run_snapshots import RunProjectSnapshotService
 
 STEP_STATUS_QUEUED = "queued"
 

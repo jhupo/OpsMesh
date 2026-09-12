@@ -2,13 +2,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from backend.app.admin.runtime_control import AdminRuntimeService
-from backend.app.admin.workers import AdminWorkerService
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.admin.dependencies import admin_runtime_service, admin_worker_service
 from backend.app.api.routes.admin.responses import page_response
 from backend.app.api.schemas.admin import AdminRuntimeLeaseResponse, AdminWorkerLeaseResponse
-from backend.app.core.pagination import PageParams
+from backend.app.platform.admin.runtime_control import AdminRuntimeService
+from backend.app.platform.admin.workers import AdminWorkerService
+from backend.app.platform.common.pagination import PageParams
 
 router = APIRouter()
 

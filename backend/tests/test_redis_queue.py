@@ -3,11 +3,11 @@ from uuid import UUID, uuid4
 import fakeredis
 import pytest
 
-from backend.app.core.trace_context import TraceContext, trace_context
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.queue_consumer import consume_once
 from backend.app.execution.workers.redis_queue import RedisQueue
-from backend.app.redis.keys import RedisKeyBuilder
+from backend.app.platform.common.trace_context import TraceContext, trace_context
+from backend.app.platform.redis.keys import RedisKeyBuilder
 
 
 def test_key_builder_scopes_workspace_keys() -> None:

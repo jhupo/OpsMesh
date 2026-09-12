@@ -20,17 +20,17 @@ from backend.app.agents.runtime.tool_gateway import AgentToolGateway, ToolGatewa
 from backend.app.agents.runtime.tools import BackendToolExecutor
 from backend.app.capabilities.effective_catalog import EffectiveCapabilityCatalogService
 from backend.app.capabilities.models import CapabilityResource, McpCredentialReference, McpServer
-from backend.app.core.config import Settings
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.reviews.models import ResourceReview
-from backend.app.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.security.models import SecurityEvent
-from backend.app.storage.models import WorkspaceFile
-from backend.app.storage.storage import LocalStorage
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.common.config import Settings
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.platform.security.models import SecurityEvent
+from backend.app.workspace.reviews.models import ResourceReview
+from backend.app.workspace.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.workspace.storage.storage import LocalStorage
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 @pytest.fixture(autouse=True)

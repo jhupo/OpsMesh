@@ -23,8 +23,8 @@ from backend.app.capabilities.schema_validation import (
     reject_embedded_secrets,
     validate_partial_parameters,
 )
-from backend.app.core.errors import DomainError, NotFoundError
-from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.platform.common.errors import DomainError, NotFoundError
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
 
 
 class EffectiveCapabilityCatalogService:

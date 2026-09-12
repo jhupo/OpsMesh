@@ -31,7 +31,7 @@ from backend.app.orchestration.requests.authorization import (
 )
 from backend.app.orchestration.requests.utils import dict_copy, string_list, uuid_or_none
 from backend.app.orchestration.tasks.models import Task
-from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
 
 MAX_AGENT_TOOL_DEPTH = 3
 MAX_AGENT_TOOL_TURNS = 20

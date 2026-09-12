@@ -10,8 +10,8 @@ from backend.app.api.schemas.capabilities.mcp_servers import (
     McpToolAllowRequest,
 )
 from backend.app.capabilities.marketplace.models import MarketplaceListing, TalentListing
-from backend.app.core.typing import dict_or_empty, string_or_default
-from backend.app.reviews.constants import (
+from backend.app.platform.common.typing import dict_or_empty, string_or_default
+from backend.app.workspace.reviews.constants import (
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_AGENT_PROFILE,
     REVIEW_TYPE_MCP_SERVER,

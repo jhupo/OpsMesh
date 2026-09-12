@@ -9,13 +9,13 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.capabilities.tools.context import ToolContext
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
-from backend.app.storage.models import WorkspaceFile
-from backend.app.storage.runtime_files import RuntimeFileService
-from backend.app.storage.storage import LocalStorage
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.storage.models import WorkspaceFile
+from backend.app.workspace.storage.runtime_files import RuntimeFileService
+from backend.app.workspace.storage.storage import LocalStorage
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_runtime_file_staging_and_artifact_collection(tmp_path: Path) -> None:

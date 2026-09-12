@@ -16,7 +16,7 @@ from backend.app.agents.runtime.contracts import AgentRuntimeToolResult
 from backend.app.agents.runtime.token_estimation import truncate_to_token_bound
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.security.redaction import (
+from backend.app.platform.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_text,
     redact_text_fragments,

@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from backend.app.platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class AgentMessageThread(UUIDPrimaryKeyMixin, TimestampMixin, Base):

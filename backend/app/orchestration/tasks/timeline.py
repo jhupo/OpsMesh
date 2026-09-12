@@ -19,7 +19,7 @@ from backend.app.orchestration.tasks.timeline_events import (
     str_or_none,
     timeline_event_sort_key,
 )
-from backend.app.storage.artifact_models import Artifact
+from backend.app.workspace.storage.artifact_models import Artifact
 
 
 class TaskTimelineService:

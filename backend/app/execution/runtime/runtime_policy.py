@@ -11,7 +11,7 @@ from backend.app.execution.runtime.contracts import RuntimeLimits
 from backend.app.execution.runtime.egress import RuntimeEgressPolicy, resolve_egress_policy
 from backend.app.execution.runtime.models import RuntimeTemplate
 from backend.app.execution.runtime.space_models import RuntimeSpace, RuntimeSpaceBinding
-from backend.app.teams.models import AgentTeam
+from backend.app.workspace.teams.models import AgentTeam
 
 
 @dataclass(frozen=True)

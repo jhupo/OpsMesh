@@ -20,21 +20,21 @@ from backend.app.api.schemas.projects import (
     WorkspaceProjectResponse,
     WorkspaceProjectUpdateRequest,
 )
-from backend.app.auth.context import WorkspaceContext
-from backend.app.auth.dependencies import workspace_dependency
-from backend.app.auth.permissions import WorkspaceAction
-from backend.app.core.pagination import PageParams
-from backend.app.db.errors import DatabaseConflictError
-from backend.app.db.session import get_db_session
-from backend.app.projects.contracts import (
+from backend.app.platform.auth.context import WorkspaceContext
+from backend.app.platform.auth.dependencies import workspace_dependency
+from backend.app.platform.auth.permissions import WorkspaceAction
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.errors import DatabaseConflictError
+from backend.app.platform.db.session import get_db_session
+from backend.app.workspace.projects.contracts import (
     ProjectCreateCommand,
     ProjectFileCommand,
     ProjectFileReplacementCommand,
     ProjectOutputCommand,
     ProjectUpdateCommand,
 )
-from backend.app.projects.service import WorkspaceProjectService
-from backend.app.projects.versioning import WorkspaceProjectVersionQueryService
+from backend.app.workspace.projects.service import WorkspaceProjectService
+from backend.app.workspace.projects.versioning import WorkspaceProjectVersionQueryService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/projects", tags=["projects"])
 

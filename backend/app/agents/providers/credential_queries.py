@@ -11,10 +11,10 @@ from backend.app.agents.providers.health_summary import (
 )
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.providers.resolver import ModelProviderResolver
-from backend.app.core.pagination import PageParams
-from backend.app.db.pagination import page_scalars
 from backend.app.observability.audit_models import AuditEvent
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.common.pagination import PageParams
+from backend.app.platform.db.pagination import page_scalars
+from backend.app.platform.secrets.service import SecretEncryptionService
 
 
 class ModelProviderCredentialQueryService:

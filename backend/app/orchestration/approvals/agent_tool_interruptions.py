@@ -15,8 +15,8 @@ from backend.app.orchestration.approvals.pending_tools import (
     PendingToolInvocationService,
 )
 from backend.app.orchestration.approvals.service import ApprovalService
-from backend.app.secrets.service import SecretEncryptionService
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.secrets.service import SecretEncryptionService
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 
 class AgentToolInterruptionService:

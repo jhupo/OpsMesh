@@ -6,13 +6,13 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.trace_context import current_trace_metadata
 from backend.app.execution.operations.models import WorkerLease
 from backend.app.execution.operations.worker_lifecycle import (
     RUNNING_LEASE_STATUSES,
     append_worker_lifecycle_events,
     worker_lifecycle_event,
 )
+from backend.app.platform.common.trace_context import current_trace_metadata
 
 
 class WorkerLeaseMaintenanceService:

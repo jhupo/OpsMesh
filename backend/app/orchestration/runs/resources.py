@@ -23,8 +23,8 @@ from backend.app.orchestration.runs.state_resource_usage import (
     positive_int_usage,
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.workspaces.models import WorkspaceReservation
-from backend.app.workspaces.quotas import WorkspaceQuotaService
+from backend.app.workspace.tenants.models import WorkspaceReservation
+from backend.app.workspace.tenants.quotas import WorkspaceQuotaService
 
 MarkStepBlocked = Callable[[TaskStep, str, dict[str, object] | None], None]
 MarkStepRunnable = Callable[[TaskStep], None]

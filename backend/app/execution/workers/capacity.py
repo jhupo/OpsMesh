@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from backend.app.core.typing import dict_or_empty
 from backend.app.execution.workers.jobs import JobPayload
+from backend.app.platform.common.typing import dict_or_empty
 
 
 def worker_can_run_job(job: JobPayload, capacity: dict[str, object]) -> bool:

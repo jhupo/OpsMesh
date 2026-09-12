@@ -18,7 +18,7 @@ from backend.app.agents.providers.health_state import (
     record_provider_success,
 )
 from backend.app.agents.providers.model_api import model_api_for_provider
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.secrets.service import SecretEncryptionService
 
 
 class ModelProviderHealthService:

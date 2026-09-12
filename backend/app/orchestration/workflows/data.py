@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.plan_workflow_contracts import WorkflowDataBinding
-from backend.app.security.redaction import redact_sensitive_payload_item
+from backend.app.platform.security.redaction import redact_sensitive_payload_item
 
 MAX_BINDING_BYTES = 16 * 1024
 MAX_TOTAL_BINDING_BYTES = 64 * 1024

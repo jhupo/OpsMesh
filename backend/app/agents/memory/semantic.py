@@ -13,8 +13,8 @@ from backend.app.agents.memory.content import memory_content_fingerprint
 from backend.app.agents.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryVersion
 from backend.app.agents.models import AgentProfile
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.security.redaction import redact_sensitive_payload, redact_text_fragments
-from backend.app.teams.models import AgentTeam
+from backend.app.platform.security.redaction import redact_sensitive_payload, redact_text_fragments
+from backend.app.workspace.teams.models import AgentTeam
 
 SEMANTIC_SCOPE_TYPES = frozenset({"workspace", "team", "agent"})
 SEMANTIC_KNOWLEDGE_TYPES = frozenset({"fact", "configuration", "policy", "procedure"})

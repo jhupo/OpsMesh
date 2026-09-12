@@ -17,7 +17,7 @@ from backend.app.capabilities.workspace_skill_lifecycle_helpers import (
     require_same_skill_key,
     require_workspace_install,
 )
-from backend.app.core.config import Settings, get_settings
+from backend.app.platform.common.config import Settings, get_settings
 
 
 class WorkspaceSkillImpactService:

@@ -19,9 +19,9 @@ from backend.app.capabilities.tools.product_normalization import (
     bounded_optional,
     optional_uuid_from_metadata,
 )
-from backend.app.core.pagination import PageParams
 from backend.app.orchestration.tasks.models import Task
-from backend.app.teams.models import AgentTeam, AgentTeamMember
+from backend.app.platform.common.pagination import PageParams
+from backend.app.workspace.teams.models import AgentTeam, AgentTeamMember
 
 
 class AgentMailboxProductTools(ProductToolEventRecorder):

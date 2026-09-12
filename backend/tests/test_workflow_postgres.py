@@ -13,8 +13,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.agents.models import AgentProfile
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.orchestration.models import OrchestrationDefinition, OrchestrationRevision
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.workflows.definition_commands import OrchestrationDefinitionCreate
@@ -23,8 +21,10 @@ from backend.app.orchestration.workflows.definitions import (
     OrchestrationDefinitionService,
 )
 from backend.app.orchestration.workflows.plan_workflow_contracts import WorkflowNode
-from backend.app.teams.models import AgentTeam
-from backend.app.workspaces.models import Workspace
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.teams.models import AgentTeam
+from backend.app.workspace.tenants.models import Workspace
 from backend.tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema
 
 pytestmark = pytest.mark.skipif(

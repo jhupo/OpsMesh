@@ -10,14 +10,14 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.core.config import Settings
-from backend.app.core.errors import QuotaExceededError
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.db.session import get_db_session
 from backend.app.execution.operations.models import WorkerNode
 from backend.app.main import create_app
-from backend.app.redis.dependencies import get_redis_client
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.errors import QuotaExceededError
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.db.session import get_db_session
+from backend.app.platform.redis.dependencies import get_redis_client
 
 
 def test_health_endpoint_returns_service_status() -> None:

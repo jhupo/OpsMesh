@@ -4,7 +4,7 @@ from pathlib import Path
 
 from opentelemetry.trace import SpanKind
 
-from backend.app.core.trace_context import (
+from backend.app.platform.common.trace_context import (
     current_trace_context,
     telemetry_span,
     trace_context_from_headers,
@@ -42,8 +42,8 @@ from opentelemetry.sdk._logs.export import InMemoryLogExporter
 from sqlalchemy import create_engine
 
 import backend.app.observability.tracing as tracing
-from backend.app.core.config import Settings
-from backend.app.core.trace_context import TraceContext, telemetry_span
+from backend.app.platform.common.config import Settings
+from backend.app.platform.common.trace_context import TraceContext, telemetry_span
 
 exporter = InMemorySpanExporter()
 log_exporter = InMemoryLogExporter()
@@ -105,7 +105,7 @@ from opentelemetry.trace import SpanKind
 from sqlalchemy import create_engine
 
 import backend.app.observability.tracing as tracing
-from backend.app.core.config import Settings
+from backend.app.platform.common.config import Settings
 from backend.app.api.middleware import RequestContextMiddleware
 
 exporter = InMemorySpanExporter()

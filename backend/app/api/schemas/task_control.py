@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 CORRECTION_TARGET_PATTERN = "^(task|step|agent|artifact|final_output)$"
 CORRECTION_MODE_PATTERN = "^(revise|regenerate|add_missing_work|replace_artifact|stop_work)$"

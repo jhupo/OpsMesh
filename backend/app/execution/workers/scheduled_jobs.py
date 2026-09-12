@@ -7,7 +7,6 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.providers.models import ModelProviderCredential
-from backend.app.db.pagination import page_scalars_by_offset
 from backend.app.execution.workers.jobs import JobPayload, JobType
 from backend.app.execution.workers.redis_queue import RedisQueue
 from backend.app.execution.workers.scheduled_models import (
@@ -25,7 +24,8 @@ from backend.app.execution.workers.scheduled_types import (
 )
 from backend.app.execution.workers.schedules import next_run_at, utc_datetime
 from backend.app.observability.audit_service import AuditService
-from backend.app.workspaces.models import Workspace
+from backend.app.platform.db.pagination import page_scalars_by_offset
+from backend.app.workspace.tenants.models import Workspace
 
 
 def increment_count(counts: dict[str, int], key: str | None) -> None:

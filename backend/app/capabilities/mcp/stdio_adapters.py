@@ -25,7 +25,7 @@ from backend.app.execution.runtime.contracts import RuntimeCommandInputFile
 from backend.app.execution.runtime.manager import RuntimeManager
 from backend.app.execution.runtime.models import WorkspaceRuntime
 from backend.app.execution.self_hosted.mcp_jobs import SelfHostedMcpJobService
-from backend.app.secrets.service import SecretEncryptionService
+from backend.app.platform.secrets.service import SecretEncryptionService
 
 
 class DockerRuntimeStdioMcpToolAdapter:

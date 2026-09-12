@@ -12,9 +12,9 @@ from backend.app.capabilities.marketplace.listing_payloads import (
 from backend.app.capabilities.marketplace.models import MarketplaceListing
 from backend.app.capabilities.mcp.servers import McpServerService
 from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
-from backend.app.core.config import Settings
-from backend.app.db.errors import flush_or_raise_conflict
 from backend.app.observability.audit_service import AuditService
+from backend.app.platform.common.config import Settings
+from backend.app.platform.db.errors import flush_or_raise_conflict
 
 
 class MarketplaceResourceInstaller:

@@ -54,7 +54,7 @@ def main() -> None:
         module = (
             "backend.app.execution.workers.cli"
             if args.command == "worker"
-            else "backend.app.admin.updates.daemon"
+            else "backend.app.platform.admin.updates.daemon"
         )
         sys.argv = [module, *remaining]
         runpy.run_module(module, run_name="__main__")
@@ -71,7 +71,7 @@ def check_runtime(directory: Path) -> None:
         "docker",
         "backend.app.main",
         "backend.app.execution.workers.cli",
-        "backend.app.admin.updates.daemon",
+        "backend.app.platform.admin.updates.daemon",
     ):
         importlib.import_module(module)
     from alembic.config import Config

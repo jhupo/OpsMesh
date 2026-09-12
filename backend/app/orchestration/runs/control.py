@@ -25,8 +25,8 @@ from backend.app.orchestration.workflows.statuses import (
     ACTIVE_RUN_STATUS_VALUES,
     STALE_RECOVERABLE_RUN_STATUS_VALUES,
 )
-from backend.app.projects.run_snapshots import RunProjectSnapshotService
-from backend.app.workspaces.quotas import WorkspaceQuotaService
+from backend.app.workspace.projects.run_snapshots import RunProjectSnapshotService
+from backend.app.workspace.tenants.quotas import WorkspaceQuotaService
 
 EnqueueRun = Callable[[AgentRun, UUID | None], bool]
 

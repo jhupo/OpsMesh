@@ -17,13 +17,13 @@ from backend.app.agents.runtime.contracts import (
     AgentRuntimeUsage,
 )
 from backend.app.agents.runtime.usage import runtime_usage
-from backend.app.db import models as registered_models  # noqa: F401
-from backend.app.db.base import Base
-from backend.app.identity.models import User
 from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
 from backend.app.observability.cost_usage import normalize_model_usage
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.workspaces.models import Workspace, WorkspaceMember
+from backend.app.platform.db import models as registered_models  # noqa: F401
+from backend.app.platform.db.base import Base
+from backend.app.platform.identity.models import User
+from backend.app.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 def test_usage_normalization_handles_provider_aliases_and_redacts_raw_payload() -> None:

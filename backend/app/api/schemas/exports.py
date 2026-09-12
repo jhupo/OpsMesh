@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, computed_field, field_serializer
 
 from backend.app.api.schemas.common import ORMModel
-from backend.app.security.redaction import redact_sensitive_payload
+from backend.app.platform.security.redaction import redact_sensitive_payload
 
 SUPPORTED_WORKSPACE_EXPORT_FORMAT = "workspace-export.v1"
 

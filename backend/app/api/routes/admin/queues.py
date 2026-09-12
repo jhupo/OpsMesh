@@ -2,8 +2,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.app.admin.operations_summary import AdminOperationsSummaryService
-from backend.app.admin.queue_operations import AdminQueueOperationsService
 from backend.app.api.routes.admin.dependencies import (
     admin_operations_summary_service,
     admin_queue_operations_service,
@@ -14,6 +12,8 @@ from backend.app.api.schemas.admin import (
     AdminQueueMetricsResponse,
     AdminRequeueDeadLetterResponse,
 )
+from backend.app.platform.admin.operations_summary import AdminOperationsSummaryService
+from backend.app.platform.admin.queue_operations import AdminQueueOperationsService
 
 router = APIRouter()
 

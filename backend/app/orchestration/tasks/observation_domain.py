@@ -4,7 +4,7 @@ from typing import TypedDict
 
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.observation_utils import count_items, int_value, present
-from backend.app.storage.artifact_models import Artifact
+from backend.app.workspace.storage.artifact_models import Artifact
 
 
 class AigcMetrics(TypedDict):

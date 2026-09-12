@@ -375,15 +375,15 @@ plan, so the whole phase is not yet complete.
 ## Repository Layout
 
 ```text
-backend/app/api/              HTTP routes, schemas, and API services
-backend/app/agent_runtime/    Agents SDK integration and runtime contracts
-backend/app/orchestration/    Run construction, authorization, and lifecycle
-backend/app/teams/            Team execution and operations views
-backend/app/capabilities/     Skills, MCP, tool policy, and execution
-backend/app/runtime/          Docker runtime control, models, pools and hardening
-backend/app/runtime/space_*   Quotas, reservations, leases, and placement
-backend/app/self_hosted/      User-owned runtime protocol and trust controls
-backend/app/workers/          Async jobs, queue consumption, and maintenance
+backend/app/api/                              HTTP routes, schemas, and API services
+backend/app/agents/                           Agent profiles, SDK runtime, memory, and providers
+backend/app/agents/runtime/providers/         OpenAI and Claude SDK adapters
+backend/app/capabilities/                     Skills, MCP, tools, marketplace, and policy
+backend/app/orchestration/                    Requests, runs, approvals, tasks, and workflows
+backend/app/execution/                        Runtime, worker, operations, and self-hosted execution
+backend/app/workspace/                        Workspace tenant, projects, teams, storage, and reviews
+backend/app/platform/                        Identity, auth, persistence, security, and integrations
+backend/app/observability/                    Audit, traces, costs, and notifications
 backend/migrations/           Alembic schema history
 backend/tests/                Unit and integration-style backend tests
 deploy/                       VPS/systemd and monitoring assets

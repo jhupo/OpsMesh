@@ -23,9 +23,9 @@ from backend.app.capabilities.mcp.types import (
     McpExecutionResult,
 )
 from backend.app.capabilities.models import McpToolCallLog
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.trace_context import current_trace_context, telemetry_span
 from backend.app.orchestration.approvals.policy import ApprovalPolicyEngine
+from backend.app.platform.common.config import Settings, get_settings
+from backend.app.platform.common.trace_context import current_trace_context, telemetry_span
 
 
 class McpToolExecutionService:
