@@ -4,18 +4,18 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.providers.capabilities import resolve_model_capability
-from backend.app.domains.agents.providers.metadata import budget_is_exhausted
-from backend.app.domains.agents.providers.model_api import (
+from backend.app.domains.agents.providers.catalog.capabilities import resolve_model_capability
+from backend.app.domains.agents.providers.catalog.metadata import budget_is_exhausted
+from backend.app.domains.agents.providers.catalog.model_api import (
     default_model_api,
     model_api_for_provider,
     model_api_options_for_provider,
 )
-from backend.app.domains.agents.providers.models import ModelProviderCredential
-from backend.app.domains.agents.providers.policy import (
+from backend.app.domains.agents.providers.catalog.policy import (
     credential_is_selectable,
     model_provider_base_url_host,
 )
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 
 
 @dataclass(frozen=True)

@@ -21,7 +21,7 @@ from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.models import AgentProfile, AgentProfileVersion
-from backend.app.domains.agents.providers.credential_commands import (
+from backend.app.domains.agents.providers.credentials.commands import (
     ModelProviderCredentialCommandService,
 )
 from backend.app.domains.agents.runtime.sessions import (

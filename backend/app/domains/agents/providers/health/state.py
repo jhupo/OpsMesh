@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.domains.agents.providers.health import ModelProviderHealthCheckResult
-from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.health.probes import ModelProviderHealthCheckResult
 
 PROVIDER_UNHEALTHY_FAILURE_THRESHOLD = 3
 
@@ -61,8 +61,8 @@ def provider_health_audit_metadata(
     result: ModelProviderHealthCheckResult,
 ) -> dict[str, object]:
     from backend.app.core.security.redaction import redact_sensitive_payload
-    from backend.app.domains.agents.providers.audit_payloads import model_api_audit_payload
-    from backend.app.domains.agents.providers.policy import model_provider_base_url_host
+    from backend.app.domains.agents.providers.audit.payloads import model_api_audit_payload
+    from backend.app.domains.agents.providers.catalog.policy import model_provider_base_url_host
 
     return {
         "name": credential.name,
@@ -79,8 +79,8 @@ def provider_health_audit_metadata(
 def provider_credential_audit_metadata(
     credential: ModelProviderCredential,
 ) -> dict[str, object]:
-    from backend.app.domains.agents.providers.audit_payloads import model_api_audit_payload
-    from backend.app.domains.agents.providers.policy import model_provider_base_url_host
+    from backend.app.domains.agents.providers.audit.payloads import model_api_audit_payload
+    from backend.app.domains.agents.providers.catalog.policy import model_provider_base_url_host
 
     return {
         "name": credential.name,

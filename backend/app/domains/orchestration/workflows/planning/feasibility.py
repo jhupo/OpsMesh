@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.schemas.capabilities.catalog import EffectiveCapabilityCatalogResponse
 from backend.app.core.common.errors import DomainError
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.resolution import ModelProviderResolutionService
+from backend.app.domains.agents.providers.resolution.snapshot import ModelProviderResolutionService
 from backend.app.domains.capabilities.catalog.effective import EffectiveCapabilityCatalogService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state_resource_usage import (

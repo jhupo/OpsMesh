@@ -16,7 +16,7 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeStreamEvent,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.domains.agents.runtime.providers.openai_tools import OpenAIProductFunctionTool
+from backend.app.domains.agents.runtime.providers.openai.tools import OpenAIProductFunctionTool
 
 
 class OpenAIAgentsResultMapper:

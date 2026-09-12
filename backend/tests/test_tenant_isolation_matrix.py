@@ -30,7 +30,7 @@ from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.projects.export_models import WorkspaceExportJob

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from backend.app.domains.agents.providers.policy import canonical_model_provider
+from backend.app.domains.agents.providers.catalog.policy import canonical_model_provider
 
 
 @dataclass(frozen=True)

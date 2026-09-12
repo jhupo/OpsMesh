@@ -10,7 +10,7 @@ from agents import RunContextWrapper
 from agents.exceptions import InputGuardrailTripwireTriggered
 from sqlalchemy import select
 
-import backend.app.domains.agents.runtime.providers.openai_agents as openai_runtime
+import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.core.common.config import Settings
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.profiles.commands import AgentProfileCommandService
@@ -27,9 +27,9 @@ from backend.app.domains.agents.runtime.errors import (
     AgentRuntimeOutputValidationError,
     normalize_agent_error,
 )
-from backend.app.domains.agents.runtime.providers.claude_runner import ClaudeAgentSDKRunner
-from backend.app.domains.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
-from backend.app.domains.agents.runtime.providers.openai_guardrails import OpenAIRuntimeOutputSchema
+from backend.app.domains.agents.runtime.providers.claude.runner import ClaudeAgentSDKRunner
+from backend.app.domains.agents.runtime.providers.openai.guardrails import OpenAIRuntimeOutputSchema
+from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.runs.authorization_snapshot import (
     RunAuthorizationSnapshotService,

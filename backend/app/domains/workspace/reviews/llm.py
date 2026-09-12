@@ -11,17 +11,17 @@ from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.agents.providers.contracts import ResolvedModelProvider
-from backend.app.domains.agents.providers.model_api import (
+from backend.app.domains.agents.providers.catalog.model_api import (
     ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
 )
-from backend.app.domains.agents.providers.policy import (
+from backend.app.domains.agents.providers.catalog.policy import (
     canonical_model_provider,
     is_anthropic_provider,
     is_openai_compatible_provider,
 )
+from backend.app.domains.agents.providers.contracts import ResolvedModelProvider
 
 OPENAI_RESPONSES_REVIEWER = "openai_responses"
 OPENAI_CHAT_REVIEWER = "openai_chat_completions"

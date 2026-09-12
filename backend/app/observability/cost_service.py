@@ -10,7 +10,7 @@ from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.trace_context import current_trace_context
-from backend.app.domains.agents.providers.policy import canonical_model_provider
+from backend.app.domains.agents.providers.catalog.policy import canonical_model_provider
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.observability.audit_service import AuditService

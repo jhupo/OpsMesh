@@ -410,6 +410,91 @@ def test_project_modules_are_nested_by_function() -> None:
         assert not (projects / name).exists(), name
 
 
+def test_agent_provider_modules_are_nested_by_function() -> None:
+    providers = ROOT / "backend/app/domains/agents/providers"
+    expected = {"audit", "catalog", "credentials", "health", "resolution"}
+    assert {path.name for path in providers.iterdir() if path.is_dir()} >= expected
+    root_modules = {
+        path.stem
+        for path in providers.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules == {"contracts"}
+    for name in (
+        "agent_summary.py",
+        "audit_payloads.py",
+        "audit_responses.py",
+        "audit_writer.py",
+        "capabilities.py",
+        "credential_commands.py",
+        "credential_queries.py",
+        "health.py",
+        "health_service.py",
+        "health_state.py",
+        "health_summary.py",
+        "metadata.py",
+        "model_api.py",
+        "models.py",
+        "policy.py",
+        "resolution.py",
+        "resolution_service.py",
+        "resolver.py",
+    ):
+        assert not (providers / name).exists(), name
+
+
+def test_agent_runtime_vendor_modules_are_nested_by_provider() -> None:
+    runtime = ROOT / "backend/app/domains/agents/runtime"
+    providers = runtime / "providers"
+    assert {path.name for path in providers.iterdir() if path.is_dir()} >= {"openai", "claude"}
+    root_modules = {
+        path.stem
+        for path in runtime.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules == {
+        "base",
+        "cancellation",
+        "capability_policy",
+        "contracts",
+        "errors",
+        "event_mapping",
+        "execution_observer",
+        "factory",
+        "guardrails",
+        "multi_provider",
+        "product_tool_executor",
+        "session_management",
+        "session_repository",
+        "session_views",
+        "sessions",
+        "state_store",
+        "token_estimation",
+        "tool_arguments",
+        "tool_gateway",
+        "tool_mcp_resolver",
+        "tool_metadata",
+        "tool_payloads",
+        "tools",
+        "usage",
+    }
+    for name in (
+        "claude_runner.py",
+        "claude_sandbox.py",
+        "openai_agents.py",
+        "openai_compaction.py",
+        "openai_guardrails.py",
+        "openai_lifecycle.py",
+        "openai_results.py",
+        "openai_sandbox.py",
+        "openai_session.py",
+        "openai_settings.py",
+        "openai_streaming.py",
+        "openai_tools.py",
+    ):
+        assert not (providers / name).exists(), name
+
+
 def test_operations_features_are_nested_by_function() -> None:
     operations = ROOT / "backend/app/runtime/operations"
     expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}

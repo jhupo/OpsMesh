@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.integrations.webhooks.models import WebhookSubscription
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.models import SecurityEvent
-from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.domains.capabilities.models import McpCredentialReference
 
 

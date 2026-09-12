@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 
-from backend.app.domains.agents.providers.policy import (
+from backend.app.domains.agents.providers.catalog.policy import (
     is_anthropic_provider,
     is_openai_compatible_provider,
     model_provider_key,

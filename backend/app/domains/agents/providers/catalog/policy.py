@@ -8,7 +8,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.egress import EgressUrlPolicy, validate_egress_url
-from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 
 MODEL_PROVIDER_NOT_ACTIVE = "model_provider_not_active"
 MODEL_PROVIDER_UNHEALTHY = "model_provider_unhealthy"
@@ -18,7 +18,7 @@ MODEL_PROVIDER_BUDGET_EXHAUSTED = "model_provider_budget_exhausted"
 def credential_not_selectable_reasons(
     credential: ModelProviderCredential | None,
 ) -> list[str]:
-    from backend.app.domains.agents.providers.metadata import budget_is_exhausted
+    from backend.app.domains.agents.providers.catalog.metadata import budget_is_exhausted
 
     if credential is None:
         return ["model_provider_missing"]

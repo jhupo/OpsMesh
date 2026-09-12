@@ -15,7 +15,7 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeStreamEventKind,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.domains.agents.runtime.providers.openai_results import OpenAIAgentsResultMapper
+from backend.app.domains.agents.runtime.providers.openai.results import OpenAIAgentsResultMapper
 
 
 def test_runtime_contracts_do_not_import_vendor_result_or_state_types() -> None:

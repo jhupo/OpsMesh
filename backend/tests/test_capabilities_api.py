@@ -19,10 +19,10 @@ from backend.app.core.db.session import get_db_session
 from backend.app.core.identity.models import User
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.credential_commands import (
+from backend.app.domains.agents.providers.credentials.commands import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.domains.capabilities.models import (
     McpCredentialReference,
     McpServer,

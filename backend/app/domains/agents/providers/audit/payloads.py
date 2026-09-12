@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from backend.app.domains.agents.providers.metadata import sanitize_budget_metadata
-from backend.app.domains.agents.providers.model_api import (
+from backend.app.domains.agents.providers.catalog.metadata import sanitize_budget_metadata
+from backend.app.domains.agents.providers.catalog.model_api import (
     default_model_api,
     model_api_for_provider,
     model_api_options_for_provider,
     require_provider_model_api,
 )
-from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 
 
 def model_api_audit_payload(credential: ModelProviderCredential) -> dict[str, object]:

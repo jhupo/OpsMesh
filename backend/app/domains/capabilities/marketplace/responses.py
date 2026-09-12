@@ -8,7 +8,7 @@ from backend.app.api.schemas.capabilities.marketplace import (
     WorkspaceAgentInstallResponse,
     WorkspaceMarketplaceInstallResponse,
 )
-from backend.app.domains.agents.providers.agent_summary import agent_profile_response
+from backend.app.domains.agents.providers.catalog.agent_summary import agent_profile_response
 from backend.app.domains.capabilities.marketplace.models import (
     TalentListingReview,
     WorkspaceAgentInstall,

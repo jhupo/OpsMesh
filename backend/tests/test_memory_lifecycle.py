@@ -55,7 +55,7 @@ from backend.app.domains.agents.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryUpsert,
 )
-from backend.app.domains.agents.providers.credential_commands import (
+from backend.app.domains.agents.providers.credentials.commands import (
     ModelProviderCredentialCommandService,
 )
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService

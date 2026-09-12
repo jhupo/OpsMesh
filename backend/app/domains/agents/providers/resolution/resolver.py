@@ -6,13 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.domains.agents.providers.catalog.model_api import model_api_for_provider
+from backend.app.domains.agents.providers.catalog.policy import credential_is_selectable
 from backend.app.domains.agents.providers.contracts import (
     ModelProviderUnavailableError,
     ResolvedModelProvider,
 )
-from backend.app.domains.agents.providers.model_api import model_api_for_provider
-from backend.app.domains.agents.providers.models import ModelProviderCredential
-from backend.app.domains.agents.providers.policy import credential_is_selectable
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 
 
 class ModelProviderResolver:

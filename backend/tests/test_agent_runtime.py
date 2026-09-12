@@ -6,9 +6,9 @@ from uuid import uuid4
 import pytest
 from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 
-import backend.app.domains.agents.runtime.providers.openai_agents as openai_runtime
+import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.policy import normalize_openai_compatible_base_url
+from backend.app.domains.agents.providers.catalog.policy import normalize_openai_compatible_base_url
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -30,12 +30,12 @@ from backend.app.domains.agents.runtime.errors import (
 )
 from backend.app.domains.agents.runtime.factory import build_agent_runtime_registry
 from backend.app.domains.agents.runtime.multi_provider import ProviderAgentRuntimeRegistry
-from backend.app.domains.agents.runtime.providers.openai_agents import OpenAIAgentsRunner
-from backend.app.domains.agents.runtime.providers.openai_results import (
+from backend.app.domains.agents.runtime.providers.openai.results import (
     OpenAIAgentsResultMapper,
     runtime_event_from_sdk_item,
 )
-from backend.app.domains.agents.runtime.providers.openai_tools import (
+from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
+from backend.app.domains.agents.runtime.providers.openai.tools import (
     OpenAIToolBridge,
     runtime_allowed_tools,
 )

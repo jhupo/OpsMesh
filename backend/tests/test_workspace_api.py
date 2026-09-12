@@ -13,6 +13,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import backend.app.domains.agents.providers.health.service as model_provider_health_service_module
 from backend.app.core.auth.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.base import Base
@@ -26,17 +27,14 @@ from backend.app.domains.agents.memory.content import memory_content_fingerprint
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers import (
-    health_service as model_provider_health_service_module,
-)
-from backend.app.domains.agents.providers.credential_commands import (
+from backend.app.domains.agents.providers.credentials.commands import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.providers.health import (
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.health.probes import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
-from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.agents.runtime.sessions import (
     PersistentAgentSession,

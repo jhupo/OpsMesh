@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.core.common.config import Settings
 from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
@@ -27,7 +28,7 @@ from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.providers.contracts import (
     ModelProviderUnavailableError,
 )
-from backend.app.domains.agents.providers.credential_commands import (
+from backend.app.domains.agents.providers.credentials.commands import (
     ModelProviderCredentialCommandService,
 )
 from backend.app.domains.agents.runtime.contracts import (
@@ -38,7 +39,6 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
-from backend.app.domains.agents.runtime.providers import openai_agents as openai_runtime
 from backend.app.domains.agents.runtime.sessions import PersistentAgentSession
 from backend.app.domains.agents.runtime.state_store import AgentRunStateStore
 from backend.app.domains.capabilities.models import (

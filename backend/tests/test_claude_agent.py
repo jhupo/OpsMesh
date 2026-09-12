@@ -17,7 +17,7 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
 )
-from backend.app.domains.agents.runtime.providers.claude_runner import (
+from backend.app.domains.agents.runtime.providers.claude.runner import (
     ClaudeAgentSDKRunner,
     ClaudeAgentSessionStore,
     _approval_hook,

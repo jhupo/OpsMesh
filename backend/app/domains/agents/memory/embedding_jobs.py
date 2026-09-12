@@ -11,8 +11,8 @@ from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEmbeddingEvent,
     WorkspaceMemoryEntry,
 )
-from backend.app.domains.agents.providers.models import ModelProviderCredential
-from backend.app.domains.agents.providers.policy import canonical_model_provider
+from backend.app.domains.agents.providers.catalog.policy import canonical_model_provider
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue.redis import RedisQueue
 

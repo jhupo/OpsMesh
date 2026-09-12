@@ -8,8 +8,8 @@ from backend.app.api.schemas.agents.providers import (
 from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
-from backend.app.domains.agents.providers.capabilities import list_model_capabilities
-from backend.app.domains.agents.providers.model_api import (
+from backend.app.domains.agents.providers.catalog.capabilities import list_model_capabilities
+from backend.app.domains.agents.providers.catalog.model_api import (
     default_model_api,
     model_api_options_for_provider,
 )

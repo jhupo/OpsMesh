@@ -21,11 +21,11 @@ from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEmbeddingEvent,
     WorkspaceMemoryEntry,
 )
-from backend.app.domains.agents.providers.models import ModelProviderCredential
-from backend.app.domains.agents.providers.policy import (
+from backend.app.domains.agents.providers.catalog.policy import (
     canonical_model_provider,
     is_openai_compatible_provider,
 )
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
 
 

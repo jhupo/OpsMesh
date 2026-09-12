@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from backend.app.domains.agents.providers.model_api import canonical_model_api
+from backend.app.domains.agents.providers.catalog.model_api import canonical_model_api
 
 _SENSITIVE_METADATA_KEYS = {
     "api_key",

@@ -22,7 +22,7 @@ from backend.app.domains.agents.memory.models import (
 )
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.models import AgentProfile, AgentProfileVersion
-from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.domains.agents.runtime.sessions import (
     PersistentAgentSession,
     PersistentAgentSessionItem,

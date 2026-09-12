@@ -19,12 +19,12 @@ from agents.handoffs import handoff as sdk_handoff
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
 
-from backend.app.domains.agents.providers.model_api import (
+from backend.app.domains.agents.providers.catalog.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
     canonical_model_api,
 )
-from backend.app.domains.agents.providers.policy import (
+from backend.app.domains.agents.providers.catalog.policy import (
     is_openai_compatible_provider,
     normalize_openai_compatible_base_url,
 )
@@ -51,23 +51,23 @@ from backend.app.domains.agents.runtime.guardrails import (
     guardrail_events,
     validated_structured_output,
 )
-from backend.app.domains.agents.runtime.providers.openai_compaction import openai_run_session
-from backend.app.domains.agents.runtime.providers.openai_guardrails import (
+from backend.app.domains.agents.runtime.providers.openai.compaction import openai_run_session
+from backend.app.domains.agents.runtime.providers.openai.guardrails import (
     OpenAIRuntimeOutputSchema,
     OpenAIRuntimeOutputSchemaError,
     merged_openai_guardrail_results,
     openai_input_guardrails,
     openai_output_guardrails,
 )
-from backend.app.domains.agents.runtime.providers.openai_lifecycle import OpenAIRuntimeHooks
-from backend.app.domains.agents.runtime.providers.openai_results import (
+from backend.app.domains.agents.runtime.providers.openai.lifecycle import OpenAIRuntimeHooks
+from backend.app.domains.agents.runtime.providers.openai.results import (
     OpenAIAgentsResultMapper,
     jsonable,
 )
-from backend.app.domains.agents.runtime.providers.openai_sandbox import sandbox_run_config
-from backend.app.domains.agents.runtime.providers.openai_settings import OpenAIModelSettingsMapper
-from backend.app.domains.agents.runtime.providers.openai_streaming import run_openai_streamed
-from backend.app.domains.agents.runtime.providers.openai_tools import OpenAIToolBridge
+from backend.app.domains.agents.runtime.providers.openai.sandbox import sandbox_run_config
+from backend.app.domains.agents.runtime.providers.openai.settings import OpenAIModelSettingsMapper
+from backend.app.domains.agents.runtime.providers.openai.streaming import run_openai_streamed
+from backend.app.domains.agents.runtime.providers.openai.tools import OpenAIToolBridge
 from backend.app.domains.agents.runtime.usage import runtime_usage
 
 

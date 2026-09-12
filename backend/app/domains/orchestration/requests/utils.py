@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from backend.app.core.common.values import uuid_or_none
-from backend.app.domains.agents.providers.model_api import (
+from backend.app.domains.agents.providers.catalog.model_api import (
     canonical_model_api,
     model_api_options_for_provider,
 )

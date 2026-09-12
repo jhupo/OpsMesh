@@ -7,7 +7,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.db.pagination import page_scalars_by_offset
-from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType

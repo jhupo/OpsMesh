@@ -21,15 +21,15 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.egress import EgressUrlValidationError
-from backend.app.domains.agents.providers.audit_responses import usage_audit_response
+from backend.app.domains.agents.providers.audit.responses import usage_audit_response
 from backend.app.domains.agents.providers.contracts import provider_health_probes
-from backend.app.domains.agents.providers.credential_commands import (
+from backend.app.domains.agents.providers.credentials.commands import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.providers.credential_queries import (
+from backend.app.domains.agents.providers.credentials.queries import (
     ModelProviderCredentialQueryService,
 )
-from backend.app.domains.agents.providers.health_service import ModelProviderHealthService
+from backend.app.domains.agents.providers.health.service import ModelProviderHealthService
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-credentials",

@@ -24,7 +24,7 @@ from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.messages.models import AgentMessage
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.credential_commands import (
+from backend.app.domains.agents.providers.credentials.commands import (
     ModelProviderCredentialCommandService,
 )
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult

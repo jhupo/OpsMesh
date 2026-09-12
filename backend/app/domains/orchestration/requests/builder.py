@@ -20,7 +20,7 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeToolExecutor,
 )
 from backend.app.domains.agents.runtime.guardrails import runtime_controls_from_snapshot
-from backend.app.domains.agents.runtime.providers.claude_sandbox import sandbox_settings_for_claude
+from backend.app.domains.agents.runtime.providers.claude.sandbox import sandbox_settings_for_claude
 from backend.app.domains.agents.runtime.sandbox.contracts import SandboxManifest
 from backend.app.domains.agents.runtime.sessions import (
     PersistentAgentSessionRef,

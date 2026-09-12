@@ -4,14 +4,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.providers.audit_payloads import model_api_audit_payload
-from backend.app.domains.agents.providers.health import ModelProviderHealthCheckResult
-from backend.app.domains.agents.providers.health_state import (
+from backend.app.domains.agents.providers.audit.payloads import model_api_audit_payload
+from backend.app.domains.agents.providers.catalog.policy import model_provider_base_url_host
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.health.probes import ModelProviderHealthCheckResult
+from backend.app.domains.agents.providers.health.state import (
     provider_credential_audit_metadata,
     provider_health_audit_metadata,
 )
-from backend.app.domains.agents.providers.models import ModelProviderCredential
-from backend.app.domains.agents.providers.policy import model_provider_base_url_host
 from backend.app.observability.audit_service import AuditService
 
 

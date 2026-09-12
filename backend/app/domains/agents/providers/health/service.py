@@ -5,22 +5,22 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.providers.audit_writer import ModelProviderAuditWriter
+from backend.app.domains.agents.providers.audit.writer import ModelProviderAuditWriter
+from backend.app.domains.agents.providers.catalog.model_api import model_api_for_provider
 from backend.app.domains.agents.providers.contracts import ProviderProbeName
-from backend.app.domains.agents.providers.credential_queries import (
+from backend.app.domains.agents.providers.credentials.queries import (
     ModelProviderCredentialQueryService,
 )
-from backend.app.domains.agents.providers.health import (
+from backend.app.domains.agents.providers.health.probes import (
     ModelProviderHealthCheckResult,
     ModelProviderHealthTarget,
     probe_model_provider,
 )
-from backend.app.domains.agents.providers.health_state import (
+from backend.app.domains.agents.providers.health.state import (
     apply_health_check_result,
     record_provider_failure,
     record_provider_success,
 )
-from backend.app.domains.agents.providers.model_api import model_api_for_provider
 
 
 class ModelProviderHealthService:

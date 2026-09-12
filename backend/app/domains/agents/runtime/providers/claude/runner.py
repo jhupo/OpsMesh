@@ -39,7 +39,7 @@ from claude_agent_sdk.types import (
 from pydantic import TypeAdapter, ValidationError
 
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.agents.providers.model_api import ANTHROPIC_MESSAGES_API
+from backend.app.domains.agents.providers.catalog.model_api import ANTHROPIC_MESSAGES_API
 from backend.app.domains.agents.runtime.base import BaseSDKAgentRuntimeAdapter
 from backend.app.domains.agents.runtime.cancellation import (
     cancel_active_tools,
