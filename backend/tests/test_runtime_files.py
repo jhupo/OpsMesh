@@ -8,13 +8,13 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.capabilities.tools.context import ToolContext
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
 from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.runtime_files import RuntimeFileService
 from backend.app.storage.storage import LocalStorage
-from backend.app.tools.context import ToolContext
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

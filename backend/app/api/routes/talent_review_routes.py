@@ -10,10 +10,10 @@ from backend.app.api.schemas.marketplace import (
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
+from backend.app.capabilities.marketplace.responses import review_response
+from backend.app.capabilities.marketplace.talent_reviews import TalentReviewService
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
-from backend.app.marketplace.responses import review_response
-from backend.app.marketplace.talent_reviews import TalentReviewService
 
 router = APIRouter()
 

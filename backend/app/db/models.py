@@ -22,6 +22,13 @@ from backend.app.agents.runtime.sessions import (
     PersistentAgentSessionItem,
 )
 from backend.app.approvals.models import Approval, PendingToolInvocation
+from backend.app.capabilities.marketplace.models import (
+    MarketplaceListing,
+    TalentListing,
+    TalentListingReview,
+    WorkspaceAgentInstall,
+    WorkspaceMarketplaceInstall,
+)
 from backend.app.capabilities.models import (
     Capability,
     CapabilityResource,
@@ -35,13 +42,6 @@ from backend.app.capabilities.models import (
 )
 from backend.app.domains.models import DomainItem, DomainProject, ReviewComment, RevisionRequest
 from backend.app.identity.models import User, UserAPIToken
-from backend.app.marketplace.models import (
-    MarketplaceListing,
-    TalentListing,
-    TalentListingReview,
-    WorkspaceAgentInstall,
-    WorkspaceMarketplaceInstall,
-)
 from backend.app.observability.audit_models import AuditEvent, AuditIntegrityCheck
 from backend.app.observability.cost_models import (
     ModelPricingRule,

@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from backend.app.api.schemas.marketplace import TalentRecommendationRequest
+from backend.app.capabilities.marketplace.models import TalentListing
 from backend.app.core.typing import string_list, string_or_default
-from backend.app.marketplace.models import TalentListing
 from backend.app.tasks.models import Task
 
 

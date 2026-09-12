@@ -5,6 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.tools.context import ToolContext
+from backend.app.capabilities.tools.product_service import ProductToolService
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.models import FileAccessEvent
 from backend.app.storage.runtime_policy import (
@@ -13,8 +15,6 @@ from backend.app.storage.runtime_policy import (
 )
 from backend.app.storage.security import validate_runtime_relative_path, validate_storage_key
 from backend.app.storage.storage import ObjectStorage, StorageObjectTooLargeError
-from backend.app.tools.context import ToolContext
-from backend.app.tools.product_service import ProductToolService
 
 
 class RuntimeFileService:

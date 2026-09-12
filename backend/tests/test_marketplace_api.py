@@ -14,6 +14,13 @@ from sqlalchemy.pool import StaticPool
 from backend.app.agents.models import AgentProfile
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.api.schemas.marketplace import MarketplaceInstallRequest
+from backend.app.capabilities.marketplace.models import (
+    MarketplaceListing,
+    TalentListing,
+    WorkspaceAgentInstall,
+    WorkspaceMarketplaceInstall,
+)
+from backend.app.capabilities.marketplace.resource_service import MarketplaceService
 from backend.app.capabilities.models import (
     McpServer,
     McpToolAllowlist,
@@ -27,13 +34,6 @@ from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
 from backend.app.identity.models import User
 from backend.app.main import create_app
-from backend.app.marketplace.models import (
-    MarketplaceListing,
-    TalentListing,
-    WorkspaceAgentInstall,
-    WorkspaceMarketplaceInstall,
-)
-from backend.app.marketplace.resource_service import MarketplaceService
 from backend.app.redis.dependencies import get_redis_client
 from backend.app.reviews.llm import LlmReviewResult
 from backend.app.tasks.models import Task, TaskMessage

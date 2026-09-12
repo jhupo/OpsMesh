@@ -10,13 +10,13 @@ from backend.app.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.agents.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
 from backend.app.agents.memory.working import AgentWorkingMemoryService
 from backend.app.agents.memory_policy import semantic_memory_policy
+from backend.app.capabilities.tools.context import ToolContext
+from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
+from backend.app.capabilities.tools.product_events import ProductToolEventRecorder
+from backend.app.capabilities.tools.product_normalization import normalized_tags
+from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.runs.models import AgentRun
 from backend.app.secrets.service import SecretEncryptionService
-from backend.app.tools.context import ToolContext
-from backend.app.tools.errors import ToolResourceNotFoundError
-from backend.app.tools.product_events import ProductToolEventRecorder
-from backend.app.tools.product_normalization import normalized_tags
-from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
 
 
 class WorkspaceMemoryProductTools(ProductToolEventRecorder):

@@ -3,17 +3,17 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.service import AgentManagementService
-from backend.app.capabilities.mcp.servers import McpServerService
-from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
-from backend.app.core.config import Settings
-from backend.app.db.errors import flush_or_raise_conflict
-from backend.app.marketplace.listing_payloads import (
+from backend.app.capabilities.marketplace.listing_payloads import (
     agent_create_request_from_listing,
     marketplace_source_checksum,
     mcp_server_create_request_from_listing,
     mcp_tool_requests_from_listing,
 )
-from backend.app.marketplace.models import MarketplaceListing
+from backend.app.capabilities.marketplace.models import MarketplaceListing
+from backend.app.capabilities.mcp.servers import McpServerService
+from backend.app.capabilities.models import Skill, WorkspaceSkillInstall
+from backend.app.core.config import Settings
+from backend.app.db.errors import flush_or_raise_conflict
 from backend.app.observability.audit_service import AuditService
 
 

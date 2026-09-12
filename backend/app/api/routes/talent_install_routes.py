@@ -13,11 +13,11 @@ from backend.app.api.schemas.marketplace import (
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
+from backend.app.capabilities.marketplace.responses import install_response
+from backend.app.capabilities.marketplace.talent_catalog import TalentCatalogService
+from backend.app.capabilities.marketplace.talent_upgrades import TalentInstallUpgradeService
 from backend.app.core.pagination import PageParams
 from backend.app.db.session import get_db_session
-from backend.app.marketplace.responses import install_response
-from backend.app.marketplace.talent_catalog import TalentCatalogService
-from backend.app.marketplace.talent_upgrades import TalentInstallUpgradeService
 
 router = APIRouter()
 

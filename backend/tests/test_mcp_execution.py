@@ -29,6 +29,7 @@ from backend.app.capabilities.models import (
     McpToolAllowlist,
     McpToolCallLog,
 )
+from backend.app.capabilities.tools.errors import ToolPermissionError, ToolResourceNotFoundError
 from backend.app.core.config import Settings
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
@@ -42,7 +43,6 @@ from backend.app.runs.models import AgentRun, RunEvent
 from backend.app.runs.status import RunStatus
 from backend.app.security.models import SecurityEvent
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

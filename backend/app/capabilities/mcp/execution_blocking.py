@@ -13,10 +13,10 @@ from backend.app.capabilities.mcp.execution_context import (
 from backend.app.capabilities.mcp.execution_logs import McpToolCallLogService
 from backend.app.capabilities.mcp.execution_notifications import McpExecutionNotifier
 from backend.app.capabilities.mcp.types import McpExecutionRequest
+from backend.app.capabilities.tools.errors import ToolPermissionError
 from backend.app.core.trace_context import with_current_trace_metadata
 from backend.app.runs.models import AgentRun
 from backend.app.security.models import SecurityEvent
-from backend.app.tools.errors import ToolPermissionError
 
 
 @dataclass(slots=True)

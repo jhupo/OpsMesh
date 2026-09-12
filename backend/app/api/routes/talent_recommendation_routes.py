@@ -11,8 +11,8 @@ from backend.app.api.schemas.marketplace import (
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
+from backend.app.capabilities.marketplace.talent_recommendations import TalentRecommendationService
 from backend.app.db.session import get_db_session
-from backend.app.marketplace.talent_recommendations import TalentRecommendationService
 
 router = APIRouter()
 

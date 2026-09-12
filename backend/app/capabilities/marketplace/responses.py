@@ -9,7 +9,7 @@ from backend.app.api.schemas.marketplace import (
     WorkspaceAgentInstallResponse,
     WorkspaceMarketplaceInstallResponse,
 )
-from backend.app.marketplace.models import (
+from backend.app.capabilities.marketplace.models import (
     TalentListingReview,
     WorkspaceAgentInstall,
     WorkspaceMarketplaceInstall,

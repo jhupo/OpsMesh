@@ -9,11 +9,11 @@ from backend.app.api.schemas.marketplace import (
     TalentListingMetricsResponse,
     TalentListingReviewCreateRequest,
 )
+from backend.app.capabilities.marketplace.models import TalentListingReview
+from backend.app.capabilities.marketplace.talent_repository import TalentMarketplaceRepository
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import commit_or_raise_conflict
 from backend.app.db.pagination import page_scalars
-from backend.app.marketplace.models import TalentListingReview
-from backend.app.marketplace.talent_repository import TalentMarketplaceRepository
 from backend.app.observability.audit_service import AuditService
 
 

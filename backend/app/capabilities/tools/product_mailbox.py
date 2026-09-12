@@ -12,16 +12,16 @@ from backend.app.api.schemas.agent_messages import (
     AgentMessageResponse,
     AgentMessageThreadCreateRequest,
 )
-from backend.app.core.pagination import PageParams
-from backend.app.tasks.models import Task
-from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.tools.context import ToolContext
-from backend.app.tools.errors import ToolResourceNotFoundError
-from backend.app.tools.product_events import ProductToolEventRecorder
-from backend.app.tools.product_normalization import (
+from backend.app.capabilities.tools.context import ToolContext
+from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
+from backend.app.capabilities.tools.product_events import ProductToolEventRecorder
+from backend.app.capabilities.tools.product_normalization import (
     bounded_optional,
     optional_uuid_from_metadata,
 )
+from backend.app.core.pagination import PageParams
+from backend.app.tasks.models import Task
+from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 
 class AgentMailboxProductTools(ProductToolEventRecorder):

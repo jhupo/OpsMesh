@@ -10,6 +10,15 @@ from backend.app.api.schemas.marketplace import (
     MarketplaceInstallRequest,
     MarketplaceListingCreateRequest,
 )
+from backend.app.capabilities.marketplace.listing_payloads import (
+    listing_review_type,
+    listing_status,
+)
+from backend.app.capabilities.marketplace.models import (
+    MarketplaceListing,
+    WorkspaceMarketplaceInstall,
+)
+from backend.app.capabilities.marketplace.resource_installer import MarketplaceResourceInstaller
 from backend.app.capabilities.models import McpServer, Skill
 from backend.app.core.config import Settings
 from backend.app.core.pagination import PageParams
@@ -19,12 +28,6 @@ from backend.app.db.errors import (
     flush_or_raise_conflict,
 )
 from backend.app.db.pagination import page_scalars
-from backend.app.marketplace.listing_payloads import (
-    listing_review_type,
-    listing_status,
-)
-from backend.app.marketplace.models import MarketplaceListing, WorkspaceMarketplaceInstall
-from backend.app.marketplace.resource_installer import MarketplaceResourceInstaller
 from backend.app.observability.audit_service import AuditService
 from backend.app.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.reviews.models import ResourceReview

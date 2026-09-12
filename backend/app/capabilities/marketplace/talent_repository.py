@@ -7,15 +7,15 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.memory_policy import normalized_memory_policy
 from backend.app.agents.models import AgentProfile
-from backend.app.core.pagination import PageParams
-from backend.app.db.pagination import page_scalars
-from backend.app.marketplace.listing_payloads import (
+from backend.app.capabilities.marketplace.listing_payloads import (
     AgentDefinitionSnapshot,
 )
-from backend.app.marketplace.models import (
+from backend.app.capabilities.marketplace.models import (
     TalentListing,
     WorkspaceAgentInstall,
 )
+from backend.app.core.pagination import PageParams
+from backend.app.db.pagination import page_scalars
 from backend.app.teams.models import AgentTeam, AgentTeamMember
 
 

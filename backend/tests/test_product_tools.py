@@ -17,6 +17,10 @@ from backend.app.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.agents.memory.search import MemorySearchHit, MemorySearchRequest
 from backend.app.agents.messages.models import AgentMessage
 from backend.app.agents.models import AgentProfile
+from backend.app.capabilities.tools.context import ToolContext
+from backend.app.capabilities.tools.errors import ToolPermissionError, ToolResourceNotFoundError
+from backend.app.capabilities.tools.product_service import ProductToolService
+from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
@@ -26,10 +30,6 @@ from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.storage import LocalStorage
 from backend.app.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.teams.models import AgentTeam, AgentTeamMember
-from backend.app.tools.context import ToolContext
-from backend.app.tools.errors import ToolPermissionError, ToolResourceNotFoundError
-from backend.app.tools.product_service import ProductToolService
-from backend.app.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

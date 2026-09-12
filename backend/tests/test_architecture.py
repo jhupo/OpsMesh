@@ -48,6 +48,8 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "agent_messages",
         "model_providers",
         "memory",
+        "tools",
+        "marketplace",
         "orchestration/models_layer",
         "orchestration/run_request",
         "orchestration/planning",

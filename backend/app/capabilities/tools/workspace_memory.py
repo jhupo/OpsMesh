@@ -28,7 +28,7 @@ from backend.app.agents.memory.search import (
     query_fingerprint,
     query_term_fingerprints,
 )
-from backend.app.tools.workspace_memory_documents import (
+from backend.app.capabilities.tools.workspace_memory_documents import (
     WorkspaceMemoryDocumentRepository,
     result_payload,
 )

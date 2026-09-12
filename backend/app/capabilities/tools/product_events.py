@@ -5,8 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.tools.context import ToolContext
 from backend.app.runs.event_writer import RunEventWriter
-from backend.app.tools.context import ToolContext
 
 
 class ProductToolContext(Protocol):

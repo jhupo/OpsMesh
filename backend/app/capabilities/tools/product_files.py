@@ -6,6 +6,9 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
+from backend.app.capabilities.tools.context import ToolContext
+from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
+from backend.app.capabilities.tools.product_events import ProductToolEventRecorder
 from backend.app.runs.models import AgentRun
 from backend.app.storage.artifact_models import Artifact
 from backend.app.storage.artifact_persistence import (
@@ -21,9 +24,6 @@ from backend.app.storage.models import WorkspaceFile
 from backend.app.storage.runtime_policy import runtime_file_denial_code
 from backend.app.storage.security import safe_filename
 from backend.app.tasks.models import TaskStep
-from backend.app.tools.context import ToolContext
-from backend.app.tools.errors import ToolResourceNotFoundError
-from backend.app.tools.product_events import ProductToolEventRecorder
 
 
 class WorkspaceFileProductTools(ProductToolEventRecorder):

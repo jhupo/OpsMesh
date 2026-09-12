@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
 from backend.app.approvals.models import Approval
+from backend.app.capabilities.marketplace.models import MarketplaceListing, TalentListing
 from backend.app.capabilities.models import (
     Capability,
     McpCredentialReference,
@@ -13,7 +14,6 @@ from backend.app.capabilities.models import (
     Skill,
 )
 from backend.app.core.typing import uuid_or_none
-from backend.app.marketplace.models import MarketplaceListing, TalentListing
 from backend.app.observability.audit_service import AuditService
 from backend.app.reviews.constants import (
     RESOURCE_STATUS_ACTIVE,

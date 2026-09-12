@@ -29,6 +29,7 @@ from backend.app.capabilities.models import (
     McpToolCallLog,
 )
 from backend.app.capabilities.product_tool_catalog import PRODUCT_TOOL_CATALOG
+from backend.app.capabilities.tools.errors import ToolPermissionError
 from backend.app.db import models as registered_models  # noqa: F401
 from backend.app.db.base import Base
 from backend.app.identity.models import User
@@ -47,7 +48,6 @@ from backend.app.runtime.models import WorkspaceRuntime
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.self_hosted.models import SelfHostedMcpJob
 from backend.app.tasks.models import Task
-from backend.app.tools.errors import ToolPermissionError
 from backend.app.workspaces.models import Workspace, WorkspaceMember
 
 

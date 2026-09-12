@@ -13,8 +13,8 @@ from backend.app.api.schemas.marketplace import (
     TalentRecommendationResponse,
     TaskTalentRecommendationResponse,
 )
-from backend.app.marketplace.models import TalentListing
-from backend.app.marketplace.recommendations import (
+from backend.app.capabilities.marketplace.models import TalentListing
+from backend.app.capabilities.marketplace.recommendations import (
     RoleSpec,
     missing_work_packages_from_task,
     role_spec_for_missing_package,
@@ -22,7 +22,7 @@ from backend.app.marketplace.recommendations import (
     score_listing,
     task_team_type,
 )
-from backend.app.marketplace.talent_repository import TalentMarketplaceRepository
+from backend.app.capabilities.marketplace.talent_repository import TalentMarketplaceRepository
 from backend.app.tasks.message_append import TaskMessageAppendService
 from backend.app.tasks.models import Task, TaskMessage
 

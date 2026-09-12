@@ -14,12 +14,12 @@ from backend.app.api.schemas.marketplace import (
 from backend.app.auth.context import WorkspaceContext
 from backend.app.auth.dependencies import workspace_dependency
 from backend.app.auth.permissions import WorkspaceAction
+from backend.app.capabilities.marketplace.resource_service import MarketplaceService
+from backend.app.capabilities.marketplace.responses import marketplace_install_response
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.pagination import PageParams
 from backend.app.db.errors import DatabaseConflictError
 from backend.app.db.session import get_db_session
-from backend.app.marketplace.resource_service import MarketplaceService
-from backend.app.marketplace.responses import marketplace_install_response
 
 router = APIRouter()
 

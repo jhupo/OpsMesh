@@ -23,8 +23,8 @@ from backend.app.capabilities.mcp.types import (
     McpExecutionResult,
 )
 from backend.app.capabilities.models import McpCredentialReference, McpServer
+from backend.app.capabilities.tools.errors import ToolPermissionError
 from backend.app.runs.models import AgentRun
-from backend.app.tools.errors import ToolPermissionError
 
 
 @dataclass(slots=True)

@@ -5,6 +5,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.models import AgentProfile
+from backend.app.capabilities.tools.context import ToolContext
+from backend.app.capabilities.tools.errors import ToolResourceNotFoundError
+from backend.app.capabilities.tools.product_files import WorkspaceFileProductTools
+from backend.app.capabilities.tools.product_mailbox import AgentMailboxProductTools
+from backend.app.capabilities.tools.product_memory import WorkspaceMemoryProductTools
 from backend.app.secrets.service import SecretEncryptionService
 from backend.app.storage.artifact_persistence import ArtifactPersistenceService
 from backend.app.storage.content import (
@@ -13,11 +18,6 @@ from backend.app.storage.content import (
     WorkspaceFileContentReader,
 )
 from backend.app.storage.storage import ObjectStorage
-from backend.app.tools.context import ToolContext
-from backend.app.tools.errors import ToolResourceNotFoundError
-from backend.app.tools.product_files import WorkspaceFileProductTools
-from backend.app.tools.product_mailbox import AgentMailboxProductTools
-from backend.app.tools.product_memory import WorkspaceMemoryProductTools
 
 
 class ProductToolService(
