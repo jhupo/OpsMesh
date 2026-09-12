@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from backend.app.core.common.values import datetime_or_none
+from backend.app.core.common.values import coerce_int_or_zero, datetime_or_none
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.runtime.sessions.models import PersistentAgentSession
 from backend.app.domains.workspace.teams.models import (
@@ -84,9 +84,7 @@ class TeamRuntimeStateBuilder:
         )
         generated_at = datetime.now(UTC)
         last_iteration_message = (
-            self._mailbox._last_iteration_message(team, thread)
-            if thread is not None
-            else None
+            self._mailbox._last_iteration_message(team, thread) if thread is not None else None
         )
         last_message_at = (
             self._mailbox._last_message_at(team, thread) if thread is not None else None
@@ -182,7 +180,7 @@ def _runtime_health(
 def _runtime_stalled(metadata: dict[str, object]) -> bool:
     if metadata.get("stalled_at"):
         return True
-    return _int(metadata.get("stall_count")) >= TEAM_RUNTIME_STALL_THRESHOLD
+    return coerce_int_or_zero(metadata.get("stall_count")) >= TEAM_RUNTIME_STALL_THRESHOLD
 
 
 def _last_worker_failure_active(metadata: dict[str, object]) -> bool:
@@ -190,18 +188,3 @@ def _last_worker_failure_active(metadata: dict[str, object]) -> bool:
     if not isinstance(failure, dict):
         return False
     return failure.get("status") in {"retrying", "failed"}
-
-
-def _int(value: object) -> int:
-    if isinstance(value, bool) or value is None:
-        return 0
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except ValueError:
-            return 0
-    return 0

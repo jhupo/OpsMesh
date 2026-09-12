@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings
-from backend.app.core.common.values import string_list
+from backend.app.core.common.values import string_list, uuid_or_none
 from backend.app.domains.capabilities.mcp.transport.payloads import (
     MCP_PYTHON_SDK_PACKAGE,
     MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
@@ -62,7 +62,7 @@ class SelfHostedTrustService:
                     worker=worker,
                     runtime=runtime,
                     credential=credential,
-                    trust_state=_worker_trust_state(worker, runtime, credential),
+                    trust_state=worker_trust_state(worker, runtime, credential),
                     capability_attestation_state=worker_capability_attestation_state(
                         worker,
                         runtime,
@@ -204,7 +204,7 @@ class SelfHostedTrustService:
         return {}
 
 
-def _worker_trust_state(
+def worker_trust_state(
     worker: SelfHostedWorker,
     runtime: WorkspaceRuntime,
     credential: RuntimeCredential | None,
@@ -277,7 +277,7 @@ def _worker_policy_diagnostics(
                 "runtime_policy": runtime_policy,
             }
         )
-    worker_runtime_space_id = _uuid_from_capabilities(worker.capabilities, "runtime_space_id")
+    worker_runtime_space_id = uuid_or_none(worker.capabilities.get("runtime_space_id"))
     if (
         worker_runtime_space_id is not None
         and runtime.runtime_space_id is not None
@@ -344,16 +344,6 @@ def _worker_version_diagnostics(
                 }
             )
     return diagnostics
-
-def _uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID | None:
-    value = capabilities.get(key)
-    if not isinstance(value, str):
-        return None
-    try:
-        return UUID(value)
-    except ValueError:
-        return None
-
 
 def _parse_version(value: object) -> Version | None:
     text = _version_string(value)

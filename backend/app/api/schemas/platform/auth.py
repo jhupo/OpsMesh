@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.app.api.schemas.common import ORMModel, TimestampedModel
+from backend.app.core.common.values import ensure_aware_utc
 
 
 class CurrentUserResponse(ORMModel):
@@ -120,7 +121,7 @@ class UserAPITokenCreateRequest(BaseModel):
     @field_validator("expires_at")
     @classmethod
     def validate_expiry(cls, value: datetime | None) -> datetime | None:
-        if value is not None and _as_utc(value) <= datetime.now(UTC):
+        if value is not None and ensure_aware_utc(value) <= datetime.now(UTC):
             raise ValueError("expires_at must be in the future")
         return value
 
@@ -142,7 +143,7 @@ class UserAPITokenRotateRequest(BaseModel):
     @field_validator("expires_at")
     @classmethod
     def validate_expiry(cls, value: datetime | None) -> datetime | None:
-        if value is not None and _as_utc(value) <= datetime.now(UTC):
+        if value is not None and ensure_aware_utc(value) <= datetime.now(UTC):
             raise ValueError("expires_at must be in the future")
         return value
 
@@ -164,9 +165,3 @@ class UserAPITokenCreateResponse(UserAPITokenResponse):
 
 class UserAPITokenRevokeAllResponse(BaseModel):
     revoked: int
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)

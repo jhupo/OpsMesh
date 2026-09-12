@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.values import ensure_aware_utc
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEntry,
@@ -41,7 +42,7 @@ class WorkspaceMemoryLifecycleService:
     ) -> MemoryLifecycleSummary:
         if limit <= 0:
             return MemoryLifecycleSummary()
-        now = _as_utc(now or datetime.now(UTC))
+        now = ensure_aware_utc(now or datetime.now(UTC))
         configurations = self._session.scalars(
             select(WorkspaceMemoryConfiguration).order_by(
                 WorkspaceMemoryConfiguration.updated_at.asc()
@@ -100,9 +101,7 @@ class WorkspaceMemoryLifecycleService:
         conditions = []
         if policy.archive_expired_episodes:
             conditions.append(
-                (
-                    WorkspaceMemoryEntry.memory_layer == "episodic"
-                )
+                (WorkspaceMemoryEntry.memory_layer == "episodic")
                 & WorkspaceMemoryEntry.expires_at.is_not(None)
                 & (WorkspaceMemoryEntry.expires_at <= now)
             )
@@ -298,7 +297,10 @@ def decayed_importance(
         else policy.semantic_decay_half_life_days
     )
     reference = entry.last_accessed_at or entry.updated_at or entry.created_at
-    age_days = max((_as_utc(now) - _as_utc(reference)).total_seconds() / 86_400, 0)
+    age_days = max(
+        (ensure_aware_utc(now) - ensure_aware_utc(reference)).total_seconds() / 86_400,
+        0,
+    )
     decay_factor: float = 0.5 ** (age_days / half_life_days)
     return round(float(entry.importance) * decay_factor, 6)
 
@@ -312,7 +314,7 @@ def _expired_episode(
         policy.archive_expired_episodes
         and entry.memory_layer == "episodic"
         and entry.expires_at is not None
-        and _as_utc(entry.expires_at) <= now
+        and ensure_aware_utc(entry.expires_at) <= now
     )
 
 
@@ -328,8 +330,8 @@ def _stale_semantic(
     ):
         return False
     cutoff = now - timedelta(days=policy.semantic_archive_after_days)
-    return _as_utc(entry.updated_at) <= cutoff and (
-        entry.last_accessed_at is None or _as_utc(entry.last_accessed_at) <= cutoff
+    return ensure_aware_utc(entry.updated_at) <= cutoff and (
+        entry.last_accessed_at is None or ensure_aware_utc(entry.last_accessed_at) <= cutoff
     )
 
 
@@ -360,7 +362,3 @@ def _uuid_or_none(value: object) -> UUID | None:
         return UUID(str(value)) if value is not None else None
     except ValueError:
         return None
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

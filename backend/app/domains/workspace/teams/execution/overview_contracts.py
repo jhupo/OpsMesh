@@ -14,27 +14,10 @@ REASSIGNABLE_SPECIALIST_STEP_STATUSES = {"blocked", "failed"}
 RISK_LEVELS = ("critical", "high", "medium", "low")
 
 
-def string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
 def uuid_list(value: object) -> list[UUID]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, UUID)]
-
-
-def dedupe_strings(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    deduped: list[str] = []
-    for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        deduped.append(value)
-    return deduped
 
 
 def severity_rank(severity: str) -> int:

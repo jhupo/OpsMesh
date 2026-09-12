@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.values import datetime_or_none
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStateService
 from backend.app.domains.orchestration.runs.status import RunStatus
@@ -284,16 +285,8 @@ class SelfHostedJobFinalizer:
 
 
 def dt_iso(value: datetime | None) -> str | None:
-    utc_value = _as_utc(value)
+    utc_value = datetime_or_none(value)
     return utc_value.isoformat() if utc_value is not None else None
-
-
-def _as_utc(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
 
 
 def _summary_from_payload(payload: dict[str, object] | None) -> str | None:

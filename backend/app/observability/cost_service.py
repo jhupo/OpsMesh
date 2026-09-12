@@ -10,6 +10,7 @@ from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.trace_context import current_trace_context
+from backend.app.core.common.values import ensure_aware_utc
 from backend.app.domains.agents.providers.catalog.policy import canonical_model_provider
 from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.models import AgentRun
@@ -66,7 +67,7 @@ class CostAccountingService:
         if existing is not None:
             return existing
 
-        occurred_at = _as_utc(occurred_at or datetime.now(UTC))
+        occurred_at = ensure_aware_utc(occurred_at or datetime.now(UTC))
         provider = canonical_model_provider(request.provider or "openai")
         model = request.model or request.agent_profile.model
         usage = normalize_model_usage(result)
@@ -127,7 +128,7 @@ class CostAccountingService:
         model: str,
         now: datetime | None = None,
     ) -> None:
-        now = _as_utc(now or datetime.now(UTC))
+        now = ensure_aware_utc(now or datetime.now(UTC))
         pricing = self._pricing_rule(
             workspace_id=workspace_id,
             provider=canonical_model_provider(provider),
@@ -226,8 +227,8 @@ class CostAccountingService:
             raise ValueError("model must not be blank")
         if not normalized_version:
             raise ValueError("version must not be blank")
-        effective_from = _as_utc(effective_from)
-        effective_to = _as_utc(effective_to) if effective_to is not None else None
+        effective_from = ensure_aware_utc(effective_from)
+        effective_to = ensure_aware_utc(effective_to) if effective_to is not None else None
         if effective_to is not None and effective_to <= effective_from:
             raise ValueError("effective_to must be later than effective_from")
         rule = ModelPricingRule(
@@ -561,14 +562,8 @@ def _currency(value: str) -> str:
     return normalized
 
 
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
-
-
 def _month_window(value: datetime) -> tuple[datetime, datetime]:
-    current = value.astimezone(UTC) if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    current = ensure_aware_utc(value)
     start = current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     if start.month == 12:
         end = start.replace(year=start.year + 1, month=1)

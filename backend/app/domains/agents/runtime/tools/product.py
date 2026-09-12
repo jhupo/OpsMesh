@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings
 from backend.app.core.common.trace_context import current_trace_context, telemetry_span
+from backend.app.core.common.values import string_list
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.redaction import redact_sensitive_text
 from backend.app.domains.agents.memory.access.authorization import (
@@ -177,9 +178,7 @@ class ProductToolExecutor:
             storage=self._storage,
             memory_embedding_secret_service=self._secret_service,
             max_file_read_bytes=self._settings.agent_file_read_max_bytes,
-            readable_content_types=frozenset(
-                self._settings.agent_file_read_content_types
-            ),
+            readable_content_types=frozenset(self._settings.agent_file_read_content_types),
         )
 
     def _review_for_approval(
@@ -262,7 +261,9 @@ class ProductToolExecutor:
             },
         )
         ApprovalWaitingService(self._session).mark_waiting(
-            workspace_id=context.workspace_id, run_id=context.run_id, task_id=context.task_id,
+            workspace_id=context.workspace_id,
+            run_id=context.run_id,
+            task_id=context.task_id,
         )
         self._session.commit()
 
@@ -395,19 +396,9 @@ def _file_ids(
 ) -> set[UUID]:
     ids: set[UUID] = set()
     for grant in grants:
-        for raw_id in _resource_locator_strings(grant, "file_ids"):
+        for raw_id in tuple(string_list(grant.locator.get("file_ids"))):
             try:
                 ids.add(UUID(str(raw_id)))
             except (TypeError, ValueError):
                 continue
     return ids & set(file_scope_ids) if file_scope_ids else ids
-
-
-def _resource_locator_strings(
-    grant: AgentRuntimeResourceGrant,
-    key: str,
-) -> tuple[str, ...]:
-    value = grant.locator.get(key)
-    if not isinstance(value, list):
-        return ()
-    return tuple(item for item in value if isinstance(item, str))

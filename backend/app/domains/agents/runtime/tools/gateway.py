@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.trace_context import with_current_trace_metadata
+from backend.app.core.common.values import string_list
 from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.agents.memory.access.authorization import (
     memory_read_scopes,
@@ -50,9 +51,7 @@ class AgentToolGateway:
         arguments: dict[str, object],
     ) -> PreparedToolCall:
         matches = [
-            definition
-            for definition in context.tool_definitions
-            if definition.name == tool_name
+            definition for definition in context.tool_definitions if definition.name == tool_name
         ]
         if tool_name not in context.allowed_tools or not matches:
             raise ToolGatewayDenied("tool_not_in_run_manifest", "Tool is not in the run manifest")
@@ -253,11 +252,11 @@ class AgentToolGateway:
         scope_type = arguments.get("scope_type")
         scope_id = arguments.get("scope_id")
         raw_tags = arguments.get("tags", [])
-        tags = {
-            item.strip().lower()
-            for item in raw_tags
-            if isinstance(item, str) and item.strip()
-        } if isinstance(raw_tags, list) else set()
+        tags = (
+            {item.strip().lower() for item in raw_tags if isinstance(item, str) and item.strip()}
+            if isinstance(raw_tags, list)
+            else set()
+        )
         if not isinstance(scope_type, str):
             raise ToolGatewayDenied(
                 "memory_scope_type_not_in_resource_scope",
@@ -284,15 +283,8 @@ def _allowed_file_ids(
     allowed = {
         str(file_id)
         for grant in grants
-        for file_id in _locator_strings(grant, "file_ids")
+        for file_id in tuple(string_list(grant.locator.get("file_ids")))
     }
     if context.file_scope_ids:
         allowed &= {str(file_id) for file_id in context.file_scope_ids}
     return allowed
-
-
-def _locator_strings(grant: AgentRuntimeResourceGrant, key: str) -> tuple[str, ...]:
-    value = grant.locator.get(key)
-    if not isinstance(value, list):
-        return ()
-    return tuple(item for item in value if isinstance(item, str))

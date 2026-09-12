@@ -6,8 +6,13 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.values import dedupe_strings, string_list
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.runs.queries import (
+    active_task_ids_by_agent,
+    latest_events_by_run,
+)
 from backend.app.domains.orchestration.tasks.management.diagnostics import (
     TaskManagerDiagnosticsService,
 )
@@ -22,8 +27,6 @@ from backend.app.domains.workspace.teams.execution.member_workload import (
 )
 from backend.app.domains.workspace.teams.execution.overview_contracts import (
     ACTIVE_RUN_STATUSES,
-    dedupe_strings,
-    string_list,
 )
 from backend.app.domains.workspace.teams.execution.overview_repository import (
     TeamExecutionOverviewRepository,
@@ -62,7 +65,7 @@ class TeamExecutionOverviewService:
         task_ids = [task.id for task in tasks]
         steps = self._repo.steps(workspace_id, task_ids)
         runs = self._repo.runs(workspace_id, task_ids)
-        latest_events = self._repo.latest_events(workspace_id, runs)
+        latest_events = latest_events_by_run(self._session, workspace_id, runs)
         steps_by_task = _group_steps_by_task(steps)
         runs_by_task = _group_runs_by_task(runs)
         member_items_result = member_items(
@@ -71,9 +74,10 @@ class TeamExecutionOverviewService:
             steps,
             runs,
             latest_events,
-            workspace_active_task_ids_by_agent=self._repo.workspace_active_task_ids_by_agent(
-                workspace_id,
-                {member.agent_profile_id for member in members},
+            workspace_active_task_ids_by_agent=active_task_ids_by_agent(
+                self._session,
+                workspace_id=workspace_id,
+                agent_profile_ids={member.agent_profile_id for member in members},
             ),
         )
         staffing_gaps_result = staffing_gaps(members, agents, steps)

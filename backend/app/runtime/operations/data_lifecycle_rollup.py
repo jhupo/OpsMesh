@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import dict_or_empty, int_or_zero, string_list
+from backend.app.core.common.values import (
+    dict_or_empty,
+    int_or_zero,
+    iso_datetime_or_none,
+    string_list,
+    stringify_or_none,
+)
 from backend.app.domains.workspace.tenants.lifecycle.service import WorkspaceDataLifecycleService
 
 
@@ -55,7 +60,7 @@ def unknown_data_lifecycle_rollup() -> dict[str, object]:
 
 def latest_backup_rollup(latest_backup: dict[str, object]) -> dict[str, object]:
     return {
-        "job_id": string_or_none(latest_backup.get("id")),
+        "job_id": stringify_or_none(latest_backup.get("id")),
         "status": latest_backup.get("status"),
         "completed_at": iso_datetime_or_none(latest_backup.get("completed_at")),
         "storage_object_configured": latest_backup.get("has_storage_object") is True,
@@ -66,7 +71,7 @@ def latest_backup_rollup(latest_backup: dict[str, object]) -> dict[str, object]:
 
 def latest_restore_drill_rollup(latest_restore_drill: dict[str, object]) -> dict[str, object]:
     return {
-        "event_id": string_or_none(latest_restore_drill.get("id")),
+        "event_id": stringify_or_none(latest_restore_drill.get("id")),
         "created_at": iso_datetime_or_none(latest_restore_drill.get("created_at")),
         "action": latest_restore_drill.get("action"),
     }
@@ -98,20 +103,6 @@ def import_conflict_preview_rollup(
             import_conflict_history.get("latest_previewed_at")
         ),
     }
-
-
-def string_or_none(value: object) -> str | None:
-    if value is None:
-        return None
-    return str(value)
-
-
-def iso_datetime_or_none(value: object) -> str | None:
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, str):
-        return value
-    return None
 
 
 def data_lifecycle_status(

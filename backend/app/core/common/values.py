@@ -24,6 +24,22 @@ def int_or_zero(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
+def coerce_int_or_zero(value: object) -> int:
+    """Coerce persisted numeric metadata while rejecting booleans and invalid text."""
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return 0
+    return 0
+
+
 def positive_int_or_default(value: object, default: int) -> int:
     parsed = positive_int_or_none(value)
     return parsed if parsed is not None else default
@@ -110,6 +126,15 @@ def optional_string(value: object) -> str | None:
 def stringify_or_none(value: object | None) -> str | None:
     """Convert an optional identifier/value to text without inventing a sentinel."""
     return str(value) if value is not None else None
+
+
+def iso_datetime_or_none(value: object) -> str | None:
+    """Serialize a datetime or preserve an already serialized timestamp."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value
+    return None
 
 
 def non_empty_string_or_none(value: object) -> str | None:

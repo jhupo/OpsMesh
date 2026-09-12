@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.values import datetime_or_none
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.contracts import WorkerTrustCleanupResult
 from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
@@ -52,7 +53,7 @@ class SelfHostedMaintenanceService:
         quarantined = 0
         for worker in stale_workers:
             runtime = self._session.get(WorkspaceRuntime, worker.workspace_runtime_id)
-            last_heartbeat_at = _as_utc(worker.last_heartbeat_at)
+            last_heartbeat_at = datetime_or_none(worker.last_heartbeat_at)
             if last_heartbeat_at is None:
                 continue
             should_quarantine = last_heartbeat_at <= quarantine_cutoff
@@ -123,11 +124,3 @@ class SelfHostedMaintenanceService:
             expired_job_claims=expired_job_claims,
             expired_mcp_jobs=expired_mcp_jobs,
         )
-
-
-def _as_utc(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)

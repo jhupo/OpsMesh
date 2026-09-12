@@ -7,6 +7,7 @@ from backend.app.domains.agents.memory.stores.working import AgentWorkingMemoryS
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.runtime.execution.contracts import AgentRunResult
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.queries import task_for_run
 from backend.app.domains.orchestration.tasks.models import Task
 
 
@@ -16,7 +17,7 @@ class RunMemoryCompletionService:
 
     def capture(self, run: AgentRun, result: AgentRunResult) -> None:
         profile = self._profile_for_run(run)
-        task = self._task_for_run(run)
+        task = task_for_run(self.session, run)
         AgentEpisodicMemoryService(self.session).capture_run_completed(
             run,
             result,
@@ -30,7 +31,7 @@ class RunMemoryCompletionService:
             run,
             error,
             profile=profile,
-            task=self._task_for_run(run),
+            task=task_for_run(self.session, run),
         )
 
     def capture_task_completed(
@@ -60,11 +61,3 @@ class RunMemoryCompletionService:
         if profile is None or profile.workspace_id != run.workspace_id:
             return None
         return profile
-
-    def _task_for_run(self, run: AgentRun) -> Task | None:
-        if run.task_id is None:
-            return None
-        task = self.session.get(Task, run.task_id)
-        if task is None or task.workspace_id != run.workspace_id:
-            return None
-        return task

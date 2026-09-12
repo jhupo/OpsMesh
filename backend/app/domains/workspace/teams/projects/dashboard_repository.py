@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import TaskMessage, TaskStep
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 
@@ -50,25 +50,6 @@ class TeamProjectDashboardRepository:
             if run.task_id is not None:
                 grouped[run.task_id].append(run)
         return grouped
-
-
-    def latest_events(
-        self,
-        workspace_id: UUID,
-        runs: list[AgentRun],
-    ) -> dict[UUID, RunEvent]:
-        run_ids = [run.id for run in runs]
-        if not run_ids:
-            return {}
-        events = self._session.scalars(
-            select(RunEvent)
-            .where(RunEvent.workspace_id == workspace_id, RunEvent.agent_run_id.in_(run_ids))
-            .order_by(RunEvent.agent_run_id.asc(), RunEvent.sequence.desc())
-        ).all()
-        latest: dict[UUID, RunEvent] = {}
-        for event in events:
-            latest.setdefault(event.agent_run_id, event)
-        return latest
 
 
     def artifacts_by_task(

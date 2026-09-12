@@ -14,6 +14,7 @@ from backend.app.api.schemas.operations.self_hosted import (
     WorkerHeartbeatRequest,
 )
 from backend.app.core.common.config import Settings
+from backend.app.core.common.values import uuid_or_none
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.runtime.self_hosted.contracts import (
@@ -265,7 +266,7 @@ class SelfHostedIdentityService:
         workspace_id: UUID,
         capabilities: dict[str, object],
     ) -> UUID | None:
-        runtime_space_id = uuid_from_capabilities(capabilities, "runtime_space_id")
+        runtime_space_id = uuid_or_none(capabilities.get("runtime_space_id"))
         if runtime_space_id is None:
             return None
         runtime_space = self._session.get(RuntimeSpace, runtime_space_id)
@@ -291,7 +292,7 @@ class SelfHostedIdentityService:
                 "Self-hosted capabilities include invalid runtime space IDs: "
                 + ", ".join(invalid_values)
             )
-        runtime_space_id = uuid_from_capabilities(normalized, "runtime_space_id")
+        runtime_space_id = uuid_or_none(normalized.get("runtime_space_id"))
         if (
             runtime_space_id is not None
             and bound_runtime_space_id is not None
@@ -338,16 +339,6 @@ class SelfHostedIdentityService:
         if token.expires_at is not None and token.expires_at < datetime.now(UTC):
             raise ValueError("Enrollment token expired")
         return token
-
-
-def uuid_from_capabilities(capabilities: dict[str, object], key: str) -> UUID | None:
-    value = capabilities.get(key)
-    if not isinstance(value, str):
-        return None
-    try:
-        return UUID(value)
-    except ValueError:
-        return None
 
 
 def capability_runtime_space_references(

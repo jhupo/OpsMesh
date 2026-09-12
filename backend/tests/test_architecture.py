@@ -776,6 +776,49 @@ def test_generic_utils_modules_are_not_used_as_dumping_grounds() -> None:
     assert not (app / "domains/orchestration/runs/profile.py").exists()
 
 
+def test_shared_normalization_and_run_queries_have_single_owners() -> None:
+    app = ROOT / "backend/app"
+    values = (app / "core/common/values.py").read_text(encoding="utf-8")
+    assert "def stringify_or_none(" in values
+    assert "def iso_datetime_or_none(" in values
+    assert "def coerce_int_or_zero(" in values
+    query_module = app / "domains/orchestration/runs/queries.py"
+    assert query_module.is_file()
+    query_source = query_module.read_text(encoding="utf-8")
+    assert "def active_task_ids_by_agent(" in query_source
+    assert "def task_for_run(" in query_source
+    for path in (
+        app / "domains/orchestration/workflows/scheduling/capacity.py",
+        app / "domains/workspace/teams/execution/overview_repository.py",
+        app / "domains/orchestration/runs/memory.py",
+        app / "domains/orchestration/runs/task_progress.py",
+    ):
+        source = path.read_text(encoding="utf-8")
+        assert "def active_task_ids_by_agent(" not in source
+        assert "def workspace_active_task_ids_by_agent(" not in source
+        assert "def _task_for_run(" not in source
+        assert "def task_for_run(" not in source
+    assert not any(
+        "def _as_utc(" in path.read_text(encoding="utf-8")
+        for path in app.rglob("*.py")
+        if "__pycache__" not in path.parts
+    )
+    trust = app / "runtime/self_hosted/enrollment/trust.py"
+    operations_trust = app / "runtime/operations/workers/self_hosted_machines.py"
+    assert "def worker_trust_state(" in trust.read_text(encoding="utf-8")
+    assert "def self_hosted_trust_state(" not in operations_trust.read_text(encoding="utf-8")
+    for path in (
+        app / "domains/workspace/teams/runtime/heartbeat.py",
+        app / "domains/workspace/teams/runtime/state_builder.py",
+        app / "domains/agents/runtime/tools/gateway.py",
+        app / "domains/agents/runtime/tools/product.py",
+    ):
+        source = path.read_text(encoding="utf-8")
+        assert "def _int(" not in source
+        assert "def _locator_strings(" not in source
+        assert "def _resource_locator_strings(" not in source
+
+
 def test_application_source_directories_are_not_empty() -> None:
     app = ROOT / "backend/app"
     empty = []

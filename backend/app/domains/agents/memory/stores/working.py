@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.values import ensure_aware_utc
 from backend.app.core.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_text,
@@ -235,7 +236,7 @@ class AgentWorkingMemoryService:
         )
         active: list[WorkspaceMemoryEntry] = []
         for entry in entries:
-            if entry.expires_at is not None and _as_utc(entry.expires_at) <= now:
+            if entry.expires_at is not None and ensure_aware_utc(entry.expires_at) <= now:
                 entry.status = "expired"
                 entry.archived_at = now
             else:
@@ -373,7 +374,3 @@ def _bounded_key(value: str) -> str:
     if not normalized:
         raise ValueError("Working memory key is required")
     return normalized[:160]
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

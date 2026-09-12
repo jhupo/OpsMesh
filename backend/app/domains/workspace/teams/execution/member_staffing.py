@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections import defaultdict
 from uuid import UUID
 
+from backend.app.core.common.values import string_list
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.tasks.models import TaskStep
 from backend.app.domains.workspace.teams.execution.overview_contracts import (
     ACTIVE_STEP_STATUSES,
     StaffingGap,
-    string_list,
 )
 from backend.app.domains.workspace.teams.models import AgentTeamMember
 

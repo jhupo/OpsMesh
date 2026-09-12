@@ -1,0 +1,68 @@
+"""Shared run queries used by scheduling and execution-domain projections."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
+
+
+def active_task_ids_by_agent(
+    session: Session,
+    *,
+    workspace_id: UUID,
+    agent_profile_ids: set[UUID],
+) -> dict[UUID, set[UUID]]:
+    """Return active task ids grouped by assigned agent within one workspace."""
+    if not agent_profile_ids:
+        return {}
+    result: dict[UUID, set[UUID]] = defaultdict(set)
+    rows = session.execute(
+        select(AgentRun.agent_profile_id, AgentRun.task_id).where(
+            AgentRun.workspace_id == workspace_id,
+            AgentRun.agent_profile_id.in_(agent_profile_ids),
+            AgentRun.task_id.is_not(None),
+            AgentRun.status.in_(ACTIVE_RUN_STATUS_VALUES),
+        )
+    ).all()
+    for agent_profile_id, task_id in rows:
+        if agent_profile_id is None or task_id is None:
+            continue
+        result[agent_profile_id].add(task_id)
+    return dict(result)
+
+
+def task_for_run(session: Session, run: AgentRun) -> Task | None:
+    """Load a run's task while preserving the run workspace boundary."""
+    if run.task_id is None:
+        return None
+    task = session.get(Task, run.task_id)
+    if task is None or task.workspace_id != run.workspace_id:
+        return None
+    return task
+
+
+def latest_events_by_run(
+    session: Session,
+    workspace_id: UUID,
+    runs: list[AgentRun],
+) -> dict[UUID, RunEvent]:
+    """Return the newest event for each run in a workspace."""
+    run_ids = [run.id for run in runs]
+    if not run_ids:
+        return {}
+    events = session.scalars(
+        select(RunEvent)
+        .where(RunEvent.workspace_id == workspace_id, RunEvent.agent_run_id.in_(run_ids))
+        .order_by(RunEvent.agent_run_id.asc(), RunEvent.sequence.desc())
+    ).all()
+    latest: dict[UUID, RunEvent] = {}
+    for event in events:
+        latest.setdefault(event.agent_run_id, event)
+    return latest

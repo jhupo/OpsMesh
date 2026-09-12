@@ -17,6 +17,7 @@ from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.enrollment.trust import (
     worker_capability_attestation_state,
     worker_host_isolation_verified,
+    worker_trust_state,
 )
 from backend.app.runtime.self_hosted.models import (
     RuntimeCredential,
@@ -42,24 +43,6 @@ def self_hosted_policy_summary(capabilities: dict[str, object]) -> dict[str, obj
 
 
 
-
-
-def self_hosted_trust_state(
-    worker: SelfHostedWorker,
-    runtime: WorkspaceRuntime,
-    credential: RuntimeCredential | None,
-) -> str:
-    if credential is not None and credential.status == "revoked":
-        return "revoked"
-    if worker.status == "revoked" or runtime.status == "revoked":
-        return "revoked"
-    if worker.status == "quarantined" or runtime.status == "quarantined":
-        return "quarantined"
-    if worker.status == "degraded" or runtime.connection_status == "degraded":
-        return "degraded"
-    if worker.status in {"offline", "disabled"} or runtime.connection_status == "offline":
-        return "offline"
-    return "active"
 
 
 def self_hosted_machine_warning(
@@ -358,7 +341,7 @@ def _machine_response(
         return None
 
     credential = records.credentials.get(runtime.id)
-    trust_state = self_hosted_trust_state(worker, runtime, credential)
+    trust_state = worker_trust_state(worker, runtime, credential)
     capability_attestation_state = worker_capability_attestation_state(
         worker,
         runtime,

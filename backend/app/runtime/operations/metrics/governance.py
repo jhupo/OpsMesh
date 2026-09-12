@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.metrics import GaugeMetric
+from backend.app.core.common.values import ensure_aware_utc
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_models import AuditIntegrityCheck
 from backend.app.observability.cost_models import ModelUsageRecord, WorkspaceCostBudget
@@ -61,7 +62,7 @@ class GovernancePrometheusMetrics:
                 states["missing"] += 1
             elif not latest.valid:
                 states["invalid"] += 1
-            elif _as_utc(latest.created_at) < cutoff:
+            elif ensure_aware_utc(latest.created_at) < cutoff:
                 states["stale"] += 1
             else:
                 states["valid"] += 1
@@ -162,9 +163,3 @@ class GovernancePrometheusMetrics:
             for currency, total in cost_rows
         )
         return gauges
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)

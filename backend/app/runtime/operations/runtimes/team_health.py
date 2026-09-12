@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from backend.app.core.common.values import ensure_aware_utc
+from backend.app.core.common.values import datetime_or_none
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.service import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
@@ -50,7 +50,7 @@ def team_runtime_health_for_metrics(
         return "degraded"
     if runtime_metadata.get("heartbeat_status") == "skipped":
         return "degraded"
-    last_heartbeat_at = datetime_from_metadata(runtime_metadata.get("last_heartbeat_at"))
+    last_heartbeat_at = datetime_or_none(runtime_metadata.get("last_heartbeat_at"))
     if last_heartbeat_at is None:
         return "starting"
     if generated_at - last_heartbeat_at > timedelta(
@@ -58,16 +58,3 @@ def team_runtime_health_for_metrics(
     ):
         return "stale"
     return "healthy"
-
-
-def datetime_from_metadata(value: object) -> datetime | None:
-    if isinstance(value, datetime):
-        parsed = value
-    elif isinstance(value, str):
-        try:
-            parsed = datetime.fromisoformat(value)
-        except ValueError:
-            return None
-    else:
-        return None
-    return ensure_aware_utc(parsed)

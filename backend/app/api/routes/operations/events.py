@@ -33,6 +33,7 @@ from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
+from backend.app.core.common.values import ensure_aware_utc
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
@@ -63,7 +64,7 @@ async def audit_integrity_status(
     settings: Settings = Depends(get_settings),
 ) -> AuditIntegrityStatusResponse:
     latest = AuditIntegrityService(session).latest(context.workspace.id)
-    stale = latest is None or _as_utc(latest.created_at) < datetime.now(UTC) - timedelta(
+    stale = latest is None or ensure_aware_utc(latest.created_at) < datetime.now(UTC) - timedelta(
         seconds=settings.audit_integrity_stale_after_seconds
     )
     return AuditIntegrityStatusResponse(
@@ -254,9 +255,3 @@ async def filter_security_events(
         limit=page.limit,
         offset=page.offset,
     )
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)

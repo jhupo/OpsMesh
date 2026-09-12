@@ -131,11 +131,3 @@ class RunTaskProgressService:
                 "source": "agent_output",
             },
         )
-
-    def task_for_run(self, run: AgentRun) -> Task | None:
-        if run.task_id is None:
-            return None
-        task = self.session.get(Task, run.task_id)
-        if task is None or task.workspace_id != run.workspace_id:
-            return None
-        return task

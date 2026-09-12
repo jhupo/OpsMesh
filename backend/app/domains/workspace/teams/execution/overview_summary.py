@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from uuid import UUID
 
+from backend.app.core.common.values import string_list
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.workspace.teams.execution.overview_bottlenecks import (
@@ -15,7 +16,6 @@ from backend.app.domains.workspace.teams.execution.overview_contracts import (
     SpecialistReassignment,
     StaffingGap,
     SummaryAction,
-    string_list,
     uuid_list,
 )
 from backend.app.domains.workspace.teams.execution.overview_interventions import (

@@ -18,6 +18,7 @@ from backend.app.core.auth.errors import (
 from backend.app.core.auth.permissions import AccountAction, WorkspaceAction, role_allows
 from backend.app.core.common.config import Settings
 from backend.app.core.common.errors import ConflictError
+from backend.app.core.common.values import datetime_or_none
 from backend.app.core.identity.models import User, UserAPIToken
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
@@ -260,7 +261,7 @@ class AuthorizationService:
             raise AuthenticationError("Invalid or inactive user token")
         if token.status != "active" or token.revoked_at is not None:
             raise AuthenticationError("Invalid or inactive user token")
-        expires_at = _as_utc(token.expires_at)
+        expires_at = datetime_or_none(token.expires_at)
         if expires_at is not None and expires_at <= now:
             raise AuthenticationError("Invalid or inactive user token")
         user = self._session.get(User, token.user_id)
@@ -372,7 +373,7 @@ class AuthorizationService:
 
     @staticmethod
     def _validate_token_expiry(expires_at: datetime | None) -> datetime | None:
-        normalized = _as_utc(expires_at)
+        normalized = datetime_or_none(expires_at)
         if normalized is not None and normalized <= datetime.now(UTC):
             raise PermissionDeniedError("API token expiry must be in the future")
         return normalized
@@ -409,11 +410,3 @@ class AuthorizationService:
             return _PASSWORD_HASH.verify(password, encoded_hash)
         except (UnknownHashError, ValueError):
             return False
-
-
-def _as_utc(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)

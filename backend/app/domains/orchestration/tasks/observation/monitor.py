@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import dict_or_empty, int_or_zero, string_list
+from backend.app.core.common.values import dedupe_strings, dict_or_empty, int_or_zero, string_list
 from backend.app.domains.orchestration.tasks.control.state import task_control_state
 from backend.app.domains.orchestration.tasks.execution.diagnostics import (
     TaskExecutionDiagnosticsService,
@@ -203,7 +203,7 @@ def _blocked_reasons(
     for step in _list(execution.get("steps")):
         step_payload = dict_or_empty(step)
         reasons.extend(string_list(step_payload.get("blocked_reasons")))
-    return _dedupe(reasons)
+    return dedupe_strings(reasons)
 
 
 def _recommended_actions(
@@ -270,17 +270,6 @@ def _manager_recommended_actions(manager: ManagerDiagnostics) -> list[str]:
 
 def _list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
-
-
-def _dedupe(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for value in values:
-        if value in seen:
-            continue
-        result.append(value)
-        seen.add(value)
-    return result
 
 
 def _dedupe_action_items(items: list[dict[str, object]]) -> list[dict[str, object]]:

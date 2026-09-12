@@ -12,6 +12,7 @@ from sqlalchemy import and_, false, func, literal_column, or_, select, true
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
+from backend.app.core.common.values import datetime_or_none, ensure_aware_utc
 from backend.app.domains.agents.memory.access.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.memory.policy import (
@@ -204,7 +205,7 @@ class HybridMemorySearchBackend:
         )
         self._retrieval_policy = retrieval_policy
         self._lifecycle_policy = lifecycle_policy
-        self._now = _as_utc(now or datetime.now(UTC))
+        self._now = ensure_aware_utc(now or datetime.now(UTC))
 
     def search(self, request: MemorySearchRequest) -> list[MemorySearchHit]:
         if request.limit <= 0:
@@ -344,7 +345,7 @@ def snippet(text: str, terms: list[str]) -> str:
 def created_at_sort_key(value: datetime | None) -> float:
     if value is None:
         return 0
-    return _as_utc(value).timestamp()
+    return ensure_aware_utc(value).timestamp()
 
 
 def _memory_entry_filters(request: MemorySearchRequest) -> list[ColumnElement[bool]]:
@@ -541,9 +542,9 @@ def _effective_importance_score(
         if memory_layer == "episodic"
         else policy.semantic_decay_half_life_days
     )
-    reference = _datetime_or_none(document.metadata.get("last_accessed_at"))
+    reference = datetime_or_none(document.metadata.get("last_accessed_at"))
     if reference is None:
-        reference = _datetime_or_none(document.metadata.get("updated_at")) or document.created_at
+        reference = datetime_or_none(document.metadata.get("updated_at")) or document.created_at
     decay = _recency_score(reference, half_life_days=half_life, now=now)
     return max(0.0, min(importance / 100.0, 1.0)) * decay
 
@@ -556,24 +557,9 @@ def _recency_score(
 ) -> float:
     if value is None:
         return 0.0
-    age_days = max((now - _as_utc(value)).total_seconds() / 86_400, 0)
+    age_days = max((now - ensure_aware_utc(value)).total_seconds() / 86_400, 0)
     return math.pow(0.5, age_days / half_life_days)
-
-
-def _datetime_or_none(value: object) -> datetime | None:
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        try:
-            return datetime.fromisoformat(value)
-        except ValueError:
-            return None
-    return None
 
 
 def _dt_or_none(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

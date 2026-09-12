@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.values import coerce_int_or_zero
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.domains.workspace.teams.models import (
     TEAM_RUNTIME_STALL_STATUSES,
@@ -45,7 +46,7 @@ class TeamRuntimeHeartbeatRecorder:
         policy = dict(team.default_task_policy or {})
         runtime_metadata = team_runtime_metadata(team)
         recorded_at = datetime.now(UTC).isoformat()
-        iteration_count = _int(runtime_metadata.get("iteration_count")) + 1
+        iteration_count = coerce_int_or_zero(runtime_metadata.get("iteration_count")) + 1
         last_iteration: dict[str, object] = {
             "iteration": iteration_count,
             "status": status,
@@ -153,7 +154,7 @@ def _stall_metadata_update(
 ) -> dict[str, object]:
     if status not in TEAM_RUNTIME_STALL_STATUSES:
         return {}
-    stall_count = _int(runtime_metadata.get("stall_count")) + 1
+    stall_count = coerce_int_or_zero(runtime_metadata.get("stall_count")) + 1
     reason = _stall_reason(summary)
     update: dict[str, object] = {
         "stall_count": stall_count,
@@ -170,23 +171,8 @@ def _stall_reason(summary: dict[str, object]) -> str:
         value = summary.get(key)
         if isinstance(value, str) and value:
             return value
-    if _int(summary.get("eligible_action_count")) > 0:
+    if coerce_int_or_zero(summary.get("eligible_action_count")) > 0:
         return "eligible_actions_not_applied"
-    if _int(summary.get("skipped_task_count")) > 0:
+    if coerce_int_or_zero(summary.get("skipped_task_count")) > 0:
         return "tasks_not_finalizable"
     return "no_progress"
-
-
-def _int(value: object) -> int:
-    if isinstance(value, bool) or value is None:
-        return 0
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except ValueError:
-            return 0
-    return 0

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from backend.app.core.common.values import dedupe_strings
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.domains.orchestration.tasks.models import TaskStep
@@ -10,7 +11,6 @@ from backend.app.domains.workspace.teams.execution.overview_contracts import (
     MemberWorkload,
     SpecialistReassignment,
     StaffingGap,
-    dedupe_strings,
     severity_rank,
     uuid_list,
 )

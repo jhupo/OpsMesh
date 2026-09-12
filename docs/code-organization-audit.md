@@ -172,3 +172,26 @@ compatibility layer. Architecture source-path checks now validate deleted files 
 Validation for this follow-up: 16 architecture tests, two focused workspace redaction tests,
 full app Ruff, app mypy (960 files), and a cold import of 959 application modules passed. No
 compatibility aliases or full-suite test run were introduced.
+
+## File-level consolidation follow-up: 2026-09-13
+
+The cross-domain run query audit found two copies of the same workspace-scoped SQL query for
+active tasks by agent, plus two copies of run-to-task ownership validation. Both now belong to
+`domains/orchestration/runs/queries.py`; team projections and workflow scheduling consume that
+owner directly, so the repository and service layers do not retain forwarding wrappers.
+
+The same audit found repeated UTC normalization helpers in authentication, cost accounting,
+operations metrics/events, self-hosted maintenance, and the three-layer memory implementation.
+All callers now use `core/common/values.py` for the canonical datetime normalization and lifecycle
+rollup serialization. Team execution uses the shared string-list and de-duplication primitives;
+the execution contract module retains only team-specific constants and typed records.
+
+Self-hosted worker trust evaluation follows the same rule: enrollment/trust owns the canonical
+`worker_trust_state` decision, while operations only assembles its response. The former duplicate
+operations implementation was removed.
+
+The architecture gate now asserts these ownership rules, including the absence of local `_as_utc`
+implementations and the presence of the canonical run-query/value modules. Focused architecture,
+authentication, memory lifecycle, cost, operations, team-capacity and execution-loop tests passed;
+Ruff and full application mypy passed. No compatibility aliases, full-suite run, release tag or
+remote publication were introduced.

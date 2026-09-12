@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.orchestration.runs.queries import latest_events_by_run
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.projects.dashboard_repository import (
@@ -60,7 +61,8 @@ class TeamProjectDashboardService:
         task_ids = [task.id for task in tasks]
         steps_by_task = self._repo.steps_by_task(workspace_id, task_ids)
         runs_by_task = self._repo.runs_by_task(workspace_id, task_ids)
-        latest_events = self._repo.latest_events(
+        latest_events = latest_events_by_run(
+            self._session,
             workspace_id,
             [run for runs in runs_by_task.values() for run in runs],
         )

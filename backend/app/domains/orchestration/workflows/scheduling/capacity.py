@@ -1,16 +1,12 @@
-from collections import defaultdict
 from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.queries import active_task_ids_by_agent
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-
-ACTIVE_RUN_STATUSES = ACTIVE_RUN_STATUS_VALUES
 
 
 @dataclass(frozen=True)
@@ -43,7 +39,8 @@ class TeamMemberCapacityResolver:
                 )
             ).all()
         }
-        active_task_ids_by_agent = self.active_task_ids_by_agent(
+        active_task_ids = active_task_ids_by_agent(
+            self._session,
             workspace_id=steps[0].workspace_id,
             agent_profile_ids={
                 step.assigned_agent_profile_id
@@ -63,32 +60,9 @@ class TeamMemberCapacityResolver:
                 contexts=contexts,
                 member_lookup=member_lookup,
                 manager_lookup=manager_lookup,
-                active_task_ids_by_agent=active_task_ids_by_agent,
+                active_task_ids_by_agent=active_task_ids,
             )
         return contexts
-
-    def active_task_ids_by_agent(
-        self,
-        *,
-        workspace_id: UUID,
-        agent_profile_ids: set[UUID],
-    ) -> dict[UUID, set[UUID]]:
-        if not agent_profile_ids:
-            return {}
-        result: dict[UUID, set[UUID]] = defaultdict(set)
-        rows = self._session.execute(
-            select(AgentRun.agent_profile_id, AgentRun.task_id).where(
-                AgentRun.workspace_id == workspace_id,
-                AgentRun.agent_profile_id.in_(agent_profile_ids),
-                AgentRun.task_id.is_not(None),
-                AgentRun.status.in_(ACTIVE_RUN_STATUSES),
-            )
-        ).all()
-        for agent_profile_id, task_id in rows:
-            if agent_profile_id is None or task_id is None:
-                continue
-            result[agent_profile_id].add(task_id)
-        return dict(result)
 
     def _resolve_step_context(
         self,
