@@ -6,7 +6,7 @@ from datetime import datetime
 from backend.app.api.schemas.operation_capacity import WorkerLifecycleBucketResponse
 from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.operations.utils import age_seconds, ensure_aware_utc
-from backend.app.operations.worker_lifecycle_queue import job_worker_types
+from backend.app.operations.worker_lifecycle import job_worker_types
 from backend.app.workers.jobs import JobPayload
 
 TERMINAL_LEASE_STATUSES = {"completed", "failed", "expired"}

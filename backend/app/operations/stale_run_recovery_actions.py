@@ -4,7 +4,7 @@ from uuid import UUID
 
 from backend.app.api.schemas.operation_queue import StaleRunRecoveryItemResponse
 from backend.app.operations.stale_run_domain import stale_run_failure_message
-from backend.app.operations.stale_run_recovery_models import StaleRunRecoveryCounts
+from backend.app.operations.stale_run_recovery import StaleRunRecoveryCounts
 from backend.app.orchestration.runs.control import RunControlService
 from backend.app.runs.models import AgentRun
 from backend.app.runs.status import RunStatus

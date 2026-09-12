@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -12,9 +14,19 @@ from backend.app.operations.models import WorkerLease, WorkerNode
 from backend.app.operations.utils import positive_int
 from backend.app.operations.worker_lease_queries import WorkerLeaseQueryService
 from backend.app.operations.worker_lifecycle import RUNNING_LEASE_STATUSES
-from backend.app.operations.worker_models import WorkerCapacitySnapshot
 from backend.app.operations.worker_node_repository import WorkerNodeRepository
 from backend.app.workers.jobs import JobType
+
+
+@dataclass(frozen=True)
+class WorkerCapacitySnapshot:
+    worker_id: str
+    max_jobs: int
+    running_jobs: int
+    available_slots: int
+    accepting: bool
+    reason: str | None = None
+    capacity: dict[str, object] | None = None
 
 
 def worker_heartbeat_details(details: dict[str, object]) -> dict[str, object]:
