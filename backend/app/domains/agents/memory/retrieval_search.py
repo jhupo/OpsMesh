@@ -387,12 +387,16 @@ def _access_scope_condition(scope: AuthorizedMemoryScope) -> ColumnElement[bool]
 def _source_type_condition(source_types: set[str]) -> ColumnElement[bool]:
     conditions: list[ColumnElement[bool]] = []
     if "workspace_memory" in source_types:
-        conditions.append(WorkspaceMemoryEntry.entry_type != "indexed_chunk")
+        conditions.append(
+            WorkspaceMemoryEntry.entry_type.not_in(("indexed_chunk", "knowledge_chunk"))
+        )
     indexed_types = source_types - {"workspace_memory"}
     if indexed_types:
         conditions.append(
             and_(
-                WorkspaceMemoryEntry.entry_type == "indexed_chunk",
+                WorkspaceMemoryEntry.entry_type.in_(
+                    ("indexed_chunk", "knowledge_chunk")
+                ),
                 WorkspaceMemoryEntry.source_type.in_(indexed_types),
             )
         )
@@ -456,8 +460,8 @@ def _backend_result_limit(request: MemorySearchRequest) -> int:
 
 def _entry_document(entry: WorkspaceMemoryEntry) -> MemorySearchDocument:
     return MemorySearchDocument(
-        source_type=_entry_source_type(entry),
-        source_id=_entry_source_id(entry),
+        source_type=memory_entry_source_type(entry),
+        source_id=memory_entry_source_id(entry),
         title=entry.title,
         text=entry.content,
         created_at=entry.created_at,
@@ -484,7 +488,7 @@ def memory_entry_document_metadata(entry: WorkspaceMemoryEntry) -> dict[str, obj
         "source_id": entry.source_id,
         "source_metadata": source_metadata,
     }
-    if entry.entry_type == "indexed_chunk":
+    if entry.entry_type in {"indexed_chunk", "knowledge_chunk"}:
         metadata.update(
             {
                 "indexed": True,
@@ -495,14 +499,14 @@ def memory_entry_document_metadata(entry: WorkspaceMemoryEntry) -> dict[str, obj
     return metadata
 
 
-def _entry_source_type(entry: WorkspaceMemoryEntry) -> str:
-    if entry.entry_type == "indexed_chunk" and entry.source_type:
+def memory_entry_source_type(entry: WorkspaceMemoryEntry) -> str:
+    if entry.entry_type in {"indexed_chunk", "knowledge_chunk"} and entry.source_type:
         return entry.source_type
     return "workspace_memory"
 
 
-def _entry_source_id(entry: WorkspaceMemoryEntry) -> UUID:
-    if entry.entry_type == "indexed_chunk" and entry.source_id:
+def memory_entry_source_id(entry: WorkspaceMemoryEntry) -> UUID:
+    if entry.entry_type in {"indexed_chunk", "knowledge_chunk"} and entry.source_id:
         try:
             return UUID(entry.source_id)
         except ValueError:

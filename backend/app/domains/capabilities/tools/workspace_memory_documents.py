@@ -13,6 +13,8 @@ from backend.app.domains.agents.memory.retrieval_search import (
     MemorySearchDocument,
     MemorySearchHit,
     memory_entry_document_metadata,
+    memory_entry_source_id,
+    memory_entry_source_type,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.domains.models import DomainItem
@@ -304,18 +306,3 @@ def json_text(value: object) -> str:
     if value in (None, "", [], {}):
         return ""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
-
-
-def memory_entry_source_type(entry: WorkspaceMemoryEntry) -> str:
-    if entry.entry_type == "indexed_chunk" and entry.source_type:
-        return entry.source_type
-    return "workspace_memory"
-
-
-def memory_entry_source_id(entry: WorkspaceMemoryEntry) -> UUID:
-    if entry.entry_type == "indexed_chunk" and entry.source_id:
-        try:
-            return UUID(entry.source_id)
-        except ValueError:
-            return entry.id
-    return entry.id

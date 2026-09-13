@@ -8,7 +8,9 @@ from sqlalchemy import select
 
 from backend.app.core.common.config import Settings
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.knowledge.ingestion import KnowledgeSourceIngestionService
 from backend.app.domains.knowledge.models import (
     KnowledgeCitation,
@@ -133,6 +135,35 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
     assert citations.status_code == 200
     assert citations.json()["total"] == result.chunk_count
     assert citations.json()["items"][0]["locator"] == f"workspace-file://{workspace_file.id}"
+    authorized = WorkspaceMemorySearchService(session).search(
+        workspace_id=workspace.id,
+        query="OpsMesh knowledge",
+        source_types={"knowledge_source"},
+        access_scopes=(
+            AuthorizedMemoryScope(
+                resource_id=workspace.id,
+                access_mode="read",
+                source_types=frozenset({"knowledge_source"}),
+                scope_types=frozenset({"workspace"}),
+                scope_ids=frozenset({str(workspace.id)}),
+            ),
+        ),
+    )
+    denied = WorkspaceMemorySearchService(session).search(
+        workspace_id=workspace.id,
+        query="OpsMesh knowledge",
+        source_types={"knowledge_source"},
+        access_scopes=(
+            AuthorizedMemoryScope(
+                resource_id=workspace.id,
+                access_mode="read",
+                source_types=frozenset({"workspace_memory"}),
+            ),
+        ),
+    )
+    assert authorized
+    assert authorized[0]["source_type"] == "knowledge_source"
+    assert denied == []
 
     duplicate = service.request(
         workspace_id=workspace.id,
