@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.workspace.knowledge import (
+    KnowledgeCitationResponse,
     KnowledgeSourceCreateRequest,
     KnowledgeSourceIngestionResponse,
     KnowledgeSourceResponse,
@@ -230,6 +231,38 @@ async def get_ingestion(
             detail="Knowledge source ingestion not found",
         )
     return KnowledgeSourceIngestionResponse.model_validate(ingestion)
+
+
+@router.get(
+    "/{source_id}/ingestions/{ingestion_id}/citations",
+    response_model=PageResponse[KnowledgeCitationResponse],
+)
+async def list_citations(
+    source_id: UUID,
+    ingestion_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[KnowledgeCitationResponse]:
+    result = KnowledgeSourceIngestionService(session).list_citations(
+        workspace_id=context.workspace.id,
+        source_id=source_id,
+        ingestion_id=ingestion_id,
+        limit=page.limit,
+        offset=page.offset,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge source ingestion not found",
+        )
+    items, total = result
+    return PageResponse(
+        items=[KnowledgeCitationResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 async def _set_status(

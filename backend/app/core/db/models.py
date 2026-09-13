@@ -46,6 +46,7 @@ from backend.app.domains.capabilities.models import (
     WorkspaceSkillInstall,
 )
 from backend.app.domains.knowledge.models import (
+    KnowledgeCitation,
     KnowledgeSource,
     KnowledgeSourceIngestion,
 )
@@ -191,6 +192,7 @@ __all__ = [
     "TaskPlanningAttempt",
     "KnowledgeSource",
     "KnowledgeSourceIngestion",
+    "KnowledgeCitation",
     "TaskStep",
     "TaskTransfer",
     "TalentListing",

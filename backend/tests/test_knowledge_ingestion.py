@@ -10,13 +10,52 @@ from backend.app.core.common.config import Settings
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.knowledge.ingestion import KnowledgeSourceIngestionService
-from backend.app.domains.knowledge.models import KnowledgeSource, KnowledgeSourceIngestion
+from backend.app.domains.knowledge.models import (
+    KnowledgeCitation,
+    KnowledgeSource,
+    KnowledgeSourceIngestion,
+)
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.storage import LocalStorage
+from backend.app.runtime.environment.contracts import (
+    RuntimeCommandInputFile,
+    RuntimeCommandResult,
+)
+from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.environment.url_fetch import RuntimeUrlFetcher
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.execution.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue.redis import RedisQueue
 from backend.tests.test_workspace_api import _client, _headers, _seed_workspace
+
+
+class _UrlFetchDockerClient:
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+        self.commands: list[list[str]] = []
+
+    def exec_command(
+        self,
+        container_id: str,
+        command: list[str],
+        timeout_seconds: int,
+        *,
+        input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
+    ) -> RuntimeCommandResult:
+        _ = (container_id, timeout_seconds, input_file, working_dir)
+        self.commands.append(command)
+        return RuntimeCommandResult(exit_code=0, stdout="", stderr="")
+
+    def copy_file_from_container(
+        self,
+        container_id: str,
+        source_path: str,
+        max_bytes: int,
+        timeout_seconds: int,
+    ) -> bytes:
+        _ = (container_id, source_path, max_bytes, timeout_seconds)
+        return self.content
 
 
 def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path) -> None:
@@ -86,6 +125,14 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
     assert len(entries) == result.chunk_count
     assert {entry.memory_metadata["source_version"] for entry in entries} == {1}
     assert {entry.memory_metadata["filename"] for entry in entries} == {"guide.txt"}
+    citations = client.get(
+        f"/api/v1/workspaces/{workspace.id}/knowledge/sources/{source_id}/"
+        f"ingestions/{ingestion.id}/citations",
+        headers=_headers(owner.id),
+    )
+    assert citations.status_code == 200
+    assert citations.json()["total"] == result.chunk_count
+    assert citations.json()["items"][0]["locator"] == f"workspace-file://{workspace_file.id}"
 
     duplicate = service.request(
         workspace_id=workspace.id,
@@ -186,7 +233,7 @@ def test_ingestion_route_enqueues_idempotent_job_and_rejects_url(tmp_path) -> No
         headers=_headers(owner.id),
     )
     assert rejected.status_code == 400
-    assert "isolated fetch runtime" in rejected.json()["error"]["message"]
+    assert "fetch_runtime_id" in rejected.json()["error"]["message"]
 
 
 def test_ingestion_failure_is_recorded_for_unsupported_file() -> None:
@@ -241,3 +288,65 @@ def test_ingestion_failure_is_recorded_for_unsupported_file() -> None:
     stored = session.get(KnowledgeSourceIngestion, ingestion.id)
     assert stored is not None
     assert stored.status == "failed"
+
+
+def test_url_ingestion_uses_network_enabled_runtime_and_records_citations() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    docker = _UrlFetchDockerClient(b"Fetched remote knowledge")
+    runtime = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="Knowledge fetch runtime",
+        status="running",
+        connection_status="online",
+        docker_container_id="fetch-container",
+        execution_mode="isolated",
+        limits={"timeout_seconds": 60, "max_output_bytes": 256_000},
+        network_policy={"mode": "internet", "disabled": False},
+        capabilities={},
+    )
+    session.add(runtime)
+    session.commit()
+    base = f"/api/v1/workspaces/{workspace.id}/knowledge/sources"
+    source_response = client.post(
+        base,
+        headers=_headers(owner.id),
+        json={
+            "name": "Remote docs",
+            "source_type": "url",
+            "uri": "https://docs.example.com/guide",
+            "config": {"fetch_runtime_id": str(runtime.id)},
+        },
+    )
+    assert source_response.status_code == 201
+    source_id = UUID(source_response.json()["id"])
+    service = KnowledgeSourceIngestionService(session)
+    ingestion = service.request(
+        workspace_id=workspace.id,
+        source_id=source_id,
+        requested_by_user_id=owner.id,
+    )
+    session.commit()
+    started = service.start(
+        workspace_id=workspace.id,
+        source_id=source_id,
+        source_version=1,
+    )
+    assert started is not None
+    session.commit()
+    result = service.process(
+        ingestion=started,
+        storage=None,
+        url_fetcher=RuntimeUrlFetcher(session, docker),
+    )
+    session.commit()
+
+    assert result.status == "succeeded"
+    assert result.chunk_count == 1
+    assert len(docker.commands) == 2
+    citation = session.scalar(
+        select(KnowledgeCitation).where(KnowledgeCitation.ingestion_id == ingestion.id)
+    )
+    assert citation is not None
+    assert citation.locator == "https://docs.example.com/guide"
+    assert citation.quote == "Fetched remote knowledge"

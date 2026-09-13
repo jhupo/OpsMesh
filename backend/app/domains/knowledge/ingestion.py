@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select
@@ -11,12 +12,16 @@ from sqlalchemy.orm import Session
 from backend.app.core.db.errors import flush_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars_by_offset
 from backend.app.domains.agents.memory.configuration import initial_embedding_status
-from backend.app.domains.agents.memory.indexing import chunk_text
+from backend.app.domains.agents.memory.indexing import chunk_text_with_offsets
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     memory_content_fingerprint,
 )
-from backend.app.domains.knowledge.models import KnowledgeSource, KnowledgeSourceIngestion
+from backend.app.domains.knowledge.models import (
+    KnowledgeCitation,
+    KnowledgeSource,
+    KnowledgeSourceIngestion,
+)
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.storage import (
     ObjectStorage,
@@ -24,6 +29,7 @@ from backend.app.domains.workspace.storage.storage import (
     StorageObjectTooLargeError,
 )
 from backend.app.observability.audit_service import AuditService
+from backend.app.runtime.environment.url_fetch import RuntimeUrlFetchError
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue.redis import RedisQueue
 
@@ -50,6 +56,17 @@ class KnowledgeIngestionResult:
     error_code: str | None
 
 
+class KnowledgeUrlFetcher(Protocol):
+    def fetch(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_id: UUID,
+        url: str,
+        max_bytes: int,
+    ) -> bytes: ...
+
+
 class KnowledgeSourceIngestionService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -66,8 +83,8 @@ class KnowledgeSourceIngestionService:
             raise ValueError("Knowledge source not found")
         if source.status != "active":
             raise ValueError("Only active knowledge sources can be ingested")
-        if source.source_type != "workspace_file":
-            raise ValueError("URL ingestion requires an isolated fetch runtime")
+        if source.source_type == "url":
+            _fetch_runtime_id(source.source_config)
         existing = self._session.scalar(
             select(KnowledgeSourceIngestion).where(
                 KnowledgeSourceIngestion.workspace_id == workspace_id,
@@ -147,6 +164,36 @@ class KnowledgeSourceIngestionService:
             )
         )
 
+    def list_citations(
+        self,
+        *,
+        workspace_id: UUID,
+        source_id: UUID,
+        ingestion_id: UUID,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[KnowledgeCitation], int] | None:
+        ingestion_exists = self._session.scalar(
+            select(KnowledgeSourceIngestion.id).where(
+                KnowledgeSourceIngestion.workspace_id == workspace_id,
+                KnowledgeSourceIngestion.source_id == source_id,
+                KnowledgeSourceIngestion.id == ingestion_id,
+            )
+        )
+        if ingestion_exists is None:
+            return None
+        statement = select(KnowledgeCitation).where(
+            KnowledgeCitation.workspace_id == workspace_id,
+            KnowledgeCitation.source_id == source_id,
+            KnowledgeCitation.ingestion_id == ingestion_id,
+        )
+        return page_scalars_by_offset(
+            self._session,
+            statement.order_by(KnowledgeCitation.chunk_index, KnowledgeCitation.id),
+            limit=limit,
+            offset=offset,
+        )
+
     def start(
         self,
         *,
@@ -187,7 +234,8 @@ class KnowledgeSourceIngestionService:
         self,
         *,
         ingestion: KnowledgeSourceIngestion,
-        storage: ObjectStorage,
+        storage: ObjectStorage | None = None,
+        url_fetcher: KnowledgeUrlFetcher | None = None,
     ) -> KnowledgeIngestionResult:
         source = self._session.scalar(
             select(KnowledgeSource).where(
@@ -197,70 +245,123 @@ class KnowledgeSourceIngestionService:
                 KnowledgeSource.status == "active",
             )
         )
-        if source is None or source.workspace_file_id is None:
+        if source is None:
             return self._fail_result(ingestion, "source_version_stale")
-        workspace_file = self._session.scalar(
-            select(WorkspaceFile).where(
-                WorkspaceFile.workspace_id == ingestion.workspace_id,
-                WorkspaceFile.id == source.workspace_file_id,
-                WorkspaceFile.status == "active",
+        locator: str
+        filename: str
+        expected_checksum: str | None
+        if source.source_type == "url":
+            if source.uri is None or url_fetcher is None:
+                return self._fail_result(ingestion, "fetch_runtime_unavailable")
+            try:
+                runtime_id = _fetch_runtime_id(source.source_config)
+                raw = url_fetcher.fetch(
+                    workspace_id=ingestion.workspace_id,
+                    runtime_id=runtime_id,
+                    url=source.uri,
+                    max_bytes=MAX_SOURCE_BYTES,
+                )
+            except RuntimeUrlFetchError as exc:
+                return self._fail_result(ingestion, exc.code)
+            except ValueError:
+                return self._fail_result(ingestion, "fetch_runtime_invalid")
+            locator = source.uri
+            filename = source.name
+            expected_checksum = None
+        else:
+            if source.workspace_file_id is None:
+                return self._fail_result(ingestion, "workspace_file_not_found")
+            workspace_file = self._session.scalar(
+                select(WorkspaceFile).where(
+                    WorkspaceFile.workspace_id == ingestion.workspace_id,
+                    WorkspaceFile.id == source.workspace_file_id,
+                    WorkspaceFile.status == "active",
+                )
             )
-            )
-        if workspace_file is None:
-            return self._fail_result(ingestion, "workspace_file_not_found")
-        content_type = workspace_file.content_type.split(";", 1)[0].strip().lower()
-        if content_type not in SUPPORTED_TEXT_TYPES:
-            return self._fail_result(ingestion, "unsupported_content_type")
-        try:
-            raw = storage.read_limited(workspace_file.storage_key, MAX_SOURCE_BYTES)
-        except StorageObjectTooLargeError:
-            return self._fail_result(ingestion, "source_too_large")
-        except FileNotFoundError:
-            return self._fail_result(ingestion, "source_object_not_found")
-        except (OSError, StorageObjectReadError, ValueError):
-            return self._fail_result(ingestion, "source_object_unreadable")
+            if workspace_file is None:
+                return self._fail_result(ingestion, "workspace_file_not_found")
+            content_type = workspace_file.content_type.split(";", 1)[0].strip().lower()
+            if content_type not in SUPPORTED_TEXT_TYPES:
+                return self._fail_result(ingestion, "unsupported_content_type")
+            if storage is None:
+                return self._fail_result(ingestion, "storage_unavailable")
+            try:
+                raw = storage.read_limited(workspace_file.storage_key, MAX_SOURCE_BYTES)
+            except StorageObjectTooLargeError:
+                return self._fail_result(ingestion, "source_too_large")
+            except FileNotFoundError:
+                return self._fail_result(ingestion, "source_object_not_found")
+            except (OSError, StorageObjectReadError, ValueError):
+                return self._fail_result(ingestion, "source_object_unreadable")
+            locator = f"workspace-file://{workspace_file.id}"
+            filename = workspace_file.filename
+            expected_checksum = workspace_file.checksum_sha256
         try:
             text = raw.decode("utf-8-sig")
         except UnicodeDecodeError:
             return self._fail_result(ingestion, "source_not_utf8")
         content_sha256 = hashlib.sha256(raw).hexdigest()
-        if content_sha256 != workspace_file.checksum_sha256:
+        if expected_checksum is not None and content_sha256 != expected_checksum:
             return self._fail_result(ingestion, "source_checksum_mismatch")
-        chunks = chunk_text(text)
+        chunks = chunk_text_with_offsets(text)
         if not chunks:
             return self._fail_result(ingestion, "source_empty")
         self._archive_chunks(ingestion.workspace_id, ingestion.source_id)
+        entries: list[WorkspaceMemoryEntry] = []
         for index, chunk in enumerate(chunks):
             title = f"{source.name} #{index + 1}" if len(chunks) > 1 else source.name
-            self._session.add(
-                WorkspaceMemoryEntry(
-                    workspace_id=ingestion.workspace_id,
-                    source_type="knowledge_source",
-                    source_id=str(source.id),
-                    memory_layer="semantic",
-                    scope_type="workspace",
-                    scope_id=str(ingestion.workspace_id),
-                    memory_key=f"knowledge_source:{source.id}:v{source.version}:{index}",
-                    entry_type="knowledge_chunk",
-                    title=title,
-                    content=chunk,
-                    tags=["knowledge_source", source.source_type],
-                    visibility_scope="workspace",
-                    importance=40,
-                    status="active",
-                    content_fingerprint=memory_content_fingerprint(title, chunk),
-                    memory_metadata={
-                        "knowledge_source_id": str(source.id),
-                        "source_version": source.version,
-                        "workspace_file_id": str(workspace_file.id),
-                        "chunk_index": index,
-                        "chunk_count": len(chunks),
-                        "filename": workspace_file.filename,
-                    },
-                    embedding_status=initial_embedding_status(
-                        self._session,
-                        ingestion.workspace_id,
+            entry = WorkspaceMemoryEntry(
+                workspace_id=ingestion.workspace_id,
+                source_type="knowledge_source",
+                source_id=str(source.id),
+                memory_layer="semantic",
+                scope_type="workspace",
+                scope_id=str(ingestion.workspace_id),
+                memory_key=f"knowledge_source:{source.id}:v{source.version}:{index}",
+                entry_type="knowledge_chunk",
+                title=title,
+                content=chunk.text,
+                tags=["knowledge_source", source.source_type],
+                visibility_scope="workspace",
+                importance=40,
+                status="active",
+                content_fingerprint=memory_content_fingerprint(title, chunk.text),
+                memory_metadata={
+                    "knowledge_source_id": str(source.id),
+                    "source_version": source.version,
+                    "workspace_file_id": (
+                        str(source.workspace_file_id)
+                        if source.workspace_file_id is not None
+                        else None
                     ),
+                    "chunk_index": index,
+                    "chunk_count": len(chunks),
+                    "filename": filename,
+                    "start_offset": chunk.start_offset,
+                    "end_offset": chunk.end_offset,
+                },
+                embedding_status=initial_embedding_status(
+                    self._session,
+                    ingestion.workspace_id,
+                ),
+            )
+            self._session.add(entry)
+            entries.append(entry)
+        self._session.flush()
+        for index, (chunk, entry) in enumerate(zip(chunks, entries, strict=True)):
+            self._session.add(
+                KnowledgeCitation(
+                    workspace_id=ingestion.workspace_id,
+                    source_id=source.id,
+                    ingestion_id=ingestion.id,
+                    memory_entry_id=entry.id,
+                    source_version=source.version,
+                    chunk_index=index,
+                    locator=locator,
+                    start_offset=chunk.start_offset,
+                    end_offset=chunk.end_offset,
+                    quote=chunk.text,
+                    quote_sha256=hashlib.sha256(chunk.text.encode("utf-8")).hexdigest(),
                 )
             )
         ingestion.status = "succeeded"
@@ -372,3 +473,13 @@ def enqueue_knowledge_source_ingestion_job(
             max_attempts=1,
         )
     )
+
+
+def _fetch_runtime_id(config: dict[str, object]) -> UUID:
+    value = config.get("fetch_runtime_id")
+    if not isinstance(value, str):
+        raise ValueError("URL ingestion requires config.fetch_runtime_id")
+    try:
+        return UUID(value)
+    except ValueError as exc:
+        raise ValueError("URL ingestion config.fetch_runtime_id must be a UUID") from exc

@@ -100,6 +100,20 @@ class KnowledgeSourceIngestionResponse(TimestampedModel):
     completed_at: datetime | None
 
 
+class KnowledgeCitationResponse(TimestampedModel):
+    workspace_id: UUID
+    source_id: UUID
+    ingestion_id: UUID
+    memory_entry_id: UUID
+    source_version: int
+    chunk_index: int
+    locator: str
+    start_offset: int
+    end_offset: int
+    quote: str
+    quote_sha256: str
+
+
 class KnowledgeSourceListResponse(BaseModel):
     items: list[KnowledgeSourceResponse]
     total: int

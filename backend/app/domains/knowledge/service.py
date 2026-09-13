@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 from collections.abc import Mapping
 from dataclasses import replace
@@ -279,6 +280,15 @@ def _normalize_uri(value: str | None) -> str | None:
         raise ValueError("Knowledge source uri must be an https URL")
     if parsed.username or parsed.password or parsed.fragment:
         raise ValueError("Knowledge source uri cannot contain credentials or fragments")
+    hostname = parsed.hostname.lower().rstrip(".")
+    if hostname in {"localhost", "host.docker.internal", "metadata.google.internal"}:
+        raise ValueError("Knowledge source uri cannot target an internal host")
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        address = None
+    if address is not None and (address.is_private or address.is_loopback or address.is_link_local):
+        raise ValueError("Knowledge source uri cannot target a private network address")
     for key, _ in parse_qsl(parsed.query, keep_blank_values=True):
         if is_sensitive_payload_key(key):
             raise ValueError("Knowledge source uri query cannot contain secret parameters")

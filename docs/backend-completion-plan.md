@@ -735,7 +735,10 @@ Build:
 - [x] Add version-guarded lifecycle APIs and source fingerprint invalidation for future ingestion.
 - [x] Add an asynchronous, idempotent workspace-file ingestion job with bounded UTF-8 extraction,
   shared chunking, content hashing, memory materialization, and failure state.
-- [ ] Add isolated URL fetching, extraction, chunking, and embedding jobs.
+- [x] Add isolated URL fetching through a running, network-enabled runtime selected by
+  `config.fetch_runtime_id`, with HTTPS-only redirects, bounded output, domain-policy checks, and
+  runtime command evidence.
+- [x] Materialize URL content with shared chunking and checksum evidence.
 - [ ] Add source revisions, citation spans, and permission-aware retrieval integration.
 
 API/data changes:
@@ -745,7 +748,7 @@ API/data changes:
 - [x] `GET/PATCH /api/v1/workspaces/{workspace_id}/knowledge/sources/{source_id}`
 - [x] `POST .../{source_id}/pause`, `.../resume`, and `.../archive`
 - [x] Add ingestion request, history, and detail endpoints for workspace-file sources.
-- [ ] Add citation endpoints after the isolated URL-fetch contract is accepted.
+- [x] Add citation-span records and a workspace-scoped citation listing endpoint.
 
 Tests:
 
@@ -754,14 +757,15 @@ Tests:
 - [x] insecure URLs, secret query/configuration values, and foreign files fail closed
 - [x] archived sources are excluded from default reads
 - [x] workspace-file ingestion, queue idempotency, bounded extraction, and failure evidence tests
-- [ ] URL ingestion, citation, and permission-aware retrieval evidence tests
+- [x] URL ingestion through an isolated runtime and citation evidence tests
+- [ ] permission-aware retrieval evidence tests
 
 Acceptance:
 
 - users can register and govern workspace knowledge sources without exposing credentials or
   crossing tenant boundaries; active workspace-file sources become searchable only after a
-  successful, auditable ingestion attempt. URL sources remain unavailable until isolated fetching
-  is implemented.
+  successful, auditable ingestion attempt. URL sources require an explicitly bound,
+  network-enabled fetch runtime and never fetch directly in the API process.
 
 ## P2: Dynamic Manager Planning And Planning Failure Review
 

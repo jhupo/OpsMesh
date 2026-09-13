@@ -564,7 +564,9 @@ Tasks:
   - [x] Add idempotent asynchronous workspace-file ingestion with bounded UTF-8 extraction,
     shared chunking, checksum evidence, and searchable semantic memory entries.
   - [x] Add ingestion request, history, and detail APIs plus worker execution handling.
-- [ ] Add an isolated URL-fetch backend and citation-span records before enabling URL ingestion.
+  - [x] Add isolated URL fetching through an explicitly bound network-enabled runtime and persist
+    citation spans for every materialized chunk.
+- [ ] Add permission-aware citation retrieval and source revision history.
 
 ## Phase 22: Persistent AI Organization Architecture
 

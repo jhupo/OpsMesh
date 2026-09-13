@@ -128,3 +128,48 @@ class KnowledgeSourceIngestion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class KnowledgeCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """A stable source span attached to one materialized knowledge chunk."""
+
+    __tablename__ = "knowledge_citations"
+    __table_args__ = (
+        UniqueConstraint(
+            "ingestion_id",
+            "chunk_index",
+            name="uq_knowledge_citations_ingestion_chunk",
+        ),
+        Index("ix_knowledge_citations_workspace_source", "workspace_id", "source_id"),
+        Index("ix_knowledge_citations_ingestion", "ingestion_id"),
+        CheckConstraint("source_version >= 1", name="knowledge_citation_version_positive"),
+        CheckConstraint("chunk_index >= 0", name="knowledge_citation_chunk_non_negative"),
+        CheckConstraint(
+            "start_offset >= 0 and end_offset > start_offset",
+            name="knowledge_citation_offsets_valid",
+        ),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_sources.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ingestion_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_source_ingestions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    memory_entry_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspace_memory_entries.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    locator: Mapped[str] = mapped_column(String(2_048), nullable=False)
+    start_offset: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
+    quote: Mapped[str] = mapped_column(String(2_000), nullable=False)
+    quote_sha256: Mapped[str] = mapped_column(String(64), nullable=False)

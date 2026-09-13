@@ -35,6 +35,13 @@ class WorkspaceMemoryIndexResult:
     indexed_chunks: int
 
 
+@dataclass(frozen=True, slots=True)
+class TextChunk:
+    text: str
+    start_offset: int
+    end_offset: int
+
+
 class WorkspaceMemoryIndexingService:
     """Build deterministic workspace-memory chunks from durable workspace objects."""
 
@@ -237,14 +244,24 @@ class WorkspaceMemoryIndexingService:
 
 
 def chunk_text(text: str) -> list[str]:
+    return [chunk.text for chunk in chunk_text_with_offsets(text)]
+
+
+def chunk_text_with_offsets(text: str) -> list[TextChunk]:
     normalized = " ".join(text.split())
     if not normalized:
         return []
-    chunks: list[str] = []
+    chunks: list[TextChunk] = []
     start = 0
     while start < len(normalized):
         end = min(len(normalized), start + _CHUNK_SIZE)
-        chunks.append(normalized[start:end])
+        chunks.append(
+            TextChunk(
+                text=normalized[start:end],
+                start_offset=start,
+                end_offset=end,
+            )
+        )
         if end == len(normalized):
             break
         start = max(end - _CHUNK_OVERLAP, start + 1)
