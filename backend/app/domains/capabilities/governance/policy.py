@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.catalog import (
+from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityParameterPolicy,
     CapabilityPolicyScope,
     CapabilityTeamPolicy,

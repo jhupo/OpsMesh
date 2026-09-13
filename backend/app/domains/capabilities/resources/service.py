@@ -6,14 +6,14 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.catalog import (
-    CapabilityResourceCreateRequest,
-    CapabilityResourceUpdateRequest,
-)
 from backend.app.core.common.errors import DomainError, NotFoundError
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.capabilities.catalog.contracts import (
+    CapabilityResourceCreatePayload,
+    CapabilityResourceUpdatePayload,
+)
 from backend.app.domains.capabilities.models import (
     CapabilityResource,
     McpCredentialReference,
@@ -90,7 +90,7 @@ class CapabilityResourceService:
     def create_resource(
         self,
         workspace_id: UUID,
-        data: CapabilityResourceCreateRequest,
+        data: CapabilityResourceCreatePayload,
         *,
         actor_user_id: UUID,
     ) -> CapabilityResource:
@@ -132,7 +132,7 @@ class CapabilityResourceService:
         self,
         workspace_id: UUID,
         resource_id: UUID,
-        data: CapabilityResourceUpdateRequest,
+        data: CapabilityResourceUpdatePayload,
         *,
         actor_user_id: UUID,
     ) -> CapabilityResource:

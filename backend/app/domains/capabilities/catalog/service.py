@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.catalog import (
+from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityResourceResponse,
     CapabilityToolDescriptor,
     WorkspaceCapabilityCatalogResponse,

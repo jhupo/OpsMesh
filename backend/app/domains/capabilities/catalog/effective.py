@@ -8,7 +8,9 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.catalog import (
+from backend.app.core.common.errors import DomainError, NotFoundError
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityPolicyScope,
     CapabilityTeamPolicy,
     CapabilityToolDescriptor,
@@ -17,8 +19,6 @@ from backend.app.api.schemas.capabilities.catalog import (
     EffectiveCapabilityResource,
     EffectiveCapabilityTool,
 )
-from backend.app.core.common.errors import DomainError, NotFoundError
-from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.catalog.service import WorkspaceCapabilityCatalogService
 from backend.app.domains.capabilities.resources.schema import (
     reject_embedded_secrets,

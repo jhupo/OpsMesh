@@ -257,3 +257,17 @@ aliases, conversion wrappers or a second validation implementation.
 The architecture test now rejects direct API imports from the self-hosted runtime package. Focused
 self-hosted runtime, connector, project-file and architecture tests, application mypy, Ruff and the
 seven import-linter contracts passed for this batch.
+
+## File-level consolidation follow-up: 2026-09-13 (capability catalog contracts)
+
+The capability catalog had a reverse dependency: domain services imported effective-catalog,
+policy and tool-descriptor models from `api/schemas/capabilities/catalog.py`. The stable catalog
+contracts now live with the capabilities domain in `catalog/contracts.py`, including resource and
+tool descriptors, team policy scopes and effective authorization results. API schemas retain only
+HTTP request models and use the domain contracts for response shapes. Resource services accept
+domain-owned payload protocols, so transport validation remains at the API edge while domain
+authorization and persistence stay independent.
+
+The catalog, resource, governance and planning services now import the domain contract directly;
+the previous API-to-domain inversion is removed without aliases or duplicate model implementations.
+Focused capability, planning and architecture tests, Ruff, application mypy and import-linter pass.
