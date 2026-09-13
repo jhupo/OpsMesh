@@ -261,7 +261,7 @@ cleanup, and security evidence. Self-hosted execution exposes its distinct trust
 
 | Order | Priority | Functional point | Status | Commit | Acceptance evidence |
 | --- | --- | --- | --- | --- | --- |
-| 7.1 | P0 | Add the critical end-to-end agent workflow | Pending | `add-agent-runtime-critical-e2e` | Plan, file read, approval, restart, resume, handoff, artifact, and manager acceptance pass together |
+| 7.1 | P0 | Add the critical end-to-end agent workflow | Done | `add-agent-runtime-critical-e2e` | `test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptance` runs the planner through project input staging, provider-independent file read, durable approval interruption, recreated worker session, exactly-once approved tool execution, task handoff and return, versioned output harvest, manager acceptance, and final delivery acceptance |
 | 7.2 | P0 | Add focused recovery and denial scenarios | Pending | `add-agent-runtime-recovery-e2e` | Duplicate messages, timeout, network denial, quota violation, and worker loss remain safe |
 | 7.3 | P1 | Integrate runtime logs, metrics, tracing, audit, and cost events | Pending | `complete-agent-runtime-operations-evidence` | Every phase transition and side effect is correlated without exposing secrets or high-cardinality data |
 | 7.4 | P1 | Replace obsolete runtime prompts, flow diagrams, architecture diagrams, and status claims | Pending | `update-agent-runtime-architecture-docs` | Documentation matches the implemented code paths and labels remaining work accurately |
