@@ -308,15 +308,13 @@ recommended order, and boundaries that remain owned by OpsMesh.
 
 ## Next Goals
 
-Active implementation is Phase 5, task and agent orchestration, in the
-[Agent runtime completion plan](docs/agent-runtime-completion-plan.md). Team tasks default to a
-tool-free planner run using the provider SDK structured-output contract. The worker validates the
-returned DAG against the live team roster, capability catalog, runtime/workspace quotas, provider
-readiness, and projected cost before creating execution steps; `input.planning_mode: "deterministic"`
-explicitly selects the template planner. Dynamic future-work replanning (add, split, merge, cancel,
-and reassign) plus durable ownership transfer with redacted handoff packages and owner-version
-guards are implemented; human continuation and delivery gates remain tracked separately in that
-plan, so the whole phase is not yet complete.
+Active implementation is Phase 7, integrated agent-runtime closure, in the
+[Agent runtime completion plan](docs/agent-runtime-completion-plan.md). Phases 1-6 and the 7.1-7.4
+runtime workflow, recovery, operations evidence, and architecture documentation gates are complete.
+The remaining 7.5 release gate is intentionally tag-only: a new canonical release tag must run the
+complete suite, real PostgreSQL migration checks, native packaging, candidate image probes, signed
+publication, and managed delivery acceptance before the current checkout is called release-ready.
+Normal development uses the focused checks described in the completion plan.
 
 ### 1. Restore and protect the quality baseline
 

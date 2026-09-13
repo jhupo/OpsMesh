@@ -2,6 +2,20 @@
 
 Status: accepted for the documented single-host topology in v0.1.0rc9.
 
+## Post-rc9 checkout status (2026-09-13)
+
+The current `master` checkout contains agent-runtime closure changes after the immutable rc9
+release. It is not itself a published release and must not be described as rc9. The release
+focused checks pass locally, including versioning/publication/deployment contracts and the
+repository Ruff gate. Migration identifiers introduced after rc9 were shortened to fit Alembic's
+32-character `alembic_version.version_num` column, and the chain still has one head at
+`0082_runtime_execution_modes`.
+
+The complete pytest suite, real PostgreSQL upgrade, Docker candidate-image probes, native matrix,
+signed publication, and managed Compose/systemd acceptance remain reserved for the next pushed
+canonical release tag. Until that tag completes `.github/workflows/release-publish.yml`, Phase 7.5
+of the [Agent Runtime Completion Plan](agent-runtime-completion-plan.md) remains pending.
+
 ## Final managed delivery acceptance (2026-09-10)
 
 [Release Publish 34429198774](https://github.com/jhupo/OpsMesh/actions/runs/34429198774), tag
