@@ -23,7 +23,7 @@ from backend.app.observability.audit_integrity import AuditIntegrityService
 from backend.app.runtime.environment.dependencies import get_docker_runtime_client
 from backend.app.runtime.operations.runtimes.cleanup import RuntimeCleanupService
 from backend.app.runtime.operations.workers.lease_maintenance import WorkerLeaseMaintenanceService
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.scheduling.service import WorkspaceScheduledJobService
 
 logger = logging.getLogger(__name__)

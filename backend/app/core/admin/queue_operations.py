@@ -5,7 +5,7 @@ from uuid import UUID
 from backend.app.api.schemas.operations.overview import QueueMetricsResponse
 from backend.app.core.admin.base import AdminRedisService
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 class AdminQueueOperationsService(AdminRedisService):

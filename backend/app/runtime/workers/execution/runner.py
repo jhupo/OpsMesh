@@ -36,7 +36,7 @@ from backend.app.runtime.workers.lifecycle.maintenance import (
     WorkerMaintenanceSummary,
 )
 from backend.app.runtime.workers.lifecycle.reporting import WorkerLeaseReporter
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 logger = logging.getLogger(__name__)
 

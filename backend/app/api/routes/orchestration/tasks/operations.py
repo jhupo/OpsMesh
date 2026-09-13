@@ -5,6 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskControlActionRequest,
     TaskControlActionResponse,
@@ -45,10 +48,7 @@ from backend.app.domains.orchestration.tasks.management.diagnostics import (
 from backend.app.domains.orchestration.tasks.observation.service import TaskObservationService
 from backend.app.domains.orchestration.tasks.observation.timeline import TaskTimelineService
 from backend.app.domains.orchestration.tasks.operations.actions import TaskOperatorActionService
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

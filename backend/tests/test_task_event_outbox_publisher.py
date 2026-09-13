@@ -21,7 +21,7 @@ from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus, Ta
 from backend.app.domains.orchestration.tasks.models import Task, TaskEventOutbox
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.runtime.workers.execution.runner import WorkerRunner, WorkerRunnerConfig
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 def test_task_event_outbox_publisher_publishes_pending_event() -> None:

@@ -3,6 +3,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.workspace.domains import (
     DomainItemCreateRequest,
@@ -21,10 +24,7 @@ from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.workspace.domains.service import DomainTaskService
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["domain-tasks"])
 

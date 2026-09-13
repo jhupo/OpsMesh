@@ -6,6 +6,9 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.api.schemas.orchestration.definitions import OrchestrationApplyRequest
 from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskPlanDiagnosticsResponse,
@@ -37,10 +40,7 @@ from backend.app.domains.orchestration.workflows.planning.future_plan_mutation i
     TaskPlanMutationError,
     TaskPlanMutationService,
 )
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

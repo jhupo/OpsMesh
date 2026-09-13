@@ -181,8 +181,9 @@ def test_runtime_features_are_nested_by_function() -> None:
         "provisioning_executor",
         "queries",
         "run_environment",
-        "service",
-        "security_events",
+            "service",
+            "security_events",
+            "url_fetch",
     }
     for name in (
         "backend_registry.py",
@@ -312,14 +313,16 @@ def test_tenant_modules_are_nested_by_function() -> None:
 
 def test_worker_modules_are_nested_by_function() -> None:
     workers = ROOT / "backend/app/runtime/workers"
-    expected = {"execution", "lifecycle", "queue", "scheduling"}
+    expected = {"execution", "lifecycle", "scheduling"}
     assert {path.name for path in workers.iterdir() if path.is_dir()} >= expected
+    assert (workers / "queue.py").is_file()
+    assert not (workers / "queue").exists()
     root_modules = {
         path.stem
         for path in workers.glob("*.py")
         if path.name != "__init__.py"
     }
-    assert root_modules == {"cli", "contracts"}
+    assert root_modules == {"cli", "contracts", "queue"}
     assert (workers / "execution/handlers/__init__.py").is_file()
     for name in (
         "capacity.py",
@@ -542,7 +545,8 @@ def test_operations_features_are_nested_by_function() -> None:
         "overview_payloads",
         "overview_queries",
         "run_activity",
-        "scheduler",
+            "scheduler",
+            "model_providers",
     }
     for name in (
         "dead_letters.py",

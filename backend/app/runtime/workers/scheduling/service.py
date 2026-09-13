@@ -11,7 +11,7 @@ from backend.app.domains.agents.providers.credentials.models import ModelProvide
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.scheduling.calendar import next_run_at, utc_datetime
 from backend.app.runtime.workers.scheduling.models import (
     WorkspaceScheduledJob,

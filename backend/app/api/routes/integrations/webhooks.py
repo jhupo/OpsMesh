@@ -3,6 +3,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.platform.webhooks import (
     WebhookDeliveryAttemptResponse,
@@ -27,10 +30,7 @@ from backend.app.core.integrations.webhooks.service import (
 )
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.egress import EgressUrlValidationError
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/webhook-subscriptions",

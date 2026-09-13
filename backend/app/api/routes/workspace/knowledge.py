@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import get_worker_queue
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.workspace.knowledge import (
     KnowledgeCitationResponse,
@@ -34,8 +35,7 @@ from backend.app.domains.knowledge.service import (
     KnowledgeSourceService,
     KnowledgeSourceVersionConflictError,
 )
-from backend.app.runtime.workers.queue.dependencies import get_worker_queue
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/knowledge/sources", tags=["knowledge"])
 

@@ -34,8 +34,7 @@ from backend.app.observability.cost_models import WorkspaceCostBudget
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.execution.registry import WorkerJobHandler
-from backend.app.runtime.workers.queue.consumer import consume_once
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.tests.test_worker_run_execution import (
     _build_agent_request,
     _seed_workspace,

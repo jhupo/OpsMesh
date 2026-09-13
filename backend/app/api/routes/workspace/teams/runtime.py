@@ -5,6 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.api.routes.workspace.teams.common import (
     _enqueue_team_runtime_control,
     _queued_runtime_control,
@@ -24,10 +27,7 @@ from backend.app.core.db.session import get_db_session
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.runtime.environment.policies.quotas import RuntimeQuotaExceededError
 from backend.app.runtime.environment.policies.safety import RuntimeSafetyError
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

@@ -59,7 +59,7 @@ from backend.app.runtime.environment.run_environment import (
     RuntimeEnvironmentError,
 )
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 TERMINAL_RUN_STATUSES = {
     RunStatus.COMPLETED,

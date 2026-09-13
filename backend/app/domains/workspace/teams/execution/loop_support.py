@@ -11,7 +11,7 @@ from backend.app.domains.workspace.teams.models import AgentTeam as _AgentTeamMo
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 COMPLETED_STEP_STATUSES = {"completed", "cancelled", "skipped"}
 TEAM_EXECUTION_LOOP_WINDOW_SECONDS = 60

@@ -16,7 +16,7 @@ from backend.app.core.integrations.webhooks.policy import (
 )
 from backend.app.core.integrations.webhooks.scheduler import WebhookDeliveryScheduler
 from backend.app.core.rate_limits.service import FixedWindowRateLimiter
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 def _metadata_datetime(metadata: dict[str, object], key: str) -> datetime | None:

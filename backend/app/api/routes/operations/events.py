@@ -8,6 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from redis import Redis
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.operations.overview import (
     AuditEventFilterResponse,
@@ -43,10 +46,7 @@ from backend.app.runtime.operations.events import OperationsEventQueryService
 from backend.app.runtime.operations.recovery.diagnostics import StaleRunDiagnosticsService
 from backend.app.runtime.operations.recovery.service import StaleRunRecoveryService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

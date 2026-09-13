@@ -10,6 +10,9 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
@@ -22,10 +25,7 @@ from backend.app.observability.audit_models import AuditEvent, AuditIntegrityChe
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.execution.registry import WorkerJobHandler
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 TOKEN = "audit-integrity-api-token"
 

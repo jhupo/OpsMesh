@@ -30,7 +30,7 @@ from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.url_fetch import RuntimeUrlFetcher
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.execution.registry import WorkerJobHandler
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 from backend.tests.test_workspace_api import _client, _headers, _seed_workspace
 
 

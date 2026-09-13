@@ -5,6 +5,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,
     IdempotencyService,
@@ -44,10 +47,7 @@ from backend.app.domains.workspace.teams.workspace_service import (
     TeamUpdateCommand,
     WorkspaceTeamService,
 )
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

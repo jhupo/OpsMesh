@@ -14,6 +14,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import backend.app.domains.agents.providers.health.service as model_provider_health_service_module
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.core.auth.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.base import Base
@@ -99,11 +102,7 @@ from backend.app.runtime.operations.timeline.service import (
 )
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.execution.registry import WorkerJobHandler
-from backend.app.runtime.workers.queue.consumer import consume_once
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.app.runtime.workers.scheduling.models import WorkspaceScheduledJob
 
 TOKEN = "test-token"
@@ -3947,14 +3946,14 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     )
     queue.enqueue(queued_job)
     queue.enqueue(other_team_job)
-    queue.redis.zadd(
+    queue.zadd(
         queue.keys.queue(queue.queue_name) + ":retry",
         {
             other_team_retry_job.model_dump_json(): datetime.now(UTC).timestamp() + 10,
             retry_job.model_dump_json(): datetime.now(UTC).timestamp() + 30,
         },
     )
-    queue.redis.rpush(
+    queue.rpush(
         queue.keys.dead_letter_queue(queue.queue_name),
         dead_letter_job.model_dump_json(),
     )
@@ -12036,7 +12035,7 @@ def _client(
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
-    redis = queue.redis if queue is not None else fakeredis.FakeRedis(decode_responses=True)
+    redis = queue if queue is not None else fakeredis.FakeRedis(decode_responses=True)
 
     docker = FakeDockerClient()
     app = create_app(

@@ -26,7 +26,7 @@ from backend.app.domains.workspace.teams.workspace_service import (
 )
 from backend.app.runtime.environment.commands.queued_control import QueuedRuntimeControl
 from backend.app.runtime.environment.contracts import RuntimeLimits
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

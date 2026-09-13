@@ -10,6 +10,9 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
@@ -20,10 +23,7 @@ from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.observability.notification_models import WorkspaceNotification
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 TOKEN = "test-token"
 

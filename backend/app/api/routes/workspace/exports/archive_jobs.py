@@ -4,6 +4,9 @@ from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies import (
+    get_worker_queue,
+)
 from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveIntegrityResponse,
@@ -19,10 +22,7 @@ from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.workspace.storage.security import content_disposition_attachment
 from backend.app.domains.workspace.storage.storage import create_storage
-from backend.app.runtime.workers.queue.dependencies import (
-    get_worker_queue,
-)
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter()
 

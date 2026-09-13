@@ -6,8 +6,7 @@ import pytest
 from backend.app.core.common.trace_context import TraceContext, trace_context
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue.consumer import consume_once
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue, consume_once
 
 
 def test_key_builder_scopes_workspace_keys() -> None:

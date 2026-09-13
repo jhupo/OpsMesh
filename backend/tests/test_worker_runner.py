@@ -80,7 +80,7 @@ from backend.app.runtime.workers.execution.runner import (
     WorkerRunner,
     WorkerRunnerConfig,
 )
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 @pytest.fixture(autouse=True)

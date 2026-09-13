@@ -21,7 +21,7 @@ from backend.app.runtime.operations.recovery.lease_expiration import (
     StaleRunLeaseExpirationService,
 )
 from backend.app.runtime.operations.recovery.queries import StaleRunQueryService
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 class StaleRunRecoveryService:

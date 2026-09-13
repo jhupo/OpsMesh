@@ -14,7 +14,7 @@ from backend.app.domains.agents.memory.models import (
 from backend.app.domains.agents.providers.catalog.policy import canonical_model_provider
 from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 @dataclass(frozen=True, slots=True)

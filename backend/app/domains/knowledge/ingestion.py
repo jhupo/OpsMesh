@@ -32,7 +32,7 @@ from backend.app.domains.workspace.storage.storage import (
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.environment.url_fetch import RuntimeUrlFetchError
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 MAX_SOURCE_BYTES = 10 * 1024 * 1024
 SUPPORTED_TEXT_TYPES = frozenset(

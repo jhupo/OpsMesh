@@ -16,7 +16,7 @@ from backend.app.domains.workspace.reviews.resource_review_targets import (
 )
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 class ApprovalDecisionService:

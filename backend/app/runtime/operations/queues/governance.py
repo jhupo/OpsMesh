@@ -21,7 +21,7 @@ from backend.app.domains.orchestration.runs.service import RunOrchestrationServi
 from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 def job_ids(jobs: list[JobPayload], *, limit: int = 25) -> list[UUID]:

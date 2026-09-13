@@ -23,7 +23,7 @@ from backend.app.runtime.operations.timeline.team_context import TeamRuntimeTime
 from backend.app.runtime.operations.timeline.worker_collectors import (
     TeamRuntimeWorkerTimelineCollector,
 )
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 class TeamRuntimeTimelineCollector:

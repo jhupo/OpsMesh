@@ -11,7 +11,7 @@ from backend.app.domains.capabilities.mcp.transport.contracts import (
 )
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.dependencies import get_docker_runtime_client
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 @dataclass(frozen=True, slots=True)

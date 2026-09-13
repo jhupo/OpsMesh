@@ -14,7 +14,7 @@ from backend.app.domains.orchestration.tasks.service import TaskStateService
 from backend.app.domains.orchestration.tasks.status import TaskStatus
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.observability.audit_service import AuditService
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 STEP_STATUS_QUEUED = "queued"
 

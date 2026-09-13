@@ -227,3 +227,20 @@ boundaries were preserved. Callers use the concrete modules directly.
 The architecture gate asserts the flattened memory owner and the absence of the reservations
 subpackage. Focused memory, product-tool, workspace-file, runtime-space and architecture tests pass;
 Ruff passes for the changed source. No database schema or public API behavior changed.
+
+## File-level consolidation follow-up: 2026-09-13 (worker queue boundary)
+
+The Redis worker queue no longer uses a package of mixins, scripts, serialization helpers and a
+FastAPI dependency module. Enqueueing, leasing, retry/dead-letter handling, inspection and
+serialization now live in the single cohesive `runtime/workers/queue.py` execution module. The
+queue's public surface is unchanged (`RedisQueue` and `consume_once`), while the superseded
+`runtime/workers/queue` package was deleted without aliases.
+
+`get_worker_queue` is an HTTP dependency, so it now belongs to `api/dependencies.py`; runtime worker
+code no longer imports FastAPI. Every application and test import was updated directly to the new
+owners. This keeps the queue implementation in the data plane and transport dependency resolution
+in the API boundary.
+
+The queue retains one idempotency, lease, retry and workspace-filter implementation. No queue data
+format, Redis key, retry policy or public API behavior changed. Focused Redis queue, worker
+dependency, worker runner and architecture tests must pass before this batch is committed.

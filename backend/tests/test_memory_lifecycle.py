@@ -65,7 +65,7 @@ from backend.app.runtime.workers.execution.handlers.context import WorkerJobHand
 from backend.app.runtime.workers.execution.handlers.memory_embedding import (
     MemoryEmbeddingJobHandler,
 )
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 def test_hybrid_retrieval_uses_weighted_rrf_and_deduplicates_content() -> None:

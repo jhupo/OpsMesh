@@ -23,7 +23,7 @@ from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, Ta
 from backend.app.domains.orchestration.tasks.service import TaskStateService
 from backend.app.domains.orchestration.tasks.status import TaskStatus
 from backend.app.observability.audit_service import AuditService
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,

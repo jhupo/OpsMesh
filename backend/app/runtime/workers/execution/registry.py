@@ -27,7 +27,7 @@ from backend.app.runtime.workers.execution.handlers import (
     WorkspaceArchiveExportJobHandler,
 )
 from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 class WorkerJobTypeHandler(Protocol):

@@ -16,7 +16,7 @@ from backend.app.domains.workspace.teams.execution.runtime_candidates import (
     _scheduler_scan_candidate,
 )
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 class TeamExecutionLoopQueueDispatcher:

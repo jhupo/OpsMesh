@@ -11,7 +11,7 @@ from backend.app.core.security.redaction import (
 )
 from backend.app.runtime.operations.timeline.models import TimelineEvent, TimelineFilters, within
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 
 def queue_job_time(job: JobPayload) -> datetime:

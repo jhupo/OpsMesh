@@ -39,7 +39,7 @@ from backend.app.domains.workspace.projects.snapshots.service import RunProjectS
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.queue import RedisQueue
 
 __all__ = [
     "RunOrchestrationService",
