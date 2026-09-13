@@ -34,6 +34,33 @@ def sanitize_budget_metadata(value: object) -> dict[str, object]:
     return sanitized
 
 
+def budget_metadata_summary(value: object, *, now: datetime | None = None) -> dict[str, object]:
+    """Return bounded, redacted budget and limit metadata for operations views.
+
+    Provider credentials may store arbitrary JSON for vendor limits.  Operations surfaces need
+    the useful counters without exposing a second copy of sensitive metadata, so only the
+    conventional limits/usage/remaining/status fields are projected after sanitization.
+    """
+    sanitized = sanitize_budget_metadata(value)
+    limits = _scalar_mapping(sanitized.get("limits"))
+    usage = _scalar_mapping(sanitized.get("usage"))
+    remaining = sanitized.get("remaining")
+    if isinstance(remaining, dict):
+        remaining = _scalar_mapping(remaining)
+    elif not _is_scalar(remaining):
+        remaining = None
+    status = sanitized.get("status")
+    if not isinstance(status, str) or not status:
+        status = "exhausted" if budget_is_exhausted(value, now=now) else "ok"
+    return {
+        "status": status,
+        "exhausted": budget_is_exhausted(value, now=now),
+        "limits": limits,
+        "usage": usage,
+        "remaining": remaining,
+    }
+
+
 def budget_is_exhausted(value: object, *, now: datetime | None = None) -> bool:
     metadata = value if isinstance(value, dict) else {}
     if not metadata:
@@ -89,6 +116,16 @@ def _sanitize_budget_value(value: object) -> object:
 
 def _dict(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _scalar_mapping(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): item for key, item in value.items() if _is_scalar(item)}
+
+
+def _is_scalar(value: object) -> bool:
+    return value is None or isinstance(value, str | int | float | bool)
 
 
 def _number(value: object) -> float | None:
