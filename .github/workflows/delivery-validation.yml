@@ -3,9 +3,27 @@ on:
   workflow_dispatch:
   push:
     branches: [master]
-    paths: ['operator/**', 'deploy/**', 'Dockerfile*', 'docker-compose.yml', 'backend/app/core/admin/updates/**', 'backend/migrations/**', '.github/workflows/**']
+    paths:
+      - 'operator/**'
+      - 'deploy/**'
+      - 'Dockerfile*'
+      - 'docker-compose.yml'
+      - 'backend/app/core/admin/updates/**'
+      - 'backend/app/runtime/**'
+      - 'backend/app/domains/capabilities/mcp/**'
+      - 'backend/migrations/**'
+      - '.github/workflows/**'
   pull_request:
-    paths: ['operator/**', 'deploy/**', 'Dockerfile*', 'docker-compose.yml', 'backend/app/core/admin/updates/**', 'backend/migrations/**', '.github/workflows/**']
+    paths:
+      - 'operator/**'
+      - 'deploy/**'
+      - 'Dockerfile*'
+      - 'docker-compose.yml'
+      - 'backend/app/core/admin/updates/**'
+      - 'backend/app/runtime/**'
+      - 'backend/app/domains/capabilities/mcp/**'
+      - 'backend/migrations/**'
+      - '.github/workflows/**'
 permissions:
   contents: read
 jobs:
