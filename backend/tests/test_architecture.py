@@ -481,9 +481,34 @@ def test_agent_runtime_vendor_modules_are_nested_by_provider() -> None:
         assert not (providers / name).exists(), name
 
 
-def test_memory_modules_are_nested_by_function() -> None:
+def test_memory_modules_are_flattened_under_domain_owner() -> None:
     memory = ROOT / "backend/app/domains/agents/memory"
     expected = {
+        "authorization",
+        "configuration",
+        "context",
+        "embedding_scheduler",
+        "embedding_service",
+        "episodic",
+        "indexing",
+        "lifecycle",
+        "models",
+        "policy",
+        "retrieval_evidence",
+        "retrieval_search",
+        "semantic",
+        "working",
+    }
+    root_modules = {
+        path.stem
+        for path in memory.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert root_modules == expected
+    assert {
+        path.name for path in memory.iterdir() if path.is_dir() and path.name != "__pycache__"
+    } == set()
+    for name in (
         "access",
         "configuration",
         "context",
@@ -492,29 +517,6 @@ def test_memory_modules_are_nested_by_function() -> None:
         "lifecycle",
         "retrieval",
         "stores",
-    }
-    assert {path.name for path in memory.iterdir() if path.is_dir()} >= expected
-    root_modules = {
-        path.stem
-        for path in memory.glob("*.py")
-        if path.name != "__init__.py"
-    }
-    assert root_modules == {"models", "policy"}
-    for name in (
-        "authorization.py",
-        "configuration.py",
-        "context.py",
-        "content.py",
-        "embeddings.py",
-        "embedding_jobs.py",
-        "evidence.py",
-        "indexing.py",
-        "jobs.py",
-        "episodic.py",
-        "lifecycle.py",
-        "search.py",
-        "semantic.py",
-        "working.py",
     ):
         assert not (memory / name).exists(), name
 
@@ -659,7 +661,30 @@ def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
     }
     assert root_modules == {"models.py", "service.py"}
     assert (agents / "profiles/__init__.py").is_file()
-    assert (agents / "memory/policy.py").is_file()
+    memory = agents / "memory"
+    assert {
+        path.name
+        for path in memory.iterdir()
+        if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
+    } == {
+        "authorization.py",
+        "configuration.py",
+        "context.py",
+        "embedding_scheduler.py",
+        "embedding_service.py",
+        "episodic.py",
+        "indexing.py",
+        "lifecycle.py",
+        "models.py",
+        "policy.py",
+        "retrieval_evidence.py",
+        "retrieval_search.py",
+        "semantic.py",
+        "working.py",
+    }
+    assert {
+        path.name for path in memory.iterdir() if path.is_dir() and path.name != "__pycache__"
+    } == set()
     for name in (
         "lifecycle.py",
         "payloads.py",
@@ -673,6 +698,21 @@ def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
     ):
         assert not (agents / name).exists(), name
     assert not (agents / "memory/agent_policy.py").exists()
+
+
+def test_runtime_space_reservations_are_owned_by_spaces_module() -> None:
+    spaces = ROOT / "backend/app/runtime/environment/spaces"
+    assert {
+        path.name
+        for path in spaces.iterdir()
+        if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
+    } >= {
+        "reservation_attachment.py",
+        "reservation_capacity.py",
+        "reservation_release.py",
+        "reservation_usage.py",
+    }
+    assert not (spaces / "reservations").exists()
 
 
 def test_capability_modules_are_nested_by_function() -> None:

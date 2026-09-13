@@ -11,13 +11,13 @@ from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.workspace.tenants.models import WorkspaceReservation
 from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceReservation
-from backend.app.runtime.environment.spaces.reservations.attachment import (
+from backend.app.runtime.environment.spaces.reservation_attachment import (
     RuntimeSpaceReservationAttachmentService,
 )
-from backend.app.runtime.environment.spaces.reservations.capacity import (
+from backend.app.runtime.environment.spaces.reservation_capacity import (
     RuntimeSpaceCapacityReservationService,
 )
-from backend.app.runtime.environment.spaces.reservations.release import (
+from backend.app.runtime.environment.spaces.reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
 

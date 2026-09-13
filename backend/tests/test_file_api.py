@@ -16,7 +16,7 @@ from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.identity.models import User
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.agents.memory.indexing.service import enqueue_workspace_memory_index_job
+from backend.app.domains.agents.memory.indexing import enqueue_workspace_memory_index_job
 from backend.app.domains.workspace.storage.models import FileAccessEvent
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app

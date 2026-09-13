@@ -10,7 +10,7 @@ from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
 from backend.app.domains.agents.memory.policy import WorkingMemoryPolicy
-from backend.app.domains.agents.memory.stores.working import (
+from backend.app.domains.agents.memory.working import (
     AgentWorkingMemoryService,
     working_memory_context,
 )

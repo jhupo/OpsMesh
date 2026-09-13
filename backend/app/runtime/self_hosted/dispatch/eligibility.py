@@ -16,10 +16,10 @@ from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
-from backend.app.runtime.environment.spaces.reservations.attachment import (
+from backend.app.runtime.environment.spaces.reservation_attachment import (
     RuntimeSpaceReservationAttachmentService,
 )
-from backend.app.runtime.environment.spaces.reservations.capacity import (
+from backend.app.runtime.environment.spaces.reservation_capacity import (
     RuntimeSpaceCapacityReservationService,
 )
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker

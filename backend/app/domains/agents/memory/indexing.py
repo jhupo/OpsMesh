@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import stringify_or_none
-from backend.app.domains.agents.memory.configuration.service import initial_embedding_status
+from backend.app.domains.agents.memory.configuration import initial_embedding_status
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     memory_content_fingerprint,

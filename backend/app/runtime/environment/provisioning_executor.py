@@ -29,7 +29,7 @@ from backend.app.runtime.environment.pool.leases import (
     RuntimeSpaceReservationStore,
 )
 from backend.app.runtime.environment.security_events import RuntimeSecurityEventRecorder
-from backend.app.runtime.environment.spaces.reservations.capacity import (
+from backend.app.runtime.environment.spaces.reservation_capacity import (
     RuntimeSpaceCapacityReservationService,
 )
 

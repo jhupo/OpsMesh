@@ -24,13 +24,13 @@ from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.agents.memory.configuration.service import (
+from backend.app.domains.agents.memory.configuration import (
     MemoryConfigurationConflictError,
     MemoryConfigurationUpdate,
     WorkspaceMemoryConfigurationService,
 )
-from backend.app.domains.agents.memory.retrieval.evidence import WorkspaceMemoryEvidenceService
-from backend.app.domains.agents.memory.stores.semantic import (
+from backend.app.domains.agents.memory.retrieval_evidence import WorkspaceMemoryEvidenceService
+from backend.app.domains.agents.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryConflictError,
     SemanticMemoryUpsert,

@@ -10,7 +10,7 @@ from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskCorrectionRequest,
     TaskDeliveryDecisionRequest,
 )
-from backend.app.domains.agents.memory.stores.episodic import AgentEpisodicMemoryService
+from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.domains.orchestration.tasks.delivery.corrections import (

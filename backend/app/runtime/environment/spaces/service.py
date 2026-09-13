@@ -15,14 +15,14 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceEvent,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.environment.spaces.reservations.attachment import (
+from backend.app.runtime.environment.spaces.reservation_attachment import (
     RuntimeSpaceReservationAttachmentService,
 )
-from backend.app.runtime.environment.spaces.reservations.capacity import (
+from backend.app.runtime.environment.spaces.reservation_capacity import (
     RuntimeSpaceCapacityReservationService,
     RuntimeSpaceReservationResult,
 )
-from backend.app.runtime.environment.spaces.reservations.release import (
+from backend.app.runtime.environment.spaces.reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
 from backend.app.runtime.environment.spaces.targets import RuntimeSpaceTargetService

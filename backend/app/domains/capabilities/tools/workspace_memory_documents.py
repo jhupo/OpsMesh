@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import stringify_or_none
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.domains.agents.memory.retrieval.search import (
+from backend.app.domains.agents.memory.retrieval_search import (
     MemorySearchDocument,
     MemorySearchHit,
     memory_entry_document_metadata,

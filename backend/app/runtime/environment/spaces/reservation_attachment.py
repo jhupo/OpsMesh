@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runtime.environment.spaces.models import RuntimeSpaceReservation
-from backend.app.runtime.environment.spaces.reservations.usage import reservation_usage
+from backend.app.runtime.environment.spaces.reservation_usage import reservation_usage
 
 
 class RuntimeSpaceReservationAttachmentService:

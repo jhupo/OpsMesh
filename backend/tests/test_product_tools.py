@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
-from backend.app.domains.agents.memory.access.authorization import AuthorizedMemoryScope
-from backend.app.domains.agents.memory.indexing.service import WorkspaceMemoryIndexingService
+from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
+from backend.app.domains.agents.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.domains.agents.memory.retrieval.search import MemorySearchHit, MemorySearchRequest
+from backend.app.domains.agents.memory.retrieval_search import MemorySearchHit, MemorySearchRequest
 from backend.app.domains.agents.messages.models import AgentMessage
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.tools.context import ToolContext

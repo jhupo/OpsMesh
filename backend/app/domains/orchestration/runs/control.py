@@ -24,7 +24,7 @@ from backend.app.domains.workspace.projects.snapshots.service import RunProjectS
 from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.reservations.release import (
+from backend.app.runtime.environment.spaces.reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
 

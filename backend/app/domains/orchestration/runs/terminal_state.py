@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.memory.stores.episodic import AgentEpisodicMemoryService
-from backend.app.domains.agents.memory.stores.working import AgentWorkingMemoryService
+from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
+from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.runs.state import RunStateService
 from backend.app.domains.orchestration.runs.status import RunStatus

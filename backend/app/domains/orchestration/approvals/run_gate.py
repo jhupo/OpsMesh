@@ -13,7 +13,7 @@ from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSE
 from backend.app.domains.orchestration.tasks.step_service import TaskStepStateService
 from backend.app.domains.orchestration.tasks.step_status import FINAL_STEP_STATUSES, TaskStepStatus
 from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
-from backend.app.runtime.environment.spaces.reservations.release import (
+from backend.app.runtime.environment.spaces.reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
 

@@ -5,17 +5,17 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.memory.access.authorization import AuthorizedMemoryScope
-from backend.app.domains.agents.memory.embeddings.service import (
+from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
+from backend.app.domains.agents.memory.embedding_service import (
     WorkspaceMemoryQueryEmbeddingService,
 )
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.memory.policy import semantic_memory_policy
-from backend.app.domains.agents.memory.stores.semantic import (
+from backend.app.domains.agents.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryUpsert,
 )
-from backend.app.domains.agents.memory.stores.working import AgentWorkingMemoryService
+from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
 from backend.app.domains.capabilities.tools.context import ToolContext
 from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
 from backend.app.domains.capabilities.tools.product_events import ProductToolEventRecorder

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
-from backend.app.domains.agents.memory.indexing.service import WorkspaceMemoryIndexingService
+from backend.app.domains.agents.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent, WorkspaceFile

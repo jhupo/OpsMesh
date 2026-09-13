@@ -8,7 +8,7 @@ from backend.app.core.common.trace_context import current_trace_context, telemet
 from backend.app.core.common.values import string_list
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.domains.agents.memory.access.authorization import (
+from backend.app.domains.agents.memory.authorization import (
     memory_read_scopes,
     memory_write_scopes,
 )

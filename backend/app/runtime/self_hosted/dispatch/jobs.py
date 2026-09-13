@@ -17,7 +17,7 @@ from backend.app.domains.orchestration.tasks.step_service import TaskStepStateSe
 from backend.app.domains.orchestration.tasks.step_status import TaskStepStatus
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
-from backend.app.runtime.environment.spaces.reservations.release import (
+from backend.app.runtime.environment.spaces.reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
 from backend.app.runtime.self_hosted.models import (

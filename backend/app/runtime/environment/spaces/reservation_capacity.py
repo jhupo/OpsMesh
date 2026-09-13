@@ -13,7 +13,7 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceReservation,
 )
 from backend.app.runtime.environment.spaces.quota_counter import RuntimeSpaceQuotaCounter
-from backend.app.runtime.environment.spaces.reservations.usage import (
+from backend.app.runtime.environment.spaces.reservation_usage import (
     active_reservation_matches,
     first_exceeded_quota,
     normalize_reservation_usage,

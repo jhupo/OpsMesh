@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.memory.context.service import AgentMemoryContextService
+from backend.app.domains.agents.memory.context import AgentMemoryContextService
 from backend.app.domains.agents.memory.policy import context_budget_policy, working_memory_policy
-from backend.app.domains.agents.memory.stores.working import (
+from backend.app.domains.agents.memory.working import (
     AgentWorkingMemoryService,
     working_memory_context,
 )

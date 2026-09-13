@@ -19,19 +19,19 @@ from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.memory.access.authorization import AuthorizedMemoryScope
-from backend.app.domains.agents.memory.configuration.service import (
+from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
+from backend.app.domains.agents.memory.configuration import (
     MemoryConfigurationConflictError,
     MemoryConfigurationUpdate,
     WorkspaceMemoryConfigurationService,
 )
-from backend.app.domains.agents.memory.embeddings.scheduler import WorkspaceMemoryEmbeddingScheduler
-from backend.app.domains.agents.memory.embeddings.service import (
+from backend.app.domains.agents.memory.embedding_scheduler import WorkspaceMemoryEmbeddingScheduler
+from backend.app.domains.agents.memory.embedding_service import (
     MemoryEmbeddingResult,
     OpenAIMemoryEmbeddingProvider,
     WorkspaceMemoryEmbeddingProviderResolver,
 )
-from backend.app.domains.agents.memory.lifecycle.service import WorkspaceMemoryLifecycleService
+from backend.app.domains.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEmbeddingEvent,
     WorkspaceMemoryEntry,
@@ -45,13 +45,13 @@ from backend.app.domains.agents.memory.policy import (
     default_lifecycle_policy,
     default_retrieval_policy,
 )
-from backend.app.domains.agents.memory.retrieval.search import (
+from backend.app.domains.agents.memory.retrieval_search import (
     HybridMemorySearchBackend,
     MemorySearchDocument,
     MemorySearchHit,
     MemorySearchRequest,
 )
-from backend.app.domains.agents.memory.stores.semantic import (
+from backend.app.domains.agents.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryUpsert,
 )

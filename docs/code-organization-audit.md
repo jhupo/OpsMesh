@@ -208,3 +208,22 @@ implementations and the presence of the canonical run-query/value modules. Focus
 authentication, memory lifecycle, cost, operations, team-capacity and execution-loop tests passed;
 Ruff and full application mypy passed. No compatibility aliases, full-suite run, release tag or
 remote publication were introduced.
+
+## File-level consolidation follow-up: 2026-09-13 (memory and runtime spaces)
+
+The memory domain no longer uses one package directory for each small implementation. Authorization,
+configuration, context, indexing, lifecycle, embedding, retrieval and memory-store modules now live
+directly under `domains/agents/memory` with explicit names. Episodic, semantic and working memory
+remain separate files because they own different persistence and promotion semantics; only the
+artificial `access`, `configuration`, `context`, `embeddings`, `indexing`, `lifecycle`, `retrieval`
+and `stores` package layers were removed. All application and test imports were updated directly;
+no forwarding packages remain.
+
+Runtime-space reservation accounting follows the same rule. Attachment, capacity, release and usage
+implementations now live directly under `runtime/environment/spaces` as `reservation_*.py` modules.
+The reservation subpackage was removed while the reservation state machine and quota transaction
+boundaries were preserved. Callers use the concrete modules directly.
+
+The architecture gate asserts the flattened memory owner and the absence of the reservations
+subpackage. Focused memory, product-tool, workspace-file, runtime-space and architecture tests pass;
+Ruff passes for the changed source. No database schema or public API behavior changed.

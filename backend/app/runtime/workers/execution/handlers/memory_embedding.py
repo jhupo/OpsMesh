@@ -1,6 +1,6 @@
 from sqlalchemy import select
 
-from backend.app.domains.agents.memory.embeddings.service import (
+from backend.app.domains.agents.memory.embedding_service import (
     MemoryEmbeddingError,
     MemoryEmbeddingWork,
     WorkspaceMemoryEmbeddingProviderResolver,

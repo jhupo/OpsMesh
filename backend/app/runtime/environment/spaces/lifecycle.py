@@ -9,7 +9,7 @@ from backend.app.runtime.environment.spaces.blockers import RuntimeSpaceBlockerS
 from backend.app.runtime.environment.spaces.events import RuntimeSpaceEventLog
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.runtime.environment.spaces.quotas import RuntimeSpaceQuotaService
-from backend.app.runtime.environment.spaces.reservations.release import (
+from backend.app.runtime.environment.spaces.reservation_release import (
     RuntimeSpaceReservationReleaseService,
 )
 from backend.app.runtime.environment.spaces.targets import RuntimeSpaceTargetService
