@@ -271,3 +271,15 @@ authorization and persistence stay independent.
 The catalog, resource, governance and planning services now import the domain contract directly;
 the previous API-to-domain inversion is removed without aliases or duplicate model implementations.
 Focused capability, planning and architecture tests, Ruff, application mypy and import-linter pass.
+
+## File-level consolidation follow-up: 2026-09-13 (agent domain contracts)
+
+Agent profile responses and model-provider usage audit responses were also owned by API schema
+modules while agent-domain services assembled them. They now live in the agent profile and provider
+audit contract modules respectively. Message and profile command services accept domain-level
+payload shapes (or mappings) and no longer import API request classes. API routes still validate
+HTTP input and select the domain response contract explicitly.
+
+The agent domain has no direct API-schema imports; the architecture gate covers that invariant.
+Agent management, mailbox, provider-operations and architecture tests, Ruff and application mypy
+passed after the move. No forwarding module or compatibility alias was added.

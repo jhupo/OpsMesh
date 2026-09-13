@@ -12,9 +12,6 @@ from backend.app.api.idempotency import (
 )
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.agents.errors import agent_management_http_error
-from backend.app.api.schemas.agents.profiles import (
-    AgentProfileResponse,
-)
 from backend.app.api.schemas.workspace.teams import (
     AgentTeamMemberCreateRequest,
     AgentTeamMemberModelProviderUpdateRequest,
@@ -31,6 +28,7 @@ from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.agents.messages.models import AgentMessage
 from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.contracts import AgentProfileResponse
 from backend.app.domains.agents.providers.catalog.agent_summary import agent_profile_response
 from backend.app.domains.agents.providers.catalog.model_api import (
     configured_model_api,

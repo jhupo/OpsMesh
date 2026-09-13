@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Protocol, TypedDict, TypeVar
+from typing import Any, Protocol, TypedDict, TypeVar
 from uuid import UUID
 
 from sqlalchemy import Select
@@ -9,6 +9,25 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 
 T = TypeVar("T")
+
+
+class AgentMessageThreadCreatePayload(Protocol):
+    task_id: UUID | None
+    agent_team_id: UUID | None
+    subject: str
+    status: str
+
+    def model_dump(self, *, exclude: set[str]) -> dict[str, Any]: ...
+
+
+class AgentMessageCreatePayload(Protocol):
+    task_id: UUID | None
+    agent_team_id: UUID | None
+    sender_agent_profile_id: UUID
+    recipient_agent_profile_id: UUID
+    reply_to_message_id: UUID | None
+
+    def model_dump(self, *, exclude: set[str]) -> dict[str, Any]: ...
 
 
 class AgentInbox(TypedDict):

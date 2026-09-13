@@ -5,10 +5,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.agents.profiles import (
-    AgentProfileCreateRequest,
-    AgentProfileUpdateRequest,
-)
 from backend.app.core.common.config import Settings
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.profiles.model_validation import AgentModelValidator
@@ -40,7 +36,7 @@ class AgentProfileCommandService:
     def create_agent(
         self,
         workspace_id: UUID,
-        data: AgentProfileCreateRequest | Mapping[str, Any],
+        data: object | Mapping[str, Any],
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
@@ -107,7 +103,7 @@ class AgentProfileCommandService:
     def update_agent(
         self,
         profile: AgentProfile,
-        changes: AgentProfileUpdateRequest | Mapping[str, Any],
+        changes: object | Mapping[str, Any],
         actor_user_id: UUID | None = None,
     ) -> AgentProfile:
         values = normalize_update_payload(changes, {})

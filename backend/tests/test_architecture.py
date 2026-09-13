@@ -668,6 +668,14 @@ def test_api_services_are_nested_by_function() -> None:
 
 def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
     agents = ROOT / "backend/app/domains/agents"
+    direct_api_imports = [
+        path.relative_to(ROOT).as_posix()
+        for path in agents.rglob("*.py")
+        if "backend.app.api" in path.read_text(encoding="utf-8")
+    ]
+    assert not direct_api_imports, "Agent domain imports API transport: " + ", ".join(
+        direct_api_imports
+    )
     root_modules = {
         path.name
         for path in agents.iterdir()
@@ -958,7 +966,7 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
         ),
         (
             "core/common/pagination.py",
-            "from backend.app.domains.agents.service import AgentManagementService",
+            "from backend.app.api.schemas.agents.profiles import AgentProfileCreateRequest",
             "Shared infrastructure cannot depend on the API even indirectly",
         ),
         (

@@ -8,12 +8,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.agents.profiles import (
-    AgentProfileCloneRequest,
-    AgentProfileCreateRequest,
-    AgentProfileRollbackRequest,
-    AgentProfileUpdateRequest,
-)
 from backend.app.core.common.config import Settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
@@ -63,7 +57,7 @@ class AgentManagementService:
     def create_agent(
         self,
         workspace_id: UUID,
-        data: AgentProfileCreateRequest | Mapping[str, Any],
+        data: object | Mapping[str, Any],
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
@@ -79,7 +73,7 @@ class AgentManagementService:
         self,
         workspace_id: UUID,
         agent_profile_id: UUID,
-        changes: AgentProfileUpdateRequest | Mapping[str, Any],
+        changes: object | Mapping[str, Any],
         actor_user_id: UUID | None = None,
     ) -> AgentProfile | None:
         profile = self._require_profile(workspace_id, agent_profile_id)
@@ -123,7 +117,7 @@ class AgentManagementService:
         self,
         workspace_id: UUID,
         agent_profile_id: UUID,
-        overrides: AgentProfileCloneRequest | Mapping[str, Any],
+        overrides: object | Mapping[str, Any],
         actor_user_id: UUID | None = None,
     ) -> AgentProfile:
         source = self._require_profile(workspace_id, agent_profile_id)
@@ -166,7 +160,7 @@ class AgentManagementService:
         workspace_id: UUID,
         agent_profile_id: UUID,
         version: int,
-        request: AgentProfileRollbackRequest | Mapping[str, Any],
+        request: object | Mapping[str, Any],
         actor_user_id: UUID | None = None,
     ) -> AgentProfile | None:
         profile = self._require_profile(workspace_id, agent_profile_id)

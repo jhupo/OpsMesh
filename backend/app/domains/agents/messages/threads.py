@@ -3,12 +3,14 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from backend.app.api.schemas.agents.messages import AgentMessageThreadCreateRequest
-from backend.app.domains.agents.messages.contracts import MailboxStore
+from backend.app.domains.agents.messages.contracts import (
+    AgentMessageThreadCreatePayload,
+    MailboxStore,
+)
 from backend.app.domains.agents.messages.models import THREAD_STATUSES, AgentMessageThread
 
 
-def thread_create_payload(data: AgentMessageThreadCreateRequest) -> dict[str, object]:
+def thread_create_payload(data: AgentMessageThreadCreatePayload) -> dict[str, object]:
     return data.model_dump(exclude={"agent_team_id"})
 
 
@@ -16,7 +18,7 @@ class AgentMailboxThreadMixin(MailboxStore):
     def create_thread(
         self,
         workspace_id: UUID,
-        data: AgentMessageThreadCreateRequest,
+        data: AgentMessageThreadCreatePayload,
     ) -> AgentMessageThread:
         task_team_id = (
             self._task_team_id(workspace_id, data.task_id) if data.task_id is not None else None

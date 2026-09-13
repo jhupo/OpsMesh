@@ -6,8 +6,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.agents.profiles import AgentProfileResponse
 from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.contracts import AgentProfileResponse
 from backend.app.domains.agents.providers.catalog.capabilities import resolve_model_capability
 from backend.app.domains.agents.providers.catalog.metadata import budget_is_exhausted
 from backend.app.domains.agents.providers.catalog.model_api import (

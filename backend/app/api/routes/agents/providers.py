@@ -11,7 +11,6 @@ from backend.app.api.schemas.agents.providers import (
     ModelProviderCredentialUpdateRequest,
     ModelProviderHealthCheckRequest,
     ModelProviderHealthCheckResponse,
-    ModelProviderUsageAuditResponse,
 )
 from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.auth.dependencies import workspace_dependency
@@ -21,6 +20,7 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.egress import EgressUrlValidationError
+from backend.app.domains.agents.providers.audit.contracts import ModelProviderUsageAuditResponse
 from backend.app.domains.agents.providers.audit.responses import usage_audit_response
 from backend.app.domains.agents.providers.contracts import provider_health_probes
 from backend.app.domains.agents.providers.credentials.commands import (

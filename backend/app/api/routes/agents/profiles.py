@@ -15,7 +15,6 @@ from backend.app.api.routes.agents.errors import agent_management_http_error
 from backend.app.api.schemas.agents.profiles import (
     AgentProfileCloneRequest,
     AgentProfileCreateRequest,
-    AgentProfileResponse,
     AgentProfileRollbackRequest,
     AgentProfileUpdateRequest,
     AgentProfileVersionResponse,
@@ -28,6 +27,7 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.agents.profiles.contracts import AgentProfileResponse
 from backend.app.domains.agents.providers.catalog.agent_summary import agent_profile_response
 from backend.app.domains.agents.service import AgentManagementService
 
