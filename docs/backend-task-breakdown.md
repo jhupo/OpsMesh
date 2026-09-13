@@ -559,6 +559,12 @@ Tasks:
   - [x] Redact self-hosted operations aggregate metadata and platform policy event metadata.
   - [x] Redact archive export job metadata while hiding storage keys.
   - [x] Redact self-hosted local-file and artifact upload metadata in worker-facing responses.
+- [x] Add workspace knowledge-source registration and lifecycle controls.
+  - [x] Keep source declarations workspace-scoped, versioned, fingerprinted, and secret-free.
+  - [x] Add idempotent asynchronous workspace-file ingestion with bounded UTF-8 extraction,
+    shared chunking, checksum evidence, and searchable semantic memory entries.
+  - [x] Add ingestion request, history, and detail APIs plus worker execution handling.
+- [ ] Add an isolated URL-fetch backend and citation-span records before enabling URL ingestion.
 
 ## Phase 22: Persistent AI Organization Architecture
 

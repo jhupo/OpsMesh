@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.workspace.knowledge import (
     KnowledgeSourceCreateRequest,
+    KnowledgeSourceIngestionResponse,
     KnowledgeSourceResponse,
     KnowledgeSourceStatusRequest,
     KnowledgeSourceUpdateRequest,
@@ -23,10 +24,16 @@ from backend.app.domains.knowledge.contracts import (
     KnowledgeSourceStatus,
     KnowledgeSourceUpdate,
 )
+from backend.app.domains.knowledge.ingestion import (
+    KnowledgeSourceIngestionService,
+    enqueue_knowledge_source_ingestion_job,
+)
 from backend.app.domains.knowledge.service import (
     KnowledgeSourceService,
     KnowledgeSourceVersionConflictError,
 )
+from backend.app.runtime.workers.queue.dependencies import get_worker_queue
+from backend.app.runtime.workers.queue.redis import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/knowledge/sources", tags=["knowledge"])
 
@@ -142,6 +149,87 @@ async def archive_source(
     session: Session = Depends(get_db_session),
 ) -> KnowledgeSourceResponse:
     return await _set_status(source_id, request, "archived", context, session)
+
+
+@router.post(
+    "/{source_id}/ingest",
+    response_model=KnowledgeSourceIngestionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def ingest_source(
+    source_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> KnowledgeSourceIngestionResponse:
+    service = KnowledgeSourceIngestionService(session)
+    try:
+        ingestion = service.request(
+            workspace_id=context.workspace.id,
+            source_id=source_id,
+            requested_by_user_id=context.user.user_id,
+        )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    session.commit()
+    session.refresh(ingestion)
+    enqueue_knowledge_source_ingestion_job(
+        queue=queue,
+        workspace_id=context.workspace.id,
+        source_id=source_id,
+        source_version=ingestion.source_version,
+        requested_by_user_id=context.user.user_id,
+    )
+    return KnowledgeSourceIngestionResponse.model_validate(ingestion)
+
+
+@router.get(
+    "/{source_id}/ingestions",
+    response_model=PageResponse[KnowledgeSourceIngestionResponse],
+)
+async def list_ingestions(
+    source_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[KnowledgeSourceIngestionResponse]:
+    items, total = KnowledgeSourceIngestionService(session).list_ingestions(
+        workspace_id=context.workspace.id,
+        source_id=source_id,
+        limit=page.limit,
+        offset=page.offset,
+    )
+    return PageResponse(
+        items=[KnowledgeSourceIngestionResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get(
+    "/{source_id}/ingestions/{ingestion_id}",
+    response_model=KnowledgeSourceIngestionResponse,
+)
+async def get_ingestion(
+    source_id: UUID,
+    ingestion_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> KnowledgeSourceIngestionResponse:
+    ingestion = KnowledgeSourceIngestionService(session).get_ingestion(
+        workspace_id=context.workspace.id,
+        source_id=source_id,
+        ingestion_id=ingestion_id,
+    )
+    if ingestion is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge source ingestion not found",
+        )
+    return KnowledgeSourceIngestionResponse.model_validate(ingestion)
 
 
 async def _set_status(

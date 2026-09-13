@@ -37,6 +37,10 @@ class StorageObjectTooLargeError(ValueError):
     pass
 
 
+class StorageObjectReadError(OSError):
+    pass
+
+
 class LocalStorage:
     def __init__(self, root: str) -> None:
         self._root = Path(root).resolve()
@@ -166,7 +170,7 @@ class S3Storage:
         except ClientError as exc:
             if _is_not_found_error(exc):
                 raise FileNotFoundError("Storage object not found") from exc
-            raise
+            raise StorageObjectReadError("Storage object could not be read") from exc
         body = response["Body"]
         try:
             content = body.read(max_bytes + 1)

@@ -3,6 +3,9 @@ from backend.app.runtime.workers.execution.handlers.io import (
     WebhookDeliveryJobHandler,
     WorkspaceArchiveExportJobHandler,
 )
+from backend.app.runtime.workers.execution.handlers.knowledge_ingest import (
+    KnowledgeIngestJobHandler,
+)
 from backend.app.runtime.workers.execution.handlers.maintenance import (
     AuditIntegrityJobHandler,
     ModelProviderHealthJobHandler,
@@ -29,6 +32,7 @@ __all__ = [
     "AuditIntegrityJobHandler",
     "McpToolExecutionJobHandler",
     "MemoryIndexJobHandler",
+    "KnowledgeIngestJobHandler",
     "MemoryEmbeddingJobHandler",
     "ModelProviderHealthJobHandler",
     "RuntimeCleanupJobHandler",

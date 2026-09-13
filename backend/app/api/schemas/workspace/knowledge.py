@@ -85,6 +85,21 @@ class KnowledgeSourceResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
+class KnowledgeSourceIngestionResponse(TimestampedModel):
+    workspace_id: UUID
+    source_id: UUID
+    requested_by_user_id: UUID | None
+    source_version: int
+    status: Literal["pending", "processing", "succeeded", "failed"]
+    attempts: int
+    content_sha256: str | None
+    byte_count: int
+    chunk_count: int
+    error_code: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
 class KnowledgeSourceListResponse(BaseModel):
     items: list[KnowledgeSourceResponse]
     total: int

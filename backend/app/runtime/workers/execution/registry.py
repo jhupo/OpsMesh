@@ -13,6 +13,7 @@ from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.execution.handlers import (
     AgentRunJobHandler,
     AuditIntegrityJobHandler,
+    KnowledgeIngestJobHandler,
     McpToolExecutionJobHandler,
     MemoryEmbeddingJobHandler,
     MemoryIndexJobHandler,
@@ -74,6 +75,7 @@ def _build_handler_registry(
         JobType.WORKSPACE_ARCHIVE_EXPORT: WorkspaceArchiveExportJobHandler(context),
         JobType.MEMORY_INDEX: MemoryIndexJobHandler(context),
         JobType.MEMORY_EMBED: MemoryEmbeddingJobHandler(context),
+        JobType.KNOWLEDGE_INGEST: KnowledgeIngestJobHandler(context),
         JobType.WEBHOOK_DELIVERY: WebhookDeliveryJobHandler(context),
         JobType.SECRET_REENCRYPT: SecretReencryptJobHandler(context),
         JobType.MODEL_PROVIDER_HEALTH_CHECK: ModelProviderHealthJobHandler(context),

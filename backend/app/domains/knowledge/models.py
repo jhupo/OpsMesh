@@ -71,3 +71,60 @@ class KnowledgeSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
     )
     last_error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+
+class KnowledgeSourceIngestion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Durable attempt state for materializing one source version into memory chunks."""
+
+    __tablename__ = "knowledge_source_ingestions"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "source_version",
+            name="uq_knowledge_source_ingestions_source_version",
+        ),
+        Index(
+            "ix_knowledge_source_ingestions_workspace_status",
+            "workspace_id",
+            "status",
+        ),
+        Index(
+            "ix_knowledge_source_ingestions_source_created",
+            "source_id",
+            "created_at",
+        ),
+        CheckConstraint(
+            "status in ('pending', 'processing', 'succeeded', 'failed')",
+            name="knowledge_source_ingestion_status_valid",
+        ),
+        CheckConstraint(
+            "source_version >= 1",
+            name="knowledge_source_ingestion_version_positive",
+        ),
+        CheckConstraint(
+            "attempts >= 0 and byte_count >= 0 and chunk_count >= 0",
+            name="knowledge_source_ingestion_counts_non_negative",
+        ),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    requested_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_sources.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    byte_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

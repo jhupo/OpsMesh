@@ -733,7 +733,9 @@ Build:
 - [x] Validate URL credentials, fragments, secret query parameters, foreign workspace files, and
   embedded configuration secrets before persistence.
 - [x] Add version-guarded lifecycle APIs and source fingerprint invalidation for future ingestion.
-- [ ] Add asynchronous fetch, extraction, chunking, and embedding jobs.
+- [x] Add an asynchronous, idempotent workspace-file ingestion job with bounded UTF-8 extraction,
+  shared chunking, content hashing, memory materialization, and failure state.
+- [ ] Add isolated URL fetching, extraction, chunking, and embedding jobs.
 - [ ] Add source revisions, citation spans, and permission-aware retrieval integration.
 
 API/data changes:
@@ -742,7 +744,8 @@ API/data changes:
 - [x] `GET /api/v1/workspaces/{workspace_id}/knowledge/sources`
 - [x] `GET/PATCH /api/v1/workspaces/{workspace_id}/knowledge/sources/{source_id}`
 - [x] `POST .../{source_id}/pause`, `.../resume`, and `.../archive`
-- [ ] Add ingestion-job and citation endpoints after the fetch contract is accepted.
+- [x] Add ingestion request, history, and detail endpoints for workspace-file sources.
+- [ ] Add citation endpoints after the isolated URL-fetch contract is accepted.
 
 Tests:
 
@@ -750,13 +753,15 @@ Tests:
 - [x] URL and workspace-file sources are isolated by workspace
 - [x] insecure URLs, secret query/configuration values, and foreign files fail closed
 - [x] archived sources are excluded from default reads
-- [ ] ingestion, extraction, citation, and retrieval evidence tests
+- [x] workspace-file ingestion, queue idempotency, bounded extraction, and failure evidence tests
+- [ ] URL ingestion, citation, and permission-aware retrieval evidence tests
 
 Acceptance:
 
 - users can register and govern workspace knowledge sources without exposing credentials or
-  crossing tenant boundaries; no source is considered searchable until the later ingestion gate is
-  complete.
+  crossing tenant boundaries; active workspace-file sources become searchable only after a
+  successful, auditable ingestion attempt. URL sources remain unavailable until isolated fetching
+  is implemented.
 
 ## P2: Dynamic Manager Planning And Planning Failure Review
 

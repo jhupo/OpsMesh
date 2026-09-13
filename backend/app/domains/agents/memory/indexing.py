@@ -179,7 +179,7 @@ class WorkspaceMemoryIndexingService:
             source_type=source_type,
             source_id=source_id_text,
         )
-        chunks = _chunks(text)
+        chunks = chunk_text(text)
         for index, chunk in enumerate(chunks):
             entry = WorkspaceMemoryEntry(
                 workspace_id=workspace_id,
@@ -236,7 +236,7 @@ class WorkspaceMemoryIndexingService:
         return len(entries)
 
 
-def _chunks(text: str) -> list[str]:
+def chunk_text(text: str) -> list[str]:
     normalized = " ".join(text.split())
     if not normalized:
         return []

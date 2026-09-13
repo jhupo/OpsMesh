@@ -8,6 +8,21 @@ def required_string(payload: dict[str, object], key: str, *, context: str) -> st
     return value.strip()
 
 
+def required_int(
+    payload: dict[str, object],
+    key: str,
+    *,
+    context: str,
+    minimum: int | None = None,
+) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{context} is missing a valid {key}")
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{context} {key} must be at least {minimum}")
+    return value
+
+
 def positive_int(value: object, *, default: int, key: str, context: str) -> int:
     if value is None:
         return default
