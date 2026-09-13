@@ -123,6 +123,16 @@ The backend must provide:
    Active, acceptance-driven plan for SDK adaptation, approvals, workspace I/O, context and memory,
    orchestration, and per-run isolation.
 
+25. [Architecture Consolidation Plan](architecture-consolidation-plan.md)
+
+   Repository-wide ownership map, dependency direction, runtime modes, migration sequence, and
+   acceptance criteria for keeping the backend modular without compatibility shims.
+
+26. [Code Organization Audit](code-organization-audit.md)
+
+   Evidence log for completed file moves, ownership decisions, focused validation, and remaining
+   boundaries that are intentionally retained for independent lifecycles or adapters.
+
 ## Non-Negotiable Backend Rules
 
 - Workspace isolation is mandatory.
