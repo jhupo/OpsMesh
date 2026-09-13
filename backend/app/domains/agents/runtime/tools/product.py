@@ -135,7 +135,7 @@ class ProductToolExecutor:
             )
         except (ToolResourceNotFoundError, ValueError) as exc:
             error_code = getattr(exc, "code", "product_tool_failed")
-            if tool_name == "read_workspace_file":
+            if tool_name in {"read_workspace_file", "get_knowledge_citations"}:
                 if error_code == "product_tool_failed":
                     error_code = "workspace_file_not_found"
                 AgentToolGateway(self._session).record_denial(
@@ -321,6 +321,12 @@ def _execute_product_tool(
                 ),
             )
         }
+    if tool_name == "get_knowledge_citations":
+        return service.get_knowledge_citations(
+            context,
+            memory_entry_id=uuid_argument(arguments, "memory_entry_id"),
+            access_scopes=memory_read_scopes(resource_grants),
+        )
     if tool_name == "upsert_semantic_memory":
         return memory_entry_payload(
             service.upsert_semantic_memory(

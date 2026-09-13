@@ -568,7 +568,8 @@ Tasks:
     citation spans for every materialized chunk.
   - [x] Add immutable source revision history with workspace-scoped list/detail APIs and migration
     backfill for existing source declarations.
-- [ ] Add permission-aware citation retrieval.
+  - [x] Add permission-aware citation retrieval through memory resource grants and exclude paused
+    or archived sources from agent search.
 
 ## Phase 22: Persistent AI Organization Architecture
 

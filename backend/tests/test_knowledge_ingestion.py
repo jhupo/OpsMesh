@@ -10,6 +10,9 @@ from backend.app.core.common.config import Settings
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
+from backend.app.domains.capabilities.tools.context import ToolContext
+from backend.app.domains.capabilities.tools.product_memory import KnowledgeCitationAccessError
+from backend.app.domains.capabilities.tools.product_service import ProductToolService
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.knowledge.ingestion import KnowledgeSourceIngestionService
 from backend.app.domains.knowledge.models import (
@@ -164,6 +167,59 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
     assert authorized
     assert authorized[0]["source_type"] == "knowledge_source"
     assert denied == []
+    product_context = ToolContext(
+        workspace_id=workspace.id,
+        agent_run_id=None,
+        task_id=None,
+        allowed_tools=frozenset({"search_workspace_memory", "get_knowledge_citations"}),
+    )
+    product_results = ProductToolService(session).search_workspace_memory(
+        product_context,
+        "OpsMesh knowledge",
+        source_types={"knowledge_source"},
+        access_scopes=(
+            AuthorizedMemoryScope(
+                resource_id=workspace.id,
+                access_mode="read",
+                source_types=frozenset({"knowledge_source"}),
+                scope_types=frozenset({"workspace"}),
+                scope_ids=frozenset({str(workspace.id)}),
+            ),
+        ),
+    )
+    assert product_results[0]["citations"]
+    memory_entry_id = UUID(str(product_results[0]["metadata"]["memory_entry_id"]))
+    citation_result = ProductToolService(session).get_knowledge_citations(
+        product_context,
+        memory_entry_id=memory_entry_id,
+        access_scopes=(
+            AuthorizedMemoryScope(
+                resource_id=workspace.id,
+                access_mode="read",
+                source_types=frozenset({"knowledge_source"}),
+                scope_types=frozenset({"workspace"}),
+                scope_ids=frozenset({str(workspace.id)}),
+            ),
+        ),
+    )
+    assert citation_result["total"] == 1
+    assert citation_result["items"][0]["memory_entry_id"] == str(memory_entry_id)
+    try:
+        ProductToolService(session).get_knowledge_citations(
+            product_context,
+            memory_entry_id=memory_entry_id,
+            access_scopes=(
+                AuthorizedMemoryScope(
+                    resource_id=workspace.id,
+                    access_mode="read",
+                    source_types=frozenset({"workspace_memory"}),
+                ),
+            ),
+        )
+    except KnowledgeCitationAccessError as exc:
+        assert "authorized resource scope" in str(exc)
+    else:
+        raise AssertionError("Expected citation retrieval to require knowledge source scope")
 
     duplicate = service.request(
         workspace_id=workspace.id,
@@ -172,6 +228,30 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
     )
     assert duplicate.id == ingestion.id
     assert duplicate.status == "succeeded"
+    source_path = f"/api/v1/workspaces/{workspace.id}/knowledge/sources"
+    archived = client.post(
+        f"{source_path}/{source_id}/archive",
+        headers=_headers(owner.id),
+        json={"expected_version": 1},
+    )
+    assert archived.status_code == 200
+    assert (
+        WorkspaceMemorySearchService(session).search(
+            workspace_id=workspace.id,
+            query="OpsMesh knowledge",
+            source_types={"knowledge_source"},
+            access_scopes=(
+                AuthorizedMemoryScope(
+                    resource_id=workspace.id,
+                    access_mode="read",
+                    source_types=frozenset({"knowledge_source"}),
+                    scope_types=frozenset({"workspace"}),
+                    scope_ids=frozenset({str(workspace.id)}),
+                ),
+            ),
+        )
+        == []
+    )
 
 
 def test_ingestion_route_enqueues_idempotent_job_and_rejects_url(tmp_path) -> None:

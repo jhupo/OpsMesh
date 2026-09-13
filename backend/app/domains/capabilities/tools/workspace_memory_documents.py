@@ -16,6 +16,7 @@ from backend.app.domains.agents.memory.retrieval_search import (
     memory_entry_source_id,
     memory_entry_source_type,
 )
+from backend.app.domains.knowledge.models import KnowledgeSource
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.domains.models import DomainItem
 from backend.app.domains.workspace.storage.artifact_models import Artifact
@@ -73,6 +74,15 @@ class WorkspaceMemoryDocumentRepository:
             )
             .limit(SOURCE_LIMIT)
         ).all()
+        active_knowledge_source_ids = {
+            str(source_id)
+            for source_id in self._session.scalars(
+                select(KnowledgeSource.id).where(
+                    KnowledgeSource.workspace_id == workspace_id,
+                    KnowledgeSource.status == "active",
+                )
+            ).all()
+        }
         return [
             MemorySearchDocument(
                 source_type=memory_entry_source_type(entry),
@@ -89,6 +99,8 @@ class WorkspaceMemoryDocumentRepository:
                 metadata=memory_entry_document_metadata(entry),
             )
             for entry in entries
+            if entry.source_type != "knowledge_source"
+            or entry.source_id in active_knowledge_source_ids
         ]
 
     def file_candidates(self, workspace_id: UUID) -> list[MemorySearchDocument]:

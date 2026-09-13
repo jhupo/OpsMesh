@@ -740,7 +740,7 @@ Build:
   runtime command evidence.
 - [x] Materialize URL content with shared chunking and checksum evidence.
 - [x] Add immutable source revision snapshots and citation spans for every materialized chunk.
-- [ ] Complete permission-aware citation retrieval integration with resource-grant filtering.
+- [x] Complete permission-aware citation retrieval integration with resource-grant filtering.
 
 API/data changes:
 
@@ -750,6 +750,8 @@ API/data changes:
 - [x] `POST .../{source_id}/pause`, `.../resume`, and `.../archive`
 - [x] Add ingestion request, history, and detail endpoints for workspace-file sources.
 - [x] Add citation-span records and a workspace-scoped citation listing endpoint.
+- [x] Add the `get_knowledge_citations` product tool and attach authorized citation spans to
+  knowledge-memory search results.
 
 Tests:
 
@@ -759,14 +761,16 @@ Tests:
 - [x] archived sources are excluded from default reads
 - [x] workspace-file ingestion, queue idempotency, bounded extraction, and failure evidence tests
 - [x] URL ingestion through an isolated runtime and citation evidence tests
-- [ ] permission-aware retrieval evidence tests
+- [x] permission-aware citation retrieval and archived-source denial evidence tests
 
 Acceptance:
 
 - users can register and govern workspace knowledge sources without exposing credentials or
   crossing tenant boundaries; active workspace-file sources become searchable only after a
-  successful, auditable ingestion attempt. URL sources require an explicitly bound,
-  network-enabled fetch runtime and never fetch directly in the API process.
+  successful, auditable ingestion attempt. Knowledge citations are returned only through an
+  authorized memory resource grant, and paused or archived sources are excluded from agent
+  retrieval. URL sources require an explicitly bound, network-enabled fetch runtime and never
+  fetch directly in the API process.
 
 ## P2: Dynamic Manager Planning And Planning Failure Review
 

@@ -21,7 +21,13 @@ from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundEr
 from backend.app.domains.capabilities.tools.product_events import ProductToolEventRecorder
 from backend.app.domains.capabilities.tools.product_normalization import normalized_tags
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
+from backend.app.domains.knowledge.ingestion import KnowledgeSourceIngestionService
+from backend.app.domains.knowledge.models import KnowledgeCitation
 from backend.app.domains.orchestration.runs.models import AgentRun
+
+
+class KnowledgeCitationAccessError(ToolResourceNotFoundError):
+    code = "knowledge_citation_access_denied"
 
 
 class WorkspaceMemoryProductTools(ProductToolEventRecorder):
@@ -54,8 +60,68 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
             query_embedding_evidence=embedding_evidence,
             agent_run_id=context.agent_run_id,
         )
+        memory_entry_ids = {
+            parsed_id
+            for result in results
+            if result.get("source_type") == "knowledge_source"
+            for metadata in [result.get("metadata")]
+            if isinstance(metadata, dict)
+            for raw_id in [metadata.get("memory_entry_id")]
+            if raw_id is not None
+            for parsed_id in [_parse_uuid(raw_id)]
+            if parsed_id is not None
+        }
+        citations_by_entry = KnowledgeSourceIngestionService(
+            self._session
+        ).authorized_citations_for_memory_entries(
+            workspace_id=context.workspace_id,
+            memory_entry_ids=memory_entry_ids,
+            access_scopes=access_scopes,
+        )
+        for result in results:
+            if result.get("source_type") != "knowledge_source":
+                continue
+            metadata = result.get("metadata")
+            memory_entry_id = (
+                _parse_uuid(metadata.get("memory_entry_id"))
+                if isinstance(metadata, dict)
+                else None
+            )
+            if memory_entry_id is not None:
+                result["citations"] = [
+                    _citation_payload(citation)
+                    for citation in citations_by_entry.get(memory_entry_id, [])
+                ]
         self._append_tool_event(context, "tool.completed", "search_workspace_memory")
         return results
+
+    def get_knowledge_citations(
+        self,
+        context: ToolContext,
+        *,
+        memory_entry_id: UUID,
+        access_scopes: tuple[AuthorizedMemoryScope, ...],
+    ) -> dict[str, object]:
+        context.require_tool("get_knowledge_citations")
+        self._append_tool_event(context, "tool.called", "get_knowledge_citations")
+        try:
+            citations = KnowledgeSourceIngestionService(
+                self._session
+            ).authorized_citations_for_memory_entry(
+                workspace_id=context.workspace_id,
+                memory_entry_id=memory_entry_id,
+                access_scopes=access_scopes,
+            )
+        except ValueError as exc:
+            raise KnowledgeCitationAccessError(
+                "Knowledge citation is outside the authorized resource scope"
+            ) from exc
+        result = {
+            "items": [_citation_payload(citation) for citation in citations],
+            "total": len(citations),
+        }
+        self._append_tool_event(context, "tool.completed", "get_knowledge_citations")
+        return result
 
     def _query_embedding(
         self,
@@ -209,3 +275,27 @@ def _require_memory_write(
         for scope in access_scopes
     ):
         raise ValueError("Memory write is outside the authorized resource scope")
+
+
+def _citation_payload(citation: KnowledgeCitation) -> dict[str, object]:
+    return {
+        "id": str(citation.id),
+        "workspace_id": str(citation.workspace_id),
+        "source_id": str(citation.source_id),
+        "ingestion_id": str(citation.ingestion_id),
+        "memory_entry_id": str(citation.memory_entry_id),
+        "source_version": citation.source_version,
+        "chunk_index": citation.chunk_index,
+        "locator": citation.locator,
+        "start_offset": citation.start_offset,
+        "end_offset": citation.end_offset,
+        "quote": citation.quote,
+        "quote_sha256": citation.quote_sha256,
+    }
+
+
+def _parse_uuid(value: object) -> UUID | None:
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        return None

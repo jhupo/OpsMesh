@@ -99,6 +99,16 @@ PRODUCT_TOOL_CATALOG = (
         required_access_modes=("read", "read_write"),
     ),
     ProductToolDefinition(
+        name="get_knowledge_citations",
+        description="Read citation spans for one authorized knowledge-memory entry.",
+        input_schema=_object_schema(
+            {"memory_entry_id": UUID_SCHEMA},
+            required=("memory_entry_id",),
+        ),
+        required_resource_type="memory_collection",
+        required_access_modes=("read", "read_write"),
+    ),
+    ProductToolDefinition(
         name="upsert_semantic_memory",
         description=(
             "Create or revise authorized workspace, team, or agent knowledge with version history."

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.db.errors import flush_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars_by_offset
+from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.configuration import initial_embedding_status
 from backend.app.domains.agents.memory.indexing import chunk_text_with_offsets
 from backend.app.domains.agents.memory.models import (
@@ -193,6 +194,131 @@ class KnowledgeSourceIngestionService:
             limit=limit,
             offset=offset,
         )
+
+    def authorized_citations_for_memory_entry(
+        self,
+        *,
+        workspace_id: UUID,
+        memory_entry_id: UUID,
+        access_scopes: tuple[AuthorizedMemoryScope, ...],
+    ) -> list[KnowledgeCitation]:
+        entry = self._session.scalar(
+            select(WorkspaceMemoryEntry).where(
+                WorkspaceMemoryEntry.workspace_id == workspace_id,
+                WorkspaceMemoryEntry.id == memory_entry_id,
+                WorkspaceMemoryEntry.source_type == "knowledge_source",
+                WorkspaceMemoryEntry.entry_type == "knowledge_chunk",
+                WorkspaceMemoryEntry.status == "active",
+            )
+        )
+        if entry is None or entry.source_id is None:
+            raise ValueError("Knowledge memory entry not found")
+        if not any(
+            scope.allows(
+                source_type="knowledge_source",
+                tags=set(entry.tags),
+                scope_type=entry.scope_type,
+                scope_id=entry.scope_id,
+            )
+            for scope in access_scopes
+        ):
+            raise ValueError("Knowledge memory entry is outside the authorized resource scope")
+        try:
+            source_id = UUID(entry.source_id)
+        except ValueError as exc:
+            raise ValueError("Knowledge memory entry source is invalid") from exc
+        source = self._session.scalar(
+            select(KnowledgeSource).where(
+                KnowledgeSource.workspace_id == workspace_id,
+                KnowledgeSource.id == source_id,
+                KnowledgeSource.status == "active",
+            )
+        )
+        if source is None:
+            raise ValueError("Knowledge source is not active")
+        return list(
+            self._session.scalars(
+                select(KnowledgeCitation).where(
+                    KnowledgeCitation.workspace_id == workspace_id,
+                    KnowledgeCitation.source_id == source_id,
+                    KnowledgeCitation.memory_entry_id == memory_entry_id,
+                ).order_by(KnowledgeCitation.chunk_index, KnowledgeCitation.id)
+            ).all()
+        )
+
+    def authorized_citations_for_memory_entries(
+        self,
+        *,
+        workspace_id: UUID,
+        memory_entry_ids: set[UUID],
+        access_scopes: tuple[AuthorizedMemoryScope, ...],
+    ) -> dict[UUID, list[KnowledgeCitation]]:
+        if not memory_entry_ids or not access_scopes:
+            return {}
+        entries = self._session.scalars(
+            select(WorkspaceMemoryEntry).where(
+                WorkspaceMemoryEntry.workspace_id == workspace_id,
+                WorkspaceMemoryEntry.id.in_(memory_entry_ids),
+                WorkspaceMemoryEntry.source_type == "knowledge_source",
+                WorkspaceMemoryEntry.entry_type == "knowledge_chunk",
+                WorkspaceMemoryEntry.status == "active",
+            )
+        ).all()
+        authorized_entries = [
+            entry
+            for entry in entries
+            if any(
+                scope.allows(
+                    source_type="knowledge_source",
+                    tags=set(entry.tags),
+                    scope_type=entry.scope_type,
+                    scope_id=entry.scope_id,
+                )
+                for scope in access_scopes
+            )
+        ]
+        source_ids: set[UUID] = set()
+        entry_source_ids: dict[UUID, UUID] = {}
+        for entry in authorized_entries:
+            if entry.source_id is None:
+                continue
+            try:
+                source_id = UUID(entry.source_id)
+            except ValueError:
+                continue
+            source_ids.add(source_id)
+            entry_source_ids[entry.id] = source_id
+        if not source_ids:
+            return {}
+        active_source_ids = set(
+            self._session.scalars(
+                select(KnowledgeSource.id).where(
+                    KnowledgeSource.workspace_id == workspace_id,
+                    KnowledgeSource.status == "active",
+                    KnowledgeSource.id.in_(source_ids),
+                )
+            ).all()
+        )
+        eligible_entry_ids = {
+            entry_id
+            for entry_id, source_id in entry_source_ids.items()
+            if source_id in active_source_ids
+        }
+        if not eligible_entry_ids:
+            return {}
+        citations = self._session.scalars(
+            select(KnowledgeCitation)
+            .where(
+                KnowledgeCitation.workspace_id == workspace_id,
+                KnowledgeCitation.memory_entry_id.in_(eligible_entry_ids),
+                KnowledgeCitation.source_id.in_(active_source_ids),
+            )
+            .order_by(KnowledgeCitation.memory_entry_id, KnowledgeCitation.chunk_index)
+        ).all()
+        grouped: dict[UUID, list[KnowledgeCitation]] = {}
+        for citation in citations:
+            grouped.setdefault(citation.memory_entry_id, []).append(citation)
+        return grouped
 
     def start(
         self,
