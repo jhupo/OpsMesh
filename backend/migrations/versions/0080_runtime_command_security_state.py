@@ -3,7 +3,7 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0080_runtime_command_security_state"
+revision = "0080_cmd_security_state"
 down_revision = "0079_per_run_runtime_execution"
 branch_labels = None
 depends_on = None

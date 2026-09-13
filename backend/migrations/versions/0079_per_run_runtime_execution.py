@@ -4,9 +4,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision = "0079_per_run_runtime_execution"
-down_revision = "0078_add_run_runtime_cleanup_state"
+down_revision = "0078_runtime_cleanup_state"
 branch_labels = None
 depends_on = None
 

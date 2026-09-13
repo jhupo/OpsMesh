@@ -4,8 +4,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
-revision = "0078_add_run_runtime_cleanup_state"
+revision = "0078_runtime_cleanup_state"
 down_revision = "0077_structured_workflow_data"
 branch_labels = None
 depends_on = None

@@ -5,7 +5,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0081_self_hosted_attestation"
-down_revision = "0080_runtime_command_security_state"
+down_revision = "0080_cmd_security_state"
 branch_labels = None
 depends_on = None
 
