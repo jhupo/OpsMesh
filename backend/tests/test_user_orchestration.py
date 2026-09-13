@@ -1,9 +1,15 @@
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
 from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.domains.orchestration.tasks.execution.diagnostics import (
+    TaskExecutionDiagnosticsService,
+)
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
@@ -381,6 +387,71 @@ def test_condition_language_is_bounded_and_reports_pending_step_state() -> None:
     result = evaluate_task_step_condition(session, task, dependent)
 
     assert result.state == "pending"
+
+
+def test_execution_diagnostics_exposes_node_results_attempts_and_approval_state() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    agent = AgentProfile(
+        workspace_id=workspace.id,
+        name="Reviewer",
+        role="reviewer",
+        model="gpt-5.5",
+    )
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Inspect")
+    session.add_all([agent, task])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        work_package_id="review",
+        assigned_agent_profile_id=agent.id,
+        title="Review",
+        status="waiting_approval",
+        result_summary="Evidence collected",
+        result_payload={"artifact": "review.md"},
+    )
+    session.add(step)
+    session.flush()
+    from backend.app.domains.orchestration.runs.models import AgentRun
+
+    run = AgentRun(
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=agent.id,
+        status="waiting_approval",
+        model="gpt-5.5",
+        output={"summary": "Evidence collected"},
+    )
+    session.add(run)
+    session.flush()
+    session.add(
+        Approval(
+            workspace_id=workspace.id,
+            task_id=task.id,
+            agent_run_id=run.id,
+            requested_by_agent_profile_id=agent.id,
+            approval_type="tool",
+            risk_level="medium",
+            payload={"tool_name": "publish"},
+            status="pending",
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.flush()
+
+    diagnostics = TaskExecutionDiagnosticsService(session).get_diagnostics(
+        workspace_id=workspace.id,
+        task_id=task.id,
+    )
+    assert diagnostics is not None
+    payload = diagnostics["steps"][0]
+    assert payload["attempt_count"] == 1
+    assert payload["result_payload"] == {"artifact": "review.md"}
+    assert payload["approval_state"]["pending_count"] == 1
+    assert payload["diagnostics"]["approval_blocked"] is True
+    assert payload["runs"][0]["output"] == {"summary": "Evidence collected"}
 
 
 def test_orchestration_api_supports_draft_publish_edit_and_archive() -> None:

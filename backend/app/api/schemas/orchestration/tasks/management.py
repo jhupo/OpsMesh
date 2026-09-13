@@ -155,14 +155,19 @@ class TaskExecutionRunDiagnostic(BaseModel):
     id: UUID
     status: str
     agent_profile_id: UUID | None
+    model: str | None
     runtime_id: UUID | None
     runtime_space_id: UUID | None
     started_at: datetime | None
     completed_at: datetime | None
+    output: dict[str, object] | None
     error: dict[str, object] | None
 
-    @field_serializer("error")
-    def _serialize_error(self, value: dict[str, object] | None) -> dict[str, object] | None:
+    @field_serializer("output", "error")
+    def _serialize_payload(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
         return redact_sensitive_payload(value) if value is not None else None
 
 
@@ -188,7 +193,11 @@ class TaskExecutionStepDiagnostic(BaseModel):
     handoff: dict[str, object]
     runs: list[TaskExecutionRunDiagnostic]
     active_run_ids: list[UUID]
+    attempt_count: int
     result_summary: str | None
+    result_payload: dict[str, object] | None
+    approval_state: dict[str, object]
+    diagnostics: dict[str, object]
 
     @field_serializer(
         "review_policy",
@@ -196,9 +205,18 @@ class TaskExecutionStepDiagnostic(BaseModel):
         "dependency_state",
         "scheduling",
         "handoff",
+        "approval_state",
+        "diagnostics",
     )
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+    @field_serializer("result_payload")
+    def _serialize_result_payload(
+        self,
+        value: dict[str, object] | None,
+    ) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
 
 
 class TaskExecutionDiagnosticsResponse(BaseModel):

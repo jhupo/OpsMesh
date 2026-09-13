@@ -12,7 +12,7 @@ share the canonical node contract, admission policy, durable execution and mutat
 | Typed executable node catalog | Done | Agent, direct tool/MCP, control, approval and subworkflow nodes use the shared contract and existing SDK/tool/approval/task boundaries; child execution is pinned to an immutable revision |
 | Structured data flow | Done | Nodes declare bounded task/step input bindings; completed steps persist structured outputs; bindings are redacted, size-limited and workspace-scoped; conditions and output schemas validate against the same data |
 | Human/AI editing policy | Done | Locked nodes and incident edges require an explicit edit scope and privileged workspace role; out-of-scope mutations are rejected and audited |
-| Execution inspection | Pending | Persisted per-node results, attempts, approval state and diagnostics usable by a future canvas |
+| Execution inspection | Done | Execution diagnostics now expose persisted per-node result payloads, run outputs and attempt counts, approval/pending-tool state, and redacted failure diagnostics for a future canvas |
 | PostgreSQL integration | Done for revisions | Real PostgreSQL 18: migration round trip with existing data, concurrent publication/application, Alembic metadata check |
 
 No frontend, new provider framework, or second queue is introduced. Existing provider SDK adapters,

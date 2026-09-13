@@ -267,10 +267,12 @@ def run_payload(run: AgentRun) -> dict[str, object]:
         "id": run.id,
         "status": run.status,
         "agent_profile_id": run.agent_profile_id,
+        "model": run.model,
         "runtime_id": run.runtime_id,
         "runtime_space_id": run.runtime_space_id,
         "started_at": run.started_at,
         "completed_at": run.completed_at,
+        "output": redact_sensitive_payload(run.output) if isinstance(run.output, dict) else None,
         "error": redact_sensitive_payload(run.error) if isinstance(run.error, dict) else None,
     }
 
