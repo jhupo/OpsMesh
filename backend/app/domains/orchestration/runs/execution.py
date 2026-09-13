@@ -30,11 +30,15 @@ from backend.app.domains.orchestration.approvals.agent_tool_interruptions import
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.domains.orchestration.approvals.service import ApprovalService
 from backend.app.domains.orchestration.approvals.waiting import ApprovalWaitingService
+from backend.app.domains.orchestration.requests.authorization import RunAuthorizationService
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.requests.run_gateway import ModelRunGateway
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.lifecycle import RunLifecycleService
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.runs.runtime_authorization import (
+    RunRuntimeAuthorizationError,
+)
 from backend.app.domains.orchestration.runs.runtime_event_messages import (
     RunRuntimeEventMessageMapper,
 )
@@ -130,6 +134,19 @@ class RunExecutionService:
                     if node_type in {"tool", "mcp", "approval", "subworkflow"}
                     else self._request_builder().build_agent_request(run, job)
                 )
+            except RunRuntimeAuthorizationError as exc:
+                RunAuthorizationService(self.session).record_runtime_denial(run, exc)
+                self._lifecycle().mark_run_failed(
+                    run,
+                    AgentRuntimePolicyError(
+                        code=exc.code,
+                        message=str(exc),
+                        event_type="runtime.authorization_blocked",
+                        metadata={"reason": exc.code},
+                    ),
+                )
+                self._commit_and_refresh(run)
+                return run
             except (ModelProviderUnavailableError, AgentRuntimePolicyError) as exc:
                 if isinstance(exc, ModelProviderUnavailableError):
                     self._events().append_model_provider_unavailable_event(run, exc)

@@ -24,6 +24,7 @@ from backend.app.domains.capabilities.models import (
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import (
     AgentRun,
+    RunEvent,
     authorization_snapshot_fingerprint,
 )
 from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
@@ -131,7 +132,7 @@ class RunAuthorizationService:
                 snapshot=snapshot,
             )
         except RunRuntimeAuthorizationError as exc:
-            self._record_runtime_denial(run, exc)
+            self.record_runtime_denial(run, exc)
             raise
         catalog = capability_catalog_for_snapshot(snapshot)
         if catalog is None:
@@ -159,11 +160,19 @@ class RunAuthorizationService:
             lock=lock_resources,
         )
 
-    def _record_runtime_denial(
+    def record_runtime_denial(
         self,
         run: AgentRun,
         denial: RunRuntimeAuthorizationError,
     ) -> None:
+        if self.session.scalar(
+            select(RunEvent.id).where(
+                RunEvent.workspace_id == run.workspace_id,
+                RunEvent.agent_run_id == run.id,
+                RunEvent.event_type == "runtime.authorization_blocked",
+            )
+        ) is not None:
+            return
         RunEventRecorder(self.session).append_event(
             run,
             "runtime.authorization_blocked",
