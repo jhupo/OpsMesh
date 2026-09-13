@@ -308,13 +308,13 @@ recommended order, and boundaries that remain owned by OpsMesh.
 
 ## Next Goals
 
-Active implementation is Phase 7, integrated agent-runtime closure, in the
-[Agent runtime completion plan](docs/agent-runtime-completion-plan.md). Phases 1-6 and the 7.1-7.4
-runtime workflow, recovery, operations evidence, and architecture documentation gates are complete.
-The remaining 7.5 release gate is intentionally tag-only: a new canonical release tag must run the
-complete suite, real PostgreSQL migration checks, native packaging, candidate image probes, signed
-publication, and managed delivery acceptance before the current checkout is called release-ready.
-Normal development uses the focused checks described in the completion plan.
+Active implementation is post-Phase 7 hardening across the
+[Agent runtime completion plan](docs/agent-runtime-completion-plan.md) and backend completion plan.
+The runtime workflow, recovery, operations evidence, architecture gates, and knowledge-source
+registry stage are complete. The remaining 7.5 release gate is intentionally tag-only: a new
+canonical release tag must run the complete suite, real PostgreSQL migration checks, native
+packaging, candidate image probes, signed publication, and managed delivery acceptance before the
+current checkout is called release-ready. Normal development uses focused checks.
 
 ### 1. Restore and protect the quality baseline
 
