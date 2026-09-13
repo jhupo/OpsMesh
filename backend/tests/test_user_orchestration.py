@@ -8,6 +8,7 @@ from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, Ta
 from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
+    OrchestrationEditScope,
 )
 from backend.app.domains.orchestration.workflows.definitions.conditions import (
     evaluate_task_step_condition,
@@ -432,6 +433,88 @@ def test_orchestration_api_supports_draft_publish_edit_and_archive() -> None:
     assert archived.status_code == 200
     assert archived.json()["status"] == "archived"
     assert session.query(Task).count() == 0
+
+
+def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    service = OrchestrationDefinitionService(session)
+    definition = service.create_definition(
+        workspace.id,
+        OrchestrationDefinitionCreate(
+            key="locked-flow",
+            name="Locked flow",
+            nodes=[
+                WorkflowNode(package_id="source", title="Source", locked=True),
+                WorkflowNode(package_id="review", title="Review"),
+            ],
+        ),
+        user.id,
+    )
+
+    with pytest.raises(ValueError, match="privileged editor"):
+        service.update_definition(
+            workspace.id,
+            definition.id,
+            OrchestrationDefinitionUpdate(
+                expected_version=1,
+                nodes=[
+                    WorkflowNode(package_id="source", title="Changed", locked=True),
+                    WorkflowNode(package_id="review", title="Review"),
+                ],
+            ),
+            user.id,
+        )
+    session.rollback()
+
+    with pytest.raises(ValueError, match="authorized edit scope"):
+        service.update_definition(
+            workspace.id,
+            definition.id,
+            OrchestrationDefinitionUpdate(
+                expected_version=1,
+                nodes=[
+                    WorkflowNode(package_id="source", title="Changed", locked=True),
+                    WorkflowNode(package_id="review", title="Review"),
+                ],
+                edit_scope=OrchestrationEditScope(node_ids=["review"]),
+            ),
+            user.id,
+            allow_locked_edits=True,
+        )
+    session.rollback()
+
+    updated = service.update_definition(
+        workspace.id,
+        definition.id,
+        OrchestrationDefinitionUpdate(
+            expected_version=1,
+            nodes=[
+                WorkflowNode(package_id="source", title="Source", locked=True),
+                WorkflowNode(package_id="review", title="Review", depends_on=["source"]),
+            ],
+            edit_scope=OrchestrationEditScope(edge_ids=["source->review"]),
+        ),
+        user.id,
+        allow_locked_edits=True,
+    )
+    assert updated.version == 2
+
+    with pytest.raises(ValueError, match="authorized edit scope"):
+        service.update_definition(
+            workspace.id,
+            definition.id,
+            OrchestrationDefinitionUpdate(
+                expected_version=2,
+                nodes=[
+                    WorkflowNode(package_id="source", title="Changed", locked=True),
+                    WorkflowNode(package_id="review", title="Review", depends_on=["source"]),
+                ],
+                edit_scope=OrchestrationEditScope(edge_ids=["source->review"]),
+            ),
+            user.id,
+            allow_locked_edits=True,
+        )
 
 
 def test_workspace_user_can_edit_team_capability_and_mcp_tool_properties() -> None:

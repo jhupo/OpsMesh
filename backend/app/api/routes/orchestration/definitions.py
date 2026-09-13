@@ -18,7 +18,7 @@ from backend.app.api.schemas.orchestration.definitions import (
 )
 from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.auth.dependencies import workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.core.auth.permissions import WorkspaceAction, WorkspaceRole
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import DatabaseConflictError
@@ -129,6 +129,7 @@ async def update_orchestration(
             orchestration_definition_id,
             request,
             context.user.user_id,
+            allow_locked_edits=context.role in {WorkspaceRole.OWNER, WorkspaceRole.ADMIN},
         )
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
@@ -252,6 +253,7 @@ def _http_error(exc: OrchestrationDefinitionError) -> HTTPException:
         "orchestration_task_active_run",
         "orchestration_task_terminal",
         "orchestration_version_mismatch",
+        "orchestration_locked_region",
     }:
         error_status = status.HTTP_409_CONFLICT
     else:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
 
@@ -20,6 +20,32 @@ class OrchestrationDefinitionCreate(BaseModel):
     nodes: list[WorkflowNode] = Field(min_length=1, max_length=128)
 
 
+class OrchestrationEditScope(BaseModel):
+    """Explicit region a privileged editor is allowed to change."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    node_ids: list[str] = Field(default_factory=list, max_length=128)
+    edge_ids: list[str] = Field(default_factory=list, max_length=256)
+
+    @field_validator("node_ids")
+    @classmethod
+    def validate_node_ids(cls, value: list[str]) -> list[str]:
+        if any(not item for item in value) or len(value) != len(set(value)):
+            raise ValueError("edit_scope.node_ids must contain unique non-empty IDs")
+        return value
+
+    @field_validator("edge_ids")
+    @classmethod
+    def validate_edge_ids(cls, value: list[str]) -> list[str]:
+        if any(
+            not item or "->" not in item or item.startswith("->") or item.endswith("->")
+            for item in value
+        ) or len(value) != len(set(value)):
+            raise ValueError("edit_scope.edge_ids must contain unique source->target IDs")
+        return value
+
+
 class OrchestrationDefinitionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -28,10 +54,11 @@ class OrchestrationDefinitionUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=2_000)
     nodes: list[WorkflowNode] | None = Field(default=None, min_length=1, max_length=128)
+    edit_scope: OrchestrationEditScope | None = None
 
     @model_validator(mode="after")
     def require_change(self) -> OrchestrationDefinitionUpdate:
-        if not self.model_fields_set - {"expected_version"}:
+        if not self.model_fields_set - {"expected_version", "edit_scope"}:
             raise ValueError("At least one orchestration field is required")
         null_fields = sorted(
             field for field in self.model_fields_set if getattr(self, field) is None

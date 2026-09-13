@@ -23,6 +23,10 @@ from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSE
 from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
+    OrchestrationEditScope,
+)
+from backend.app.domains.orchestration.workflows.definitions.conditions import (
+    condition_step_references,
 )
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
@@ -161,6 +165,7 @@ class OrchestrationDefinitionService:
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
+        allow_locked_edits: bool = False,
     ) -> OrchestrationDefinition:
         definition = self._require_definition(workspace_id, orchestration_definition_id)
         changes = request.model_dump(exclude_unset=True)
@@ -172,6 +177,12 @@ class OrchestrationDefinitionService:
             request.nodes if request.nodes is not None else self._nodes_from_definition(definition)
         )
         serialized_nodes = self._validate_nodes(workspace_id, next_nodes)
+        self._enforce_edit_scope(
+            before=self._nodes_from_definition(definition),
+            after=next_nodes,
+            edit_scope=request.edit_scope,
+            allow_locked_edits=allow_locked_edits,
+        )
         before_version = definition.version
         if request.name is not None:
             definition.name = request.name
@@ -202,6 +213,74 @@ class OrchestrationDefinitionService:
             self._session.refresh(definition)
         return definition
 
+    def _enforce_edit_scope(
+        self,
+        *,
+        before: list[WorkflowNode],
+        after: list[WorkflowNode],
+        edit_scope: OrchestrationEditScope | None,
+        allow_locked_edits: bool,
+    ) -> None:
+        before_by_id = {node.package_id: node for node in before}
+        after_by_id = {node.package_id: node for node in after}
+        locked_ids = {node.package_id for node in before if node.locked}
+        changed_locked_nodes = {
+            package_id
+            for package_id in locked_ids
+            if before_by_id[package_id] != after_by_id.get(package_id)
+        }
+        before_edges = self._workflow_edges(before)
+        after_edges = self._workflow_edges(after)
+        changed_incident_edges = {
+            edge
+            for edge in before_edges.symmetric_difference(after_edges)
+            if edge[0] in locked_ids or edge[1] in locked_ids
+        }
+        if not changed_locked_nodes and not changed_incident_edges:
+            return
+        if not allow_locked_edits:
+            raise OrchestrationDefinitionError(
+                "Locked workflow regions require an authorized privileged editor",
+                code="orchestration_locked_region",
+            )
+        scope = edit_scope
+        authorized_nodes = set(scope.node_ids) if scope is not None else set()
+        authorized_edges = set(scope.edge_ids) if scope is not None else set()
+        missing_nodes = changed_locked_nodes - authorized_nodes
+        missing_edges = {
+            self._edge_key(source, target)
+            for source, target in changed_incident_edges
+        } - authorized_edges
+        if missing_nodes or missing_edges:
+            details: list[str] = []
+            if missing_nodes:
+                details.append("nodes=" + ",".join(sorted(missing_nodes)))
+            if missing_edges:
+                details.append("edges=" + ",".join(sorted(missing_edges)))
+            raise OrchestrationDefinitionError(
+                "Locked workflow changes fall outside the authorized edit scope: "
+                + "; ".join(details),
+                code="orchestration_locked_region",
+            )
+
+    @staticmethod
+    def _workflow_edges(nodes: list[WorkflowNode]) -> set[tuple[str, str]]:
+        edges: set[tuple[str, str]] = set()
+        for node in nodes:
+            for dependency in node.depends_on:
+                edges.add((dependency, node.package_id))
+            for dependency in condition_step_references(
+                node.condition.model_dump(mode="json", by_alias=True, exclude_none=True)
+                if node.condition is not None
+                else None
+            ):
+                edges.add((dependency, node.package_id))
+        return edges
+
+    @staticmethod
+    def _edge_key(source: str, target: str) -> str:
+        return f"{source}->{target}"
+
     def validate_definition(
         self,
         workspace_id: UUID,
@@ -221,6 +300,7 @@ class OrchestrationDefinitionService:
         actor_user_id: UUID | None = None,
         *,
         commit: bool = True,
+        allow_locked_edits: bool = False,
     ) -> OrchestrationDefinition:
         definition = self._require_definition(workspace_id, orchestration_definition_id)
         self._validate_nodes(workspace_id, self._nodes_from_definition(definition))
