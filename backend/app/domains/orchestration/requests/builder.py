@@ -173,7 +173,7 @@ class RunRequestBuilder:
                     if isinstance(project_workspace, dict)
                     else "/workspace"
                 ),
-                "backend": "runtime_manager",
+                "backend": "runtime",
                 "persistent": _runtime_execution_mode(run) == "persistent",
             }
             metadata["sandbox_session"] = sandbox_metadata
