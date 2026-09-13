@@ -24,6 +24,7 @@ by `main`. Shared core no longer imports HTTP error responses. The old core modu
 | Docker SDK | Only the managed Docker adapter may directly import the SDK |
 | S3 SDK | Only the storage adapter may directly import Boto3 |
 | Agent runtime contract | No direct or indirect provider SDK or API dependency, including type-checking imports |
+| Domain/application boundary | Domain and runtime code cannot import `api.services`; project export/import services are domain-owned |
 
 Configuration lives in `pyproject.toml`. There are no ignored-import exemptions or compatibility
 modules. Package markers in `runtime/environment`, `runtime/self_hosted` and `api/services` ensure

@@ -946,13 +946,13 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
     ]
     assert not configuration.get("exclude_type_checking_imports", False)
     contracts = configuration["contracts"]
-    assert len(contracts) == 7
+    assert len(contracts) == 8
     for contract in contracts:
         assert not contract.get("ignore_imports")
         assert not contract.get("allow_indirect_imports", False)
     result = lint(architecture_tree)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "7 kept, 0 broken" in result.stdout
+    assert "8 kept, 0 broken" in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -997,6 +997,11 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
             "domains/agents/runtime/execution/contracts.py",
             "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from openai import OpenAI",
             "Agent runtime contracts do not depend on vendor SDKs or HTTP transport",
+        ),
+        (
+            "domains/workspace/tenants/models.py",
+            "from backend.app.api.services.workspace.files import WorkspaceFileService",
+            "Domain and runtime code cannot depend on API application services",
         ),
     ],
 )

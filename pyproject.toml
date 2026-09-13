@@ -163,3 +163,10 @@ name = "Agent runtime contracts do not depend on vendor SDKs or HTTP transport"
 type = "forbidden"
 source_modules = ["backend.app.domains.agents.runtime.execution.contracts", "backend.app.domains.agents.runtime.sandbox"]
 forbidden_modules = ["agents", "openai", "anthropic", "claude_agent_sdk", "backend.app.api"]
+
+[[tool.importlinter.contracts]]
+id = "domain-no-api-services"
+name = "Domain and runtime code cannot depend on API application services"
+type = "forbidden"
+source_modules = ["backend.app.domains", "backend.app.runtime"]
+forbidden_modules = ["backend.app.api.services"]

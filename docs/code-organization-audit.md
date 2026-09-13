@@ -293,3 +293,7 @@ is used by tenant lifecycle actions and worker handlers. The complete export pac
 while tenant recovery, scheduled backup/restore and worker project handlers use the same owner.
 The former `api/services/workspace/{exports,imports}` packages are deleted, not left as forwarding
 shims. Focused export, maintenance and architecture tests plus Ruff and mypy pass for this move.
+
+The import-linter now protects the boundary by rejecting any future domain/runtime dependency on
+`api.services`; the contract is intentionally narrower than a blanket API-schema ban while the
+remaining transport response models are migrated by their owning domain.
