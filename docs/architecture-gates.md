@@ -75,4 +75,6 @@ migration, not an ignored-import workaround.
 
 After this bounded gate, active work returns to Phase 5 of the
 [Agent runtime completion plan](agent-runtime-completion-plan.md): task and agent orchestration.
-Knowledge-source registration, ingestion and citations remain later planned work.
+Knowledge-source registration, asynchronous workspace-file and isolated URL ingestion, immutable
+source revisions, and citation spans are covered by the current knowledge service. Permission-aware
+citation retrieval remains a planned gate.

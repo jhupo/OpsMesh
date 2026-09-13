@@ -49,6 +49,7 @@ from backend.app.domains.knowledge.models import (
     KnowledgeCitation,
     KnowledgeSource,
     KnowledgeSourceIngestion,
+    KnowledgeSourceRevision,
 )
 from backend.app.domains.orchestration.approvals.models import Approval, PendingToolInvocation
 from backend.app.domains.orchestration.models import (
@@ -193,6 +194,7 @@ __all__ = [
     "KnowledgeSource",
     "KnowledgeSourceIngestion",
     "KnowledgeCitation",
+    "KnowledgeSourceRevision",
     "TaskStep",
     "TaskTransfer",
     "TalentListing",

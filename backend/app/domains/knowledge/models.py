@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -173,3 +174,58 @@ class KnowledgeCitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     end_offset: Mapped[int] = mapped_column(Integer, nullable=False)
     quote: Mapped[str] = mapped_column(String(2_000), nullable=False)
     quote_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class KnowledgeSourceRevision(UUIDPrimaryKeyMixin, Base):
+    """Immutable source declaration snapshot for one source version."""
+
+    __tablename__ = "knowledge_source_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "version",
+            name="uq_knowledge_source_revisions_source_version",
+        ),
+        Index(
+            "ix_knowledge_source_revisions_workspace_source",
+            "workspace_id",
+            "source_id",
+        ),
+        CheckConstraint("version >= 1", name="knowledge_source_revision_version_positive"),
+        CheckConstraint(
+            "source_type in ('url', 'workspace_file')",
+            name="knowledge_source_revision_type_valid",
+        ),
+        CheckConstraint(
+            "status in ('active', 'paused', 'archived')",
+            name="knowledge_source_revision_status_valid",
+        ),
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_id: Mapped[UUID] = mapped_column(
+        ForeignKey("knowledge_sources.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    changed_by_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(String(2_000), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    uri: Mapped[str | None] = mapped_column(String(2_048), nullable=True)
+    workspace_file_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    source_config: Mapped[dict[str, object]] = mapped_column("config", JSONB, nullable=False)
+    source_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    change_reason: Mapped[str | None] = mapped_column(String(240), nullable=True)

@@ -566,7 +566,9 @@ Tasks:
   - [x] Add ingestion request, history, and detail APIs plus worker execution handling.
   - [x] Add isolated URL fetching through an explicitly bound network-enabled runtime and persist
     citation spans for every materialized chunk.
-- [ ] Add permission-aware citation retrieval and source revision history.
+  - [x] Add immutable source revision history with workspace-scoped list/detail APIs and migration
+    backfill for existing source declarations.
+- [ ] Add permission-aware citation retrieval.
 
 ## Phase 22: Persistent AI Organization Architecture
 

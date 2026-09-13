@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
-from backend.app.api.schemas.common import TimestampedModel
+from backend.app.api.schemas.common import ORMModel, TimestampedModel
 from backend.app.core.security.redaction import redact_sensitive_payload
 
 KnowledgeSourceType = Literal["url", "workspace_file"]
@@ -112,6 +112,28 @@ class KnowledgeCitationResponse(TimestampedModel):
     end_offset: int
     quote: str
     quote_sha256: str
+
+
+class KnowledgeSourceRevisionResponse(ORMModel):
+    id: UUID
+    created_at: datetime
+    workspace_id: UUID
+    source_id: UUID
+    changed_by_user_id: UUID | None
+    version: int
+    name: str
+    description: str
+    source_type: KnowledgeSourceType
+    uri: str | None
+    workspace_file_id: UUID | None
+    source_config: dict[str, object]
+    source_fingerprint: str
+    status: str
+    change_reason: str | None
+
+    @field_serializer("source_config")
+    def _serialize_source_config(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
 
 
 class KnowledgeSourceListResponse(BaseModel):

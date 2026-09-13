@@ -11,6 +11,7 @@ from backend.app.api.schemas.workspace.knowledge import (
     KnowledgeSourceCreateRequest,
     KnowledgeSourceIngestionResponse,
     KnowledgeSourceResponse,
+    KnowledgeSourceRevisionResponse,
     KnowledgeSourceStatusRequest,
     KnowledgeSourceUpdateRequest,
 )
@@ -263,6 +264,58 @@ async def list_citations(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+@router.get(
+    "/{source_id}/revisions",
+    response_model=PageResponse[KnowledgeSourceRevisionResponse],
+)
+async def list_source_revisions(
+    source_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[KnowledgeSourceRevisionResponse]:
+    items, total = KnowledgeSourceService(session).list_revisions(
+        workspace_id=context.workspace.id,
+        source_id=source_id,
+        limit=page.limit,
+        offset=page.offset,
+    )
+    return PageResponse(
+        items=[KnowledgeSourceRevisionResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get(
+    "/{source_id}/revisions/{version}",
+    response_model=KnowledgeSourceRevisionResponse,
+)
+async def get_source_revision(
+    source_id: UUID,
+    version: int,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> KnowledgeSourceRevisionResponse:
+    if version < 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Knowledge source revision version must be positive",
+        )
+    revision = KnowledgeSourceService(session).get_revision(
+        workspace_id=context.workspace.id,
+        source_id=source_id,
+        version=version,
+    )
+    if revision is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge source revision not found",
+        )
+    return KnowledgeSourceRevisionResponse.model_validate(revision)
 
 
 async def _set_status(

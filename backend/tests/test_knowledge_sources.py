@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from backend.app.domains.knowledge.models import KnowledgeSourceRevision
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.tests.test_workspace_api import _client, _headers, _seed_workspace
 
@@ -76,6 +77,21 @@ def test_knowledge_source_lifecycle_is_versioned_and_workspace_scoped() -> None:
         == 1
     )
     assert client.get(f"{path}/{source['id']}", headers=_headers(owner.id)).status_code == 404
+    revisions = client.get(
+        f"{path}/{source['id']}/revisions",
+        headers=_headers(owner.id),
+    )
+    revision = client.get(
+        f"{path}/{source['id']}/revisions/1",
+        headers=_headers(owner.id),
+    )
+    assert revisions.status_code == 200
+    assert revisions.json()["total"] == 5
+    assert revisions.json()["items"][0]["version"] == 5
+    assert revision.status_code == 200
+    assert revision.json()["uri"] == "https://docs.example.com/guide?lang=en"
+    assert revision.json()["change_reason"] == "created"
+    assert session.query(KnowledgeSourceRevision).count() == 5
 
 
 def test_knowledge_source_rejects_secrets_invalid_urls_and_foreign_files() -> None:

@@ -22,7 +22,7 @@ from backend.app.domains.knowledge.contracts import (
     KnowledgeSourceType,
     KnowledgeSourceUpdate,
 )
-from backend.app.domains.knowledge.models import KnowledgeSource
+from backend.app.domains.knowledge.models import KnowledgeSource, KnowledgeSourceRevision
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.observability.audit_service import AuditService
 
@@ -91,6 +91,7 @@ class KnowledgeSourceService:
         )
         self._session.add(source)
         flush_or_raise_conflict(self._session, "Knowledge source name already exists")
+        self._record_revision(source, actor_user_id, reason="created")
         self._audit(source, actor_user_id, "knowledge_source.created")
         commit_or_raise_conflict(self._session, "Knowledge source name already exists")
         self._session.refresh(source)
@@ -142,6 +143,7 @@ class KnowledgeSourceService:
         if source.source_fingerprint != old_fingerprint:
             source.last_ingested_at = None
             source.last_error_code = None
+        self._record_revision(source, actor_user_id, reason="updated")
         self._audit(
             source,
             actor_user_id,
@@ -175,6 +177,7 @@ class KnowledgeSourceService:
             return source
         source.status = status
         source.version += 1
+        self._record_revision(source, actor_user_id, reason=f"status:{status}")
         self._audit(
             source,
             actor_user_id,
@@ -193,6 +196,68 @@ class KnowledgeSourceService:
                 KnowledgeSource.id == source_id,
             )
             .with_for_update()
+        )
+
+    def list_revisions(
+        self,
+        *,
+        workspace_id: UUID,
+        source_id: UUID,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[KnowledgeSourceRevision], int]:
+        statement = select(KnowledgeSourceRevision).where(
+            KnowledgeSourceRevision.workspace_id == workspace_id,
+            KnowledgeSourceRevision.source_id == source_id,
+        )
+        return page_scalars_by_offset(
+            self._session,
+            statement.order_by(
+                KnowledgeSourceRevision.version.desc(),
+                KnowledgeSourceRevision.id.desc(),
+            ),
+            limit=limit,
+            offset=offset,
+        )
+
+    def get_revision(
+        self,
+        *,
+        workspace_id: UUID,
+        source_id: UUID,
+        version: int,
+    ) -> KnowledgeSourceRevision | None:
+        return self._session.scalar(
+            select(KnowledgeSourceRevision).where(
+                KnowledgeSourceRevision.workspace_id == workspace_id,
+                KnowledgeSourceRevision.source_id == source_id,
+                KnowledgeSourceRevision.version == version,
+            )
+        )
+
+    def _record_revision(
+        self,
+        source: KnowledgeSource,
+        actor_user_id: UUID,
+        *,
+        reason: str,
+    ) -> None:
+        self._session.add(
+            KnowledgeSourceRevision(
+                workspace_id=source.workspace_id,
+                source_id=source.id,
+                changed_by_user_id=actor_user_id,
+                version=source.version,
+                name=source.name,
+                description=source.description,
+                source_type=source.source_type,
+                uri=source.uri,
+                workspace_file_id=source.workspace_file_id,
+                source_config=dict(source.source_config),
+                source_fingerprint=source.source_fingerprint,
+                status=source.status,
+                change_reason=reason,
+            )
         )
 
     def _normalize_source(

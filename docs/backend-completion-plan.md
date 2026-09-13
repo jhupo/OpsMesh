@@ -739,7 +739,8 @@ Build:
   `config.fetch_runtime_id`, with HTTPS-only redirects, bounded output, domain-policy checks, and
   runtime command evidence.
 - [x] Materialize URL content with shared chunking and checksum evidence.
-- [ ] Add source revisions, citation spans, and permission-aware retrieval integration.
+- [x] Add immutable source revision snapshots and citation spans for every materialized chunk.
+- [ ] Complete permission-aware citation retrieval integration with resource-grant filtering.
 
 API/data changes:
 

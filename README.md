@@ -62,7 +62,7 @@ The APIs and database model may change before the first stable release. See the
 | Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, call audit, runtime-resource placement, live revocation, explicit MCP connection reconfiguration, and credential rotation |
 | MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
 | Run isolation and workspace | Official Docker SDK and self-hosted control-plane contracts, frozen runtime bindings, runtime-space reservations, exact project snapshot staging, declared-output harvesting, and fail-closed stdio routing are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
-| Knowledge service | Workspace-scoped source registration, idempotent workspace-file/isolated-URL ingestion, citation spans, three-layer memory, Postgres full-text, pgvector/HNSW similarity, weighted hybrid ranking, grant-scoped context injection, lifecycle policy, and evidence are implemented; permission-aware retrieval remains planned |
+| Knowledge service | Workspace-scoped source registration, immutable source revisions, idempotent workspace-file/isolated-URL ingestion, citation spans, three-layer memory, Postgres full-text, pgvector/HNSW similarity, weighted hybrid ranking, grant-scoped context injection, lifecycle policy, and evidence are implemented; permission-aware citation retrieval remains planned |
 | Observability and operations | Implemented for the VPS topology: OTLP logs and traces, official Prometheus metrics, Loki, Tempo, Grafana correlation, alerts, WORM audit verification, cost ledger, budgets, queue/runtime diagnostics, and recovery actions |
 | Infrastructure and scaling | Postgres, Redis, storage, VPS/systemd, Docker runtime, and remote validation assets exist; Kubernetes, multi-region, and microVM backends are future work |
 
@@ -341,11 +341,11 @@ Normal development uses the focused checks described in the completion plan.
 
 ### 3. Build a unified capability and knowledge plane
 
-- Extend the implemented unified product/MCP/resource catalog with knowledge-source ingestion and
-  citation contracts.
+- Extend the implemented unified product/MCP/resource catalog with permission-aware knowledge
+  retrieval and citation contracts.
 - Add policy-driven ephemeral sandbox creation, per-run file materialization, and selected artifact
   harvesting on top of the implemented frozen runtime binding.
-- Add knowledge-source registration, ingestion jobs, citations, and permission-aware retrieval.
+- Add permission-aware citation retrieval with resource-grant filtering.
 
 ### 4. Add enterprise identity and policy integration
 
