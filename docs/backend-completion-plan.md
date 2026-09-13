@@ -715,6 +715,49 @@ Acceptance:
 
 - agents can retrieve relevant prior workspace context without ad hoc direct database access
 
+## P1: Knowledge-Source Registry
+
+Current state:
+
+- Workspace-owned knowledge sources are now durable declarations under
+  `backend/app/domains/knowledge`. The registry accepts only HTTPS URLs or active workspace files;
+  it never fetches a URL during an API request and never stores raw credentials.
+- Source names are unique per workspace, source configuration is bounded and secret-free, and each
+  source carries a content/configuration fingerprint plus an optimistic-concurrency version.
+- Create, list, detail, update, pause, resume, and archive operations are workspace-scoped and emit
+  redacted audit events. Archived sources are hidden by default and cannot be resumed or edited.
+
+Build:
+
+- [x] Add the `knowledge_sources` table and one-head Alembic migration.
+- [x] Validate URL credentials, fragments, secret query parameters, foreign workspace files, and
+  embedded configuration secrets before persistence.
+- [x] Add version-guarded lifecycle APIs and source fingerprint invalidation for future ingestion.
+- [ ] Add asynchronous fetch, extraction, chunking, and embedding jobs.
+- [ ] Add source revisions, citation spans, and permission-aware retrieval integration.
+
+API/data changes:
+
+- [x] `POST /api/v1/workspaces/{workspace_id}/knowledge/sources`
+- [x] `GET /api/v1/workspaces/{workspace_id}/knowledge/sources`
+- [x] `GET/PATCH /api/v1/workspaces/{workspace_id}/knowledge/sources/{source_id}`
+- [x] `POST .../{source_id}/pause`, `.../resume`, and `.../archive`
+- [ ] Add ingestion-job and citation endpoints after the fetch contract is accepted.
+
+Tests:
+
+- [x] lifecycle transitions increment versions and reject stale updates
+- [x] URL and workspace-file sources are isolated by workspace
+- [x] insecure URLs, secret query/configuration values, and foreign files fail closed
+- [x] archived sources are excluded from default reads
+- [ ] ingestion, extraction, citation, and retrieval evidence tests
+
+Acceptance:
+
+- users can register and govern workspace knowledge sources without exposing credentials or
+  crossing tenant boundaries; no source is considered searchable until the later ingestion gate is
+  complete.
+
 ## P2: Dynamic Manager Planning And Planning Failure Review
 
 Current state:

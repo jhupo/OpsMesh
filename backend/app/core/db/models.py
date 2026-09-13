@@ -45,6 +45,7 @@ from backend.app.domains.capabilities.models import (
     ToolGroup,
     WorkspaceSkillInstall,
 )
+from backend.app.domains.knowledge.models import KnowledgeSource
 from backend.app.domains.orchestration.approvals.models import Approval, PendingToolInvocation
 from backend.app.domains.orchestration.models import (
     OrchestrationDefinition,
@@ -185,6 +186,7 @@ __all__ = [
     "TaskEventOutbox",
     "TaskMessage",
     "TaskPlanningAttempt",
+    "KnowledgeSource",
     "TaskStep",
     "TaskTransfer",
     "TalentListing",

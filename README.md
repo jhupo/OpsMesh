@@ -43,7 +43,7 @@ Linux amd64/Postgres 16/local-storage maintenance-window topology, not rolling o
 | Files, artifacts, memory, approvals, and audit | Implemented |
 | Web Portal | Planned; intentionally not scaffolded yet |
 | Enterprise SSO and fine-grained authorization | Planned |
-| Knowledge registry and vector/hybrid retrieval | Partially implemented: three-layer memory, hybrid retrieval, and authorized context injection are complete; external knowledge-source registration and citations remain planned |
+| Knowledge registry and vector/hybrid retrieval | Partially implemented: workspace-scoped URL/workspace-file source registration and lifecycle are complete alongside three-layer memory, hybrid retrieval, and authorized context injection; external ingestion and citations remain planned |
 | Logs, metrics, tracing, audit integrity, and cost accounting | Implemented |
 | Kubernetes and multi-region deployment | Future, driven by measured scale requirements |
 
@@ -62,7 +62,7 @@ The APIs and database model may change before the first stable release. See the
 | Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, call audit, runtime-resource placement, live revocation, explicit MCP connection reconfiguration, and credential rotation |
 | MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
 | Run isolation and workspace | Official Docker SDK and self-hosted control-plane contracts, frozen runtime bindings, runtime-space reservations, exact project snapshot staging, declared-output harvesting, and fail-closed stdio routing are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
-| Knowledge service | Three-layer memory, Postgres full-text, pgvector/HNSW similarity, weighted hybrid ranking, grant-scoped context injection, lifecycle policy, and evidence are implemented; external source ingestion and citation contracts remain planned |
+| Knowledge service | Workspace-scoped source registration plus three-layer memory, Postgres full-text, pgvector/HNSW similarity, weighted hybrid ranking, grant-scoped context injection, lifecycle policy, and evidence are implemented; external source ingestion and citation contracts remain planned |
 | Observability and operations | Implemented for the VPS topology: OTLP logs and traces, official Prometheus metrics, Loki, Tempo, Grafana correlation, alerts, WORM audit verification, cost ledger, budgets, queue/runtime diagnostics, and recovery actions |
 | Infrastructure and scaling | Postgres, Redis, storage, VPS/systemd, Docker runtime, and remote validation assets exist; Kubernetes, multi-region, and microVM backends are future work |
 
