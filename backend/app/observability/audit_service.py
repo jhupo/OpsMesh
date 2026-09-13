@@ -11,6 +11,7 @@ from sqlalchemy import Select, delete, func, select, text
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.trace_context import with_current_trace_metadata
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_models import AuditEvent
@@ -58,10 +59,11 @@ class AuditService:
             actor_type="user",
             actor_id=str(user_id),
             user_id=user_id,
+            agent_run_id=_agent_run_id_for_target(target_type, target_id),
             action=action,
             target_type=target_type,
             target_id=str(target_id),
-            audit_metadata=redact_sensitive_payload(metadata or {}),
+            audit_metadata=redact_sensitive_payload(with_current_trace_metadata(metadata)),
             previous_hash=self._latest_hash(workspace_id),
             created_at=created_at,
         )
@@ -88,10 +90,11 @@ class AuditService:
             actor_type="system",
             actor_id=actor_id,
             user_id=None,
+            agent_run_id=_agent_run_id_for_target(target_type, target_id),
             action=action,
             target_type=target_type,
             target_id=str(target_id),
-            audit_metadata=redact_sensitive_payload(metadata or {}),
+            audit_metadata=redact_sensitive_payload(with_current_trace_metadata(metadata)),
             previous_hash=self._latest_hash(workspace_id),
             created_at=created_at,
         )
@@ -258,6 +261,15 @@ def _canonical_value(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return [_canonical_value(item) for item in value]
     return value
+
+
+def _agent_run_id_for_target(target_type: str, target_id: UUID | str) -> UUID | None:
+    if target_type != "agent_run":
+        return None
+    try:
+        return target_id if isinstance(target_id, UUID) else UUID(str(target_id))
+    except ValueError as exc:
+        raise ValueError("Agent run audit targets must use a UUID target_id") from exc
 
 
 def _canonical_datetime(value: datetime) -> str:
