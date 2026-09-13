@@ -5,20 +5,20 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.workspaces import (
-    WorkspaceMemberCreateRequest,
-    WorkspaceMemberUpdateRequest,
+from backend.app.core.auth.permissions import WorkspaceRole
+from backend.app.core.db.errors import commit_or_raise_conflict
+from backend.app.core.identity.models import User
+from backend.app.domains.workspace.tenants.contracts import (
+    WorkspaceMemberCreatePayload,
+    WorkspaceMemberUpdatePayload,
 )
-from backend.app.api.services.workspace.lifecycle.errors import (
+from backend.app.domains.workspace.tenants.models import WorkspaceMember
+from backend.app.domains.workspace.tenants.workspace_lifecycle_errors import (
     WorkspaceMemberConflictError,
     WorkspaceMemberNotFoundError,
     WorkspaceMemberPermissionError,
 )
-from backend.app.api.services.workspace.lifecycle.snapshots import member_snapshot
-from backend.app.core.auth.permissions import WorkspaceRole
-from backend.app.core.db.errors import commit_or_raise_conflict
-from backend.app.core.identity.models import User
-from backend.app.domains.workspace.tenants.models import WorkspaceMember
+from backend.app.domains.workspace.tenants.workspace_snapshots import member_snapshot
 from backend.app.observability.audit_service import AuditService
 
 
@@ -29,7 +29,7 @@ class WorkspaceMemberService:
     def create_member(
         self,
         workspace_id: UUID,
-        data: WorkspaceMemberCreateRequest,
+        data: WorkspaceMemberCreatePayload,
         *,
         actor_user_id: UUID,
         actor_role: str,
@@ -87,7 +87,7 @@ class WorkspaceMemberService:
         self,
         workspace_id: UUID,
         member_id: UUID,
-        data: WorkspaceMemberUpdateRequest,
+        data: WorkspaceMemberUpdatePayload,
         *,
         actor_user_id: UUID,
         actor_role: str,

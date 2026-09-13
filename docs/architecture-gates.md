@@ -27,9 +27,8 @@ by `main`. Shared core no longer imports HTTP error responses. The old core modu
 | Domain/application boundary | Domain and runtime code cannot import `api.services`; project export/import services are domain-owned |
 
 Configuration lives in `pyproject.toml`. There are no ignored-import exemptions or compatibility
-modules. Package markers in `runtime/environment`, `runtime/self_hosted` and `api/services` ensure
-those modules are included in the static graph. A test requires every application Python directory
-to remain a regular package.
+modules. Package markers in the runtime and domain packages ensure those modules are included in
+the static graph. A test requires every application Python directory to remain a regular package.
 
 ## Dependency decision
 
@@ -70,10 +69,11 @@ required. Protected SDK contracts constrain direct SDK imports, not every produc
 an adapter through its public interface.
 
 Some application services still consume `api.schemas`, but workspace export/archive and import
-lifecycles now live under `domains/workspace/projects/{exports,imports}` and are callable by API,
-tenant lifecycle and worker composition without an API-service dependency. This stage does **not**
-assert universal domain independence, acyclic service dependencies, or complete DTO consolidation.
-Moving every transport model is a distinct architectural migration, not an ignored-import workaround.
+lifecycles now live under `domains/workspace/projects/{exports,imports}` and tenant administration
+services live under `domains/workspace/tenants`. They are callable by API, tenant lifecycle and
+worker composition without an API-service dependency. This stage does **not** assert universal
+domain independence, acyclic service dependencies, or complete DTO consolidation. Moving every
+transport model is a distinct architectural migration, not an ignored-import workaround.
 
 After this bounded gate, active work proceeds through the remaining runtime release gate and
 operator-hardening work in the [Agent runtime completion plan](agent-runtime-completion-plan.md).

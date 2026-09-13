@@ -12,17 +12,6 @@ from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceInviteResponse,
     WorkspaceMemberResponse,
 )
-from backend.app.api.services.workspace.lifecycle.errors import (
-    WorkspaceInviteConflictError,
-    WorkspaceInviteNotFoundError,
-    WorkspaceInvitePermissionError,
-    WorkspaceMemberPermissionError,
-)
-from backend.app.api.services.workspace.lifecycle.invites import (
-    WorkspaceInviteService,
-    fingerprint_invite_token,
-)
-from backend.app.api.services.workspace.lifecycle.workspaces import WorkspaceService
 from backend.app.core.auth.context import AuthenticatedUser, WorkspaceContext
 from backend.app.core.auth.dependencies import get_current_user, workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
@@ -31,6 +20,17 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.service import SecurityAuditService
+from backend.app.domains.workspace.tenants.workspace_invites import (
+    WorkspaceInviteService,
+    fingerprint_invite_token,
+)
+from backend.app.domains.workspace.tenants.workspace_lifecycle_errors import (
+    WorkspaceInviteConflictError,
+    WorkspaceInviteNotFoundError,
+    WorkspaceInvitePermissionError,
+    WorkspaceMemberPermissionError,
+)
+from backend.app.domains.workspace.tenants.workspace_management import WorkspaceService
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 

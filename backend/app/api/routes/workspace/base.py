@@ -15,7 +15,6 @@ from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceResponse,
     WorkspaceUpdateRequest,
 )
-from backend.app.api.services.workspace.lifecycle.workspaces import WorkspaceService
 from backend.app.core.auth.context import AuthenticatedUser, WorkspaceContext
 from backend.app.core.auth.dependencies import (
     account_action_dependency,
@@ -29,6 +28,7 @@ from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.workspace.tenants.workspace_management import WorkspaceService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

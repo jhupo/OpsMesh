@@ -24,7 +24,6 @@ from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskMessageResponse,
     TaskPlanningAttemptResponse,
 )
-from backend.app.api.services.workspace.lifecycle.reads import WorkspaceReadService
 from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
@@ -34,6 +33,7 @@ from backend.app.core.db.session import get_db_session
 from backend.app.domains.orchestration.tasks.events import TaskEventBus
 from backend.app.domains.orchestration.tasks.feedback import TaskFeedbackService
 from backend.app.domains.orchestration.tasks.observation.live_status import TaskLiveStatusService
+from backend.app.domains.workspace.tenants.workspace_reads import WorkspaceReadService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

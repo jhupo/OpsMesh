@@ -9,26 +9,26 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.workspaces import (
-    WorkspaceInviteAcceptRequest,
-    WorkspaceInviteCreateRequest,
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.db.errors import commit_or_raise_conflict
+from backend.app.core.identity.models import User
+from backend.app.domains.workspace.tenants.contracts import (
+    WorkspaceInviteAcceptPayload,
+    WorkspaceInviteCreatePayload,
 )
-from backend.app.api.services.workspace.lifecycle.errors import (
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceInvite, WorkspaceMember
+from backend.app.domains.workspace.tenants.workspace_lifecycle_errors import (
     WorkspaceInviteConflictError,
     WorkspaceInviteNotFoundError,
     WorkspaceInvitePermissionError,
 )
-from backend.app.api.services.workspace.lifecycle.members import ensure_actor_can_assign_role
-from backend.app.api.services.workspace.lifecycle.snapshots import (
+from backend.app.domains.workspace.tenants.workspace_members import ensure_actor_can_assign_role
+from backend.app.domains.workspace.tenants.workspace_snapshots import (
     as_utc,
     canonical_datetime,
     invite_snapshot,
     member_snapshot,
 )
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.db.errors import commit_or_raise_conflict
-from backend.app.core.identity.models import User
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceInvite, WorkspaceMember
 from backend.app.observability.audit_service import AuditService
 
 
@@ -52,7 +52,7 @@ class WorkspaceInviteService:
     def create_invite(
         self,
         workspace_id: UUID,
-        data: WorkspaceInviteCreateRequest,
+        data: WorkspaceInviteCreatePayload,
         *,
         actor_user_id: UUID,
         actor_role: str,
@@ -157,7 +157,7 @@ class WorkspaceInviteService:
 
     def accept_invite(
         self,
-        data: WorkspaceInviteAcceptRequest,
+        data: WorkspaceInviteAcceptPayload,
         *,
         actor_user_id: UUID,
     ) -> AcceptedWorkspaceInvite:

@@ -3946,14 +3946,14 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     )
     queue.enqueue(queued_job)
     queue.enqueue(other_team_job)
-    queue.zadd(
+    queue.redis.zadd(
         queue.keys.queue(queue.queue_name) + ":retry",
         {
             other_team_retry_job.model_dump_json(): datetime.now(UTC).timestamp() + 10,
             retry_job.model_dump_json(): datetime.now(UTC).timestamp() + 30,
         },
     )
-    queue.rpush(
+    queue.redis.rpush(
         queue.keys.dead_letter_queue(queue.queue_name),
         dead_letter_job.model_dump_json(),
     )
@@ -12035,7 +12035,7 @@ def _client(
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = session_factory()
-    redis = queue if queue is not None else fakeredis.FakeRedis(decode_responses=True)
+    redis = queue.redis if queue is not None else fakeredis.FakeRedis(decode_responses=True)
 
     docker = FakeDockerClient()
     app = create_app(

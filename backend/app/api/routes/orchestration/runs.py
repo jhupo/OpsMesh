@@ -14,7 +14,6 @@ from backend.app.api.schemas.orchestration.runs import (
     RunEventResponse,
 )
 from backend.app.api.schemas.platform.audit import AuditEventResponse
-from backend.app.api.services.workspace.lifecycle.reads import WorkspaceReadService
 from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
@@ -24,6 +23,7 @@ from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.workspace.projects.io.support import RunProjectIOQueryService
 from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
+from backend.app.domains.workspace.tenants.workspace_reads import WorkspaceReadService
 from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])

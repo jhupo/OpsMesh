@@ -73,7 +73,13 @@ domains/
 ├── orchestration/
 │   ├── definitions.py planning.py runs.py tasks.py approvals.py execution.py events.py
 └── workspace/
-    ├── workspaces.py projects/{models.py,imports/,exports/} files.py teams.py storage.py reviews.py
+    ├── tenants/{models.py,contracts.py,workspace_management.py,workspace_members.py,
+    │           workspace_invites.py,workspace_quotas.py,workspace_settings.py,
+    │           workspace_snapshots.py,workspace_reads.py,workspace_lifecycle_errors.py}
+    ├── projects/{models.py,imports/,exports/}
+    ├── storage/{models.py,service.py,storage.py,security.py}
+    ├── teams/{models.py,service.py,execution_loop.py}
+    └── reviews/{policy.py,service.py}
 ```
 
 The exact filenames may be split further when a module owns a real state machine or adapter, but

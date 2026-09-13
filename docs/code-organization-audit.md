@@ -297,3 +297,18 @@ shims. Focused export, maintenance and architecture tests plus Ruff and mypy pas
 The import-linter now protects the boundary by rejecting any future domain/runtime dependency on
 `api.services`; the contract is intentionally narrower than a blanket API-schema ban while the
 remaining transport response models are migrated by their owning domain.
+
+## File-level consolidation follow-up: 2026-09-14 (workspace tenant ownership)
+
+Workspace administration services now have a domain owner at `domains/workspace/tenants`. The
+explicit modules `workspace_management.py`, `workspace_members.py`, `workspace_invites.py`,
+`workspace_quotas.py`, `workspace_settings.py`, `workspace_snapshots.py`, `workspace_reads.py` and
+`workspace_lifecycle_errors.py` replace the former `api/services/workspace/lifecycle` package.
+Stable request shapes are structural contracts in `tenants/contracts.py`; API schemas remain the
+HTTP validation boundary and are passed to the services without importing transport types in the
+domain. The old `api/services` tree is deleted, so there is one owner and no compatibility import
+path. Workspace file persistence is likewise owned by `domains/workspace/storage/service.py`.
+
+The architecture test now asserts the deleted service tree and lifecycle package stay absent and
+the tenant module set remains explicit. Focused workspace API, audit, export, architecture, Ruff,
+mypy and import-linter checks are required before committing future tenant changes.

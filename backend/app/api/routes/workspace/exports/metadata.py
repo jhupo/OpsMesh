@@ -9,12 +9,12 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceImportRequest,
     WorkspaceImportResponse,
 )
-from backend.app.domains.workspace.projects.imports.metadata import WorkspaceMetadataImportService
 from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.workspace.projects.exports.service import WorkspaceExportService
+from backend.app.domains.workspace.projects.imports.metadata import WorkspaceMetadataImportService
 from backend.app.domains.workspace.storage.security import content_disposition_attachment
 
 router = APIRouter()

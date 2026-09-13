@@ -15,7 +15,6 @@ from backend.app.api.schemas.workspace.files import (
     WorkspaceFileResponse,
     WorkspaceFileRuntimePolicyRequest,
 )
-from backend.app.api.services.workspace.files import WorkspaceFileService
 from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
@@ -24,6 +23,7 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.agents.memory.indexing import enqueue_workspace_memory_index_job
 from backend.app.domains.workspace.storage.security import content_disposition_attachment
+from backend.app.domains.workspace.storage.service import WorkspaceFileService
 from backend.app.domains.workspace.storage.storage import create_storage
 from backend.app.runtime.workers.queue import RedisQueue
 

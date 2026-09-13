@@ -286,7 +286,19 @@ def test_tenant_modules_are_nested_by_function() -> None:
         for path in tenants.glob("*.py")
         if path.name != "__init__.py"
     }
-    assert root_modules == {"models", "quotas"}
+    assert root_modules == {
+        "contracts",
+        "models",
+        "quotas",
+        "workspace_invites",
+        "workspace_lifecycle_errors",
+        "workspace_management",
+        "workspace_members",
+        "workspace_reads",
+        "workspace_settings",
+        "workspace_snapshots",
+        "workspace_quotas",
+    }
     for name in (
         "lifecycle/actions",
         "lifecycle/diagnostics",
@@ -640,29 +652,9 @@ def test_api_schemas_are_nested_by_function() -> None:
 
 def test_api_services_are_nested_by_function() -> None:
     services = ROOT / "backend/app/api/services"
-    expected = {
-        "workspace",
-        "workspace/lifecycle",
-    }
-    for name in expected:
-        assert (services / name / "__init__.py").is_file(), name
-    assert {
-        path.name
-        for path in services.iterdir()
-        if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
-    } == set()
-    for name in (
-        "exports.py",
-        "files.py",
-        "workspaces.py",
-        "workspace_archive_import.py",
-        "workspace_import_preview.py",
-        "workspace_members.py",
-    ):
-        assert not (services / name).exists(), name
-    for name in ("tokens.py", "metadata_context.py", "metadata_support.py"):
-        assert not (services / "workspace/imports" / name).exists(), name
+    assert not any(path.suffix == ".py" for path in services.rglob("*.py"))
     assert (ROOT / "backend/app/domains/workspace/projects/imports/__init__.py").is_file()
+    assert (ROOT / "backend/app/domains/workspace/storage/service.py").is_file()
 
 
 def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
@@ -1000,7 +992,8 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
         ),
         (
             "domains/workspace/tenants/models.py",
-            "from backend.app.api.services.workspace.files import WorkspaceFileService",
+            "from backend.app.api.services.workspace.lifecycle.workspaces import "
+            "WorkspaceLifecycleService",
             "Domain and runtime code cannot depend on API application services",
         ),
     ],
@@ -1008,6 +1001,13 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
 def test_architecture_gate_rejects_violations(
     architecture_tree: Path, module: str, violation: str, contract: str
 ) -> None:
+    if contract == "Domain and runtime code cannot depend on API application services":
+        service_package = architecture_tree / "backend/app/api/services/workspace/lifecycle"
+        service_package.mkdir(parents=True)
+        (service_package.parent.parent / "__init__.py").write_text("", encoding="utf-8")
+        (service_package.parent / "__init__.py").write_text("", encoding="utf-8")
+        (service_package / "__init__.py").write_text("", encoding="utf-8")
+        (service_package / "workspaces.py").write_text("", encoding="utf-8")
     target = architecture_tree / "backend/app" / module
     original = target.read_text("utf-8")
     try:

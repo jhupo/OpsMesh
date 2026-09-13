@@ -7,9 +7,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.workspaces import WorkspaceQuotaUpsertRequest
-from backend.app.api.services.workspace.lifecycle.snapshots import quota_snapshot
+from backend.app.domains.workspace.tenants.contracts import WorkspaceQuotaUpsertPayload
 from backend.app.domains.workspace.tenants.models import WorkspaceQuota, WorkspaceReservation
+from backend.app.domains.workspace.tenants.workspace_snapshots import quota_snapshot
 from backend.app.observability.audit_service import AuditService
 
 EXECUTION_SLOT_QUOTA_KEYS = ("active_runs", "docker_runtimes", "self_hosted_jobs")
@@ -22,7 +22,7 @@ class WorkspaceQuotaService:
     def upsert_quotas(
         self,
         workspace_id: UUID,
-        data: WorkspaceQuotaUpsertRequest,
+        data: WorkspaceQuotaUpsertPayload,
         *,
         actor_user_id: UUID | None = None,
     ) -> list[WorkspaceQuota]:

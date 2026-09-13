@@ -6,16 +6,6 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.workspaces import (
-    WorkspaceCreateRequest,
-    WorkspaceUpdateRequest,
-)
-from backend.app.api.services.workspace.lifecycle.invites import WorkspaceInviteService
-from backend.app.api.services.workspace.lifecycle.settings import (
-    scheduler_settings,
-    semantic_resource_review_settings,
-    validate_resource_review_settings,
-)
 from backend.app.core.auth.permissions import WorkspaceRole
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
@@ -26,11 +16,21 @@ from backend.app.domains.agents.memory.policy import (
     default_lifecycle_policy,
     default_retrieval_policy,
 )
+from backend.app.domains.workspace.tenants.contracts import (
+    WorkspaceCreatePayload,
+    WorkspaceUpdatePayload,
+)
 from backend.app.domains.workspace.tenants.models import (
     Workspace,
     WorkspaceInvite,
     WorkspaceMember,
     WorkspaceQuota,
+)
+from backend.app.domains.workspace.tenants.workspace_invites import WorkspaceInviteService
+from backend.app.domains.workspace.tenants.workspace_settings import (
+    scheduler_settings,
+    semantic_resource_review_settings,
+    validate_resource_review_settings,
 )
 from backend.app.observability.audit_service import AuditService
 
@@ -59,12 +59,12 @@ class WorkspaceService:
             statement = statement.where(Workspace.id.in_(allowed_workspace_ids))
         return self._page(statement, page)
 
-    def create_for_owner(self, owner_user_id: UUID, data: WorkspaceCreateRequest) -> Workspace:
+    def create_for_owner(self, owner_user_id: UUID, data: WorkspaceCreatePayload) -> Workspace:
         workspace = Workspace(
             owner_user_id=owner_user_id,
             name=data.name,
             slug=data.slug,
-            settings=data.settings,
+            settings=dict(data.settings),
         )
         membership = WorkspaceMember(
             workspace=workspace,
@@ -98,21 +98,27 @@ class WorkspaceService:
     def update(
         self,
         workspace: Workspace,
-        data: WorkspaceUpdateRequest,
+        data: WorkspaceUpdatePayload,
         *,
         actor_user_id: UUID | None = None,
     ) -> Workspace:
         old_status = workspace.status
         old_scheduler = scheduler_settings(workspace.settings)
         old_resource_review = semantic_resource_review_settings(workspace.settings)
-        updates = data.model_dump(exclude_unset=True)
+        updates = {
+            field: value
+            for field in ("name", "status", "settings")
+            if (value := getattr(data, field, None)) is not None
+        }
         if "settings" in updates:
             validate_resource_review_settings(
                 self._session,
                 workspace_id=workspace.id,
-                settings=updates["settings"],
+                settings=dict(updates["settings"]),
             )
         for field, value in updates.items():
+            if field == "settings":
+                value = dict(value)
             setattr(workspace, field, value)
         new_scheduler = scheduler_settings(workspace.settings)
         new_resource_review = semantic_resource_review_settings(workspace.settings)
