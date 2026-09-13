@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from backend.app.api.routes.self_hosted.dependencies import self_hosted_service
+from backend.app.api.routes.self_hosted.dependencies import (
+    get_authenticated_worker,
+    self_hosted_service,
+)
 from backend.app.api.schemas.operations.self_hosted import (
     ArtifactUploadRequest,
     ArtifactUploadResponse,
@@ -9,7 +12,6 @@ from backend.app.api.schemas.operations.self_hosted import (
 )
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.service import SelfHostedRuntimeService
-from backend.app.runtime.self_hosted.worker.dependencies import get_authenticated_worker
 
 router = APIRouter()
 

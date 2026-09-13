@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.app.api.routes.self_hosted.dependencies import (
+    get_authenticated_worker,
     self_hosted_dispatch_service,
     self_hosted_mcp_job_service,
 )
@@ -15,7 +16,6 @@ from backend.app.api.schemas.operations.self_hosted import (
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.dispatch.mcp import SelfHostedMcpJobService
 from backend.app.runtime.self_hosted.dispatch.service import SelfHostedDispatchService
-from backend.app.runtime.self_hosted.worker.dependencies import get_authenticated_worker
 
 router = APIRouter()
 

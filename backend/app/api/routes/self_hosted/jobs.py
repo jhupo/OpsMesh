@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from backend.app.api.routes.self_hosted.dependencies import (
+    get_authenticated_worker,
     self_hosted_dispatch_service,
     self_hosted_progress_service,
     self_hosted_project_file_service,
@@ -26,7 +27,6 @@ from backend.app.runtime.self_hosted.projects.files import (
     SelfHostedProjectContract,
     SelfHostedProjectFileService,
 )
-from backend.app.runtime.self_hosted.worker.dependencies import get_authenticated_worker
 from backend.app.runtime.self_hosted.worker.progress import SelfHostedProgressService
 
 router = APIRouter()

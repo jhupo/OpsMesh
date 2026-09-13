@@ -365,6 +365,8 @@ def test_self_hosted_runtime_modules_are_nested_by_function() -> None:
         if path.name != "__init__.py"
     }
     assert root_modules == {"contracts", "models", "service"}
+    assert not (runtime / "worker/dependencies.py").exists()
+    assert (ROOT / "backend/app/api/routes/self_hosted/dependencies.py").is_file()
     for name in (
         "artifacts.py",
         "attestation.py",
