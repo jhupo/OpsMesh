@@ -33,6 +33,7 @@ from backend.app.domains.orchestration.workflows.definitions.service import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )
+from backend.app.observability.audit_service import AuditService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]
@@ -134,6 +135,20 @@ async def update_orchestration(
     except DatabaseConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except OrchestrationDefinitionError as exc:
+        if exc.code == "orchestration_locked_region":
+            session.rollback()
+            AuditService(session).record_user_action(
+                workspace_id=context.workspace.id,
+                user_id=context.user.user_id,
+                action="orchestration.update_blocked",
+                target_type="orchestration_definition",
+                target_id=orchestration_definition_id,
+                metadata={
+                    "reason": str(exc),
+                    "expected_version": request.expected_version,
+                },
+            )
+            session.commit()
         raise _http_error(exc) from exc
     return OrchestrationDefinitionResponse.model_validate(definition)
 

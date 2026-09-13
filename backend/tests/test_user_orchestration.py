@@ -29,6 +29,7 @@ from backend.app.domains.orchestration.workflows.definitions.service import (
 )
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.observability.audit_models import AuditEvent
 from backend.tests.test_capability_resources import (
     _client as _api_client,
 )
@@ -586,6 +587,44 @@ def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> Non
             user.id,
             allow_locked_edits=True,
         )
+
+def test_api_locked_edit_rejection_is_recorded_in_audit_chain() -> None:
+    client, session = _api_client()
+    owner, workspace = _seed_api_workspace(session, "locked-audit@example.com", "locked-audit")
+    path = f"/api/v1/workspaces/{workspace.id}/orchestrations"
+    created = client.post(
+        path,
+        headers=_api_headers(owner.id),
+        json={
+            "key": "audit-locked",
+            "name": "Audit locked",
+            "nodes": [{"package_id": "protected", "title": "Protected", "locked": True}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    definition_id = created.json()["id"]
+
+    rejected = client.patch(
+        f"{path}/{definition_id}",
+        headers=_api_headers(owner.id),
+        json={
+            "expected_version": 1,
+            "nodes": [{"package_id": "protected", "title": "Changed", "locked": True}],
+        },
+    )
+
+    assert rejected.status_code == 409
+    event = session.scalar(
+        select(AuditEvent)
+        .where(
+            AuditEvent.workspace_id == workspace.id,
+            AuditEvent.action == "orchestration.update_blocked",
+            AuditEvent.target_id == str(definition_id),
+        )
+        .order_by(AuditEvent.created_at.desc())
+    )
+    assert event is not None
+    assert "Changed" not in str(event.audit_metadata)
 
 
 def test_workspace_user_can_edit_team_capability_and_mcp_tool_properties() -> None:
