@@ -400,7 +400,7 @@ def test_self_hosted_runtime_modules_are_nested_by_function() -> None:
 
 def test_project_modules_are_nested_by_function() -> None:
     projects = ROOT / "backend/app/domains/workspace/projects"
-    expected = {"artifacts", "io", "snapshots"}
+    expected = {"artifacts", "exports", "imports", "io", "snapshots"}
     assert {path.name for path in projects.iterdir() if path.is_dir()} >= expected
     root_modules = {
         path.stem
@@ -642,8 +642,6 @@ def test_api_services_are_nested_by_function() -> None:
     services = ROOT / "backend/app/api/services"
     expected = {
         "workspace",
-        "workspace/exports",
-        "workspace/imports",
         "workspace/lifecycle",
     }
     for name in expected:
@@ -664,6 +662,7 @@ def test_api_services_are_nested_by_function() -> None:
         assert not (services / name).exists(), name
     for name in ("tokens.py", "metadata_context.py", "metadata_support.py"):
         assert not (services / "workspace/imports" / name).exists(), name
+    assert (ROOT / "backend/app/domains/workspace/projects/imports/__init__.py").is_file()
 
 
 def test_agent_profile_and_memory_modules_have_stable_owners() -> None:

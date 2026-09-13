@@ -283,3 +283,13 @@ HTTP input and select the domain response contract explicitly.
 The agent domain has no direct API-schema imports; the architecture gate covers that invariant.
 Agent management, mailbox, provider-operations and architecture tests, Ruff and application mypy
 passed after the move. No forwarding module or compatibility alias was added.
+
+## File-level consolidation follow-up: 2026-09-14 (workspace export ownership)
+
+Workspace export/archive and restore-import code had an accidental API-service owner even though it
+is used by tenant lifecycle actions and worker handlers. The complete export package moved to
+`domains/workspace/projects/exports`; its companion import helpers moved to
+`domains/workspace/projects/imports`. API routes now call the domain project services directly,
+while tenant recovery, scheduled backup/restore and worker project handlers use the same owner.
+The former `api/services/workspace/{exports,imports}` packages are deleted, not left as forwarding
+shims. Focused export, maintenance and architecture tests plus Ruff and mypy pass for this move.

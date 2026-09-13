@@ -73,7 +73,7 @@ domains/
 ├── orchestration/
 │   ├── definitions.py planning.py runs.py tasks.py approvals.py execution.py events.py
 └── workspace/
-    ├── workspaces.py projects.py files.py teams.py storage.py reviews.py
+    ├── workspaces.py projects/{models.py,imports/,exports/} files.py teams.py storage.py reviews.py
 ```
 
 The exact filenames may be split further when a module owns a real state machine or adapter, but
@@ -120,9 +120,11 @@ contracts/ports ──> PostgreSQL, Redis, OpenAI SDK, Claude SDK, Docker, OpenT
 domain/runtime events ──> observability
 ```
 
-No domain module imports FastAPI schemas. Runtime workers do not import API schemas. Provider
-adapters implement the Agent Runtime contract, while runtime backends implement the execution
-contract. Concrete infrastructure is assembled once at the application/worker composition root.
+Domain services own their stable contracts and may not import API routes or API application
+services. Runtime workers do not import API schemas for execution inputs; transport-only response
+models are migrated separately when they are shared read models. Provider adapters implement the
+Agent Runtime contract, while runtime backends implement the execution contract. Concrete
+infrastructure is assembled once at the application/worker composition root.
 
 ## Migration sequence
 
@@ -153,4 +155,3 @@ not change public behavior, database identities or workspace isolation semantics
 - SDK adapters and runtime backends are replaceable through typed contracts.
 - No API-to-infrastructure imports, circular imports, empty packages or compatibility shims remain.
 - Focused architecture and behavior tests pass, with no full-suite run during normal development.
-

@@ -2,7 +2,7 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportRequest,
 )
-from backend.app.api.services.workspace.imports.fields import _dict_field, _int_field, _string_field
+from backend.app.domains.workspace.projects.imports.fields import _dict_field, _int_field, _string_field
 
 
 def _resolved_import_name(

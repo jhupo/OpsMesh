@@ -26,9 +26,9 @@ by `main`. Shared core no longer imports HTTP error responses. The old core modu
 | Agent runtime contract | No direct or indirect provider SDK or API dependency, including type-checking imports |
 
 Configuration lives in `pyproject.toml`. There are no ignored-import exemptions or compatibility
-modules. Package markers in `runtime/environment` and `api/services` ensure those modules are
-included in the static graph. A test requires every application Python directory to remain a
-regular package.
+modules. Package markers in `runtime/environment`, `runtime/self_hosted` and `api/services` ensure
+those modules are included in the static graph. A test requires every application Python directory
+to remain a regular package.
 
 ## Dependency decision
 
@@ -68,10 +68,11 @@ safe command execution by themselves. Existing tenant-denial and isolated-runtim
 required. Protected SDK contracts constrain direct SDK imports, not every product service calling
 an adapter through its public interface.
 
-Some application services still consume `api.schemas`, and export/read application services remain
-under `api/services`. This stage does **not** assert universal domain independence, acyclic service
-dependencies, or complete facade consolidation. Moving every DTO/service is a distinct architectural
-migration, not an ignored-import workaround.
+Some application services still consume `api.schemas`, but workspace export/archive and import
+lifecycles now live under `domains/workspace/projects/{exports,imports}` and are callable by API,
+tenant lifecycle and worker composition without an API-service dependency. This stage does **not**
+assert universal domain independence, acyclic service dependencies, or complete DTO consolidation.
+Moving every transport model is a distinct architectural migration, not an ignored-import workaround.
 
 After this bounded gate, active work proceeds through the remaining runtime release gate and
 operator-hardening work in the [Agent runtime completion plan](agent-runtime-completion-plan.md).

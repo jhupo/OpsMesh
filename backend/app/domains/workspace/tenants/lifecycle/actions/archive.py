@@ -3,7 +3,7 @@ from uuid import UUID
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from backend.app.api.services.workspace.exports.service import WorkspaceExportService
+from backend.app.domains.workspace.projects.exports.service import WorkspaceExportService
 from backend.app.domains.workspace.tenants.lifecycle.recovery import (
     _recovery_action_result,
     _recovery_action_skipped,

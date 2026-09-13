@@ -3,17 +3,17 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.services.workspace.imports.conflicts import (
+from backend.app.domains.workspace.projects.imports.conflicts import (
     _missing_dependency_conflict,
     _skip_conflict,
 )
-from backend.app.api.services.workspace.imports.context import (
+from backend.app.domains.workspace.projects.imports.context import (
     WorkspaceMetadataImportContext,
 )
-from backend.app.api.services.workspace.imports.dependency_resolution import (
+from backend.app.domains.workspace.projects.imports.dependency_resolution import (
     resolved_dependency_id,
 )
-from backend.app.api.services.workspace.imports.fields import (
+from backend.app.domains.workspace.projects.imports.fields import (
     _bool_field,
     _dict_field,
     _int_field,
@@ -22,7 +22,7 @@ from backend.app.api.services.workspace.imports.fields import (
     _string_list_field,
     _uuid_or_none,
 )
-from backend.app.api.services.workspace.imports.resolution import _resolved_import_name
+from backend.app.domains.workspace.projects.imports.resolution import _resolved_import_name
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.runtime.environment.spaces.models import RuntimeSpace

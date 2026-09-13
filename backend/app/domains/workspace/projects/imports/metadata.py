@@ -9,22 +9,22 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceImportRequest,
     WorkspaceImportResponse,
 )
-from backend.app.api.services.workspace.imports.agent import AgentMetadataImporter
-from backend.app.api.services.workspace.imports.conflicts import (
+from backend.app.domains.workspace.projects.imports.agent import AgentMetadataImporter
+from backend.app.domains.workspace.projects.imports.conflicts import (
     _preview_token_conflict,
     _unsupported_format_conflict,
 )
-from backend.app.api.services.workspace.imports.context import (
+from backend.app.domains.workspace.projects.imports.context import (
     WorkspaceMetadataImportContext,
 )
-from backend.app.api.services.workspace.imports.preview import (
+from backend.app.domains.workspace.projects.imports.preview import (
     _import_preview_audit_metadata,
     _populate_import_preview,
 )
-from backend.app.api.services.workspace.imports.runtime_space import RuntimeSpaceMetadataImporter
-from backend.app.api.services.workspace.imports.skill_install import SkillInstallMetadataImporter
-from backend.app.api.services.workspace.imports.task import TaskMetadataImporter
-from backend.app.api.services.workspace.imports.team import TeamMetadataImporter
+from backend.app.domains.workspace.projects.imports.runtime_space import RuntimeSpaceMetadataImporter
+from backend.app.domains.workspace.projects.imports.skill_install import SkillInstallMetadataImporter
+from backend.app.domains.workspace.projects.imports.task import TaskMetadataImporter
+from backend.app.domains.workspace.projects.imports.team import TeamMetadataImporter
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService
 

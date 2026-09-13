@@ -11,10 +11,14 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceExportRequest,
     WorkspaceExportResponse,
 )
-from backend.app.api.services.workspace.exports.archive_builder import WorkspaceArchiveExportBuilder
-from backend.app.api.services.workspace.exports.archive_jobs import WorkspaceArchiveExportJobService
-from backend.app.api.services.workspace.exports.builder import WorkspaceExportBuilder
 from backend.app.domains.workspace.projects.export_models import WorkspaceExportJob
+from backend.app.domains.workspace.projects.exports.archive_builder import (
+    WorkspaceArchiveExportBuilder,
+)
+from backend.app.domains.workspace.projects.exports.archive_jobs import (
+    WorkspaceArchiveExportJobService,
+)
+from backend.app.domains.workspace.projects.exports.builder import WorkspaceExportBuilder
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.runtime.workers.contracts import JobPayload

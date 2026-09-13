@@ -8,8 +8,8 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportRequest,
 )
-from backend.app.api.services.workspace.imports.fields import _is_valid_uuid
-from backend.app.api.services.workspace.imports.resolution import _resolution
+from backend.app.domains.workspace.projects.imports.fields import _is_valid_uuid
+from backend.app.domains.workspace.projects.imports.resolution import _resolution
 
 
 def resolved_dependency_id(

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.services.workspace.exports.service import WorkspaceExportService
+from backend.app.domains.workspace.projects.exports.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.domains.workspace.tenants.lifecycle.diagnostics.payloads import (
     _archive_integrity_payload,

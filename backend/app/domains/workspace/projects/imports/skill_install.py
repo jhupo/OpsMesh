@@ -3,19 +3,19 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.services.workspace.imports.conflicts import (
+from backend.app.domains.workspace.projects.imports.conflicts import (
     _disabled_skill_install_conflict,
     _skip_conflict,
 )
-from backend.app.api.services.workspace.imports.context import (
+from backend.app.domains.workspace.projects.imports.context import (
     WorkspaceMetadataImportContext,
 )
-from backend.app.api.services.workspace.imports.fields import (
+from backend.app.domains.workspace.projects.imports.fields import (
     _dict_field,
     _string_field,
     _string_list_field,
 )
-from backend.app.api.services.workspace.imports.resolution import _resolution_action
+from backend.app.domains.workspace.projects.imports.resolution import _resolution_action
 from backend.app.domains.capabilities.models import Skill, WorkspaceSkillInstall
 
 

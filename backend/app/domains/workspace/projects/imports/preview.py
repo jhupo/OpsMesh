@@ -8,7 +8,7 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceImportResponse,
     WorkspaceImportSuggestedResolution,
 )
-from backend.app.api.services.workspace.imports.fields import _int_from_optional_string
+from backend.app.domains.workspace.projects.imports.fields import _int_from_optional_string
 
 
 def _populate_import_preview(

@@ -3,17 +3,17 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.services.workspace.imports.conflicts import _skip_conflict
-from backend.app.api.services.workspace.imports.context import (
+from backend.app.domains.workspace.projects.imports.conflicts import _skip_conflict
+from backend.app.domains.workspace.projects.imports.context import (
     WorkspaceMetadataImportContext,
 )
-from backend.app.api.services.workspace.imports.fields import (
+from backend.app.domains.workspace.projects.imports.fields import (
     _dict_field,
     _int_field,
     _remap_agent_skills,
     _string_field,
 )
-from backend.app.api.services.workspace.imports.resolution import _resolved_import_name
+from backend.app.domains.workspace.projects.imports.resolution import _resolved_import_name
 from backend.app.domains.agents.memory.policy import normalized_memory_policy
 from backend.app.domains.agents.models import AgentProfile
 

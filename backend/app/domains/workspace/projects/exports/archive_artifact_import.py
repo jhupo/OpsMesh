@@ -7,21 +7,21 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportResponse,
 )
-from backend.app.api.services.workspace.exports.archive_blob_reader import (
-    WorkspaceArchiveBlobReader,
-)
-from backend.app.api.services.workspace.imports.checksum import _validated_checksum
-from backend.app.api.services.workspace.imports.dependency_resolution import (
+from backend.app.domains.workspace.projects.imports.checksum import _validated_checksum
+from backend.app.domains.workspace.projects.imports.dependency_resolution import (
     resolved_dependency_id,
 )
-from backend.app.api.services.workspace.imports.fields import (
+from backend.app.domains.workspace.projects.imports.fields import (
     _dict_field,
     _int_field,
     _optional_string_field,
     _string_field,
     _uuid_or_none,
 )
-from backend.app.api.services.workspace.imports.resolution import _archive_resolution_action
+from backend.app.domains.workspace.projects.imports.resolution import _archive_resolution_action
+from backend.app.domains.workspace.projects.exports.archive_blob_reader import (
+    WorkspaceArchiveBlobReader,
+)
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.security import safe_filename
 from backend.app.domains.workspace.storage.storage_transactions import (

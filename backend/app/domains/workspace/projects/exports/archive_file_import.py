@@ -6,12 +6,12 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportResponse,
 )
-from backend.app.api.services.workspace.exports.archive_blob_reader import (
+from backend.app.domains.workspace.projects.imports.checksum import _validated_checksum
+from backend.app.domains.workspace.projects.imports.fields import _dict_field, _string_field
+from backend.app.domains.workspace.projects.imports.resolution import _archive_resolution_action
+from backend.app.domains.workspace.projects.exports.archive_blob_reader import (
     WorkspaceArchiveBlobReader,
 )
-from backend.app.api.services.workspace.imports.checksum import _validated_checksum
-from backend.app.api.services.workspace.imports.fields import _dict_field, _string_field
-from backend.app.api.services.workspace.imports.resolution import _archive_resolution_action
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.runtime_policy import validate_file_runtime_policy
 from backend.app.domains.workspace.storage.security import safe_filename

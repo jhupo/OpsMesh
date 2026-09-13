@@ -14,12 +14,12 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceExportJobResponse,
     WorkspaceRestoreDrillResponse,
 )
-from backend.app.api.services.workspace.exports.service import WorkspaceExportService
 from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.auth.dependencies import workspace_dependency
 from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
+from backend.app.domains.workspace.projects.exports.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.security import content_disposition_attachment
 from backend.app.domains.workspace.storage.storage import create_storage
 from backend.app.runtime.workers.queue import RedisQueue

@@ -12,7 +12,7 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveExportResult,
 )
-from backend.app.api.services.workspace.exports.builder import WorkspaceExportBuilder
+from backend.app.domains.workspace.projects.exports.builder import WorkspaceExportBuilder
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.security import safe_filename

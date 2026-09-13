@@ -10,17 +10,17 @@ from backend.app.api.schemas.workspace.exports import (
     WorkspaceImportRequest,
     WorkspaceImportResponse,
 )
-from backend.app.api.services.workspace.exports.archive_artifact_import import (
+from backend.app.domains.workspace.projects.imports.metadata import WorkspaceMetadataImportService
+from backend.app.domains.workspace.projects.imports.preview import _populate_import_preview
+from backend.app.domains.workspace.projects.exports.archive_artifact_import import (
     WorkspaceArchiveArtifactImporter,
 )
-from backend.app.api.services.workspace.exports.archive_blob_reader import (
+from backend.app.domains.workspace.projects.exports.archive_blob_reader import (
     WorkspaceArchiveBlobReader,
 )
-from backend.app.api.services.workspace.exports.archive_file_import import (
+from backend.app.domains.workspace.projects.exports.archive_file_import import (
     WorkspaceArchiveFileImporter,
 )
-from backend.app.api.services.workspace.imports.metadata import WorkspaceMetadataImportService
-from backend.app.api.services.workspace.imports.preview import _populate_import_preview
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.domains.workspace.storage.storage_transactions import (
     CompensatingObjectStorageWrites,

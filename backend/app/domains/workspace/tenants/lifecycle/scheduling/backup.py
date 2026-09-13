@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from backend.app.api.services.workspace.exports.service import WorkspaceExportService
+from backend.app.domains.workspace.projects.exports.service import WorkspaceExportService
 from backend.app.domains.workspace.tenants.lifecycle.policy import _backup_policy
 from backend.app.domains.workspace.tenants.lifecycle.repository import (
     WorkspaceDataLifecycleRepository,

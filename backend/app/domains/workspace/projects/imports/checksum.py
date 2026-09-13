@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from backend.app.api.schemas.workspace.exports import WorkspaceImportResponse
-from backend.app.api.services.workspace.imports.conflicts import _checksum_conflict
+from backend.app.domains.workspace.projects.imports.conflicts import _checksum_conflict
 
 
 @dataclass(frozen=True)
