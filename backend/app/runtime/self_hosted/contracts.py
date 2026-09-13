@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Protocol
 from uuid import UUID
 
 from backend.app.runtime.environment.models import WorkspaceRuntime
@@ -49,3 +51,57 @@ class WorkerControlResult:
     action: str
     affected_claims: int
     affected_runs: int
+
+
+class EnrollmentTokenCreatePayload(Protocol):
+    name: str
+    expires_at: datetime | None
+
+
+class RuntimeRegistrationPayload(Protocol):
+    enrollment_token: str
+    name: str
+    machine_id: str
+    version: str
+    capabilities: dict[str, object]
+    attestation: dict[str, object] | None
+
+
+class WorkerHeartbeatPayload(Protocol):
+    status: str
+    capabilities: dict[str, object]
+    attestation: dict[str, object] | None
+
+
+class LocalFileReferencePayload(Protocol):
+    task_id: UUID | None
+    path: str
+    label: str
+    metadata: dict[str, object]
+
+
+class ArtifactUploadPayload(Protocol):
+    agent_run_id: UUID | None
+    filename: str
+    storage_key: str | None
+    checksum_sha256: str | None
+    metadata: dict[str, object]
+
+
+class JobCompletePayload(Protocol):
+    status: str
+    output: dict[str, object] | None
+    error: dict[str, object] | None
+
+
+class McpJobCompletePayload(Protocol):
+    status: str
+    response_payload: dict[str, object] | None
+    error_payload: dict[str, object] | None
+
+
+class ProgressEventPayload(Protocol):
+    agent_run_id: UUID
+    event_type: str
+    message: str
+    metadata: dict[str, object]

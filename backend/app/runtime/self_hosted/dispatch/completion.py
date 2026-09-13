@@ -6,12 +6,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.self_hosted import JobCompleteRequest
 from backend.app.core.common.config import Settings
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStateService
 from backend.app.domains.orchestration.runs.status import RunStatus
-from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker, JobCompletePayload
 from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
 from backend.app.runtime.self_hosted.models import SelfHostedJobClaim
 from backend.app.runtime.self_hosted.projects.files import SelfHostedProjectFileService
@@ -29,7 +28,7 @@ class SelfHostedRunCompletionService:
         self,
         auth: AuthenticatedWorker,
         agent_run_id: UUID,
-        data: JobCompleteRequest,
+        data: JobCompletePayload,
     ) -> SelfHostedJobClaim:
         run = self._locked_worker_run(auth, agent_run_id)
         claim = self._locked_claim_for_run(run)
@@ -79,7 +78,7 @@ class SelfHostedRunCompletionService:
         auth: AuthenticatedWorker,
         run: AgentRun,
         claim: SelfHostedJobClaim,
-        data: JobCompleteRequest,
+        data: JobCompletePayload,
     ) -> None:
         now = datetime.now(UTC)
         claim.status = data.status

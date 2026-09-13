@@ -5,9 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.self_hosted import ProgressEventRequest
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker, ProgressEventPayload
 from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
 
 
@@ -19,7 +18,7 @@ class SelfHostedProgressService:
     def upload_progress(
         self,
         auth: AuthenticatedWorker,
-        data: ProgressEventRequest,
+        data: ProgressEventPayload,
     ) -> RunEvent:
         run = self._require_worker_run(auth, data.agent_run_id)
         event = self._events.append_run_event(run, data.event_type, data.message, data.metadata)

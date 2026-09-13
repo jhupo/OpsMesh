@@ -2,22 +2,20 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.self_hosted import (
-    ArtifactUploadRequest,
-    EnrollmentTokenCreateRequest,
-    JobCompleteRequest,
-    LocalFileReferenceRequest,
-    McpJobCompleteRequest,
-    RuntimeRegistrationRequest,
-    WorkerHeartbeatRequest,
-)
 from backend.app.core.common.config import Settings
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.runtime.self_hosted.contracts import (
+    ArtifactUploadPayload,
     AuthenticatedWorker,
     CreatedEnrollmentToken,
+    EnrollmentTokenCreatePayload,
+    JobCompletePayload,
+    LocalFileReferencePayload,
+    McpJobCompletePayload,
     RegisteredRuntime,
+    RuntimeRegistrationPayload,
     WorkerControlResult,
+    WorkerHeartbeatPayload,
     WorkerTrustCleanupResult,
 )
 from backend.app.runtime.self_hosted.dispatch.completion import SelfHostedRunCompletionService
@@ -64,12 +62,12 @@ class SelfHostedRuntimeService:
         self,
         workspace_id: UUID,
         user_id: UUID,
-        data: EnrollmentTokenCreateRequest,
+        data: EnrollmentTokenCreatePayload,
     ) -> CreatedEnrollmentToken:
         self._policy_gate.require_enabled()
         return self._identity.create_enrollment_token(workspace_id, user_id, data)
 
-    def register_runtime(self, data: RuntimeRegistrationRequest) -> RegisteredRuntime:
+    def register_runtime(self, data: RuntimeRegistrationPayload) -> RegisteredRuntime:
         self._policy_gate.require_enabled()
         return self._identity.register_runtime(data)
 
@@ -79,21 +77,21 @@ class SelfHostedRuntimeService:
     def heartbeat(
         self,
         auth: AuthenticatedWorker,
-        data: WorkerHeartbeatRequest,
+        data: WorkerHeartbeatPayload,
     ) -> SelfHostedWorker:
         return self._identity.heartbeat(auth, data)
 
     def create_local_file_reference(
         self,
         auth: AuthenticatedWorker,
-        data: LocalFileReferenceRequest,
+        data: LocalFileReferencePayload,
     ) -> LocalFileReference:
         return SelfHostedArtifactService(self._session).create_local_file_reference(auth, data)
 
     def register_artifact_upload(
         self,
         auth: AuthenticatedWorker,
-        data: ArtifactUploadRequest,
+        data: ArtifactUploadPayload,
     ) -> SelfHostedArtifactUpload:
         return SelfHostedArtifactService(self._session).register_artifact_upload(auth, data)
 
@@ -107,7 +105,7 @@ class SelfHostedRuntimeService:
         self,
         auth: AuthenticatedWorker,
         agent_run_id: UUID,
-        data: JobCompleteRequest,
+        data: JobCompletePayload,
     ) -> SelfHostedJobClaim:
         return SelfHostedRunCompletionService(self._session, self._settings).complete_job(
             auth,
@@ -138,7 +136,7 @@ class SelfHostedRuntimeService:
         self,
         auth: AuthenticatedWorker,
         mcp_job_id: UUID,
-        data: McpJobCompleteRequest,
+        data: McpJobCompletePayload,
     ) -> SelfHostedMcpJob:
         return SelfHostedMcpJobService(self._session).complete_mcp_job(
             auth,

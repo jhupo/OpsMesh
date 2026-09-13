@@ -244,3 +244,16 @@ in the API boundary.
 The queue retains one idempotency, lease, retry and workspace-filter implementation. No queue data
 format, Redis key, retry policy or public API behavior changed. Focused Redis queue, worker
 dependency, worker runner and architecture tests must pass before this batch is committed.
+
+## File-level consolidation follow-up: 2026-09-13 (self-hosted transport boundary)
+
+Self-hosted runtime services no longer import request models from `api/schemas/operations`. Those
+Pydantic models are transport concerns; the runtime now declares structural payload contracts in
+`runtime/self_hosted/contracts.py`. FastAPI request models satisfy those contracts at the API edge,
+while enrollment, heartbeat, job completion, MCP completion, progress and project-file services
+depend only on the runtime-owned shapes. This removes an inward dependency without introducing
+aliases, conversion wrappers or a second validation implementation.
+
+The architecture test now rejects direct API imports from the self-hosted runtime package. Focused
+self-hosted runtime, connector, project-file and architecture tests, application mypy, Ruff and the
+seven import-linter contracts passed for this batch.

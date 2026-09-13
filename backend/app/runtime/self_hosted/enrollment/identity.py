@@ -8,11 +8,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.self_hosted import (
-    EnrollmentTokenCreateRequest,
-    RuntimeRegistrationRequest,
-    WorkerHeartbeatRequest,
-)
 from backend.app.core.common.config import Settings
 from backend.app.core.common.values import uuid_or_none
 from backend.app.runtime.environment.models import WorkspaceRuntime
@@ -20,7 +15,10 @@ from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.runtime.self_hosted.contracts import (
     AuthenticatedWorker,
     CreatedEnrollmentToken,
+    EnrollmentTokenCreatePayload,
     RegisteredRuntime,
+    RuntimeRegistrationPayload,
+    WorkerHeartbeatPayload,
 )
 from backend.app.runtime.self_hosted.enrollment.attestation import (
     CapabilityAttestationResult,
@@ -49,7 +47,7 @@ class SelfHostedIdentityService:
         self,
         workspace_id: UUID,
         user_id: UUID,
-        data: EnrollmentTokenCreateRequest,
+        data: EnrollmentTokenCreatePayload,
     ) -> CreatedEnrollmentToken:
         token = f"ccrt_{token_urlsafe(32)}"
         record = RuntimeEnrollmentToken(
@@ -64,7 +62,7 @@ class SelfHostedIdentityService:
         self._session.refresh(record)
         return CreatedEnrollmentToken(record=record, token=token)
 
-    def register_runtime(self, data: RuntimeRegistrationRequest) -> RegisteredRuntime:
+    def register_runtime(self, data: RuntimeRegistrationPayload) -> RegisteredRuntime:
         token = self._consume_enrollment_token(data.enrollment_token)
         now = datetime.now(UTC)
         capabilities = self.validated_capabilities(
@@ -165,7 +163,7 @@ class SelfHostedIdentityService:
     def heartbeat(
         self,
         auth: AuthenticatedWorker,
-        data: WorkerHeartbeatRequest,
+        data: WorkerHeartbeatPayload,
     ) -> SelfHostedWorker:
         now = datetime.now(UTC)
         if auth.worker.status in {"revoked", "disabled"} or auth.runtime.status in {
@@ -210,7 +208,7 @@ class SelfHostedIdentityService:
     def _heartbeat_attestation(
         self,
         auth: AuthenticatedWorker,
-        data: WorkerHeartbeatRequest,
+        data: WorkerHeartbeatPayload,
         capabilities: dict[str, object],
     ) -> CapabilityAttestationResult:
         if data.attestation is None and capabilities == auth.worker.capabilities:

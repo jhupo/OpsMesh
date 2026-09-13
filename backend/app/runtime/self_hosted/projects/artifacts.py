@@ -3,14 +3,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.self_hosted import (
-    ArtifactUploadRequest,
-    LocalFileReferenceRequest,
-)
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.workspace.storage.security import safe_filename, validate_storage_key
-from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.contracts import (
+    ArtifactUploadPayload,
+    AuthenticatedWorker,
+    LocalFileReferencePayload,
+)
 from backend.app.runtime.self_hosted.enrollment.policy import positive_policy_int
 from backend.app.runtime.self_hosted.models import LocalFileReference, SelfHostedArtifactUpload
 
@@ -22,7 +22,7 @@ class SelfHostedArtifactService:
     def create_local_file_reference(
         self,
         auth: AuthenticatedWorker,
-        data: LocalFileReferenceRequest,
+        data: LocalFileReferencePayload,
     ) -> LocalFileReference:
         if data.task_id is not None:
             task = self._session.scalar(
@@ -55,7 +55,7 @@ class SelfHostedArtifactService:
     def register_artifact_upload(
         self,
         auth: AuthenticatedWorker,
-        data: ArtifactUploadRequest,
+        data: ArtifactUploadPayload,
     ) -> SelfHostedArtifactUpload:
         run = self._validate_worker_run(auth, data.agent_run_id)
         step = (

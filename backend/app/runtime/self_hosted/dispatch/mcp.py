@@ -6,11 +6,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.self_hosted import McpJobCompleteRequest
 from backend.app.domains.capabilities.models import McpServer
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker, McpJobCompletePayload
 from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
 from backend.app.runtime.self_hosted.models import SelfHostedMcpJob
 from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
@@ -69,7 +68,7 @@ class SelfHostedMcpJobService:
         self,
         auth: AuthenticatedWorker,
         mcp_job_id: UUID,
-        data: McpJobCompleteRequest,
+        data: McpJobCompletePayload,
     ) -> SelfHostedMcpJob:
         job = self._locked_mcp_job(auth, mcp_job_id)
         if job.status in {"completed", "failed"}:

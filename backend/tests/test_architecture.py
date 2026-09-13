@@ -388,6 +388,14 @@ def test_self_hosted_runtime_modules_are_nested_by_function() -> None:
         "worker_control.py",
     ):
         assert not (runtime / name).exists(), name
+    direct_api_imports = [
+        path.relative_to(ROOT).as_posix()
+        for path in runtime.rglob("*.py")
+        if "backend.app.api" in path.read_text(encoding="utf-8")
+    ]
+    assert not direct_api_imports, "Self-hosted runtime imports API transport: " + ", ".join(
+        direct_api_imports
+    )
 
 
 def test_project_modules_are_nested_by_function() -> None:
