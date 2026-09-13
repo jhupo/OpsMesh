@@ -17,7 +17,7 @@ The backend must provide:
 - workspace-scoped agents and teams
 - task and run orchestration
 - async worker execution
-- OpenAI Agents SDK integration
+- OpenAI Agents SDK and Claude Agent SDK integration
 - Docker runtime management
 - MCP, tools, and skill capability control
 - file upload/download and artifact collection
@@ -30,91 +30,95 @@ The backend must provide:
 
    High-level backend system shape.
 
-2. [Backend Service Architecture](backend-service-architecture.md)
+2. [Agent Runtime Architecture](agent-runtime-architecture.md)
 
-   Split between API, orchestration, OpenAI Agents runtime layer, workers, and runtime manager.
+   Current provider-neutral run boundaries, execution modes, project I/O, and evidence flow.
 
-3. [Domain Model](domain-model.md)
+3. [Backend Service Architecture](backend-service-architecture.md)
+
+   Split between API, orchestration, provider SDK runtime, workers, and runtime environment.
+
+4. [Domain Model](domain-model.md)
 
    Core backend entities and relationships.
 
-4. [API Design](api-design.md)
+5. [API Design](api-design.md)
 
    Workspace-scoped API surface for the backend.
 
-5. [Domain Task Extensions](domain-task-extensions.md)
+6. [Domain Task Extensions](domain-task-extensions.md)
 
    Backend model for team-specific task state, task view payloads, review comments, and revision requests.
 
-6. [Backend Runtime Control Plane](backend-runtime-control-plane.md)
+7. [Backend Runtime Control Plane](backend-runtime-control-plane.md)
 
    Docker runtime lifecycle, limits, files, logs, and cleanup.
 
-7. [Cloud Control Plane And Runtime Spaces](cloud-control-plane-and-runtime-spaces.md)
+8. [Cloud Control Plane And Runtime Spaces](cloud-control-plane-and-runtime-spaces.md)
 
    Managed backend control plane objects, runtime spaces, worker fleet controls, quotas, and operator APIs.
 
-8. [Agent Runtime Contract](agent-runtime-contract.md)
+9. [Agent Runtime Contract](agent-runtime-contract.md)
 
-   Boundary between product orchestration and OpenAI Agents SDK execution.
+   Boundary between product orchestration and provider SDK execution.
 
-9. [Capabilities And Runtime](capabilities-and-runtime.md)
+10. [Capabilities And Runtime](capabilities-and-runtime.md)
 
    Capability, skill, tool, MCP, and runtime model.
 
-10. [Workspace Data Management](workspace-data-management.md)
+11. [Workspace Data Management](workspace-data-management.md)
 
    Upload, download, artifacts, runtime staging, and exports.
 
-11. [Isolation And Security](isolation-and-security.md)
+12. [Isolation And Security](isolation-and-security.md)
 
    Workspace, runtime, tool, memory, file, and worker isolation.
 
-12. [Threat Model](threat-model.md)
+13. [Threat Model](threat-model.md)
 
     Backend security threats and mitigations.
 
-13. [Self-Hosted Runtimes](self-hosted-runtimes.md)
+14. [Self-Hosted Runtimes](self-hosted-runtimes.md)
 
     User-owned machine execution model.
 
-14. [MVP Spec](mvp-spec.md)
+15. [MVP Spec](mvp-spec.md)
 
     First backend MVP acceptance criteria.
 
-15. [Roadmap](roadmap.md)
+16. [Roadmap](roadmap.md)
 
     Backend-first implementation sequence.
 
-16. [Decisions](decisions.md)
+17. [Decisions](decisions.md)
 
    Stable architecture and implementation decisions.
 
-17. [Backend Task Breakdown](backend-task-breakdown.md)
+18. [Backend Task Breakdown](backend-task-breakdown.md)
 
    Actionable engineering task list from backend framework setup to complete backend capabilities.
 
-18. [Backend Deployment](backend-deployment.md)
+19. [Backend Deployment](backend-deployment.md)
 
    Production VPS/systemd deployment, release bundle updates, local Compose guidance, and environment setup.
 
-19. [Backend Completion Plan](backend-completion-plan.md)
+20. [Backend Completion Plan](backend-completion-plan.md)
 
    Detailed list of backend areas that are incomplete or only implemented as a basic foundation, with implementation tasks and acceptance criteria.
 
-20. [Backend Next Task Table](backend-next-task-table.md)
+21. [Backend Next Task Table](backend-next-task-table.md)
 
    Active execution checklist for the next backend phase.
 
-21. [Open-Source SDK Strategy](open-source-sdk-strategy.md)
+22. [Open-Source SDK Strategy](open-source-sdk-strategy.md)
 
    Candidate SDKs, adoption order, evaluation criteria, and the boundaries OpsMesh continues to own.
 
-22. [Observability, Audit, and Cost Operations](observability-audit-and-costs.md)
+23. [Observability, Audit, and Cost Operations](observability-audit-and-costs.md)
 
    Production signal flow, deployment, verification, audit integrity, and model cost operations.
 
-23. [Agent Runtime Completion Plan](agent-runtime-completion-plan.md)
+24. [Agent Runtime Completion Plan](agent-runtime-completion-plan.md)
 
    Active, acceptance-driven plan for SDK adaptation, approvals, workspace I/O, context and memory,
    orchestration, and per-run isolation.

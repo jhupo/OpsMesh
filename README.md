@@ -98,7 +98,7 @@ flowchart LR
     subgraph Execution["Asynchronous execution plane"]
         Workers["Worker fleet<br/>claim / preflight / recovery / maintenance"]
         MemoryContext["Authorized memory context<br/>grant prefilter / hybrid retrieval<br/>token budget evidence"]
-        Agents["Agent runtime<br/>OpenAI Agents SDK<br/>provider adapters"]
+        Agents["Agent runtime<br/>OpenAI Agents SDK + Claude Agent SDK<br/>provider adapters"]
         ToolBoundary["Agent execution gateway<br/>schema / parameters / resources<br/>approval / live revocation / audit"]
         RemoteMCP["Official MCP SDK<br/>HTTP / SSE"]
         Stdio["stdio MCP router"]

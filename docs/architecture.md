@@ -2,7 +2,7 @@
 
 ## Product Shape
 
-OpsMesh is a multi-user workspace product for operating AI agent teams inside isolated user workspaces. The OpenAI Agents SDK and product-owned provider adapters provide model execution primitives, while this application owns the business layer: users, workspaces, agent definitions, task orchestration, permissions, persistence, audit logs, markets, cost accounting, and product APIs.
+OpsMesh is a multi-user workspace product for operating AI agent teams inside isolated user workspaces. The OpenAI Agents SDK and Claude Agent SDK, behind product-owned provider adapters, provide model execution primitives, while this application owns the business layer: users, workspaces, agent definitions, task orchestration, permissions, persistence, audit logs, markets, cost accounting, and product APIs. See the [Agent Runtime Architecture](agent-runtime-architecture.md) for the current run-level boundary map and lifecycle.
 
 The core unit is a workspace. A workspace is the boundary for data, agents, tasks, tools, files, memory, and access control.
 
@@ -25,9 +25,9 @@ are offline. See [delivery operations](delivery-operations.md) for support and a
 
    Converts workspace tasks into agent runs, manages task state transitions, coordinates manager and specialist agents, persists run events, and resumes paused runs.
 
-3. Agent Runtime
+3. Agent SDK Runtime
 
-   Uses `openai-agents-python` to run `Agent`, `Runner`, tools, handoffs, guardrails, sessions, tracing, and sandbox agents. Runtime code should be mostly stateless and driven by database configuration. User-controlled or agent-controlled executable work must run inside an isolated runtime, never directly on the application server host.
+   Uses the official OpenAI Agents SDK and Claude Agent SDK through provider adapters to run agent turns, tools, handoffs, guardrails, sessions, tracing, structured results, and provider-native sandbox features. Runtime code should be mostly stateless and driven by database configuration. User-controlled or agent-controlled executable work must run inside an isolated runtime, never directly on the application server host.
 
 4. Persistence
 
@@ -52,7 +52,7 @@ are offline. See [delivery operations](delivery-operations.md) for support and a
 
    Platform operator services manage runtime spaces, worker fleet health, queue pressure, quota reservations, Docker leases, self-hosted trust state, network policy, and cleanup evidence. This is still personal-workspace oriented and does not require a billing or company-account layer. See [Cloud Control Plane And Runtime Spaces](cloud-control-plane-and-runtime-spaces.md).
 
-The backend should be organized into three major domains: the OpenAI Agents Runtime Layer, the Agent Management and Orchestration Layer, and the Product Backend Service Layer. Long-running work is executed by workers through queues and persisted state, not directly inside API requests. See [Backend Service Architecture](backend-service-architecture.md).
+The backend should be organized into three major domains: the Agent SDK Runtime Layer, the Agent Management and Orchestration Layer, and the Product Backend Service Layer. Long-running work is executed by workers through queues and persisted state, not directly inside API requests. See [Backend Service Architecture](backend-service-architecture.md).
 
 The runtime model supports both platform-managed Docker runtimes and self-hosted connector runtimes on user-owned machines. Self-hosted workers connect outbound to the platform, keep sensitive data local when configured, and execute tasks in local isolated runtimes. See [Self-Hosted Runtimes](self-hosted-runtimes.md).
 

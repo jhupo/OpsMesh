@@ -30,13 +30,16 @@ This supports a clearer product narrative: users hire, staff, supervise, and rev
 
 ## Architecture Decisions
 
-### D004: OpenAI Agents SDK Is The Agent Runtime Foundation
+### D004: Provider SDKs Sit Behind One Agent Runtime Contract
 
-The system uses `openai-agents-python` for agent execution primitives.
+The system uses the official OpenAI Agents SDK and Claude Agent SDK as provider execution cores
+behind one product-owned agent runtime contract.
 
 Reason:
 
-It provides Agent, Runner, tools, handoffs, guardrails, sessions, tracing, sandbox, and realtime foundations.
+The provider SDKs provide the maintained Agent/Runner, tools, handoffs, guardrails, sessions,
+tracing, structured-output, and sandbox primitives. OpsMesh owns authorization, durable state,
+runtime placement, project I/O, memory, redaction, audit, and cost evidence at the adapter boundary.
 
 ### D005: Postgres Is The Source Of Truth
 

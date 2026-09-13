@@ -26,8 +26,9 @@ by `main`. Shared core no longer imports HTTP error responses. The old core modu
 | Agent runtime contract | No direct or indirect provider SDK or API dependency, including type-checking imports |
 
 Configuration lives in `pyproject.toml`. There are no ignored-import exemptions or compatibility
-modules. Package markers in `runtime_manager` and `api/services` ensure those modules are included
-in the static graph. A test requires every application Python directory to remain a regular package.
+modules. Package markers in `runtime/environment` and `api/services` ensure those modules are
+included in the static graph. A test requires every application Python directory to remain a
+regular package.
 
 ## Dependency decision
 

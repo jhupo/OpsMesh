@@ -136,7 +136,7 @@ Worker
     +--> Agent SDK Runtime Layer
     |        |
     |        v
-    |   openai-agents-python Runner
+    |   OpenAI Agents SDK or Claude Agent SDK runner
     |
     +--> Execution Runtime Manager
              |

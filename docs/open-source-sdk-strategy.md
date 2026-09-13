@@ -174,7 +174,7 @@ and structured daemon errors.
 mount validation, capability dropping, read-only root filesystems, network restrictions, leases,
 workspace labels, cleanup verification, and security evidence.
 
-Docker SDK objects do not cross `runtime_manager`. Command input bytes use the product-owned
+Docker SDK objects do not cross `runtime/environment`. Command input bytes use the product-owned
 `RuntimeCommandInputFile` contract: the Docker adapter creates an owner-scoped, read-only temporary
 file in the runtime, appends only its generated path to the command, and removes it after execution.
 Project archives are re-owned to the container identity before extraction so a non-root runtime can
