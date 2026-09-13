@@ -132,7 +132,12 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
     assert "packages: write" in publish
     assert "subject-path: dist/*" in publish
     assert "scripts.publish_release" in publish
-    assert "mcp_stdio_client --check" in publish
+    assert "scripts/check_runtime_image.py" in publish
+    delivery = (ROOT / ".github/workflows/delivery-validation.yml").read_text("utf-8")
+    assert "scripts/check_runtime_image.py" in delivery
+    runtime_probe = (ROOT / "scripts/check_runtime_image.py").read_text("utf-8")
+    assert '"--network"' in runtime_probe
+    assert '"none"' in runtime_probe
     assert "uv build" not in publish
     assert "docker build" not in commands
     assert "candidate-${{ github.run_id }}-${{ github.run_attempt }}" in publish

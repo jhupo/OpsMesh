@@ -46,7 +46,9 @@ jobs:
           docker compose up --build --wait --wait-timeout 180
           curl --fail http://127.0.0.1:8000/api/v1/health/ready
           docker build -f Dockerfile.runtime -t opsmesh-runtime:ci .
-          docker run --rm opsmesh-runtime:ci python -m opsmesh_runtime.mcp_stdio_client --check
+          uv run python scripts/check_runtime_image.py \
+            --image opsmesh-runtime:ci \
+            --fixture backend/tests/fixtures/mcp_stdio_server.py
       - name: Real backup restoration and tamper denial
         run: |
           sudo env "PATH=$PATH" OPSMESH_ENVIRONMENT=test OPSMESH_DELIVERY_BACKUP_TEST=1 \

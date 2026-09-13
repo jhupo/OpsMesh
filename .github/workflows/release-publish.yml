@@ -90,7 +90,9 @@ jobs:
           BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
           RUNTIME_DIGEST: ${{ steps.runtime.outputs.digest }}
         run: |
-          docker run --rm "ghcr.io/jhupo/opsmesh-runtime@$RUNTIME_DIGEST" python -m opsmesh_runtime.mcp_stdio_client --check
+          uv run python scripts/check_runtime_image.py \
+            --image "ghcr.io/jhupo/opsmesh-runtime@$RUNTIME_DIGEST" \
+            --fixture backend/tests/fixtures/mcp_stdio_server.py
           docker run --rm "ghcr.io/jhupo/opsmesh@$BACKEND_DIGEST" python -c 'from backend.app.main import create_app; create_app()'
       - name: Verify fresh production Compose deployment using candidate digests
         env:
