@@ -436,8 +436,9 @@ Build:
   checksum replacement.
 - [x] Return richer suggested resolutions with recommended actions and resolution templates for
   replace-object and install-dependency workflows.
-- Broaden explicit resolution maps for additional archive replacement and dependency-install
-  edge cases.
+- [x] Broaden explicit resolution maps for additional archive replacement and dependency-install
+  edge cases, including archive metadata forwarding, skipped team/runtime dependencies, forward
+  team reporting references, task-step dependency IDs, and artifact supersedes links.
 
 API/data changes:
 
@@ -465,6 +466,7 @@ Tests:
   checksum conflicts
 - [x] committed metadata import honors selected dependency mappings to existing target resources
 - [x] committed archive import honors selected checksum replacement resolutions
+- [x] committed metadata/archive imports remap relational task-step and artifact version references
 
 Acceptance:
 

@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,9 @@ from backend.app.api.services.workspace.exports.archive_blob_reader import (
     WorkspaceArchiveBlobReader,
 )
 from backend.app.api.services.workspace.imports.checksum import _validated_checksum
+from backend.app.api.services.workspace.imports.dependency_resolution import (
+    resolved_dependency_id,
+)
 from backend.app.api.services.workspace.imports.fields import (
     _dict_field,
     _int_field,
@@ -38,6 +41,29 @@ class WorkspaceArchiveArtifactImporter:
         self._session = session
         self._blob_reader = blob_reader
         self._storage_writes = storage_writes
+        self._pending_supersedes: list[tuple[Artifact, str, str, str | None]] = []
+
+    def finalize(self, response: WorkspaceImportResponse) -> None:
+        """Resolve artifact version links after every archive object has an ID."""
+
+        for artifact, source_id, source_supersedes_id, imported_supersedes_id in (
+            self._pending_supersedes
+        ):
+            imported_supersedes_id = imported_supersedes_id or response.id_map["artifacts"].get(
+                source_supersedes_id
+            )
+            if imported_supersedes_id is None:
+                response.warnings.append(
+                    f"Imported artifact {source_id} without a mapped superseded artifact"
+                )
+                continue
+            artifact.supersedes_artifact_id = UUID(imported_supersedes_id)
+            artifact.artifact_metadata = {
+                **artifact.artifact_metadata,
+                "imported_supersedes_artifact_id": imported_supersedes_id,
+            }
+        if self._pending_supersedes:
+            self._session.flush()
 
     def import_blob(
         self,
@@ -119,6 +145,18 @@ class WorkspaceArchiveArtifactImporter:
         imported_step_id = response.id_map.get("task_steps", {}).get(source_step_id)
         imported_agent_id = response.id_map.get("agents", {}).get(source_agent_id)
         imported_supersedes_id = response.id_map["artifacts"].get(source_supersedes_id)
+        if imported_supersedes_id is None:
+            imported_supersedes_id = resolved_dependency_id(
+                self._session,
+                workspace_id=workspace.id,
+                request=request,
+                collection="artifacts",
+                source_id=source_id,
+                source_dependency_id=source_supersedes_id,
+                dependency_field="supersedes_artifact_id",
+                id_map=response.id_map["artifacts"],
+                model=Artifact,
+            )
         if source_task_id and imported_task_id is None:
             response.warnings.append(f"Imported artifact {source_id} without a mapped task")
         if source_run_id and imported_run_id is None:
@@ -132,7 +170,7 @@ class WorkspaceArchiveArtifactImporter:
             agent_run_id=None,
             task_step_id=_uuid_or_none(imported_step_id),
             agent_profile_id=_uuid_or_none(imported_agent_id),
-            supersedes_artifact_id=_uuid_or_none(imported_supersedes_id),
+            supersedes_artifact_id=None,
             work_package_id=_optional_string_field(item, "work_package_id"),
             version=_int_field(item, "version", 1),
             review_status=_string_field(item, "review_status", "pending"),
@@ -154,7 +192,7 @@ class WorkspaceArchiveArtifactImporter:
                 "imported_agent_run_id": imported_run_id,
                 "imported_task_step_id": imported_step_id,
                 "imported_agent_profile_id": imported_agent_id,
-                "imported_supersedes_artifact_id": imported_supersedes_id,
+                "imported_supersedes_artifact_id": None,
                 "import_checksum_matched": checksum_matched,
             },
             created_at=datetime.now(UTC),
@@ -163,3 +201,7 @@ class WorkspaceArchiveArtifactImporter:
         self._session.flush()
         self._storage_writes.write_new(artifact.storage_key, content)
         response.id_map["artifacts"][source_id] = str(artifact.id)
+        if source_supersedes_id:
+            self._pending_supersedes.append(
+                (artifact, source_id, source_supersedes_id, imported_supersedes_id)
+            )

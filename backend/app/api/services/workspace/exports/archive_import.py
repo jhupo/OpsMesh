@@ -120,6 +120,7 @@ class WorkspaceArchiveImportService:
                 import_skill_installs=request.import_skill_installs,
                 name_prefix=request.name_prefix,
                 max_items_per_collection=request.max_items_per_collection,
+                resolutions=request.resolutions,
             ),
             record_preview=False,
             commit=False,
@@ -174,6 +175,7 @@ class WorkspaceArchiveImportService:
                     response=response,
                     total_bytes=total_bytes,
                 )
+            artifact_importer.finalize(response)
 
     def _record_archive_import(
         self,

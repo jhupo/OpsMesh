@@ -11,6 +11,7 @@ from backend.app.api.services.workspace.imports.context import (
     WorkspaceMetadataImportContext,
 )
 from backend.app.api.services.workspace.imports.dependency_resolution import (
+    remap_task_step_dependencies,
     resolved_dependency_id,
 )
 from backend.app.api.services.workspace.imports.fields import (
@@ -25,6 +26,7 @@ from backend.app.api.services.workspace.imports.fields import (
 from backend.app.api.services.workspace.imports.resolution import _resolved_import_name
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 
 
@@ -59,9 +61,27 @@ class TaskMetadataImporter:
                 if ctx.request.dry_run:
                     ctx.id_map["tasks"][source_id] = source_id
                     continue
-                team_id = ctx.id_map["teams"].get(_string_field(item, "agent_team_id"))
-                runtime_space_id = ctx.id_map["runtime_spaces"].get(
-                    _string_field(item, "runtime_space_id")
+                team_id = resolved_dependency_id(
+                    self._session,
+                    workspace_id=ctx.workspace.id,
+                    request=ctx.request,
+                    collection="tasks",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "agent_team_id"),
+                    dependency_field="agent_team_id",
+                    id_map=ctx.id_map["teams"],
+                    model=AgentTeam,
+                )
+                runtime_space_id = resolved_dependency_id(
+                    self._session,
+                    workspace_id=ctx.workspace.id,
+                    request=ctx.request,
+                    collection="tasks",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "runtime_space_id"),
+                    dependency_field="runtime_space_id",
+                    id_map=ctx.id_map["runtime_spaces"],
+                    model=RuntimeSpace,
                 )
                 task = Task(
                     workspace_id=ctx.workspace.id,
@@ -84,6 +104,7 @@ class TaskMetadataImporter:
                 self._session.flush()
                 ctx.id_map["tasks"][source_id] = str(task.id)
 
+            pending_step_dependencies: list[tuple[TaskStep, dict[str, object]]] = []
             for item in ctx.request.export.task_steps[: ctx.request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
                 task_id = resolved_dependency_id(self._session, 
@@ -147,12 +168,21 @@ class TaskMetadataImporter:
                     description=_string_field(item, "description"),
                     status="queued",
                     order_index=_int_field(item, "order_index", 0),
-                    dependencies=_dict_field(item, "dependencies"),
+                    dependencies={},
                     result_summary=_optional_string_field(item, "result_summary"),
                 )
                 self._session.add(step)
                 self._session.flush()
                 ctx.id_map["task_steps"][source_id] = str(step.id)
+                pending_step_dependencies.append((step, _dict_field(item, "dependencies")))
+
+            if not ctx.request.dry_run:
+                for step, dependencies in pending_step_dependencies:
+                    step.dependencies = remap_task_step_dependencies(
+                        dependencies,
+                        ctx.id_map["task_steps"],
+                    )
+                self._session.flush()
 
             for item in ctx.request.export.task_messages[: ctx.request.max_items_per_collection]:
                 source_id = _string_field(item, "id")

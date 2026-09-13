@@ -24,7 +24,7 @@ def _resolved_import_name(
 
 
 def _resolution_action(
-    request: WorkspaceImportRequest,
+    request: WorkspaceImportRequest | WorkspaceArchiveImportRequest,
     collection: str,
     source_id: str,
 ) -> str | None:
@@ -34,7 +34,7 @@ def _resolution_action(
 
 
 def _resolution(
-    request: WorkspaceImportRequest,
+    request: WorkspaceImportRequest | WorkspaceArchiveImportRequest,
     collection: str,
     source_id: str,
 ) -> dict[str, object]:

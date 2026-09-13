@@ -12,6 +12,9 @@ from backend.app.api.services.workspace.imports.conflicts import (
 from backend.app.api.services.workspace.imports.context import (
     WorkspaceMetadataImportContext,
 )
+from backend.app.api.services.workspace.imports.dependency_resolution import (
+    resolved_dependency_id,
+)
 from backend.app.api.services.workspace.imports.fields import _dict_field, _string_field
 from backend.app.api.services.workspace.imports.resolution import (
     _resolution_action,
@@ -101,8 +104,16 @@ class RuntimeSpaceMetadataImporter:
                 ) == "exclude_quota":
                     ctx.skipped_counts["runtime_space_quotas"] += 1
                     continue
-                runtime_space_id = ctx.id_map["runtime_spaces"].get(
-                    _string_field(item, "runtime_space_id")
+                runtime_space_id = resolved_dependency_id(
+                    self._session,
+                    workspace_id=ctx.workspace.id,
+                    request=ctx.request,
+                    collection="runtime_space_quotas",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "runtime_space_id"),
+                    dependency_field="runtime_space_id",
+                    id_map=ctx.id_map["runtime_spaces"],
+                    model=RuntimeSpace,
                 )
                 if runtime_space_id is None:
                     ctx.skipped_counts["runtime_space_quotas"] += 1

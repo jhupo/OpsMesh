@@ -39,6 +39,7 @@ def _metadata_preview_token(request: WorkspaceImportRequest) -> str:
         "import_skill_installs": request.import_skill_installs,
         "max_items_per_collection": request.max_items_per_collection,
         "name_prefix": request.name_prefix,
+        "resolutions": request.resolutions,
     }
     content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return sha256(content.encode("utf-8")).hexdigest()

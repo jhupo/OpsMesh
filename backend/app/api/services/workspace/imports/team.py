@@ -25,6 +25,7 @@ from backend.app.api.services.workspace.imports.fields import (
 from backend.app.api.services.workspace.imports.resolution import _resolved_import_name
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.runtime.environment.spaces.models import RuntimeSpace
 
 
 class TeamMetadataImporter:
@@ -58,11 +59,27 @@ class TeamMetadataImporter:
                 if ctx.request.dry_run:
                     ctx.id_map["teams"][source_id] = source_id
                     continue
-                manager_id = ctx.id_map["agents"].get(
-                    _string_field(item, "manager_agent_profile_id")
+                manager_id = resolved_dependency_id(
+                    self._session,
+                    workspace_id=ctx.workspace.id,
+                    request=ctx.request,
+                    collection="teams",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "manager_agent_profile_id"),
+                    dependency_field="manager_agent_profile_id",
+                    id_map=ctx.id_map["agents"],
+                    model=AgentProfile,
                 )
-                runtime_space_id = ctx.id_map["runtime_spaces"].get(
-                    _string_field(item, "runtime_space_id")
+                runtime_space_id = resolved_dependency_id(
+                    self._session,
+                    workspace_id=ctx.workspace.id,
+                    request=ctx.request,
+                    collection="teams",
+                    source_id=source_id,
+                    source_dependency_id=_string_field(item, "runtime_space_id"),
+                    dependency_field="runtime_space_id",
+                    id_map=ctx.id_map["runtime_spaces"],
+                    model=RuntimeSpace,
                 )
                 source_capability_policy = _dict_field(item, "capability_policy")
                 if source_capability_policy:
@@ -87,9 +104,11 @@ class TeamMetadataImporter:
                 self._session.flush()
                 ctx.id_map["teams"][source_id] = str(team.id)
 
+            pending_reports_to: list[tuple[AgentTeamMember, str, str]] = []
             for item in ctx.request.export.team_members[: ctx.request.max_items_per_collection]:
                 source_id = _string_field(item, "id")
-                team_id = resolved_dependency_id(self._session, 
+                team_id = resolved_dependency_id(
+                    self._session,
                     workspace_id=ctx.workspace.id,
                     request=ctx.request,
                     collection="team_members",
@@ -99,7 +118,8 @@ class TeamMetadataImporter:
                     id_map=ctx.id_map["teams"],
                     model=AgentTeam,
                 )
-                agent_id = resolved_dependency_id(self._session, 
+                agent_id = resolved_dependency_id(
+                    self._session,
                     workspace_id=ctx.workspace.id,
                     request=ctx.request,
                     collection="team_members",
@@ -108,9 +128,6 @@ class TeamMetadataImporter:
                     dependency_field="agent_profile_id",
                     id_map=ctx.id_map["agents"],
                     model=AgentProfile,
-                )
-                reports_to_id = ctx.id_map["team_members"].get(
-                    _string_field(item, "reports_to_member_id")
                 )
                 if team_id is None or agent_id is None:
                     ctx.skipped_counts["team_members"] += 1
@@ -140,7 +157,7 @@ class TeamMetadataImporter:
                     workspace_id=ctx.workspace.id,
                     agent_team_id=UUID(team_id),
                     agent_profile_id=UUID(agent_id),
-                    reports_to_member_id=_uuid_or_none(reports_to_id),
+                    reports_to_member_id=None,
                     team_role=_string_field(item, "team_role"),
                     department=_optional_string_field(item, "department"),
                     position_title=_optional_string_field(item, "position_title"),
@@ -156,6 +173,24 @@ class TeamMetadataImporter:
                 self._session.add(member)
                 self._session.flush()
                 ctx.id_map["team_members"][source_id] = str(member.id)
+                source_reports_to_id = _string_field(item, "reports_to_member_id")
+                if source_reports_to_id:
+                    pending_reports_to.append((member, source_id, source_reports_to_id))
+
+            if not ctx.request.dry_run:
+                for member, source_id, source_reports_to_id in pending_reports_to:
+                    reports_to_id = resolved_dependency_id(
+                        self._session,
+                        workspace_id=ctx.workspace.id,
+                        request=ctx.request,
+                        collection="team_members",
+                        source_id=source_id,
+                        source_dependency_id=source_reports_to_id,
+                        dependency_field="reports_to_member_id",
+                        id_map=ctx.id_map["team_members"],
+                        model=AgentTeamMember,
+                    )
+                    member.reports_to_member_id = _uuid_or_none(reports_to_id)
 
     def _team_exists(self, workspace_id: UUID, name: str) -> bool:
         return self._session.scalar(

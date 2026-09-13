@@ -1977,12 +1977,17 @@ def test_workspace_metadata_import_can_map_existing_team_member_dependencies(
         name="Researcher",
         role="researcher",
     )
+    source_manager_agent = AgentProfile(
+        workspace_id=source_workspace.id,
+        name="Research Manager",
+        role="manager",
+    )
     source_team = AgentTeam(
         workspace_id=source_workspace.id,
         name="Research Team",
         team_type="research",
     )
-    session.add_all([source_agent, source_team])
+    session.add_all([source_agent, source_manager_agent, source_team])
     session.flush()
     source_member = AgentTeamMember(
         workspace_id=source_workspace.id,
@@ -1990,17 +1995,32 @@ def test_workspace_metadata_import_can_map_existing_team_member_dependencies(
         agent_profile_id=source_agent.id,
         team_role="researcher",
     )
+    source_manager_member = AgentTeamMember(
+        workspace_id=source_workspace.id,
+        agent_team_id=source_team.id,
+        agent_profile_id=source_manager_agent.id,
+        team_role="manager",
+    )
     target_agent = AgentProfile(
         workspace_id=target_workspace.id,
         name="Imported Researcher",
         role="researcher",
+    )
+    target_manager_agent = AgentProfile(
+        workspace_id=target_workspace.id,
+        name="Imported Research Manager",
+        role="manager",
     )
     target_team = AgentTeam(
         workspace_id=target_workspace.id,
         name="Imported Research Team",
         team_type="research",
     )
-    session.add_all([source_member, target_agent, target_team])
+    session.add_all(
+        [source_member, source_manager_member, target_agent, target_manager_agent, target_team]
+    )
+    session.flush()
+    source_member.reports_to_member_id = source_manager_member.id
     session.commit()
 
     export_response = client.post(
@@ -2029,7 +2049,14 @@ def test_workspace_metadata_import_can_map_existing_team_member_dependencies(
                         "agent_team_id": str(target_team.id),
                         "agent_profile_id": str(target_agent.id),
                     },
-                }
+                },
+                f"team_members:{source_manager_member.id}": {
+                    "action": "import_dependency",
+                    "dependencies": {
+                        "agent_team_id": str(target_team.id),
+                        "agent_profile_id": str(target_manager_agent.id),
+                    },
+                },
             },
         },
     )
@@ -2039,8 +2066,8 @@ def test_workspace_metadata_import_can_map_existing_team_member_dependencies(
     body = committed.json()
     assert body["created_counts"]["agents"] == 0
     assert body["created_counts"]["teams"] == 0
-    assert body["created_counts"]["team_members"] == 1
-    assert body["skipped_counts"]["agents"] == 1
+    assert body["created_counts"]["team_members"] == 2
+    assert body["skipped_counts"]["agents"] == 2
     assert body["skipped_counts"]["teams"] == 1
     assert body["required_resolutions"] == []
     imported_member = session.scalar(
@@ -2050,7 +2077,16 @@ def test_workspace_metadata_import_can_map_existing_team_member_dependencies(
             AgentTeamMember.agent_profile_id == target_agent.id,
         )
     )
+    imported_manager_member = session.scalar(
+        select(AgentTeamMember).where(
+            AgentTeamMember.workspace_id == target_workspace.id,
+            AgentTeamMember.agent_team_id == target_team.id,
+            AgentTeamMember.agent_profile_id == target_manager_agent.id,
+        )
+    )
     assert imported_member is not None
+    assert imported_manager_member is not None
+    assert imported_member.reports_to_member_id == imported_manager_member.id
 
 
 def test_workspace_metadata_import_can_map_existing_task_dependencies(
@@ -2074,10 +2110,17 @@ def test_workspace_metadata_import_can_map_existing_task_dependencies(
     )
     session.add(source_task)
     session.flush()
+    source_prerequisite = TaskStep(
+        workspace_id=source_workspace.id,
+        task_id=source_task.id,
+        title="Collect sources",
+        order_index=0,
+    )
     source_step = TaskStep(
         workspace_id=source_workspace.id,
         task_id=source_task.id,
         title="Research",
+        order_index=1,
     )
     source_message = TaskMessage(
         workspace_id=source_workspace.id,
@@ -2091,7 +2134,9 @@ def test_workspace_metadata_import_can_map_existing_task_dependencies(
         created_by_user_id=target_user.id,
         title="Imported Q2 Research",
     )
-    session.add_all([source_step, source_message, target_task])
+    session.add_all([source_prerequisite, source_step, source_message, target_task])
+    session.flush()
+    source_step.dependencies = {"after_step_ids": [str(source_prerequisite.id)]}
     session.commit()
 
     export_response = client.post(
@@ -2115,6 +2160,10 @@ def test_workspace_metadata_import_can_map_existing_task_dependencies(
             "export": export_payload,
             "dry_run": False,
             "resolutions": {
+                f"task_steps:{source_prerequisite.id}": {
+                    "action": "import_dependency",
+                    "dependencies": {"task_id": str(target_task.id)},
+                },
                 f"task_steps:{source_step.id}": {
                     "action": "import_dependency",
                     "dependencies": {"task_id": str(target_task.id)},
@@ -2131,7 +2180,7 @@ def test_workspace_metadata_import_can_map_existing_task_dependencies(
     assert committed.status_code == 200
     body = committed.json()
     assert body["created_counts"]["tasks"] == 0
-    assert body["created_counts"]["task_steps"] == 1
+    assert body["created_counts"]["task_steps"] == 2
     assert body["created_counts"]["task_messages"] == 1
     assert body["skipped_counts"]["tasks"] == 1
     assert body["required_resolutions"] == []
@@ -2139,6 +2188,14 @@ def test_workspace_metadata_import_can_map_existing_task_dependencies(
         select(TaskStep).where(
             TaskStep.workspace_id == target_workspace.id,
             TaskStep.task_id == target_task.id,
+            TaskStep.title == "Research",
+        )
+    )
+    imported_prerequisite = session.scalar(
+        select(TaskStep).where(
+            TaskStep.workspace_id == target_workspace.id,
+            TaskStep.task_id == target_task.id,
+            TaskStep.title == "Collect sources",
         )
     )
     imported_message = session.scalar(
@@ -2148,6 +2205,9 @@ def test_workspace_metadata_import_can_map_existing_task_dependencies(
         )
     )
     assert imported_step is not None
+    assert imported_prerequisite is not None
+    assert imported_step.dependencies == {"after_step_ids": [str(imported_prerequisite.id)]}
+    assert str(source_prerequisite.id) not in str(imported_step.dependencies)
     assert imported_message is not None
 
 
@@ -3650,6 +3710,31 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
     )
     session.add(source_step)
     session.flush()
+    predecessor_bytes = b"chapter one draft v1"
+    predecessor_storage_key = (
+        f"workspaces/{source_workspace.id}/artifacts/{source_task.id}/chapter-v1.txt"
+    )
+    LocalStorage(str(tmp_path)).write(predecessor_storage_key, predecessor_bytes)
+    predecessor_artifact = Artifact(
+        workspace_id=source_workspace.id,
+        task_id=source_task.id,
+        agent_run_id=None,
+        task_step_id=source_step.id,
+        agent_profile_id=source_agent.id,
+        work_package_id="chapter-1",
+        version=1,
+        review_status="approved",
+        artifact_type="document",
+        filename="chapter-v1.txt",
+        content_type="text/plain",
+        size_bytes=len(predecessor_bytes),
+        checksum_sha256=sha256(predecessor_bytes).hexdigest(),
+        storage_key=predecessor_storage_key,
+        artifact_metadata={"stage": "draft"},
+        created_at=datetime.now(UTC),
+    )
+    session.add(predecessor_artifact)
+    session.flush()
     artifact_bytes = b"chapter one artifact"
     storage_key = f"workspaces/{source_workspace.id}/artifacts/{source_task.id}/chapter.txt"
     LocalStorage(str(tmp_path)).write(storage_key, artifact_bytes)
@@ -3669,6 +3754,7 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
         checksum_sha256=sha256(artifact_bytes).hexdigest(),
         storage_key=storage_key,
         artifact_metadata={"stage": "draft"},
+        supersedes_artifact_id=predecessor_artifact.id,
         created_at=datetime.now(UTC),
     )
     session.add(source_artifact)
@@ -3692,7 +3778,7 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
     assert committed.status_code == 200
     body = committed.json()
     assert body["created_counts"]["tasks"] == 1
-    assert body["created_counts"]["artifacts"] == 1
+    assert body["created_counts"]["artifacts"] == 2
     imported_task = session.scalar(
         select(Task).where(
             Task.workspace_id == target_workspace.id,
@@ -3705,12 +3791,23 @@ def test_workspace_archive_import_restores_artifact_bytes_and_task_mapping(
             Artifact.filename == "Imported chapter.txt",
         )
     )
+    imported_predecessor = session.scalar(
+        select(Artifact).where(
+            Artifact.workspace_id == target_workspace.id,
+            Artifact.filename == "Imported chapter-v1.txt",
+        )
+    )
     assert imported_task is not None
     assert imported_artifact is not None
+    assert imported_predecessor is not None
     assert imported_artifact.task_id == imported_task.id
     assert imported_artifact.agent_run_id is None
     assert imported_artifact.work_package_id == "chapter-1"
     assert imported_artifact.version == 2
+    assert imported_artifact.supersedes_artifact_id == imported_predecessor.id
+    assert imported_artifact.artifact_metadata["imported_supersedes_artifact_id"] == str(
+        imported_predecessor.id
+    )
     assert imported_artifact.review_status == "approved"
     assert imported_artifact.checksum_sha256 == sha256(artifact_bytes).hexdigest()
     assert imported_artifact.artifact_metadata["imported_from_artifact_id"] == str(
@@ -4209,6 +4306,110 @@ def test_workspace_archive_export_job_download_requires_completion(tmp_path: Pat
     )
 
     assert download.status_code == 409
+
+
+def test_workspace_archive_import_applies_metadata_dependency_resolutions(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session,
+        email="source-archive-dependencies@example.com",
+        slug="source-archive-dependencies",
+    )
+    target_user, target_workspace = _seed_workspace(
+        session,
+        email="target-archive-dependencies@example.com",
+        slug="target-archive-dependencies",
+    )
+    source_team = AgentTeam(
+        workspace_id=source_workspace.id,
+        name="Research Team",
+        team_type="research",
+    )
+    source_space = RuntimeSpace(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        name="Research Runtime",
+        scope="workspace",
+        policy={"runtime_modes": ["docker"]},
+    )
+    session.add_all([source_team, source_space])
+    session.flush()
+    source_task = Task(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        agent_team_id=source_team.id,
+        runtime_space_id=source_space.id,
+        title="Research Task",
+    )
+    target_team = AgentTeam(
+        workspace_id=target_workspace.id,
+        name="Imported Research Team",
+        team_type="research",
+    )
+    target_space = RuntimeSpace(
+        workspace_id=target_workspace.id,
+        created_by_user_id=target_user.id,
+        name="Imported Research Runtime",
+        scope="workspace",
+        policy={"runtime_modes": ["docker"]},
+    )
+    session.add_all([source_task, target_team, target_space])
+    session.commit()
+
+    exported = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={
+            "include_agents": False,
+            "include_teams": True,
+            "include_tasks": True,
+            "include_runs": False,
+            "include_files": False,
+            "include_runtime_spaces": True,
+            "include_skill_installs": False,
+            "include_audit_events": False,
+        },
+    )
+    assert exported.status_code == 200
+    archive_bytes = BytesIO()
+    with ZipFile(archive_bytes, mode="w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("metadata.json", exported.content)
+
+    imported = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import",
+        headers=_headers(target_user.id),
+        files={"file": ("archive.zip", archive_bytes.getvalue(), "application/zip")},
+        data={
+            "dry_run": "false",
+            "resolutions": json.dumps(
+                {
+                    f"tasks:{source_task.id}": {
+                        "action": "import_dependency",
+                        "dependencies": {
+                            "agent_team_id": str(target_team.id),
+                            "runtime_space_id": str(target_space.id),
+                        },
+                    }
+                }
+            ),
+        },
+    )
+
+    assert imported.status_code == 200
+    body = imported.json()
+    assert body["created_counts"]["tasks"] == 1
+    assert body["required_resolutions"] == []
+    imported_task = session.scalar(
+        select(Task).where(
+            Task.workspace_id == target_workspace.id,
+            Task.title == "Imported Research Task",
+        )
+    )
+    assert imported_task is not None
+    assert imported_task.agent_team_id == target_team.id
+    assert imported_task.runtime_space_id == target_space.id
 
 
 def _client(tmp_path: Path) -> tuple[TestClient, Session]:

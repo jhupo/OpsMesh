@@ -533,6 +533,8 @@ Tasks:
 - [x] Add structured correction flows that can target one step, one agent, or the whole task.
 - [x] Improve self-hosted machine policy controls, quotas, and revocation audit trails.
 - [x] Add import conflict previews for workspace archives.
+  - [x] Apply explicit archive metadata dependency resolutions and remap task-step/artifact
+    relationships after all imported IDs are known.
 - [x] Add stricter Docker runtime quota enforcement and cleanup verification.
 - [x] Add per-agent model provider audit events and fail-closed handling.
   - [x] Freeze provider resolution metadata into queued run authorization snapshots.
