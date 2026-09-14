@@ -1,6 +1,6 @@
 from collections import Counter
 
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.workspace.projects.exports.contracts import (
     WorkspaceExportResponse,
     WorkspaceImportConflict,
     WorkspaceImportRequiredResolution,
@@ -259,5 +259,4 @@ def _preview_action(create_count: int, skip_count: int, required_count: int) -> 
     if skip_count > 0:
         return "skip"
     return "none"
-
 

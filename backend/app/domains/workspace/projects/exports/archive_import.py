@@ -4,14 +4,6 @@ from zipfile import BadZipFile, ZipFile
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.exports import (
-    WorkspaceArchiveImportRequest,
-    WorkspaceExportResponse,
-    WorkspaceImportRequest,
-    WorkspaceImportResponse,
-)
-from backend.app.domains.workspace.projects.imports.metadata import WorkspaceMetadataImportService
-from backend.app.domains.workspace.projects.imports.preview import _populate_import_preview
 from backend.app.domains.workspace.projects.exports.archive_artifact_import import (
     WorkspaceArchiveArtifactImporter,
 )
@@ -21,6 +13,14 @@ from backend.app.domains.workspace.projects.exports.archive_blob_reader import (
 from backend.app.domains.workspace.projects.exports.archive_file_import import (
     WorkspaceArchiveFileImporter,
 )
+from backend.app.domains.workspace.projects.exports.contracts import (
+    WorkspaceArchiveImportRequest,
+    WorkspaceExportResponse,
+    WorkspaceImportRequest,
+    WorkspaceImportResponse,
+)
+from backend.app.domains.workspace.projects.imports.metadata import WorkspaceMetadataImportService
+from backend.app.domains.workspace.projects.imports.preview import _populate_import_preview
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.domains.workspace.storage.storage_transactions import (
     CompensatingObjectStorageWrites,

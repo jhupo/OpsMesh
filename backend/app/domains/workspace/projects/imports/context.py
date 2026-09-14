@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.workspace.projects.exports.contracts import (
     WorkspaceImportConflict,
     WorkspaceImportRequest,
 )

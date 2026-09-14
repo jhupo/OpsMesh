@@ -4,7 +4,11 @@ from uuid import UUID
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.base import (
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.core.db.pagination import page_scalars
+from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityCreateRequest,
     CapabilityUpdateRequest,
     SkillCreateRequest,
@@ -12,10 +16,6 @@ from backend.app.api.schemas.capabilities.base import (
     ToolGroupCreateRequest,
     ToolGroupUpdateRequest,
 )
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.pagination import PageParams
-from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.core.db.pagination import page_scalars
 from backend.app.domains.capabilities.models import (
     Capability,
     Skill,

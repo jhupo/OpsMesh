@@ -1,15 +1,4 @@
-from datetime import datetime
-from uuid import UUID
+from backend.app.core.contracts import ORMModel, TimestampedModel
 
-from pydantic import BaseModel, ConfigDict
-
-
-class ORMModel(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-
-class TimestampedModel(ORMModel):
-    id: UUID
-    created_at: datetime
-    updated_at: datetime
+__all__ = ["ORMModel", "TimestampedModel"]
 

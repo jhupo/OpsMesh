@@ -7,16 +7,16 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.capabilities.models import WorkspaceSkillInstall
+from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.workspace.projects.exports.contracts import (
     SUPPORTED_WORKSPACE_EXPORT_FORMAT,
     WorkspaceExportManifest,
     WorkspaceExportRequest,
     WorkspaceExportResponse,
 )
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.capabilities.models import WorkspaceSkillInstall
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.projects.exports.payloads import (
     _agent_payload,
     _artifact_payload,

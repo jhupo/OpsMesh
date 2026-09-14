@@ -3,7 +3,10 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.workspace.projects.exports.archive_blob_reader import (
+    WorkspaceArchiveBlobReader,
+)
+from backend.app.domains.workspace.projects.exports.contracts import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportResponse,
 )
@@ -19,9 +22,6 @@ from backend.app.domains.workspace.projects.imports.fields import (
     _uuid_or_none,
 )
 from backend.app.domains.workspace.projects.imports.resolution import _archive_resolution_action
-from backend.app.domains.workspace.projects.exports.archive_blob_reader import (
-    WorkspaceArchiveBlobReader,
-)
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.security import safe_filename
 from backend.app.domains.workspace.storage.storage_transactions import (

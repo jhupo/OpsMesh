@@ -10,9 +10,11 @@ from zipfile import BadZipFile, ZipFile
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.exports import SUPPORTED_WORKSPACE_EXPORT_FORMAT
 from backend.app.domains.workspace.projects.exports.archive_repository import (
     WorkspaceArchiveExportJobRepository,
+)
+from backend.app.domains.workspace.projects.exports.contracts import (
+    SUPPORTED_WORKSPACE_EXPORT_FORMAT,
 )
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.observability.audit_service import AuditService

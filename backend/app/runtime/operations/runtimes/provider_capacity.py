@@ -6,13 +6,13 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.capacity import RuntimeProviderCapacityResponse
 from backend.app.core.common.values import positive_int_or_none
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.workflows.statuses import (
     CAPACITY_CONSUMING_RUN_STATUS_VALUES,
 )
 from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.operations.contracts.capacity import RuntimeProviderCapacityResponse
 
 RUNTIME_CAPACITY_KEYS = ("max_concurrent_jobs", "max_jobs", "slots", "capacity_slots")
 

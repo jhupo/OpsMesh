@@ -85,6 +85,32 @@ domains/
 The exact filenames may be split further when a module owns a real state machine or adapter, but
 `payloads`, `summary`, `support`, and similar names are not package boundaries by themselves.
 
+## Enforced ownership matrix
+
+The following matrix is the source of truth for import direction. Direct reverse imports are checked
+by `backend/tests/test_architecture.py`; indirect dependency rules are checked by the eight pinned
+Import Linter contracts in `pyproject.toml`. A module may depend on a lower-level contract only when
+that dependency is part of the boundary shown here.
+
+| Boundary | Owns | Direct reverse imports forbidden |
+| --- | --- | --- |
+| `backend.app.api.routes` | HTTP transport, request context, response mapping | (may compose domain/runtime services) |
+| `backend.app.api.schemas` | Transport DTOs and validation | (may consume domain contracts; never imported by them) |
+| `backend.app.core` | Configuration, identity, security, DB/Redis and technical ports | `backend.app.api` |
+| `backend.app.domains` | Product aggregates, commands, queries and policy decisions | `backend.app.api` |
+| `backend.app.runtime` | Runtime resources, workers, leases and execution lifecycle | `backend.app.api` |
+| `backend.app.observability` | Durable audit, trace, metric, cost and notification evidence | `backend.app.api` |
+
+Vendor SDK imports are limited to explicit adapter boundaries: Agent provider adapters, model
+provider health probes, memory embedding provider adapters, resource-review provider adapters,
+Docker runtime backends, S3 storage adapters and telemetry integrations. Provider-neutral contracts,
+domain services and API schemas must not import vendor SDK classes. When a new adapter is needed,
+add it to the ownership matrix and a focused boundary test in the same change.
+
+The matrix does not make a claim that every existing module is an ideal size. It prevents ownership
+from drifting while cohesive modules are consolidated. A directory is retained only for an
+independent lifecycle, persistence/security boundary or replaceable adapter.
+
 ### Runtime
 
 `runtime` owns actual execution resources and worker lifecycle:

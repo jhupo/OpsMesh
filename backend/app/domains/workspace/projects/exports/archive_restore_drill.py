@@ -5,17 +5,17 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.exports import (
-    WorkspaceArchiveImportRequest,
-    WorkspaceArchiveRestoreDrillRequest,
-)
-from backend.app.domains.workspace.projects.imports.preview import _import_preview_audit_metadata
 from backend.app.domains.workspace.projects.exports.archive_import import (
     WorkspaceArchiveImportService,
 )
 from backend.app.domains.workspace.projects.exports.archive_repository import (
     WorkspaceArchiveExportJobRepository,
 )
+from backend.app.domains.workspace.projects.exports.contracts import (
+    WorkspaceArchiveImportRequest,
+    WorkspaceArchiveRestoreDrillRequest,
+)
+from backend.app.domains.workspace.projects.imports.preview import _import_preview_audit_metadata
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService

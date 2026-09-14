@@ -13,6 +13,46 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
+_IMPORT_LINTER_CONTRACT_IDS = {
+    "http-transport",
+    "infrastructure-no-api",
+    "pagination-no-transport",
+    "production-no-test-framework",
+    "docker-sdk-boundary",
+    "s3-sdk-boundary",
+    "provider-neutral-contracts",
+    "domain-no-api-services",
+}
+
+# This is the executable ownership matrix for application source boundaries.  Import Linter
+# enforces the indirect rules; this direct-import check keeps the ownership decision visible in
+# the test suite and covers boundaries that intentionally have no vendor dependency.
+_FORBIDDEN_BOUNDARY_IMPORTS = {
+    "backend.app.core": ("backend.app.api",),
+    "backend.app.domains": ("backend.app.api",),
+    "backend.app.runtime": ("backend.app.api",),
+    "backend.app.observability": ("backend.app.api",),
+}
+
+
+def _module_name(path: Path) -> str:
+    return ".".join(path.relative_to(ROOT).with_suffix("").parts)
+
+
+def _is_module_in_boundary(module: str, boundary: str) -> bool:
+    return module == boundary or module.startswith(boundary + ".")
+
+
+def _absolute_import_targets(path: Path) -> list[tuple[str, int]]:
+    tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+    targets: list[tuple[str, int]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            targets.extend((item.name, node.lineno) for item in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            targets.append((node.module, node.lineno))
+    return targets
+
 
 def test_consolidated_domains_have_one_source_owner() -> None:
     app = ROOT / "backend/app"
@@ -62,6 +102,24 @@ def test_consolidated_domains_have_one_source_owner() -> None:
     ):
         target = app / name
         assert not target.exists(), name
+
+
+def test_boundary_ownership_matrix_has_no_reverse_direct_imports() -> None:
+    violations: list[str] = []
+    for path in (ROOT / "backend/app").rglob("*.py"):
+        module = _module_name(path)
+        for owner, forbidden_modules in _FORBIDDEN_BOUNDARY_IMPORTS.items():
+            if not _is_module_in_boundary(module, owner):
+                continue
+            for imported, line_number in _absolute_import_targets(path):
+                if any(
+                    _is_module_in_boundary(imported, forbidden)
+                    for forbidden in forbidden_modules
+                ):
+                    violations.append(
+                        f"{path.relative_to(ROOT)}:{line_number}: {module} imports {imported}"
+                    )
+    assert not violations, "Reverse ownership imports:\n" + "\n".join(sorted(violations))
 
 
 @pytest.mark.parametrize(
@@ -225,6 +283,7 @@ def test_task_modules_are_nested_by_function() -> None:
         if path.name != "__init__.py"
     }
     assert root_modules <= {
+        "contracts",
         "events",
         "event_outbox",
         "feedback",
@@ -938,7 +997,8 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
     ]
     assert not configuration.get("exclude_type_checking_imports", False)
     contracts = configuration["contracts"]
-    assert len(contracts) == 8
+    assert {contract["id"] for contract in contracts} == _IMPORT_LINTER_CONTRACT_IDS
+    assert len(contracts) == len(_IMPORT_LINTER_CONTRACT_IDS)
     for contract in contracts:
         assert not contract.get("ignore_imports")
         assert not contract.get("allow_indirect_imports", False)

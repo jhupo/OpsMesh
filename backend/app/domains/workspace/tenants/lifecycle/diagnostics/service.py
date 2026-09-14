@@ -3,7 +3,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.exports import SUPPORTED_WORKSPACE_EXPORT_FORMAT
+from backend.app.domains.workspace.projects.exports.contracts import (
+    SUPPORTED_WORKSPACE_EXPORT_FORMAT,
+)
 from backend.app.domains.workspace.tenants.lifecycle.diagnostics.payloads import (
     _archive_integrity_payload,
     _audit_event_payload,

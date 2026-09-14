@@ -8,11 +8,11 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.workspace.projects.exports.builder import WorkspaceExportBuilder
+from backend.app.domains.workspace.projects.exports.contracts import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveExportResult,
 )
-from backend.app.domains.workspace.projects.exports.builder import WorkspaceExportBuilder
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.security import safe_filename

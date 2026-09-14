@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.capabilities.models import Skill, WorkspaceSkillInstall
 from backend.app.domains.workspace.projects.imports.conflicts import (
     _disabled_skill_install_conflict,
     _skip_conflict,
@@ -16,7 +17,6 @@ from backend.app.domains.workspace.projects.imports.fields import (
     _string_list_field,
 )
 from backend.app.domains.workspace.projects.imports.resolution import _resolution_action
-from backend.app.domains.capabilities.models import Skill, WorkspaceSkillInstall
 
 
 class SkillInstallMetadataImporter:

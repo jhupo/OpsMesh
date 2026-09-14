@@ -6,13 +6,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.common.errors import DomainError, NotFoundError
 from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityParameterPolicy,
     CapabilityPolicyScope,
     CapabilityTeamPolicy,
     CapabilityToolDescriptor,
 )
-from backend.app.core.common.errors import DomainError, NotFoundError
 from backend.app.domains.capabilities.catalog.service import WorkspaceCapabilityCatalogService
 from backend.app.domains.capabilities.resources.schema import validate_partial_parameters
 from backend.app.domains.workspace.teams.models import AgentTeam

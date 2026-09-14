@@ -5,12 +5,12 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.capacity import (
+from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.operations.contracts.capacity import (
     RuntimeSpaceQuotaUsageResponse,
     RuntimeSpaceSaturationResponse,
 )
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 
 
 class RuntimeSpaceSaturationService:

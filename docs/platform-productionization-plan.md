@@ -43,6 +43,21 @@
 定向测试基线和未提交改动。历史 release 的通过不等于当前 `master` 已通过；当前 checkout
 必须重新验证。
 
+### 1.4 当前执行证据
+
+`P0-1` 已在当前 checkout 完成，阶段其余功能点仍未完成。此次收口建立了领域合同的唯一
+所有者、API 到领域/运行时的单向映射和可执行的反向依赖门禁；迁移 head 复核为
+`0086_knowledge_revisions`。当前证据命令及结果为：
+
+- `pytest backend/tests/test_architecture.py`：40 passed；
+- P0-1 影响的能力、MCP、Marketplace、Agent 消息、Workspace 导入导出、Runtime space、
+  Operations、Task 定向回归：全部通过；
+- `ruff check backend/app backend/tests/test_architecture.py`：通过；
+- `lint-imports --no-cache`：8 kept, 0 broken；
+- `git diff --check`：通过。
+
+P0-2 至 P1-11 仍保持未完成状态，不能使用本节证据代替它们的环境验收。
+
 ## 2. 目标架构与不变量
 
 ```text

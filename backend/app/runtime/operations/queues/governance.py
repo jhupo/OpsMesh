@@ -8,18 +8,18 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.queue import (
-    QueueGovernanceDiagnosticsResponse,
-    QueueGovernanceIssueResponse,
-    QueueGovernanceReconcileAction,
-    QueueGovernanceReconcileResponse,
-)
 from backend.app.core.common.values import non_empty_string_or_none
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.observability.audit_service import AuditService
+from backend.app.runtime.operations.contracts.queue import (
+    QueueGovernanceDiagnosticsResponse,
+    QueueGovernanceIssueResponse,
+    QueueGovernanceReconcileAction,
+    QueueGovernanceReconcileResponse,
+)
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
 

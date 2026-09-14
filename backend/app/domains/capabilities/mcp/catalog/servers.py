@@ -6,18 +6,18 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.mcp_servers import (
+from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.common.errors import DomainError
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.domains.capabilities.mcp.catalog.catalog import McpCatalogServer
+from backend.app.domains.capabilities.mcp.catalog.contracts import (
     McpServerCreateRequest,
     McpServerHealthCheckRequest,
     McpServerUpdateRequest,
     McpToolAllowRequest,
     McpToolAllowUpdateRequest,
 )
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.errors import DomainError
-from backend.app.core.common.pagination import PageParams
-from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.domains.capabilities.mcp.catalog.catalog import McpCatalogServer
 from backend.app.domains.capabilities.mcp.catalog.rules import connection_summary
 from backend.app.domains.capabilities.mcp.catalog.service import McpCatalogService
 from backend.app.domains.capabilities.mcp.policy import (

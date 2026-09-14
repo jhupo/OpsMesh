@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.workspace.projects.exports.contracts import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportRequest,
 )

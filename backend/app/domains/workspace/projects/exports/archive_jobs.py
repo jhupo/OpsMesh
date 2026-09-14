@@ -6,10 +6,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.exports import (
-    WorkspaceArchiveExportRequest,
-    WorkspaceArchiveRestoreDrillRequest,
-)
 from backend.app.domains.workspace.projects.export_models import (
     WorkspaceExportJob,
     WorkspaceExportJobStatus,
@@ -25,6 +21,10 @@ from backend.app.domains.workspace.projects.exports.archive_repository import (
 )
 from backend.app.domains.workspace.projects.exports.archive_restore_drill import (
     WorkspaceArchiveRestoreDrillService,
+)
+from backend.app.domains.workspace.projects.exports.contracts import (
+    WorkspaceArchiveExportRequest,
+    WorkspaceArchiveRestoreDrillRequest,
 )
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.domains.workspace.storage.storage_transactions import (

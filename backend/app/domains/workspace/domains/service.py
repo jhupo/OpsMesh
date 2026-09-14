@@ -4,16 +4,16 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.domains import (
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.base import Base
+from backend.app.core.db.pagination import page_scalars
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.domains.contracts import (
     DomainItemCreateRequest,
     DomainProjectCreateRequest,
     ReviewCommentCreateRequest,
     RevisionRequestCreateRequest,
 )
-from backend.app.core.common.pagination import PageParams
-from backend.app.core.db.base import Base
-from backend.app.core.db.pagination import page_scalars
-from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.domains.models import (
     DomainItem,
     DomainProject,

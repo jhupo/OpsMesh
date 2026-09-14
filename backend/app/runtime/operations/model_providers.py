@@ -6,12 +6,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.providers import (
-    ModelProviderOperationsAgentResponse,
-    ModelProviderOperationsCredentialResponse,
-    ModelProviderOperationsResponse,
-    ModelProviderOperationsRunResponse,
-)
 from backend.app.core.common.values import dict_or_empty, uuid_or_none
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.domains.agents.models import AgentProfile
@@ -34,6 +28,12 @@ from backend.app.domains.agents.providers.credentials.models import ModelProvide
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.runtime.operations.contracts.providers import (
+    ModelProviderOperationsAgentResponse,
+    ModelProviderOperationsCredentialResponse,
+    ModelProviderOperationsResponse,
+    ModelProviderOperationsRunResponse,
+)
 
 
 class ModelProviderOperationsService:

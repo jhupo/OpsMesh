@@ -3,14 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 
-from backend.app.api.schemas.agents.profiles import AgentProfileCreateRequest
-from backend.app.api.schemas.capabilities.mcp_servers import (
+from backend.app.core.common.values import dict_or_empty, string_or_default
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.contracts import AgentProfileCreateRequest
+from backend.app.domains.capabilities.marketplace.models import MarketplaceListing, TalentListing
+from backend.app.domains.capabilities.mcp.catalog.contracts import (
     McpServerCreateRequest,
     McpToolAllowRequest,
 )
-from backend.app.core.common.values import dict_or_empty, string_or_default
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.capabilities.marketplace.models import MarketplaceListing, TalentListing
 from backend.app.domains.workspace.reviews.policy import (
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_AGENT_PROFILE,

@@ -1,6 +1,6 @@
 from zipfile import ZipFile
 
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.workspace.projects.exports.contracts import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportConflict,
     WorkspaceImportResponse,

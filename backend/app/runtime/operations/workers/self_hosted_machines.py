@@ -8,12 +8,12 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.control_plane import (
+from backend.app.core.common.values import age_seconds, positive_int_or_none, string_list
+from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.operations.contracts.control_plane import (
     OperationsSelfHostedMachineResponse,
     OperationsSelfHostedMachinesResponse,
 )
-from backend.app.core.common.values import age_seconds, positive_int_or_none, string_list
-from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.enrollment.trust import (
     worker_capability_attestation_state,
     worker_host_isolation_verified,

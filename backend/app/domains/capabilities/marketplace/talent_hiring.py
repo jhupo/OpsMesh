@@ -4,14 +4,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.marketplace import (
-    HireTalentRequest,
-    HireTaskTalentRequest,
-)
 from backend.app.core.common.values import string_or_default
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.domains.agents.memory.policy import normalized_memory_policy
 from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.capabilities.marketplace.contracts import (
+    HireTalentRequest,
+    HireTaskTalentRequest,
+)
 from backend.app.domains.capabilities.marketplace.listing_payloads import listing_agent_definition
 from backend.app.domains.capabilities.marketplace.models import TalentListing, WorkspaceAgentInstall
 from backend.app.domains.capabilities.marketplace.recommendations import (

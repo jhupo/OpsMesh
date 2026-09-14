@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.workspace.projects.export_models import WorkspaceExportJob
+from backend.app.domains.workspace.projects.exports.contracts import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveRestoreDrillRequest,
 )
-from backend.app.domains.workspace.projects.export_models import WorkspaceExportJob
 from backend.app.domains.workspace.tenants.lifecycle.scheduling.summary import (
     ScheduledLifecycleSummary,
 )

@@ -7,16 +7,6 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.overview import (
-    BlockedStepExplanationResponse,
-    BlockedStepUnblockResponse,
-    OperationsSchedulerResponse,
-    SchedulerBacklogResponse,
-    SchedulerBlockedReasonResponse,
-    SchedulerControlResponse,
-    SchedulerPolicyResponse,
-    SchedulerPriorityBucketResponse,
-)
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.common.values import (
     ensure_aware_utc,
@@ -32,6 +22,16 @@ from backend.app.domains.orchestration.workflows.definitions.blocked_reasons imp
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit_service import AuditService
+from backend.app.runtime.operations.contracts.scheduler import (
+    BlockedStepExplanationResponse,
+    BlockedStepUnblockResponse,
+    OperationsSchedulerResponse,
+    SchedulerBacklogResponse,
+    SchedulerBlockedReasonResponse,
+    SchedulerControlResponse,
+    SchedulerPolicyResponse,
+    SchedulerPriorityBucketResponse,
+)
 
 
 class SchedulerPolicyService:

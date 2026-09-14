@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from backend.app.api.schemas.operations.queue import StaleRunRecoveryItemResponse
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.runtime.operations.contracts.queue import StaleRunRecoveryItemResponse
 from backend.app.runtime.operations.recovery.domain import stale_run_failure_message
 
 

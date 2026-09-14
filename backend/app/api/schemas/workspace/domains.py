@@ -6,14 +6,24 @@ from pydantic import BaseModel, Field, field_serializer
 from backend.app.api.schemas.common import TimestampedModel
 from backend.app.api.schemas.orchestration.tasks.overview import TaskResponse
 from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.workspace.domains.contracts import (
+    DomainItemCreateRequest,
+    DomainProjectCreateRequest,
+    ReviewCommentCreateRequest,
+    RevisionRequestCreateRequest,
+)
 
-
-class DomainProjectCreateRequest(BaseModel):
-    agent_team_id: UUID | None = None
-    domain_type: str = Field(min_length=1, max_length=80)
-    name: str = Field(min_length=1, max_length=200)
-    description: str = ""
-    state: dict[str, object] = Field(default_factory=dict)
+__all__ = [
+    "DomainProjectCreateRequest",
+    "DomainProjectResponse",
+    "DomainItemCreateRequest",
+    "DomainItemResponse",
+    "ReviewCommentCreateRequest",
+    "ReviewCommentResponse",
+    "RevisionRequestCreateRequest",
+    "RevisionRequestResponse",
+    "TaskViewResponse",
+]
 
 
 class DomainProjectResponse(TimestampedModel):
@@ -28,18 +38,6 @@ class DomainProjectResponse(TimestampedModel):
     @field_serializer("state")
     def _serialize_state(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
-
-
-class DomainItemCreateRequest(BaseModel):
-    domain_project_id: UUID | None = None
-    task_id: UUID | None = None
-    parent_item_id: UUID | None = None
-    item_type: str = Field(min_length=1, max_length=80)
-    title: str = Field(min_length=1, max_length=240)
-    status: str = Field(default="draft", max_length=32)
-    order_index: int = 0
-    content: dict[str, object] = Field(default_factory=dict)
-    state: dict[str, object] = Field(default_factory=dict)
 
 
 class DomainItemResponse(TimestampedModel):
@@ -59,12 +57,6 @@ class DomainItemResponse(TimestampedModel):
         return redact_sensitive_payload(value)
 
 
-class ReviewCommentCreateRequest(BaseModel):
-    domain_item_id: UUID | None = None
-    body: str = Field(min_length=1)
-    metadata: dict[str, object] = Field(default_factory=dict)
-
-
 class ReviewCommentResponse(TimestampedModel):
     workspace_id: UUID
     task_id: UUID
@@ -78,13 +70,6 @@ class ReviewCommentResponse(TimestampedModel):
     @field_serializer("metadata")
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
-
-
-class RevisionRequestCreateRequest(BaseModel):
-    domain_item_id: UUID | None = None
-    assigned_agent_profile_id: UUID | None = None
-    instruction: str = Field(min_length=1)
-    payload: dict[str, object] = Field(default_factory=dict)
 
 
 class RevisionRequestResponse(TimestampedModel):

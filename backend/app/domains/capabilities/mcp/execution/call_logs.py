@@ -6,11 +6,11 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.mcp_observability import McpToolCallLogRequest
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.governance.agent_policy import agent_allowed_mcp_tool_names
+from backend.app.domains.capabilities.mcp.execution.contracts import McpToolCallLogRequest
 from backend.app.domains.capabilities.mcp.execution.payloads import (
     error_code,
     hash_from_payload,

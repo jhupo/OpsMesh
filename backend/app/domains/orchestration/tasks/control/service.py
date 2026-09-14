@@ -6,13 +6,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.orchestration.tasks.overview import (
-    TaskControlActionRequest,
-    TaskCorrectionRequest,
-)
 from backend.app.core.common.values import int_or_zero
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
+from backend.app.domains.orchestration.tasks.contracts import (
+    TaskControlActionRequest,
+    TaskCorrectionRequest,
+)
 from backend.app.domains.orchestration.tasks.control.execution import (
     TaskControlExecutionService,
 )

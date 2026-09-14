@@ -6,11 +6,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.orchestration.tasks.overview import TaskControlActionRequest
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.runs.state import RunStateService
 from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.tasks.contracts import TaskControlActionRequest
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.step_service import TaskStepStateService
 from backend.app.domains.orchestration.tasks.step_status import TaskStepStatus

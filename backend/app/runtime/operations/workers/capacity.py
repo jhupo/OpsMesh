@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.capacity import (
+from backend.app.core.common.values import int_or_zero, positive_int_or_default
+from backend.app.runtime.operations.contracts.capacity import (
     WorkerCapacityAggregateResponse,
     WorkerTypeCapacityResponse,
 )
-from backend.app.core.common.values import int_or_zero, positive_int_or_default
 from backend.app.runtime.operations.models import WorkerLease, WorkerNode
 from backend.app.runtime.operations.workers.lease_queries import WorkerLeaseQueryService
 from backend.app.runtime.operations.workers.lifecycle import RUNNING_LEASE_STATUSES

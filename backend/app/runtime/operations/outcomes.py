@@ -6,7 +6,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.overview import (
+from backend.app.core.common.values import ensure_aware_utc
+from backend.app.domains.orchestration.approvals.models import Approval
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.runtime.operations.contracts.outcomes import (
     ApprovalBacklogResponse,
     McpJobStatusBucketResponse,
     McpJobToolBucketResponse,
@@ -15,9 +18,6 @@ from backend.app.api.schemas.operations.overview import (
     RunFailureReasonResponse,
     RunOutcomeWindowResponse,
 )
-from backend.app.core.common.values import ensure_aware_utc
-from backend.app.domains.orchestration.approvals.models import Approval
-from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.runtime.self_hosted.models import SelfHostedMcpJob
 
 

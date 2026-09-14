@@ -1,4 +1,4 @@
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.workspace.projects.exports.contracts import (
     SUPPORTED_WORKSPACE_EXPORT_FORMAT,
     WorkspaceExportResponse,
     WorkspaceImportConflict,
@@ -167,5 +167,4 @@ def _preview_token_conflict(
         severity="error",
         message="Import preview token does not match the supplied metadata payload.",
     )
-
 

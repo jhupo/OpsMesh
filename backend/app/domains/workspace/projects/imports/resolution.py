@@ -1,8 +1,12 @@
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.workspace.projects.exports.contracts import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportRequest,
 )
-from backend.app.domains.workspace.projects.imports.fields import _dict_field, _int_field, _string_field
+from backend.app.domains.workspace.projects.imports.fields import (
+    _dict_field,
+    _int_field,
+    _string_field,
+)
 
 
 def _resolved_import_name(

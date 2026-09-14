@@ -3,6 +3,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.projects.imports.conflicts import (
     _missing_dependency_conflict,
     _skip_conflict,
@@ -24,8 +26,6 @@ from backend.app.domains.workspace.projects.imports.fields import (
     _uuid_or_none,
 )
 from backend.app.domains.workspace.projects.imports.resolution import _resolved_import_name
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 

@@ -4,13 +4,13 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.marketplace import (
+from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.capabilities.marketplace.contracts import (
     TalentInstallPinRequest,
     TalentInstallUpgradeRequest,
     TalentListingResponse,
     TalentUpgradeStatusResponse,
 )
-from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.marketplace.listing_payloads import listing_agent_definition
 from backend.app.domains.capabilities.marketplace.models import WorkspaceAgentInstall
 from backend.app.domains.capabilities.marketplace.responses import install_response
@@ -109,4 +109,3 @@ class TalentInstallUpgradeService:
         self._session.commit()
         self._session.refresh(install)
         return install
-

@@ -4,8 +4,8 @@ from uuid import UUID
 
 from redis import Redis
 
-from backend.app.api.schemas.operations.overview import DeadLetterJobsResponse
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.runtime.operations.contracts.queue import DeadLetterJobsResponse
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.queue import RedisQueue
 

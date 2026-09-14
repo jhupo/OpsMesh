@@ -5,13 +5,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.marketplace import (
-    TalentListingMetricsResponse,
-    TalentListingReviewCreateRequest,
-)
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import commit_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars
+from backend.app.domains.capabilities.marketplace.contracts import (
+    TalentListingMetricsResponse,
+    TalentListingReviewCreateRequest,
+)
 from backend.app.domains.capabilities.marketplace.models import TalentListingReview
 from backend.app.domains.capabilities.marketplace.talent_repository import (
     TalentMarketplaceRepository,
@@ -108,4 +108,3 @@ class TalentReviewService:
             review_count=listing.review_count,
             average_rating=listing.average_rating,
         )
-

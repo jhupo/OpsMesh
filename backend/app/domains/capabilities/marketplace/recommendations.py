@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.app.api.schemas.capabilities.marketplace import TalentRecommendationRequest
 from backend.app.core.common.values import string_list, string_or_default
+from backend.app.domains.capabilities.marketplace.contracts import TalentRecommendationRequest
 from backend.app.domains.capabilities.marketplace.models import TalentListing
 from backend.app.domains.orchestration.tasks.models import Task
 

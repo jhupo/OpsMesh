@@ -6,13 +6,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.orchestration.tasks.overview import (
-    TaskCorrectionRequest,
-    TaskDeliveryDecisionRequest,
-)
 from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.tasks.contracts import (
+    TaskCorrectionRequest,
+    TaskDeliveryDecisionRequest,
+)
 from backend.app.domains.orchestration.tasks.delivery.corrections import (
     TaskCorrectionResult,
     TaskCorrectionService,

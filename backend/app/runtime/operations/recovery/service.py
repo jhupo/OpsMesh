@@ -6,12 +6,12 @@ from uuid import UUID
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.queue import (
-    StaleRunRecoveryResponse,
-)
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
+from backend.app.runtime.operations.contracts.queue import (
+    StaleRunRecoveryResponse,
+)
 from backend.app.runtime.operations.recovery.actions import (
     StaleRunRecoveryActionExecutor,
 )

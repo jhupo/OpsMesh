@@ -5,10 +5,6 @@ from uuid import UUID
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.capabilities.marketplace import (
-    MarketplaceInstallRequest,
-    MarketplaceListingCreateRequest,
-)
 from backend.app.core.common.config import Settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import (
@@ -18,6 +14,10 @@ from backend.app.core.db.errors import (
 )
 from backend.app.core.db.pagination import page_scalars
 from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.capabilities.marketplace.contracts import (
+    MarketplaceInstallRequest,
+    MarketplaceListingCreateRequest,
+)
 from backend.app.domains.capabilities.marketplace.listing_payloads import (
     listing_review_type,
     listing_status,
@@ -287,5 +287,4 @@ class MarketplaceService:
         page: PageParams,
     ) -> tuple[list[MarketplaceListing], int]:
         return page_scalars(self._session, statement, page)
-
 

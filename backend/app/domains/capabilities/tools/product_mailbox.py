@@ -4,12 +4,12 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from backend.app.api.schemas.agents.messages import (
+from backend.app.core.common.pagination import PageParams
+from backend.app.domains.agents.messages.contracts import (
     AgentMessageCreateRequest,
     AgentMessageResponse,
     AgentMessageThreadCreateRequest,
 )
-from backend.app.core.common.pagination import PageParams
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.messages.service import AgentMailboxService
 from backend.app.domains.agents.models import AgentProfile

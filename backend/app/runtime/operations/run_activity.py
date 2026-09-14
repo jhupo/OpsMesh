@@ -8,16 +8,16 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.control_plane import (
-    OperationsRunActivityResponse,
-    RunActivityOldestRunResponse,
-    RunActivityPhaseBucketResponse,
-)
 from backend.app.core.common.values import ensure_aware_utc
 from backend.app.domains.orchestration.runs.activity import run_activity
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.runtime.operations.contracts.control_plane import (
+    OperationsRunActivityResponse,
+    RunActivityOldestRunResponse,
+    RunActivityPhaseBucketResponse,
+)
 
 
 @dataclass(slots=True)

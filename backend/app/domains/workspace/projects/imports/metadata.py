@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.workspace.exports import (
+from backend.app.domains.workspace.projects.exports.contracts import (
     WorkspaceImportConflict,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
@@ -21,8 +21,12 @@ from backend.app.domains.workspace.projects.imports.preview import (
     _import_preview_audit_metadata,
     _populate_import_preview,
 )
-from backend.app.domains.workspace.projects.imports.runtime_space import RuntimeSpaceMetadataImporter
-from backend.app.domains.workspace.projects.imports.skill_install import SkillInstallMetadataImporter
+from backend.app.domains.workspace.projects.imports.runtime_space import (
+    RuntimeSpaceMetadataImporter,
+)
+from backend.app.domains.workspace.projects.imports.skill_install import (
+    SkillInstallMetadataImporter,
+)
 from backend.app.domains.workspace.projects.imports.task import TaskMetadataImporter
 from backend.app.domains.workspace.projects.imports.team import TeamMetadataImporter
 from backend.app.domains.workspace.tenants.models import Workspace

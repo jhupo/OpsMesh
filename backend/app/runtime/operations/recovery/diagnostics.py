@@ -5,12 +5,12 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.overview import (
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.runtime.operations.contracts.queue import (
     StaleRunDiagnosticResponse,
     StaleRunsDiagnosticsResponse,
 )
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
 from backend.app.runtime.operations.models import WorkerLease
 from backend.app.runtime.operations.recovery.domain import (
     aware_datetime,

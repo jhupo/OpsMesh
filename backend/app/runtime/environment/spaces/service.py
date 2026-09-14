@@ -5,9 +5,9 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.operations.runtime_spaces import RuntimeSpaceDiagnosticsResponse
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
+from backend.app.runtime.environment.spaces.contracts import RuntimeSpaceDiagnosticsResponse
 from backend.app.runtime.environment.spaces.diagnostics import RuntimeSpaceDiagnosticsService
 from backend.app.runtime.environment.spaces.lifecycle import RuntimeSpaceLifecycleService
 from backend.app.runtime.environment.spaces.models import (
