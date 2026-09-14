@@ -3,8 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
-from backend.app.api.schemas.common import TimestampedModel
 from backend.app.api.schemas.orchestration.tasks.overview import TaskResponse
+from backend.app.core.contracts import TimestampedModel
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.workspace.domains.contracts import (
     DomainItemCreateRequest,

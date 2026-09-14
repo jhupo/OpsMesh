@@ -11,7 +11,7 @@ from pydantic import (
     model_validator,
 )
 
-from backend.app.api.schemas.common import TimestampedModel
+from backend.app.core.contracts import TimestampedModel
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.workspace.reviews.policy import (
     DEFAULT_RESOURCE_REVIEW_MODEL,

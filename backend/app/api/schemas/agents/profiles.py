@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from backend.app.api.schemas.common import ORMModel
+from backend.app.core.contracts import ORMModel
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.agents.profiles.contracts import (
     AgentProfileMutableFields,

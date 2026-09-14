@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from backend.app.api.schemas.common import ORMModel
+from backend.app.core.contracts import ORMModel
 
 
 class ModelPricingRuleCreateRequest(BaseModel):

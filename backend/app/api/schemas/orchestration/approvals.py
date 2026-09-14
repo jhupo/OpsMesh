@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from backend.app.api.schemas.common import ORMModel
+from backend.app.core.contracts import ORMModel
 
 
 class ApprovalDecisionRequest(BaseModel):

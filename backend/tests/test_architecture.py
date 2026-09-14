@@ -745,7 +745,7 @@ def test_api_schemas_are_nested_by_function() -> None:
         for path in schemas.iterdir()
         if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
     }
-    assert root_modules == {"common.py"}
+    assert root_modules == set()
     for name in (
         "agents.py",
         "agent_messages.py",

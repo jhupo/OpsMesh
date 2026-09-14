@@ -4,7 +4,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, field_serializer
 
-from backend.app.api.schemas.common import ORMModel, TimestampedModel
 from backend.app.api.schemas.operations.runtimes import WorkspaceRuntimeResponse
 from backend.app.api.schemas.operations.workers import (
     RuntimeLeaseResponse,
@@ -12,6 +11,7 @@ from backend.app.api.schemas.operations.workers import (
     WorkerNodeResponse,
 )
 from backend.app.api.schemas.workspace.workspaces import WorkspaceResponse
+from backend.app.core.contracts import ORMModel, TimestampedModel
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.runtime.environment.spaces.contracts import RuntimeSpaceResponse
 from backend.app.runtime.operations.contracts.queue import QueueMetricsResponse
