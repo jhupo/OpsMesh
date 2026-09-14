@@ -4,16 +4,16 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.schemas.workspace.exports import (
-    WorkspaceArchiveImportRequest,
-    WorkspaceImportResponse,
-)
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.workspace.projects.exports.archive_import import (
     WorkspaceArchiveImportService,
+)
+from backend.app.domains.workspace.projects.exports.contracts import (
+    WorkspaceArchiveImportRequest,
+    WorkspaceImportResponse,
 )
 from backend.app.domains.workspace.storage.storage import create_storage
 

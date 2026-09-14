@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.capabilities.workspace_skills import (
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.errors import DatabaseConflictError
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.capabilities.skills.contracts import (
     WorkspaceSkillAvailabilityResponse,
     WorkspaceSkillImpactResponse,
     WorkspaceSkillInstallConfigRequest,
@@ -15,11 +20,6 @@ from backend.app.api.schemas.capabilities.workspace_skills import (
     WorkspaceSkillToolAvailabilityResponse,
     WorkspaceSkillUpgradeRequest,
 )
-from backend.app.core.common.pagination import PageParams
-from backend.app.core.db.errors import DatabaseConflictError
-from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from backend.app.domains.capabilities.skills.impact import WorkspaceSkillImpactService
 from backend.app.domains.capabilities.skills.lifecycle import WorkspaceSkillLifecycleService

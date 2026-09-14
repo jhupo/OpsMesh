@@ -4,13 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.capabilities.marketplace import (
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.capabilities.marketplace.contracts import (
     TalentListingMetricsResponse,
     TalentListingResponse,
     TalentListingReviewResponse,
 )
-from backend.app.core.common.pagination import PageParams
-from backend.app.core.db.session import get_db_session
 from backend.app.domains.capabilities.marketplace.responses import review_response
 from backend.app.domains.capabilities.marketplace.talent_catalog import TalentCatalogService
 from backend.app.domains.capabilities.marketplace.talent_reviews import TalentReviewService

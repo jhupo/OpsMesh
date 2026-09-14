@@ -25,7 +25,6 @@ from backend.app.api.schemas.operations.overview import (
     StaleRunRecoveryResponse,
     StaleRunsDiagnosticsResponse,
 )
-from backend.app.api.schemas.orchestration.runs import AgentRunResponse, RunEventResponse
 from backend.app.api.schemas.platform.audit import (
     AuditEventResponse,
     AuditIntegrityCheckResponse,
@@ -40,6 +39,7 @@ from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.orchestration.runs.contracts import AgentRunResponse, RunEventResponse
 from backend.app.observability.audit_integrity import AuditIntegrityService
 from backend.app.observability.audit_service import AuditService
 from backend.app.runtime.operations.events import OperationsEventQueryService

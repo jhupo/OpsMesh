@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from backend.app.api.schemas.operations.events import SecurityEventResponse
-from backend.app.api.schemas.orchestration.runs import RunEventResponse
 from backend.app.api.schemas.platform.audit import AuditEventResponse
+from backend.app.domains.orchestration.runs.contracts import RunEventResponse
+from backend.app.runtime.operations.contracts.events import SecurityEventResponse
 
 
 class AuditEventFilterResponse(BaseModel):

@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.schemas.capabilities.marketplace import (
+from backend.app.core.db.session import get_db_session
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.capabilities.marketplace.contracts import (
     TalentRecommendationRequest,
     TalentRecommendationResponse,
     TaskTalentRecommendationResponse,
 )
-from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.marketplace.talent_recommendations import (
     TalentRecommendationService,
 )

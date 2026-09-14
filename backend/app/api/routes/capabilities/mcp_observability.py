@@ -5,10 +5,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.capabilities.mcp_observability import (
-    McpToolCallLogRequest,
-    McpToolCallLogResponse,
-)
 from backend.app.api.schemas.capabilities.policy_diagnostics import (
     AgentToolPolicyDiagnosticsResponse,
     WorkspaceToolPolicyMatrixResponse,
@@ -18,6 +14,10 @@ from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.mcp.execution.call_logs import McpToolCallLogQueryService
+from backend.app.domains.capabilities.mcp.execution.contracts import (
+    McpToolCallLogRequest,
+    McpToolCallLogResponse,
+)
 from backend.app.domains.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])

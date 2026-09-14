@@ -167,6 +167,31 @@ def test_access_and_transport_dependencies_have_distinct_owners() -> None:
     assert not (app / "core/identity").exists()
 
 
+def test_api_schema_reexports_are_removed() -> None:
+    app = ROOT / "backend/app"
+    for name in (
+        "api/schemas/agents/messages.py",
+        "api/schemas/capabilities/base.py",
+        "api/schemas/capabilities/marketplace.py",
+        "api/schemas/capabilities/mcp_credentials.py",
+        "api/schemas/capabilities/mcp_observability.py",
+        "api/schemas/capabilities/mcp_redaction.py",
+        "api/schemas/capabilities/mcp_servers.py",
+        "api/schemas/capabilities/workspace_skills.py",
+        "api/schemas/operations/capacity.py",
+        "api/schemas/operations/control_plane.py",
+        "api/schemas/operations/events.py",
+        "api/schemas/operations/outcomes.py",
+        "api/schemas/operations/providers.py",
+        "api/schemas/operations/queue.py",
+        "api/schemas/operations/runtime_spaces.py",
+        "api/schemas/operations/scheduler.py",
+        "api/schemas/orchestration/runs.py",
+        "api/schemas/workspace/exports.py",
+    ):
+        assert not (app / name).exists(), name
+
+
 def test_team_consolidation_removes_superseded_sources() -> None:
     teams = ROOT / "backend/app/domains/workspace/teams"
     for name in (
