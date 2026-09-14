@@ -8,8 +8,8 @@ from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.platform.admin import AdminUserResponse, AdminUserStatusUpdateRequest
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
-from backend.app.core.identity.admin_service import IdentityAdminService
 from backend.app.core.security.service import SecurityAuditService
+from backend.app.domains.access.admin import IdentityAdminService
 
 router = APIRouter()
 

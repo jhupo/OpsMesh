@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from backend.app.api.dependencies.admin import require_platform_admin
 from backend.app.api.routes.admin.leases import router as leases_router
 from backend.app.api.routes.admin.overview import router as overview_router
 from backend.app.api.routes.admin.policies import router as policies_router
@@ -11,7 +12,6 @@ from backend.app.api.routes.admin.system import router as system_router
 from backend.app.api.routes.admin.updates import router as updates_router
 from backend.app.api.routes.admin.users import router as users_router
 from backend.app.api.routes.admin.workers import router as workers_router
-from backend.app.core.auth.admin import require_platform_admin
 
 router = APIRouter(
     prefix="/admin",

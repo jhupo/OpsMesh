@@ -5,9 +5,9 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.auth.permissions import WorkspaceRole
 from backend.app.core.db.errors import commit_or_raise_conflict
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
+from backend.app.domains.access.permissions import WorkspaceRole
 from backend.app.domains.workspace.tenants.contracts import (
     WorkspaceMemberCreatePayload,
     WorkspaceMemberUpdatePayload,

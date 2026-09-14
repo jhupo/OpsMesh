@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, Query
 
+from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.schemas.agents.providers import (
     AgentRuntimeAdapterCapabilityResponse,
     AgentRuntimeCapabilityFeatureResponse,
     ModelCapabilityResponse,
 )
-from backend.app.core.auth.context import WorkspaceContext
-from backend.app.core.auth.dependencies import workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.agents.providers.catalog.capabilities import list_model_capabilities
 from backend.app.domains.agents.providers.catalog.model_api import (
     default_model_api,

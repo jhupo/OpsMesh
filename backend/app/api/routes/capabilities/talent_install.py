@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.capabilities.marketplace import (
     TalentInstallPinRequest,
@@ -10,11 +11,10 @@ from backend.app.api.schemas.capabilities.marketplace import (
     TalentUpgradeStatusResponse,
     WorkspaceAgentInstallResponse,
 )
-from backend.app.core.auth.context import WorkspaceContext
-from backend.app.core.auth.dependencies import workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.marketplace.responses import install_response
 from backend.app.domains.capabilities.marketplace.talent_catalog import TalentCatalogService
 from backend.app.domains.capabilities.marketplace.talent_upgrades import TalentInstallUpgradeService

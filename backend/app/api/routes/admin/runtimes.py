@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.app.api.dependencies import (
+from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
 from backend.app.api.pagination import PageResponse, pagination_params

@@ -3,7 +3,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies import (
+from backend.app.api.dependencies.auth import workspace_dependency
+from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
@@ -14,9 +15,6 @@ from backend.app.api.schemas.platform.webhooks import (
     WebhookSubscriptionResponse,
     WebhookSubscriptionUpdateRequest,
 )
-from backend.app.core.auth.context import WorkspaceContext
-from backend.app.core.auth.dependencies import workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
@@ -30,6 +28,8 @@ from backend.app.core.integrations.webhooks.service import (
 )
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.egress import EgressUrlValidationError
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter(

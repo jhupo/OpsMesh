@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 
 
 class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):

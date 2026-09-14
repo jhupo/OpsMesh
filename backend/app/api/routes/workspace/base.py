@@ -4,6 +4,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies.auth import (
+    account_action_dependency,
+    get_current_user,
+    workspace_dependency,
+)
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,
     IdempotencyService,
@@ -15,19 +20,14 @@ from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceResponse,
     WorkspaceUpdateRequest,
 )
-from backend.app.core.auth.context import AuthenticatedUser, WorkspaceContext
-from backend.app.core.auth.dependencies import (
-    account_action_dependency,
-    get_current_user,
-    workspace_dependency,
-)
-from backend.app.core.auth.permissions import AccountAction, WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.access.context import AuthenticatedUser, WorkspaceContext
+from backend.app.domains.access.permissions import AccountAction, WorkspaceAction
 from backend.app.domains.workspace.tenants.workspace_management import WorkspaceService
 
 if TYPE_CHECKING:

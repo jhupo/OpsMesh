@@ -15,7 +15,7 @@ from backend.app.core.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KE
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.runtime.environment.contracts import (
@@ -497,7 +497,7 @@ def _client(
     app = create_app(settings)
     from fakeredis import FakeRedis
 
-    from backend.app.api.dependencies import (
+    from backend.app.api.dependencies.workers import (
         get_worker_queue,
     )
     from backend.app.core.redis.keys import RedisKeyBuilder

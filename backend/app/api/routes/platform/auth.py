@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies.auth import account_action_dependency
 from backend.app.api.schemas.platform.auth import (
     CurrentUserResponse,
     CurrentUserUpdateRequest,
@@ -15,15 +16,14 @@ from backend.app.api.schemas.platform.auth import (
     UserLoginRequest,
     UserRegisterRequest,
 )
-from backend.app.core.auth.context import AuthenticatedUser
-from backend.app.core.auth.dependencies import account_action_dependency
-from backend.app.core.auth.errors import AuthenticationError, PermissionDeniedError
-from backend.app.core.auth.permissions import AccountAction
-from backend.app.core.auth.service import AuthorizationService
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.errors import ConflictError
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.service import SecurityAuditService
+from backend.app.domains.access.context import AuthenticatedUser
+from backend.app.domains.access.errors import AuthenticationError, PermissionDeniedError
+from backend.app.domains.access.permissions import AccountAction
+from backend.app.domains.access.service import AuthorizationService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

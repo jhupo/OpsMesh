@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import fakeredis
 
-from backend.app.api.dependencies import (
+from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
 from backend.app.core.common.config import Settings

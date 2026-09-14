@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 import backend.app.domains.agents.providers.health.service as model_provider_health_service_module
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.base import Base
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.providers.catalog.model_api import (
     model_api_for_agent_provider,

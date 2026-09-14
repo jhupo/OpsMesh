@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.types import JSON
 
 from backend.app.core.db.base import Base
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.memory.policy import normalized_memory_policy

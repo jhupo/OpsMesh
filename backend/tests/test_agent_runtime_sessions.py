@@ -9,7 +9,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.domains.agents.runtime.sessions.management import (
     PersistentAgentSessionManagementService,
 )

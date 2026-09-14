@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from backend.app.core.auth.permissions import AccountAction, WorkspaceAction, WorkspaceRole
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
+from backend.app.domains.access.permissions import AccountAction, WorkspaceAction, WorkspaceRole
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
 

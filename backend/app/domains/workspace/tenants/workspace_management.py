@@ -6,11 +6,11 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.auth.permissions import WorkspaceRole
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import commit_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars
+from backend.app.domains.access.permissions import WorkspaceRole
 from backend.app.domains.agents.memory.models import WorkspaceMemoryConfiguration
 from backend.app.domains.agents.memory.policy import (
     default_lifecycle_policy,

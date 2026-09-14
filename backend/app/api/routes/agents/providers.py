@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.agents.providers import (
     ModelProviderCredentialCreateRequest,
@@ -12,14 +13,13 @@ from backend.app.api.schemas.agents.providers import (
     ModelProviderHealthCheckRequest,
     ModelProviderHealthCheckResponse,
 )
-from backend.app.core.auth.context import WorkspaceContext
-from backend.app.core.auth.dependencies import workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.egress import EgressUrlValidationError
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.agents.providers.audit.contracts import ModelProviderUsageAuditResponse
 from backend.app.domains.agents.providers.audit.responses import usage_audit_response
 from backend.app.domains.agents.providers.contracts import provider_health_probes

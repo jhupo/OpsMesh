@@ -1,1 +1,1 @@
-"""Platform services: identity, authorization, persistence, and host infrastructure."""
+"""Shared infrastructure primitives used by application domains."""

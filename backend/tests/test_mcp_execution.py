@@ -16,7 +16,7 @@ from backend.app.core.admin.models import PlatformPolicy
 from backend.app.core.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.core.common.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.domains.capabilities.mcp.execution.service import McpToolExecutionService

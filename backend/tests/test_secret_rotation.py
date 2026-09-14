@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.common.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.core.integrations.webhooks.models import WebhookSubscription
 from backend.app.core.secrets.rotation import HostedSecretReencryptService
 from backend.app.core.secrets.service import SecretEncryptionService

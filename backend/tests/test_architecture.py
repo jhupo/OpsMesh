@@ -71,16 +71,15 @@ def test_consolidated_domains_have_one_source_owner() -> None:
     assert {path.name for path in app.glob("*.py")} == {"__init__.py", "delivery.py", "main.py"}
     for name in (
         "core/admin",
-        "core/auth",
         "core/common",
         "core/db",
-        "core/identity",
         "core/integrations",
         "core/rate_limits",
         "core/redis",
         "core/secrets",
         "core/security",
         "domains/agents",
+        "domains/access",
         "domains/capabilities",
         "domains/orchestration",
         "domains/workspace",
@@ -100,6 +99,8 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "execution",
         "runtime_manager",
         "core/platform",
+        "core/auth",
+        "core/identity",
     ):
         target = app / name
         assert not target.exists(), name
@@ -141,6 +142,27 @@ def test_consolidated_services_import_in_a_fresh_process(module: str) -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_access_and_transport_dependencies_have_distinct_owners() -> None:
+    app = ROOT / "backend/app"
+    access = app / "domains/access"
+    dependencies = app / "api/dependencies"
+    assert {path.name for path in access.glob("*.py")} >= {
+        "models.py",
+        "context.py",
+        "permissions.py",
+        "errors.py",
+        "service.py",
+        "admin.py",
+    }
+    assert {path.name for path in dependencies.glob("*.py")} >= {
+        "auth.py",
+        "admin.py",
+        "workers.py",
+    }
+    assert not (app / "core/auth").exists()
+    assert not (app / "core/identity").exists()
 
 
 def test_team_consolidation_removes_superseded_sources() -> None:

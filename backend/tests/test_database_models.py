@@ -13,7 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateTable
 
 from backend.app.core.db.base import Base
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.tasks.models import TaskEventOutbox
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember, WorkspaceQuota
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota

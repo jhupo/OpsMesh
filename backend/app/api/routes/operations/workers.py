@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from redis import Redis
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.operations.overview import (
     RuntimeCleanupResponse,
@@ -18,13 +19,12 @@ from backend.app.api.schemas.operations.overview import (
     WorkerNodeResponse,
     WorkerStatusUpdateRequest,
 )
-from backend.app.core.auth.context import WorkspaceContext
-from backend.app.core.auth.dependencies import workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.service import SecurityAuditService
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.runtime.operations.runtimes.cleanup import RuntimeCleanupService
 from backend.app.runtime.operations.runtimes.leases import RuntimeLeaseOperationsService
 from backend.app.runtime.operations.workers.heartbeats import WorkerHeartbeatOperationsService

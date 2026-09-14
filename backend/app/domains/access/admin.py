@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.pagination import PageParams
-from backend.app.core.identity.models import User, UserAPIToken
+from backend.app.domains.access.models import User, UserAPIToken
 
 
 class IdentityAdminService:

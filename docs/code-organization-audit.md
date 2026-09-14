@@ -236,10 +236,10 @@ serialization now live in the single cohesive `runtime/workers/queue.py` executi
 queue's public surface is unchanged (`RedisQueue` and `consume_once`), while the superseded
 `runtime/workers/queue` package was deleted without aliases.
 
-`get_worker_queue` is an HTTP dependency, so it now belongs to `api/dependencies.py`; runtime worker
-code no longer imports FastAPI. Every application and test import was updated directly to the new
-owners. This keeps the queue implementation in the data plane and transport dependency resolution
-in the API boundary.
+`get_worker_queue` is an HTTP dependency, so it now belongs to `api/dependencies/workers.py`; runtime
+worker code no longer imports FastAPI. Every application and test import was updated directly to the
+new owners. This keeps the queue implementation in the data plane and transport dependency
+resolution in the API boundary.
 
 The queue retains one idempotency, lease, retry and workspace-filter implementation. No queue data
 format, Redis key, retry policy or public API behavior changed. Focused Redis queue, worker

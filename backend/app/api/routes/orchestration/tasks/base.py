@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies import (
+from backend.app.api.dependencies.auth import workspace_dependency
+from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
 from backend.app.api.idempotency import (
@@ -20,14 +21,13 @@ from backend.app.api.schemas.orchestration.tasks.overview import (
     TaskManagerQueueResponse,
     TaskResponse,
 )
-from backend.app.core.auth.context import WorkspaceContext
-from backend.app.core.auth.dependencies import workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.execution.diagnostics import (

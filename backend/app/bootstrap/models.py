@@ -10,7 +10,7 @@ from backend.app.core.db.base import Base
 _MODEL_MODULES = (
     "backend.app.core.admin.models",
     "backend.app.core.admin.updates.models",
-    "backend.app.core.identity.models",
+    "backend.app.domains.access.models",
     "backend.app.core.integrations.webhooks.models",
     "backend.app.core.security.models",
     "backend.app.domains.agents.memory.models",

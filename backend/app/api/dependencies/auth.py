@@ -5,14 +5,14 @@ from uuid import UUID
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.auth.context import AuthenticatedUser, WorkspaceContext
-from backend.app.core.auth.errors import AuthenticationError, PermissionDeniedError
-from backend.app.core.auth.permissions import AccountAction, WorkspaceAction
-from backend.app.core.auth.service import AuthorizationService
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.request_context import set_log_context
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.service import SecurityAuditService
+from backend.app.domains.access.context import AuthenticatedUser, WorkspaceContext
+from backend.app.domains.access.errors import AuthenticationError, PermissionDeniedError
+from backend.app.domains.access.permissions import AccountAction, WorkspaceAction
+from backend.app.domains.access.service import AuthorizationService
 
 AUTHORIZATION_HEADER = Header(default=None)
 SETTINGS_DEPENDENCY = Depends(get_settings)

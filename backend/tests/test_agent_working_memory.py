@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.core.db.base import Base
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.policy import WorkingMemoryPolicy
 from backend.app.domains.agents.memory.working import (
     AgentWorkingMemoryService,

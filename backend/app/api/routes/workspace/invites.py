@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies.auth import get_current_user, workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceInviteAcceptRequest,
@@ -12,14 +13,13 @@ from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceInviteResponse,
     WorkspaceMemberResponse,
 )
-from backend.app.core.auth.context import AuthenticatedUser, WorkspaceContext
-from backend.app.core.auth.dependencies import get_current_user, workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.service import SecurityAuditService
+from backend.app.domains.access.context import AuthenticatedUser, WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.workspace.tenants.workspace_invites import (
     WorkspaceInviteService,
     fingerprint_invite_token,

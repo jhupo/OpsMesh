@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from redis import Redis
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.schemas.operations.overview import (
     OperationsCapacityResponse,
     OperationsControlPlaneResponse,
@@ -18,14 +19,13 @@ from backend.app.api.schemas.operations.overview import (
     OperationsSelfHostedMachinesResponse,
     OperationsWorkerLifecycleResponse,
 )
-from backend.app.core.auth.context import WorkspaceContext
-from backend.app.core.auth.dependencies import workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.cache import RedisJsonCache
 from backend.app.core.redis.dependencies import get_cache_service, get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.runtime.operations.control_plane_service import OperationsControlPlaneService
 from backend.app.runtime.operations.operation_capacity_payloads import (
     OperationsCapacityPayloadService,

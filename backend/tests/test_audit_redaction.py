@@ -12,7 +12,7 @@ from starlette.requests import Request
 from backend.app.core.common.config import Settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.base import Base
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.core.security.models import SecurityEvent
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.core.security.service import SecurityAuditService

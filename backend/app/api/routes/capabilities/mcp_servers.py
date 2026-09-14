@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.capabilities.mcp_catalog import (
     McpCatalogServerResponse,
@@ -20,13 +21,12 @@ from backend.app.api.schemas.capabilities.mcp_servers import (
     McpToolAllowResponse,
     McpToolAllowUpdateRequest,
 )
-from backend.app.core.auth.context import WorkspaceContext
-from backend.app.core.auth.dependencies import workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.mcp.catalog.catalog import McpCatalogServer, McpCatalogUsage
 from backend.app.domains.capabilities.mcp.catalog.servers import McpServerService
 

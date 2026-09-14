@@ -12,9 +12,9 @@ from backend.app.api.schemas.workspace.teams import (
     AgentTeamRuntimeControlRequest,
     AgentTeamRuntimeEnsureRequest,
 )
-from backend.app.core.auth.context import WorkspaceContext
 from backend.app.core.common.config import Settings
 from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.agents.runtime.sessions.management import (
     PersistentAgentSessionManagementService,
 )

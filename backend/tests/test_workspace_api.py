@@ -14,14 +14,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import backend.app.domains.agents.providers.health.service as model_provider_health_service_module
-from backend.app.api.dependencies import (
+from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
-from backend.app.core.auth.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
+from backend.app.domains.access.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService

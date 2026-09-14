@@ -1,6 +1,6 @@
 # app 全量结构审查与最终重构方案
 
-日期：2026-09-14。状态：方案已形成，尚未实施目录迁移或业务重构。
+日期：2026-09-14。状态：方案已形成；R1 的显式模型注册与访问域边界已落地，后续批次仍按实施表推进。
 
 ## 1. 审查范围与结论边界
 
@@ -58,7 +58,7 @@ Grimp 的 `backend` 图包含 1,030 个模块、4,678 条导入边；图包含�
 
 ### 3.1 core 不是纯基础设施
 
-`core/auth/dependencies.py` 使用 FastAPI 的 Request、Header、Depends，并执行认证失败的 HTTP 处理；
+`core/auth/dependencies.py` 使用 FastAPI 的 Request、Header、Depends，并执行认证失败的 HTTP 处理；该模块现已迁移为 `api/dependencies/auth.py`。
 `core/redis/dependencies.py` 同样读取 HTTP 请求。
 `core/admin` 管理 Worker、Runtime、Workspace 和更新任务，Webhook 则拥有订阅、投递、重放与调度。
 这些都不是“公共工具”。
@@ -68,6 +68,7 @@ Grimp 的 `backend` 图包含 1,030 个模块、4,678 条导入边；图包含�
 
 决定：认证和用户归 `domains/access`；平台管理归 `domains/platform`；Webhook 归 `domains/integrations/webhooks`；
 HTTP 依赖归 `api/dependencies`；ORM 注册归显式启动装配。加密、脱敏、数据库连接、Redis 等才留在 core。
+当前队列 HTTP 依赖位于 `api/dependencies/workers.py`，平台管理员依赖位于 `api/dependencies/admin.py`。
 
 ### 3.2 转发文件和必要的注册入口被混在一起
 
@@ -370,7 +371,8 @@ runtime/environment/
 
 ## 7. 实施顺序与相关验证
 
-R0 是已经完成的审查基线。R1-R8 均尚未实施。CSV 中的 R0 保留项表示“结构保留，导入随依赖模块批次更新”，不表示对应功能已验收。
+R0 是已经完成的审查基线。R1 的显式 ORM 注册和访问域/HTTP 依赖边界已实施并通过相关验证；R2-R8 尚未实施。
+CSV 中的 R0 保留项表示“结构保留，导入随依赖模块批次更新”，不表示对应功能已验收。
 
 | 批次 | 实施范围 | 必须检查 | 建议的相关测试入口 |
 | --- | --- | --- | --- |

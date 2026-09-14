@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.routes.self_hosted.dependencies import self_hosted_service
 from backend.app.api.routes.self_hosted.responses import (
     worker_control_response,
@@ -15,9 +16,8 @@ from backend.app.api.schemas.operations.self_hosted import (
     SelfHostedWorkerControlResponse,
     SelfHostedWorkerTrustResponse,
 )
-from backend.app.core.auth.context import WorkspaceContext
-from backend.app.core.auth.dependencies import workspace_dependency
-from backend.app.core.auth.permissions import WorkspaceAction
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.runtime.self_hosted.service import SelfHostedRuntimeService
 
 router = APIRouter()

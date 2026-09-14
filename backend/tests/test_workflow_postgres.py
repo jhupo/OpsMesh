@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.core.db.base import Base
-from backend.app.core.identity.models import User
+from backend.app.domains.access.models import User
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.models import OrchestrationDefinition, OrchestrationRevision
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
