@@ -7,6 +7,12 @@ The current Agent Runtime completion phase is tracked in
 acceptance gates supersede older `Done` labels in this document where a foundational implementation
 exists but its production execution or recovery loop is not closed.
 
+The next cross-cutting phase is **Platform Closure and Productionization**. Its canonical scope,
+dependencies, per-point commit order, state-machine ownership, release gates, and acceptance
+criteria are recorded in [Platform Closure and Productionization Plan](platform-productionization-plan.md).
+The plan intentionally defers the Plugin Center until these control-plane and runtime contracts are
+closed; this table must not treat a marketplace `plugin` listing as an executable plugin runtime.
+
 Frontend remains out of scope. Billing remains out of scope.
 
 ## Execution Rules

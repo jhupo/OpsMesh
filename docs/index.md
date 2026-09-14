@@ -133,6 +133,12 @@ The backend must provide:
    Evidence log for completed file moves, ownership decisions, focused validation, and remaining
    boundaries that are intentionally retained for independent lifecycles or adapters.
 
+27. [Platform Closure and Productionization Plan](platform-productionization-plan.md)
+
+   The frozen next-phase plan for closing durable recovery, runtime isolation, SDK lifecycle,
+   capability/MCP operations, data recovery, observability, release supply chain, managed delivery,
+   and reliability drills. The Plugin Center is explicitly deferred to a later phase.
+
 ## Non-Negotiable Backend Rules
 
 - Workspace isolation is mandatory.

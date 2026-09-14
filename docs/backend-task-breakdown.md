@@ -679,3 +679,21 @@ Advanced trust demo:
 - Phase 1 through Phase 16.
 
 Frontend can wait until the backend demo is stable.
+
+## Phase 23: Platform Closure And Productionization
+
+The next phase after the persistent organization and runtime foundations is tracked in the
+[Platform Closure and Productionization Plan](platform-productionization-plan.md). It is the
+canonical execution plan for contract/architecture gates, identity and tenant security, durable
+worker recovery, runtime isolation and pooling, provider SDK lifecycle, capability/MCP production
+closure, workspace data recovery, observability/audit/cost, release supply chain, managed delivery,
+and reliability drills. The Plugin Center and external plugin SDK are explicitly deferred until
+this phase is accepted.
+
+Implementation rules for Phase 23:
+
+- implement one `P0-*`/`P1-*` functional point at a time and commit it separately;
+- update code, migrations, tests, runbooks, and status evidence in the same functional-point change;
+- run focused tests locally; reserve the full suite and real managed deployment for the release tag;
+- do not add compatibility shims, silent fallbacks, parallel state machines, or a second permission/
+  runtime/release implementation.
