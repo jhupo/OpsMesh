@@ -15,16 +15,20 @@ from backend.app.api.idempotency import (
     run_idempotent_create,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.workspace.teams import (
-    AgentTeamCommandCenterResponse,
+from backend.app.api.schemas.workspace.team_core import (
     AgentTeamCreateRequest,
-    AgentTeamExecutionOverviewResponse,
-    AgentTeamOperationsConsoleResponse,
     AgentTeamOrgChartResponse,
-    AgentTeamProjectSpaceResponse,
     AgentTeamResponse,
     AgentTeamUpdateRequest,
+)
+from backend.app.api.schemas.workspace.team_execution import (
+    AgentTeamCommandCenterResponse,
+    AgentTeamExecutionOverviewResponse,
+    AgentTeamProjectSpaceResponse,
     WorkspaceTeamCommandCenterResponse,
+)
+from backend.app.api.schemas.workspace.team_operations_console import (
+    AgentTeamOperationsConsoleResponse,
 )
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams

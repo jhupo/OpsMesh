@@ -10,7 +10,7 @@ from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
 from backend.app.api.routes.workspace.teams.common import _queued_runtime_control
-from backend.app.api.schemas.workspace.teams import (
+from backend.app.api.schemas.workspace.team_runtime import (
     AgentTeamCommandCenterApplyRequest,
     AgentTeamCommandCenterApplyResponse,
     AgentTeamExecutionLoopEnqueueRequest,

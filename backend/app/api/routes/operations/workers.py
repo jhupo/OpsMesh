@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.operations.overview import (
+from backend.app.api.schemas.operations.workers import (
     RuntimeCleanupResponse,
     RuntimeLeaseResponse,
     WorkerHeartbeatRequest,

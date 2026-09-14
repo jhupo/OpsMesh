@@ -186,8 +186,10 @@ def test_api_schema_reexports_are_removed() -> None:
         "api/schemas/operations/queue.py",
         "api/schemas/operations/runtime_spaces.py",
         "api/schemas/operations/scheduler.py",
+        "api/schemas/operations/overview.py",
         "api/schemas/orchestration/runs.py",
         "api/schemas/workspace/exports.py",
+        "api/schemas/workspace/teams.py",
     ):
         assert not (app / name).exists(), name
 

@@ -8,7 +8,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.operations.overview import (
+from backend.app.core.common.pagination import PageParams
+from backend.app.core.db.session import get_db_session
+from backend.app.core.redis.cache import RedisJsonCache
+from backend.app.core.redis.dependencies import get_cache_service
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.runtime.operations.contracts.scheduler import (
     BlockedStepExplanationResponse,
     BlockedStepUnblockRequest,
     BlockedStepUnblockResponse,
@@ -16,12 +22,6 @@ from backend.app.api.schemas.operations.overview import (
     SchedulerControlResponse,
     SchedulerPauseRequest,
 )
-from backend.app.core.common.pagination import PageParams
-from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.cache import RedisJsonCache
-from backend.app.core.redis.dependencies import get_cache_service
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.runtime.operations.scheduler import (
     SchedulerBacklogService,
     SchedulerBlockedStepService,

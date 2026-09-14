@@ -13,11 +13,13 @@ from backend.app.api.idempotency import (
 )
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.agents.errors import agent_management_http_error
-from backend.app.api.schemas.workspace.teams import (
+from backend.app.api.schemas.workspace.team_core import (
     AgentTeamMemberCreateRequest,
-    AgentTeamMemberModelProviderUpdateRequest,
     AgentTeamMemberResponse,
     AgentTeamMemberUpdateRequest,
+)
+from backend.app.api.schemas.workspace.team_operations_console import (
+    AgentTeamMemberModelProviderUpdateRequest,
 )
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams

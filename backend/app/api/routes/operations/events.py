@@ -13,17 +13,10 @@ from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.operations.overview import (
+from backend.app.api.schemas.operations.filters import (
     AuditEventFilterResponse,
-    FailedJobInspectionResponse,
     RunEventFilterResponse,
-    RuntimeEventResponse,
     SecurityEventFilterResponse,
-    SecurityEventResponse,
-    StaleRunRecoverStatus,
-    StaleRunRecoveryRequest,
-    StaleRunRecoveryResponse,
-    StaleRunsDiagnosticsResponse,
 )
 from backend.app.api.schemas.platform.audit import (
     AuditEventResponse,
@@ -42,6 +35,17 @@ from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.orchestration.runs.contracts import AgentRunResponse, RunEventResponse
 from backend.app.observability.audit_integrity import AuditIntegrityService
 from backend.app.observability.audit_service import AuditService
+from backend.app.runtime.operations.contracts.events import (
+    RuntimeEventResponse,
+    SecurityEventResponse,
+)
+from backend.app.runtime.operations.contracts.queue import (
+    FailedJobInspectionResponse,
+    StaleRunRecoverStatus,
+    StaleRunRecoveryRequest,
+    StaleRunRecoveryResponse,
+    StaleRunsDiagnosticsResponse,
+)
 from backend.app.runtime.operations.events import OperationsEventQueryService
 from backend.app.runtime.operations.recovery.diagnostics import StaleRunDiagnosticsService
 from backend.app.runtime.operations.recovery.service import StaleRunRecoveryService

@@ -14,7 +14,7 @@ from backend.app.api.routes.workspace.teams.common import (
     _queued_runtime_control,
     _team_runtime_limits,
 )
-from backend.app.api.schemas.workspace.teams import (
+from backend.app.api.schemas.workspace.team_runtime import (
     AgentTeamRuntimeBindRequest,
     AgentTeamRuntimeControlRequest,
     AgentTeamRuntimeEnsureRequest,
@@ -249,5 +249,4 @@ async def continue_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     _enqueue_team_runtime_control(queue, context, team_id, request, "continue")
     return AgentTeamRuntimeResponse.model_validate(state)
-
 
