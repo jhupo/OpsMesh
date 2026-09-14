@@ -7,6 +7,7 @@
 | R0 | 全量结构清单与处置方案 | 已完成 | 1,029 个源文件的审查基线与处置表 |
 | R1 | 显式 ORM 注册，解除数据库层反向加载业务模型 | 已完成 | 模型注册、数据库模型、健康检查和任务转移相关测试通过；新增独立进程边界检查 |
 | R1 | 访问域与 HTTP 依赖边界 | 已完成 | 用户/令牌/权限迁至 `domains/access`；FastAPI 认证、平台管理员和队列依赖迁至 `api/dependencies`；认证、授权和架构门禁通过 |
+| R1 | 平台控制面与外部集成归属 | 已完成 | 管理策略、发布、更新迁至 `domains/platform`；Webhook 迁至 `domains/integrations/webhooks`；模型注册、动态入口和相关导入已更新 |
 | R2 | API 路由/schema 清理 | 待实施 | |
 | R3 | Agent/provider/session/mailbox/tools/MCP | 待实施 | |
 | R4 | 任务/Run/工作流职责 | 待实施 | |

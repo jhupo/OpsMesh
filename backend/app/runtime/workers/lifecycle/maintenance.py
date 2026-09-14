@@ -8,9 +8,9 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings
-from backend.app.core.integrations.webhooks.service import WebhookDeliveryScheduler
 from backend.app.domains.agents.memory.embedding_scheduler import WorkspaceMemoryEmbeddingScheduler
 from backend.app.domains.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
+from backend.app.domains.integrations.webhooks.service import WebhookDeliveryScheduler
 from backend.app.domains.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService

@@ -1,7 +1,7 @@
 import pytest
 from packaging.version import Version
 
-from backend.app.core.admin.releases.versioning import normalize_release_tag, release_version
+from backend.app.domains.platform.releases.versioning import normalize_release_tag, release_version
 
 
 def test_release_version_normalizes_supported_tags() -> None:

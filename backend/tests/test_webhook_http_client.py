@@ -1,7 +1,7 @@
 import httpx
 
-from backend.app.core.integrations.webhooks.http_client import HttpxWebhookHttpClient
-from backend.app.core.integrations.webhooks.policy import WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH
+from backend.app.domains.integrations.webhooks.http_client import HttpxWebhookHttpClient
+from backend.app.domains.integrations.webhooks.policy import WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH
 
 
 def test_httpx_webhook_client_streams_bounded_non_success_response() -> None:

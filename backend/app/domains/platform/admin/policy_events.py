@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.admin.models import PlatformPolicy, PlatformPolicyEvent
+from backend.app.domains.platform.admin.models import PlatformPolicy, PlatformPolicyEvent
 
 
 class AdminPolicyEventService:

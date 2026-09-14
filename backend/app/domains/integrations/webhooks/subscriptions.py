@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
-from backend.app.core.integrations.webhooks.models import WebhookSubscription
-from backend.app.core.integrations.webhooks.policy import WEBHOOK_URL_POLICY
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.egress import EgressUrlPolicy, validate_egress_url
+from backend.app.domains.integrations.webhooks.models import WebhookSubscription
+from backend.app.domains.integrations.webhooks.policy import WEBHOOK_URL_POLICY
 
 
 class WebhookSubscriptionService:

@@ -6,14 +6,14 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.admin.base import AdminRedisService
-from backend.app.core.admin.common import positive_int, top_counts
-from backend.app.core.admin.queue_operations import AdminQueueOperationsService
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.platform.admin.base import AdminRedisService
+from backend.app.domains.platform.admin.common import positive_int, top_counts
+from backend.app.domains.platform.admin.queue_operations import AdminQueueOperationsService
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.operations.models import WorkerLease, WorkerNode
 

@@ -1,16 +1,16 @@
 from datetime import UTC, datetime, timedelta
 
-from backend.app.core.integrations.webhooks.http_client import WebhookHttpResponse
-from backend.app.core.integrations.webhooks.models import (
+from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
+from backend.app.domains.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,
 )
-from backend.app.core.integrations.webhooks.policy import (
+from backend.app.domains.integrations.webhooks.policy import (
     WEBHOOK_ERROR_MAX_LENGTH,
     WEBHOOK_RESPONSE_SNIPPET_MAX_LENGTH,
     WEBHOOK_RETRY_BASE_DELAY_SECONDS,
 )
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
 def _snippet(value: str | None) -> str | None:

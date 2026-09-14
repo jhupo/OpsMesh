@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from backend.app.core.admin.releases.models import ReleaseUpdateCheck
+from backend.app.domains.platform.releases.models import ReleaseUpdateCheck
 
 _LATEST_RELEASES: dict[str, tuple[float, ReleaseUpdateCheck]] = {}
 

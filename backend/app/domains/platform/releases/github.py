@@ -4,13 +4,13 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from backend.app.core.admin.releases.models import (
+from backend.app.core.common.config import Settings
+from backend.app.domains.platform.releases.models import (
     ReleaseAsset,
     ReleaseUpdateCheck,
     ReleaseVersion,
 )
-from backend.app.core.admin.releases.versioning import normalize_release_tag, release_version
-from backend.app.core.common.config import Settings
+from backend.app.domains.platform.releases.versioning import normalize_release_tag, release_version
 
 
 class GitHubReleaseClient:

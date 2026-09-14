@@ -14,17 +14,17 @@ from sqlalchemy.pool import StaticPool
 from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
-from backend.app.core.admin.models import PlatformPolicy, PlatformPolicyEvent
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.models import User
 from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.platform.admin.models import PlatformPolicy, PlatformPolicyEvent
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
@@ -772,13 +772,13 @@ def test_admin_system_version_reports_current_package_version() -> None:
 
 
 def test_admin_check_updates_returns_latest_release(monkeypatch) -> None:
-    from backend.app.core.admin.releases.cache import clear_release_update_cache
-    from backend.app.core.admin.releases.models import (
+    from backend.app.domains.platform.releases.cache import clear_release_update_cache
+    from backend.app.domains.platform.releases.models import (
         ReleaseAsset,
         ReleaseUpdateCheck,
         ReleaseVersion,
     )
-    from backend.app.core.admin.releases.service import ReleaseUpdateService
+    from backend.app.domains.platform.releases.service import ReleaseUpdateService
 
     clear_release_update_cache()
 

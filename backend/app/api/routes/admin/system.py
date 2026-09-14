@@ -6,13 +6,13 @@ from backend.app.api.schemas.platform.admin import (
     AdminReleaseVersionResponse,
     AdminSystemConfigurationResponse,
 )
-from backend.app.core.admin.releases.service import ReleaseUpdateService
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.executors import blocking_executor_snapshot
 from backend.app.core.common.resources import recommend_runtime_resources
 from backend.app.core.db.session import database_pool_snapshot
 from backend.app.core.redis.client import redis_pool_snapshot
 from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.domains.platform.releases.service import ReleaseUpdateService
 
 router = APIRouter()
 

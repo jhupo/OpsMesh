@@ -70,10 +70,8 @@ def test_consolidated_domains_have_one_source_owner() -> None:
     }
     assert {path.name for path in app.glob("*.py")} == {"__init__.py", "delivery.py", "main.py"}
     for name in (
-        "core/admin",
         "core/common",
         "core/db",
-        "core/integrations",
         "core/rate_limits",
         "core/redis",
         "core/secrets",
@@ -81,7 +79,9 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "domains/agents",
         "domains/access",
         "domains/capabilities",
+        "domains/integrations",
         "domains/orchestration",
+        "domains/platform",
         "domains/workspace",
         "runtime/operations",
         "runtime/self_hosted",
@@ -101,6 +101,8 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "core/platform",
         "core/auth",
         "core/identity",
+        "core/admin",
+        "core/integrations",
     ):
         target = app / name
         assert not target.exists(), name
@@ -897,8 +899,8 @@ def test_generic_utils_modules_are_not_used_as_dumping_grounds() -> None:
     assert not list(app.rglob("*utils.py"))
     assert not list(app.rglob("*helpers.py"))
     assert (app / "core/common/values.py").is_file()
-    assert (app / "core/integrations/webhooks/policy.py").is_file()
-    assert not (app / "core/integrations/webhooks/constants.py").exists()
+    assert (app / "domains/integrations/webhooks/policy.py").is_file()
+    assert not (app / "domains/integrations/webhooks/constants.py").exists()
     assert not (app / "domains/orchestration/requests/utils.py").exists()
     assert (app / "domains/workspace/reviews/policy.py").is_file()
     assert not (app / "domains/workspace/reviews/constants.py").exists()

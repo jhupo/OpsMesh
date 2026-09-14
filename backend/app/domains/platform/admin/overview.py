@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from backend.app.core.admin.base import AdminSessionService
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.platform.admin.base import AdminSessionService
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace

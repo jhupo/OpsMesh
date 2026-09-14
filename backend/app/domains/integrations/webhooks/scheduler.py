@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.integrations.webhooks.models import WebhookDeliveryAttempt
+from backend.app.domains.integrations.webhooks.models import WebhookDeliveryAttempt
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
 

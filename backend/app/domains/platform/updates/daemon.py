@@ -20,13 +20,13 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.bootstrap.models import register_models
-from backend.app.core.admin.updates.models import (
+from backend.app.core.db.session import SessionLocal, engine
+from backend.app.domains.platform.updates.models import (
     PlatformInstallation,
     PlatformUpdateEvent,
     PlatformUpdateJob,
 )
-from backend.app.core.admin.updates.service import UpdateService
-from backend.app.core.db.session import SessionLocal, engine
+from backend.app.domains.platform.updates.service import UpdateService
 from backend.app.runtime.operations.models import WorkerLease
 from backend.app.runtime.self_hosted.models import SelfHostedJobClaim, SelfHostedMcpJob
 

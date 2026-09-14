@@ -5,8 +5,8 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from backend.app.core.admin.base import AdminSessionService
 from backend.app.core.common.pagination import PageParams
+from backend.app.domains.platform.admin.base import AdminSessionService
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtime.workers.contracts import JobPayload, JobType

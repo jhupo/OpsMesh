@@ -3,12 +3,12 @@ import hmac
 import json
 import time
 
-from backend.app.core.integrations.webhooks.models import (
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,
 )
-from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.core.security.redaction import redact_sensitive_payload
 
 
 def _canonical_json(payload: dict[str, object]) -> bytes:

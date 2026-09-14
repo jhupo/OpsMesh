@@ -3,17 +3,17 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.admin.common import first_exceeded_capacity_cap
-from backend.app.core.admin.models import PlatformPolicy
-from backend.app.core.admin.policy_events import AdminPolicyEventService
-from backend.app.core.admin.worker_policy_values import (
+from backend.app.core.common.errors import PolicyDeniedError
+from backend.app.domains.platform.admin.common import first_exceeded_capacity_cap
+from backend.app.domains.platform.admin.models import PlatformPolicy
+from backend.app.domains.platform.admin.policy_events import AdminPolicyEventService
+from backend.app.domains.platform.admin.worker_policy_values import (
     WORKER_CONTROL_POLICY_KEY,
     WorkerControlPolicy,
     default_worker_control_policy_value,
     normalize_worker_control_policy_value,
     worker_control_policy_from_value,
 )
-from backend.app.core.common.errors import PolicyDeniedError
 
 
 class AdminWorkerPolicyControlService:

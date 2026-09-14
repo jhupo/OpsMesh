@@ -21,12 +21,16 @@ from backend.app.api.dependencies.workers import (
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
+from backend.app.core.rate_limits.service import FixedWindowRateLimiter
+from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.access.models import User
-from backend.app.core.integrations.webhooks.models import (
+from backend.app.domains.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,
 )
-from backend.app.core.integrations.webhooks.service import (
+from backend.app.domains.integrations.webhooks.service import (
     WEBHOOK_REPLAY_COOLDOWN_SECONDS,
     WEBHOOK_REPLAY_WORKSPACE_LIMIT,
     WebhookDeliveryScheduler,
@@ -34,10 +38,6 @@ from backend.app.core.integrations.webhooks.service import (
     WebhookHttpResponse,
     WebhookSubscriptionService,
 )
-from backend.app.core.rate_limits.service import FixedWindowRateLimiter
-from backend.app.core.redis.dependencies import get_redis_client
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.runtime.workers.contracts import JobPayload, JobType

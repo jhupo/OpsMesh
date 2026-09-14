@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import Connection, Table, event
 
 from backend.app.bootstrap.models import register_models
-from backend.app.core.admin.updates.models import PlatformInstallation
+from backend.app.domains.platform.updates.models import PlatformInstallation
 
 register_models()
 

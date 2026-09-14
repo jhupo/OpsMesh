@@ -7,7 +7,7 @@ from opsmesh_operator.contracts import require_tag
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.admin.updates.models import (
+from backend.app.domains.platform.updates.models import (
     PlatformInstallation,
     PlatformUpdateEvent,
     PlatformUpdateJob,

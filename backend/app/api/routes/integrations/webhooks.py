@@ -19,17 +19,17 @@ from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.db.session import get_db_session
-from backend.app.core.integrations.webhooks.models import WebhookDeliveryAttempt
-from backend.app.core.integrations.webhooks.service import (
+from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.egress import EgressUrlValidationError
+from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.integrations.webhooks.models import WebhookDeliveryAttempt
+from backend.app.domains.integrations.webhooks.service import (
     WebhookDeliveryReplayError,
     WebhookDeliveryReplayRateLimitError,
     WebhookDeliveryService,
     WebhookSubscriptionService,
 )
-from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.core.security.egress import EgressUrlValidationError
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter(

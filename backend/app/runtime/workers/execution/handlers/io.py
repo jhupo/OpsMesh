@@ -1,4 +1,4 @@
-from backend.app.core.integrations.webhooks.service import WebhookDeliveryService
+from backend.app.domains.integrations.webhooks.service import WebhookDeliveryService
 from backend.app.domains.workspace.projects.exports.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.storage import create_storage
 from backend.app.runtime.workers.contracts import JobPayload

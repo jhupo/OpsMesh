@@ -22,6 +22,8 @@ imports, dynamic patch targets, architecture gates and documentation together, w
 | Authorized request construction and provider gateway | domains/orchestration/requests | Former run_request and models_layer; these are services, not database models. |
 | Orchestration database entities | domains/orchestration/models.py | Kept as a module; creating a one-file models package would add needless depth. |
 | Planning attempts, feasibility, ownership and project plans | domains/orchestration/workflows/plan_* | Former top-level planning; one orchestration owner for automatic and user-authored work. |
+| Platform administration, release discovery and updates | domains/platform/admin, domains/platform/releases, domains/platform/updates | Former core/admin control-plane code; privileged updater remains an explicit process entry. |
+| Webhook subscriptions, delivery and replay | domains/integrations/webhooks | Former core/integrations/webhooks; the integration domain owns delivery state and policy. |
 
 ### Platform foundations and shared helpers
 
@@ -35,9 +37,9 @@ that owns their behavior (for example `common/typing.py` for value coercion and
 business logic from accumulating in a dumping ground.
 
 Core persistence and security adapters remain nested under `core/db`, `core/redis`,
-`core/security`, `core/secrets`, `core/auth`, `core/identity`, `core/admin`, and
-`core/integrations/webhooks`. They are infrastructure boundaries, not application-level utility
-folders.
+`core/security`, and `core/secrets`. Access, platform control-plane, and external integration
+behavior are product domains under `domains/access`, `domains/platform`, and
+`domains/integrations`; they are not infrastructure utility folders.
 
 Task orchestration follows the same ownership rule. `domains/orchestration/tasks` keeps durable
 task models, status transitions, the event bus, and public state services at its root. Control,
@@ -67,8 +69,9 @@ used to simulate package boundaries.
 
 - domains/capabilities/mcp is an SDK protocol/execution boundary.
 - API routes and schema groups retain their authentication and transport grouping.
-- auth, identity, security, secrets, db, runtime/self_hosted and domains/workspace are separate
-  security or lifecycle owners; the target tree was not an instruction to erase these domains.
+- access, platform, integrations, security, secrets, db, runtime/self_hosted and domains/workspace
+  are separate security or lifecycle owners; the target tree was not an instruction to erase these
+  domains.
 
 ## File-level review policy
 

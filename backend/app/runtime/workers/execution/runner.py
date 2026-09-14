@@ -9,7 +9,6 @@ from threading import Event
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.core.admin.updates.service import maintenance_enabled
 from backend.app.core.common.config import Settings
 from backend.app.core.common.request_context import log_context
 from backend.app.core.common.trace_context import (
@@ -22,6 +21,7 @@ from backend.app.domains.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
+from backend.app.domains.platform.updates.service import maintenance_enabled
 from backend.app.runtime.operations.workers.capacity import WorkerCapacitySnapshotService
 from backend.app.runtime.operations.workers.heartbeats import WorkerHeartbeatOperationsService
 from backend.app.runtime.workers.contracts import JobPayload

@@ -3,15 +3,15 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.admin.base import AdminSessionService
-from backend.app.core.admin.models import PlatformPolicy, PlatformPolicyEvent
-from backend.app.core.admin.policy_events import AdminPolicyEventService
-from backend.app.core.admin.risky_policy_values import (
+from backend.app.core.common.pagination import PageParams
+from backend.app.domains.platform.admin.base import AdminSessionService
+from backend.app.domains.platform.admin.models import PlatformPolicy, PlatformPolicyEvent
+from backend.app.domains.platform.admin.policy_events import AdminPolicyEventService
+from backend.app.domains.platform.admin.risky_policy_values import (
     RISKY_EXECUTION_POLICY_KEY,
     default_risky_execution_policy_value,
     normalize_risky_execution_policy_value,
 )
-from backend.app.core.common.pagination import PageParams
 
 
 class AdminPolicyService(AdminSessionService):

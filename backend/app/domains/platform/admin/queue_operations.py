@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.core.admin.base import AdminRedisService
+from backend.app.domains.platform.admin.base import AdminRedisService
 from backend.app.runtime.operations.contracts.queue import QueueMetricsResponse
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.queue import RedisQueue

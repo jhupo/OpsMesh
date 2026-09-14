@@ -5,17 +5,17 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.integrations.webhooks.models import (
+from backend.app.core.rate_limits.service import FixedWindowRateLimiter
+from backend.app.domains.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,
 )
-from backend.app.core.integrations.webhooks.policy import (
+from backend.app.domains.integrations.webhooks.policy import (
     WEBHOOK_REPLAY_COOLDOWN_SECONDS,
     WEBHOOK_REPLAY_WORKSPACE_LIMIT,
     WEBHOOK_REPLAY_WORKSPACE_WINDOW_SECONDS,
 )
-from backend.app.core.integrations.webhooks.scheduler import WebhookDeliveryScheduler
-from backend.app.core.rate_limits.service import FixedWindowRateLimiter
+from backend.app.domains.integrations.webhooks.scheduler import WebhookDeliveryScheduler
 from backend.app.runtime.workers.queue import RedisQueue
 
 

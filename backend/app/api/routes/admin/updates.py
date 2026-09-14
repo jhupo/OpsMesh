@@ -8,11 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.admin.updates.models import PlatformUpdateEvent, PlatformUpdateJob
-from backend.app.core.admin.updates.service import UpdateService
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.service import SecurityAuditService
+from backend.app.domains.platform.updates.models import PlatformUpdateEvent, PlatformUpdateJob
+from backend.app.domains.platform.updates.service import UpdateService
 
 router = APIRouter(prefix="/system/updates")
 

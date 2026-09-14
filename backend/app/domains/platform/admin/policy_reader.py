@@ -3,13 +3,13 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.admin.models import PlatformPolicy
-from backend.app.core.admin.risky_policy_values import (
+from backend.app.domains.platform.admin.models import PlatformPolicy
+from backend.app.domains.platform.admin.risky_policy_values import (
     RISKY_EXECUTION_POLICY_KEY,
     RiskyExecutionPolicy,
     risky_execution_policy_from_value,
 )
-from backend.app.core.admin.worker_policy_values import (
+from backend.app.domains.platform.admin.worker_policy_values import (
     WORKER_CONTROL_POLICY_KEY,
     WorkerControlPolicy,
     worker_control_policy_from_value,

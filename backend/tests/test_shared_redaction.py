@@ -1,11 +1,11 @@
 import pytest
 
-from backend.app.core.integrations.webhooks.delivery_state import _safe_headers, _snippet
 from backend.app.core.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_text,
     redact_text_fragments,
 )
+from backend.app.domains.integrations.webhooks.delivery_state import _safe_headers, _snippet
 
 
 @pytest.mark.parametrize(

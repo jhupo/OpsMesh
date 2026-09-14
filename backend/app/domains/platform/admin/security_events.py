@@ -4,9 +4,9 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from backend.app.core.admin.base import AdminSessionService
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.security.models import SecurityEvent
+from backend.app.domains.platform.admin.base import AdminSessionService
 
 
 class AdminSecurityEventService(AdminSessionService):
