@@ -10,7 +10,6 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import sessionmaker
 
 import backend.app.domains.agents.runtime.providers.openai.streaming as openai_streaming
-from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
 from backend.app.core.identity.models import User
 from backend.app.domains.agents.models import AgentProfile

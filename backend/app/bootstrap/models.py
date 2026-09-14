@@ -1,0 +1,51 @@
+"""Explicit ORM registration shared by API, workers, migrations and tests."""
+
+from importlib import import_module
+
+from sqlalchemy import MetaData
+from sqlalchemy.orm import configure_mappers
+
+from backend.app.core.db.base import Base
+
+_MODEL_MODULES = (
+    "backend.app.core.admin.models",
+    "backend.app.core.admin.updates.models",
+    "backend.app.core.identity.models",
+    "backend.app.core.integrations.webhooks.models",
+    "backend.app.core.security.models",
+    "backend.app.domains.agents.memory.models",
+    "backend.app.domains.agents.messages.models",
+    "backend.app.domains.agents.models",
+    "backend.app.domains.agents.providers.credentials.models",
+    "backend.app.domains.agents.runtime.sessions.models",
+    "backend.app.domains.capabilities.marketplace.models",
+    "backend.app.domains.capabilities.models",
+    "backend.app.domains.knowledge.models",
+    "backend.app.domains.orchestration.approvals.models",
+    "backend.app.domains.orchestration.models",
+    "backend.app.domains.orchestration.runs.models",
+    "backend.app.domains.orchestration.tasks.models",
+    "backend.app.domains.orchestration.workflows.planning.attempt_models",
+    "backend.app.domains.workspace.domains.models",
+    "backend.app.domains.workspace.projects.export_models",
+    "backend.app.domains.workspace.projects.models",
+    "backend.app.domains.workspace.storage.artifact_models",
+    "backend.app.domains.workspace.storage.models",
+    "backend.app.domains.workspace.teams.models",
+    "backend.app.domains.workspace.tenants.models",
+    "backend.app.observability.audit_models",
+    "backend.app.observability.cost_models",
+    "backend.app.observability.notification_models",
+    "backend.app.runtime.environment.models",
+    "backend.app.runtime.environment.spaces.models",
+    "backend.app.runtime.operations.models",
+    "backend.app.runtime.self_hosted.models",
+    "backend.app.runtime.workers.scheduling.models",
+)
+
+
+def register_models() -> MetaData:
+    for module_name in _MODEL_MODULES:
+        import_module(module_name)
+    configure_mappers()
+    return Base.metadata

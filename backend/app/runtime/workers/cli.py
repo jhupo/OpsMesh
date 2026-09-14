@@ -6,6 +6,7 @@ import signal
 import socket
 from threading import Event
 
+from backend.app.bootstrap.models import register_models
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.logging import configure_logging
 from backend.app.core.db.session import SessionLocal, engine
@@ -72,6 +73,7 @@ def _run_worker(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def _build_runner(settings: Settings, config: WorkerRunnerConfig) -> WorkerRunner:
+    register_models()
     return WorkerRunner(
         queue=build_default_queue(redis_client, settings),
         session_factory=SessionLocal,

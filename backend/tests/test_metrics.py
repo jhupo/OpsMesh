@@ -20,7 +20,6 @@ from starlette.requests import Request
 from backend.app.api.middleware import _metrics_path
 from backend.app.core.common.config import Settings
 from backend.app.core.common.metrics import MetricsRegistry, metrics_registry
-from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.identity.models import User

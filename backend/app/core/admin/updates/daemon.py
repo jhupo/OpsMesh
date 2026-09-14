@@ -19,6 +19,7 @@ from packaging.version import Version
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from backend.app.bootstrap.models import register_models
 from backend.app.core.admin.updates.models import (
     PlatformInstallation,
     PlatformUpdateEvent,
@@ -382,6 +383,7 @@ class HostUpdater:
 
 
 def main() -> None:
+    register_models()
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--recover", type=UUID)

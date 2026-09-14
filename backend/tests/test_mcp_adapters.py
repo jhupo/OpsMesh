@@ -5,7 +5,6 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.egress import EgressUrlPolicy
 from backend.app.domains.capabilities.mcp.execution.types import McpExecutionError

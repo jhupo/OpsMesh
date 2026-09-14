@@ -13,7 +13,6 @@ from sqlalchemy.pool import StaticPool
 from backend.app.core.admin.models import PlatformPolicy
 from backend.app.core.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.identity.models import User

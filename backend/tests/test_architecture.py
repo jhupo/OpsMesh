@@ -62,6 +62,7 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         if path.is_dir() and path.name != "__pycache__"
     } == {
         "api",
+        "bootstrap",
         "core",
         "domains",
         "observability",

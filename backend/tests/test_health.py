@@ -12,7 +12,6 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.core.common.config import Settings
 from backend.app.core.common.errors import QuotaExceededError
-from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.dependencies import get_redis_client

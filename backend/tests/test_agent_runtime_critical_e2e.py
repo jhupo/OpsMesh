@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.api.schemas.orchestration.tasks.control import TaskDeliveryDecisionRequest
 from backend.app.core.common.config import Settings
-from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.models import AgentProfile

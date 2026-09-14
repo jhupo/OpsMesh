@@ -11,6 +11,7 @@ from backend.app.api.middleware import (
     SecurityHeadersMiddleware,
 )
 from backend.app.api.router import api_router
+from backend.app.bootstrap.models import register_models
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.executors import shutdown_blocking_executor
 from backend.app.core.common.logging import configure_logging
@@ -40,6 +41,7 @@ def create_app_with_dependencies(
     rate_limiter: FixedWindowRateLimiter,
     redis_client: object | None = None,
 ) -> FastAPI:
+    register_models()
     app_settings = settings
     configure_logging(app_settings)
 

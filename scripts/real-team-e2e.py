@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.orchestration.tasks.overview import TaskCreateRequest
 from backend.app.core.common.config import Settings, get_settings
+from backend.app.bootstrap.models import register_models
 from backend.app.core.db.session import SessionLocal
 from backend.app.core.identity.models import User
 from backend.app.core.redis.client import redis_client
@@ -45,6 +46,7 @@ class RealTeamE2EConfig:
 
 
 def main() -> int:
+    register_models()
     _configure_process_output()
     config = _config_from_env()
     if config.disable_tracing:

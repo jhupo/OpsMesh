@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.admin.models import PlatformPolicy
 from backend.app.core.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.core.db.base import Base
 from backend.app.domains.capabilities.tools.context import ToolContext
 from backend.app.domains.capabilities.tools.runtime_tools import RuntimeToolService

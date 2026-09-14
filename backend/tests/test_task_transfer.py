@@ -6,17 +6,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.orchestration.tasks.overview import TaskTransferResponse
 from backend.app.core.db.base import Base
-from backend.app.core.db.models import (  # noqa: F401
-    AgentRun,
-    AgentTeam,
-    AgentTeamMember,
-    Task,
-    TaskStep,
-    TaskTransfer,
-    User,
-    Workspace,
-)
+from backend.app.core.identity.models import User
 from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep, TaskTransfer
 from backend.app.domains.orchestration.tasks.operations.ownership import task_owner_can_execute_step
 from backend.app.domains.orchestration.tasks.operations.transfers import (
     TaskTransferCommand,
@@ -24,6 +17,8 @@ from backend.app.domains.orchestration.tasks.operations.transfers import (
     TaskTransferError,
     TaskTransferService,
 )
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.domains.workspace.tenants.models import Workspace
 
 
 def _fixture() -> tuple[Session, User, Task, AgentProfile, AgentProfile, TaskStep]:

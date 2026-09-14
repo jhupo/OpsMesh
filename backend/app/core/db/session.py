@@ -6,7 +6,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.db import models as registered_models  # noqa: F401
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,6 @@ from uuid import uuid4
 
 import pytest
 
-from backend.app.core.db import models as registered_models  # noqa: F401
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
