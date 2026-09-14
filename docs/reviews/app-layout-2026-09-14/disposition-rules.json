@@ -1,0 +1,2294 @@
+{
+  "prefixes": [
+    {
+      "source": "core/admin/",
+      "target": "domains/platform/admin/",
+      "phase": "R1",
+      "reason": "Platform administration is business control-plane code, not reusable infrastructure."
+    },
+    {
+      "source": "core/admin/releases/",
+      "target": "domains/platform/releases/",
+      "phase": "R1",
+      "reason": "Keep release discovery/cache/version semantics together."
+    },
+    {
+      "source": "core/admin/updates/",
+      "target": "domains/platform/updates/",
+      "phase": "R1",
+      "reason": "Keep update intent and durable state separate from privileged deployment execution."
+    },
+    {
+      "source": "core/auth/",
+      "target": "domains/access/",
+      "phase": "R1",
+      "reason": "Authentication, identity and authorization have one product owner."
+    },
+    {
+      "source": "core/identity/",
+      "target": "domains/access/",
+      "phase": "R1",
+      "reason": "User and API-token models belong to access; workspace membership retains its existing owner."
+    },
+    {
+      "source": "core/integrations/webhooks/",
+      "target": "domains/integrations/webhooks/",
+      "phase": "R1",
+      "reason": "Webhook subscriptions, scheduling and delivery are an integration feature."
+    },
+    {
+      "source": "core/common/",
+      "target": "core/",
+      "phase": "R1",
+      "reason": "Keep foundational modules under core; do not add a directory for every helper."
+    },
+    {
+      "source": "api/routes/admin/",
+      "target": "api/routes/platform/",
+      "phase": "R2",
+      "reason": "Place platform administration routes alongside their platform schemas."
+    },
+    {
+      "source": "domains/agents/runtime/execution/",
+      "target": "domains/agents/runtime/",
+      "phase": "R3",
+      "reason": "Remove generic execution nesting; retain real session, tool and vendor boundaries."
+    },
+    {
+      "source": "domains/agents/runtime/sessions/",
+      "target": "domains/agents/sessions/",
+      "phase": "R3",
+      "reason": "Persistent sessions are product state, shared across SDK adapters."
+    },
+    {
+      "source": "domains/agents/providers/catalog/",
+      "target": "domains/agents/providers/",
+      "phase": "R3",
+      "reason": "Flatten provider metadata fragments under the single provider feature."
+    },
+    {
+      "source": "domains/workspace/domains/",
+      "target": "domains/workspace/extensions/",
+      "phase": "R5",
+      "reason": "Clarify domain-specific task extensions; avoid domains/workspace/domains naming."
+    },
+    {
+      "source": "domains/workspace/projects/exports/",
+      "target": "domains/workspace/data_transfer/",
+      "phase": "R5",
+      "reason": "Workspace backup/export covers agents, teams and runs, not just project files."
+    },
+    {
+      "source": "domains/workspace/projects/imports/",
+      "target": "domains/workspace/data_transfer/importers/",
+      "phase": "R5",
+      "reason": "Keep resource-specific metadata importers under workspace data transfer."
+    },
+    {
+      "source": "domains/workspace/tenants/lifecycle/",
+      "target": "domains/workspace/data_lifecycle/",
+      "phase": "R5",
+      "reason": "Backup, restore drills and retention are workspace data lifecycle, not membership lifecycle."
+    },
+    {
+      "source": "domains/workspace/tenants/lifecycle/actions/",
+      "target": "domains/workspace/data_lifecycle/",
+      "phase": "R5",
+      "reason": "Collapse action-class wrappers while keeping independent recovery actions explicit."
+    },
+    {
+      "source": "domains/workspace/tenants/lifecycle/diagnostics/",
+      "target": "domains/workspace/data_lifecycle/",
+      "phase": "R5",
+      "reason": "Co-locate recovery diagnostic queries and projection logic."
+    },
+    {
+      "source": "domains/workspace/tenants/lifecycle/scheduling/",
+      "target": "domains/workspace/data_lifecycle/",
+      "phase": "R5",
+      "reason": "Remove a one-layer scheduling hierarchy; preserve backup/restore/retention transactions."
+    },
+    {
+      "source": "domains/orchestration/tasks/operations/",
+      "target": "domains/orchestration/tasks/control/",
+      "phase": "R4",
+      "reason": "Task mutation commands share the control boundary; transfers and task CRUD are exceptions."
+    },
+    {
+      "source": "domains/orchestration/workflows/planning/project_plan/",
+      "target": "domains/orchestration/workflows/templates/",
+      "phase": "R4",
+      "reason": "Organization templates are a peer of planning, not a fifth-level nested package."
+    },
+    {
+      "source": "runtime/workers/execution/handlers/",
+      "target": "runtime/workers/handlers/",
+      "phase": "R6",
+      "reason": "Handlers are worker entry adapters, not an implementation detail of runner state."
+    },
+    {
+      "source": "runtime/workers/execution/",
+      "target": "runtime/workers/",
+      "phase": "R6",
+      "reason": "Keep runner/routing/state adjacent; retain a real handler boundary."
+    },
+    {
+      "source": "runtime/workers/lifecycle/",
+      "target": "runtime/workers/",
+      "phase": "R6",
+      "reason": "Consolidate lifecycle ownership under workers."
+    },
+    {
+      "source": "runtime/operations/workers/",
+      "target": "runtime/operations/workers/",
+      "phase": "R6",
+      "reason": "Keep operational worker projections only; authoritative writes move to workers."
+    },
+    {
+      "source": "runtime/operations/recovery/",
+      "target": "runtime/workers/recovery/",
+      "phase": "R6",
+      "reason": "Recovery mutates queue/leases and belongs to worker execution, not reporting."
+    },
+    {
+      "source": "domains/orchestration/tasks/management/",
+      "target": "domains/orchestration/tasks/collaboration/manager_",
+      "phase": "R4",
+      "reason": "Manager review/collaboration diagnostics share the collaboration boundary."
+    }
+  ],
+  "overrides": [
+    {
+      "sources": [
+        "api/dependencies.py"
+      ],
+      "targets": [
+        "api/dependencies/queue.py"
+      ],
+      "action": "move",
+      "phase": "R2",
+      "reason": "Turn the queue-only dependency file into an explicitly named HTTP dependency."
+    },
+    {
+      "sources": [
+        "core/auth/dependencies.py"
+      ],
+      "targets": [
+        "api/dependencies/auth.py"
+      ],
+      "action": "split-responsibility",
+      "phase": "R1",
+      "reason": "Move Depends/Header/Request adapters to API; domain authentication receives explicit inputs."
+    },
+    {
+      "sources": [
+        "core/auth/admin.py"
+      ],
+      "targets": [
+        "api/dependencies/admin.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "The platform-admin HTTP guard belongs to API; permission decisions remain in access."
+    },
+    {
+      "sources": [
+        "core/redis/dependencies.py"
+      ],
+      "targets": [
+        "api/dependencies/redis.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "HTTP request-based Redis resolution is not a core dependency."
+    },
+    {
+      "sources": [
+        "runtime/environment/dependencies.py"
+      ],
+      "targets": [
+        "api/dependencies/runtime.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "Move HTTP-facing runtime injection out of environment implementation."
+    },
+    {
+      "sources": [
+        "core/db/models.py"
+      ],
+      "targets": [
+        "bootstrap/models.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "Preserve intentional ORM model registration at composition root; remove DB-to-business import."
+    },
+    {
+      "sources": [
+        "core/identity/admin_service.py"
+      ],
+      "targets": [
+        "domains/access/admin.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "Account lifecycle commands belong with identity."
+    },
+    {
+      "sources": [
+        "core/secrets/service.py"
+      ],
+      "targets": [
+        "core/security/secrets.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "Keep encryption and safe metadata as reusable security functions."
+    },
+    {
+      "sources": [
+        "core/secrets/rotation.py"
+      ],
+      "targets": [
+        "domains/platform/credential_rotation.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "Credential rotation coordinates domain-owned credential stores."
+    },
+    {
+      "sources": [
+        "core/rate_limits/service.py"
+      ],
+      "targets": [
+        "core/security/rate_limits.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "One reusable limiter implementation needs no singleton package."
+    },
+    {
+      "sources": [
+        "core/common/values.py"
+      ],
+      "targets": [
+        "core/utils.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "Preserve heavily reused pure conversion helpers; do not create a miscellaneous business utils package."
+    },
+    {
+      "sources": [
+        "core/common/client_ip.py"
+      ],
+      "targets": [
+        "api/client_ip.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "Trusted-proxy client IP parsing is HTTP transport behavior."
+    },
+    {
+      "sources": [
+        "core/common/maintenance.py"
+      ],
+      "targets": [
+        "runtime/workers/maintenance_runner.py"
+      ],
+      "action": "move-review-entrypoint",
+      "phase": "R6",
+      "reason": "No static production caller was found; preserve until worker scheduling integration is explicitly assessed."
+    },
+    {
+      "sources": [
+        "core/common/logging.py"
+      ],
+      "targets": [
+        "observability/telemetry/logging.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Unify technical telemetry; keep this subpackage free of business/runtime implementations."
+    },
+    {
+      "sources": [
+        "core/common/metrics.py"
+      ],
+      "targets": [
+        "observability/telemetry/metrics.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Unify technical telemetry; keep this subpackage free of business/runtime implementations."
+    },
+    {
+      "sources": [
+        "core/common/request_context.py"
+      ],
+      "targets": [
+        "observability/telemetry/request_context.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Unify technical telemetry; keep this subpackage free of business/runtime implementations."
+    },
+    {
+      "sources": [
+        "core/common/trace_context.py"
+      ],
+      "targets": [
+        "observability/telemetry/trace_context.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Unify technical telemetry; keep this subpackage free of business/runtime implementations."
+    },
+    {
+      "sources": [
+        "observability/tracing.py"
+      ],
+      "targets": [
+        "observability/telemetry/tracing.py",
+        "bootstrap/telemetry.py"
+      ],
+      "action": "split",
+      "phase": "R7",
+      "reason": "SDK exporter setup stays telemetry; FastAPI/worker instrumentation wiring belongs to bootstrap."
+    },
+    {
+      "sources": [
+        "core/security/models.py"
+      ],
+      "targets": [
+        "observability/audit/security_models.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Security audit persistence is observability, not a cryptographic primitive."
+    },
+    {
+      "sources": [
+        "core/security/service.py"
+      ],
+      "targets": [
+        "observability/audit/security_events.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Preserve security event recording while passing transport-neutral event data."
+    },
+    {
+      "sources": [
+        "observability/audit_models.py"
+      ],
+      "targets": [
+        "observability/audit/models.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Group records and services by the actual audit/cost/notification feature."
+    },
+    {
+      "sources": [
+        "observability/audit_service.py"
+      ],
+      "targets": [
+        "observability/audit/service.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Group records and services by the actual audit/cost/notification feature."
+    },
+    {
+      "sources": [
+        "observability/audit_integrity.py"
+      ],
+      "targets": [
+        "observability/audit/integrity.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Group records and services by the actual audit/cost/notification feature."
+    },
+    {
+      "sources": [
+        "observability/cost_models.py"
+      ],
+      "targets": [
+        "observability/costs/models.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Group records and services by the actual audit/cost/notification feature."
+    },
+    {
+      "sources": [
+        "observability/cost_usage.py"
+      ],
+      "targets": [
+        "observability/costs/usage.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Group records and services by the actual audit/cost/notification feature."
+    },
+    {
+      "sources": [
+        "observability/notification_models.py"
+      ],
+      "targets": [
+        "observability/notifications/models.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Group records and services by the actual audit/cost/notification feature."
+    },
+    {
+      "sources": [
+        "observability/notification_service.py"
+      ],
+      "targets": [
+        "observability/notifications/service.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Group records and services by the actual audit/cost/notification feature."
+    },
+    {
+      "sources": [
+        "observability/contracts.py"
+      ],
+      "targets": [
+        "observability/notifications/contracts.py"
+      ],
+      "action": "move",
+      "phase": "R7",
+      "reason": "Group records and services by the actual audit/cost/notification feature."
+    },
+    {
+      "sources": [
+        "observability/cost_service.py"
+      ],
+      "targets": [
+        "observability/costs/service.py",
+        "observability/costs/pricing.py",
+        "observability/costs/queries.py"
+      ],
+      "action": "split",
+      "phase": "R7",
+      "reason": "Separate atomic budget/usage commands, pure Decimal pricing and report queries; preserve currency/window semantics."
+    },
+    {
+      "sources": [
+        "core/integrations/webhooks/service.py"
+      ],
+      "targets": [
+        "domains/integrations/webhooks/subscriptions.py",
+        "domains/integrations/webhooks/delivery.py",
+        "domains/integrations/webhooks/replay.py",
+        "domains/integrations/webhooks/http_client.py",
+        "domains/integrations/webhooks/scheduler.py"
+      ],
+      "action": "remove-forwarder",
+      "phase": "R1",
+      "reason": "Remove import-only service facade; preserve all concrete webhook services and protocols."
+    },
+    {
+      "sources": [
+        "api/routes/platform/auth.py"
+      ],
+      "targets": [
+        "api/routes/access/auth.py"
+      ],
+      "action": "move",
+      "phase": "R2",
+      "reason": "Account endpoints align with the access domain."
+    },
+    {
+      "sources": [
+        "api/schemas/platform/auth.py"
+      ],
+      "targets": [
+        "api/schemas/access/auth.py"
+      ],
+      "action": "move",
+      "phase": "R2",
+      "reason": "Keep password/token HTTP validation separate from domain commands."
+    },
+    {
+      "sources": [
+        "api/schemas/platform/webhooks.py"
+      ],
+      "targets": [
+        "api/schemas/integrations/webhooks.py"
+      ],
+      "action": "move",
+      "phase": "R2",
+      "reason": "Webhook HTTP DTOs align with integration routes."
+    },
+    {
+      "sources": [
+        "domains/agents/service.py",
+        "domains/agents/profiles/commands.py",
+        "domains/agents/profiles/lifecycle.py",
+        "domains/agents/profiles/queries.py"
+      ],
+      "targets": [
+        "domains/agents/profiles/service.py"
+      ],
+      "action": "merge",
+      "phase": "R3",
+      "reason": "One cohesive profile use-case service replaces forwarding command/lifecycle/query wrappers; retain model validation and version recording separately."
+    },
+    {
+      "sources": [
+        "domains/agents/models.py"
+      ],
+      "targets": [
+        "domains/agents/profiles/models.py"
+      ],
+      "action": "move",
+      "phase": "R3",
+      "reason": "Place profile persistence beside its owning feature; update all ORM registrations."
+    },
+    {
+      "sources": [
+        "domains/agents/messages/service.py",
+        "domains/agents/messages/messages.py",
+        "domains/agents/messages/threads.py",
+        "domains/agents/messages/validation.py"
+      ],
+      "targets": [
+        "domains/agents/messages/service.py"
+      ],
+      "action": "merge",
+      "phase": "R3",
+      "reason": "Replace six inherited state fragments with one mailbox command service; retain scoped validation in the owner."
+    },
+    {
+      "sources": [
+        "domains/agents/messages/queries.py",
+        "domains/agents/messages/inbox.py",
+        "domains/agents/messages/summary.py"
+      ],
+      "targets": [
+        "domains/agents/messages/queries.py"
+      ],
+      "action": "merge",
+      "phase": "R3",
+      "reason": "Group mailbox read projections; preserve tenant filters, pagination and summary window queries."
+    },
+    {
+      "sources": [
+        "domains/agents/providers/audit/contracts.py",
+        "domains/agents/providers/audit/payloads.py",
+        "domains/agents/providers/audit/responses.py",
+        "domains/agents/providers/audit/writer.py"
+      ],
+      "targets": [
+        "domains/agents/providers/audit.py"
+      ],
+      "action": "merge",
+      "phase": "R3",
+      "reason": "Keep provider audit record shaping/writing together; remove four-file forwarding overhead."
+    },
+    {
+      "sources": [
+        "domains/agents/providers/catalog/agent_summary.py"
+      ],
+      "targets": [
+        "domains/agents/providers/views.py"
+      ],
+      "action": "move",
+      "phase": "R3",
+      "reason": "One redacted provider view model shared by agent/team diagnostics."
+    },
+    {
+      "sources": [
+        "domains/agents/providers/credentials/models.py"
+      ],
+      "targets": [
+        "domains/agents/providers/models.py"
+      ],
+      "action": "move",
+      "phase": "R3",
+      "reason": "One provider credential model owner."
+    },
+    {
+      "sources": [
+        "domains/agents/providers/credentials/commands.py"
+      ],
+      "targets": [
+        "domains/agents/providers/credentials.py"
+      ],
+      "action": "move",
+      "phase": "R3",
+      "reason": "Credential writes stay separate from probes and secret resolution."
+    },
+    {
+      "sources": [
+        "domains/agents/providers/credentials/queries.py"
+      ],
+      "targets": [
+        "domains/agents/providers/queries.py"
+      ],
+      "action": "move",
+      "phase": "R3",
+      "reason": "Keep scoped credential queries reusable without extra nesting."
+    },
+    {
+      "sources": [
+        "domains/agents/providers/health/probes.py"
+      ],
+      "targets": [
+        "domains/agents/providers/probes.py"
+      ],
+      "action": "move",
+      "phase": "R3",
+      "reason": "Retain SDK-specific probe implementations and their registry."
+    },
+    {
+      "sources": [
+        "domains/agents/providers/health/service.py",
+        "domains/agents/providers/health/state.py",
+        "domains/agents/providers/health/summary.py"
+      ],
+      "targets": [
+        "domains/agents/providers/health.py"
+      ],
+      "action": "merge",
+      "phase": "R3",
+      "reason": "Health recording and scheduling projections share one feature; remove thin method forwarding."
+    },
+    {
+      "sources": [
+        "domains/agents/providers/resolution/resolver.py",
+        "domains/agents/providers/resolution/service.py",
+        "domains/agents/providers/resolution/snapshot.py"
+      ],
+      "targets": [
+        "domains/agents/providers/resolution.py",
+        "domains/agents/providers/snapshots.py"
+      ],
+      "action": "consolidate-and-split",
+      "phase": "R3",
+      "reason": "Use one credential-selection query path; execution may decrypt, display snapshots must not. Remove duplicate class names and facade."
+    },
+    {
+      "sources": [
+        "domains/agents/runtime/sandbox/contracts.py"
+      ],
+      "targets": [
+        "runtime/contracts.py"
+      ],
+      "action": "move",
+      "phase": "R3",
+      "reason": "Provider-neutral sandbox capability/session contracts must not make resource backends depend on agent-domain implementations."
+    },
+    {
+      "sources": [
+        "domains/agents/runtime/execution/factory.py"
+      ],
+      "targets": [
+        "bootstrap/providers.py"
+      ],
+      "action": "move",
+      "phase": "R3",
+      "reason": "Concrete provider registration belongs at composition root."
+    },
+    {
+      "sources": [
+        "domains/agents/runtime/sessions/models.py"
+      ],
+      "targets": [
+        "domains/agents/sessions/models.py",
+        "domains/agents/sessions/store.py"
+      ],
+      "action": "split",
+      "phase": "R3",
+      "reason": "Separate persistent ORM records from the SQL-backed SDK session implementation; preserve row locks and sequence retries."
+    },
+    {
+      "sources": [
+        "domains/agents/runtime/providers/claude/runner.py"
+      ],
+      "targets": [
+        "domains/agents/runtime/providers/claude/runner.py",
+        "domains/agents/runtime/providers/claude/sessions.py",
+        "domains/agents/runtime/providers/claude/tools.py"
+      ],
+      "action": "split",
+      "phase": "R3",
+      "reason": "Keep runner lifecycle, Claude continuation persistence and SDK tool/approval hooks as three real responsibilities."
+    },
+    {
+      "sources": [
+        "domains/agents/runtime/providers/openai/runner.py"
+      ],
+      "targets": [
+        "domains/agents/runtime/providers/openai/runner.py"
+      ],
+      "action": "keep",
+      "phase": "R3",
+      "reason": "Retain SDK runner orchestration; length alone does not justify splitting already separated results/tools/guardrails."
+    },
+    {
+      "sources": [
+        "domains/agents/runtime/tools/product.py"
+      ],
+      "targets": [
+        "domains/agents/runtime/tools/product.py"
+      ],
+      "action": "edit-boundary",
+      "phase": "R3",
+      "reason": "Dispatch typed product handlers by composition; keep one authorization/approval/tool-continuation path."
+    },
+    {
+      "sources": [
+        "domains/capabilities/models.py"
+      ],
+      "targets": [
+        "domains/capabilities/catalog/models.py",
+        "domains/capabilities/skills/models.py",
+        "domains/capabilities/mcp/models.py",
+        "domains/capabilities/resources/models.py"
+      ],
+      "action": "split",
+      "phase": "R3",
+      "reason": "Assign Capability/ToolGroup, Skill/WorkspaceSkillInstall, MCP records and CapabilityResource to their features; do not duplicate table mappings."
+    },
+    {
+      "sources": [
+        "domains/capabilities/service.py"
+      ],
+      "targets": [
+        "domains/capabilities/catalog/service.py"
+      ],
+      "action": "move",
+      "phase": "R3",
+      "reason": "Capability catalog CRUD belongs under catalog."
+    },
+    {
+      "sources": [
+        "domains/capabilities/catalog/service.py"
+      ],
+      "targets": [
+        "domains/capabilities/catalog/queries.py"
+      ],
+      "action": "move",
+      "phase": "R3",
+      "reason": "Catalog projection is distinct from capability CRUD."
+    },
+    {
+      "sources": [
+        "domains/capabilities/governance/actions.py",
+        "domains/capabilities/governance/agent_actions.py",
+        "domains/capabilities/governance/skill_actions.py"
+      ],
+      "targets": [
+        "domains/capabilities/governance/actions.py"
+      ],
+      "action": "merge",
+      "phase": "R3",
+      "reason": "Remove generic forwarding layer; retain direct agent/skill action implementations and the separate MCP action service."
+    },
+    {
+      "sources": [
+        "domains/capabilities/mcp/execution/types.py",
+        "domains/capabilities/mcp/execution/context.py",
+        "domains/capabilities/mcp/execution/contracts.py"
+      ],
+      "targets": [
+        "domains/capabilities/mcp/execution/contracts.py"
+      ],
+      "action": "merge",
+      "phase": "R3",
+      "reason": "Combine execution DTO/error/audit-context definitions; keep validation and invocation independent."
+    },
+    {
+      "sources": [
+        "domains/capabilities/mcp/execution/call_logs.py",
+        "domains/capabilities/mcp/execution/logs.py",
+        "domains/capabilities/mcp/execution/notifications.py"
+      ],
+      "targets": [
+        "domains/capabilities/mcp/execution/events.py"
+      ],
+      "action": "merge",
+      "phase": "R3",
+      "reason": "Keep MCP call evidence recording/querying together; preserve caller-controlled transactions."
+    },
+    {
+      "sources": [
+        "domains/capabilities/mcp/transport/payloads.py"
+      ],
+      "targets": [
+        "domains/capabilities/mcp/transport/payloads.py"
+      ],
+      "action": "remove-unused-functions",
+      "phase": "R3",
+      "reason": "Remove unreferenced result_from_sse_body/sse_data_messages after repository symbol check; live remote transports already use SDK. Retain stdio result envelope parsing."
+    },
+    {
+      "sources": [
+        "domains/capabilities/tools/context.py",
+        "domains/capabilities/tools/errors.py",
+        "domains/capabilities/tools/product_events.py"
+      ],
+      "targets": [
+        "domains/capabilities/tools/contracts.py"
+      ],
+      "action": "merge",
+      "phase": "R3",
+      "reason": "Make shared handler inputs/errors explicit; replace implicit Mixin attributes with injected collaborators."
+    },
+    {
+      "sources": [
+        "domains/capabilities/tools/product_files.py"
+      ],
+      "targets": [
+        "domains/capabilities/tools/files.py"
+      ],
+      "action": "refactor-composition",
+      "phase": "R3",
+      "reason": "Product handlers are composed services; do not concatenate all feature code into one class."
+    },
+    {
+      "sources": [
+        "domains/capabilities/tools/product_mailbox.py"
+      ],
+      "targets": [
+        "domains/capabilities/tools/mailbox.py"
+      ],
+      "action": "refactor-composition",
+      "phase": "R3",
+      "reason": "Product handlers are composed services; do not concatenate all feature code into one class."
+    },
+    {
+      "sources": [
+        "domains/capabilities/tools/product_memory.py"
+      ],
+      "targets": [
+        "domains/capabilities/tools/memory.py"
+      ],
+      "action": "refactor-composition",
+      "phase": "R3",
+      "reason": "Product handlers are composed services; do not concatenate all feature code into one class."
+    },
+    {
+      "sources": [
+        "domains/capabilities/tools/product_normalization.py"
+      ],
+      "targets": [
+        "domains/capabilities/tools/normalization.py"
+      ],
+      "action": "refactor-composition",
+      "phase": "R3",
+      "reason": "Product handlers are composed services; do not concatenate all feature code into one class."
+    },
+    {
+      "sources": [
+        "domains/capabilities/tools/product_service.py"
+      ],
+      "targets": [
+        "domains/capabilities/tools/service.py"
+      ],
+      "action": "refactor-composition",
+      "phase": "R3",
+      "reason": "Product handlers are composed services; do not concatenate all feature code into one class."
+    },
+    {
+      "sources": [
+        "domains/knowledge/ingestion.py"
+      ],
+      "targets": [
+        "domains/knowledge/ingestion.py",
+        "domains/knowledge/content.py"
+      ],
+      "action": "split",
+      "phase": "R3",
+      "reason": "Separate ingestion lifecycle/citation persistence from source-content loading and chunk preparation; preserve source authorization."
+    },
+    {
+      "sources": [
+        "domains/orchestration/requests/authorization.py"
+      ],
+      "targets": [
+        "domains/orchestration/runs/authorization/validation.py"
+      ],
+      "action": "move",
+      "phase": "R4",
+      "reason": "Keep authorization snapshot creation and runtime revalidation in one boundary, separate from prompt rendering."
+    },
+    {
+      "sources": [
+        "domains/orchestration/runs/authorization_snapshot.py"
+      ],
+      "targets": [
+        "domains/orchestration/runs/authorization/snapshot.py"
+      ],
+      "action": "move",
+      "phase": "R4",
+      "reason": "One immutable run authorization snapshot producer."
+    },
+    {
+      "sources": [
+        "domains/orchestration/runs/tool_authorization.py"
+      ],
+      "targets": [
+        "domains/orchestration/runs/authorization/tools.py"
+      ],
+      "action": "move",
+      "phase": "R4",
+      "reason": "Agent-as-tool authorization remains isolated from generic runtime allocation."
+    },
+    {
+      "sources": [
+        "domains/orchestration/runs/runtime_authorization.py"
+      ],
+      "targets": [
+        "domains/orchestration/runs/authorization/runtime.py",
+        "domains/orchestration/runs/authorization/policy.py"
+      ],
+      "action": "split",
+      "phase": "R4",
+      "reason": "Separate authorized runtime binding resolution from pure capability/policy checks; preserve none-mode denials."
+    },
+    {
+      "sources": [
+        "domains/orchestration/requests/builder.py"
+      ],
+      "targets": [
+        "domains/orchestration/requests/builder.py"
+      ],
+      "action": "edit-boundary",
+      "phase": "R4",
+      "reason": "Builder coordinates request assembly only; consumers call real authorization/session/provider owners instead of duplicate forwarding methods."
+    },
+    {
+      "sources": [
+        "domains/orchestration/runs/state.py",
+        "domains/orchestration/runs/status.py"
+      ],
+      "targets": [
+        "domains/orchestration/runs/state.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Co-locate run transition rules and their persistence operation; do not merge task and run state machines."
+    },
+    {
+      "sources": [
+        "domains/orchestration/runs/event_writer.py",
+        "domains/orchestration/runs/events.py"
+      ],
+      "targets": [
+        "domains/orchestration/runs/events.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "One run event append owner with event-specific helpers."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/service.py",
+        "domains/orchestration/tasks/status.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/state.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Co-locate task state transitions; free service.py for task CRUD."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/step_service.py",
+        "domains/orchestration/tasks/step_status.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/steps.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Co-locate step state rules without introducing a generic state-machine framework."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/operations/workspace.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/service.py"
+      ],
+      "action": "move",
+      "phase": "R4",
+      "reason": "Task CRUD belongs at the task feature boundary."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/control/service.py",
+        "domains/orchestration/tasks/control/state.py",
+        "domains/orchestration/tasks/control/messages.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/control/service.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Combine pause/resume state metadata and command evidence with the owning use-case."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/operations/actions.py",
+        "domains/orchestration/tasks/operations/action_recording.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/control/actions.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Operator action recorder has one command owner; keep business event/audit writes in that transaction."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/operations/transfers.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/collaboration/transfers.py",
+        "domains/orchestration/tasks/collaboration/transfer_package.py"
+      ],
+      "action": "split",
+      "phase": "R4",
+      "reason": "Separate transfer acceptance/ownership transaction from bounded handoff-package assembly."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/execution/handoff.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/collaboration/handoff.py"
+      ],
+      "action": "move",
+      "phase": "R4",
+      "reason": "Handoff queue policy belongs with collaboration, not execution diagnostics."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/execution/diagnostics.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/observation/execution.py"
+      ],
+      "action": "move",
+      "phase": "R4",
+      "reason": "Task execution diagnostics are read models."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/execution/payloads.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/observation/execution_views.py"
+      ],
+      "action": "move",
+      "phase": "R4",
+      "reason": "Keep dependency/handoff read projections next to execution diagnostics."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/management/contracts.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/collaboration/contracts.py"
+      ],
+      "action": "move",
+      "phase": "R4",
+      "reason": "Manager/collaboration DTOs remain explicit shared contracts."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/observation/cards.py",
+        "domains/orchestration/tasks/observation/quality_cards.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/observation/cards.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Group typed observation card projections; keep specialized domain extensions separate."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/observation/service.py",
+        "domains/orchestration/tasks/observation/sections.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/observation/service.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Remove the one-caller section-builder wrapper; retain repository/query separation."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/observation/timeline.py",
+        "domains/orchestration/tasks/observation/timeline_events.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/observation/timeline.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Task timeline assembly and its event mappings share one read-model owner."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/delivery/plan_lifecycle.py"
+      ],
+      "targets": [
+        "domains/orchestration/workflows/planning/lifecycle.py"
+      ],
+      "action": "move",
+      "phase": "R4",
+      "reason": "Plan retry/regeneration is planning lifecycle, not delivery review."
+    },
+    {
+      "sources": [
+        "domains/orchestration/workflows/definitions/service.py"
+      ],
+      "targets": [
+        "domains/orchestration/workflows/definitions/service.py",
+        "domains/orchestration/workflows/definitions/validation.py",
+        "domains/orchestration/workflows/definitions/application.py"
+      ],
+      "action": "split",
+      "phase": "R4",
+      "reason": "Separate definition CRUD/publish, definition validation and applying a published revision to a task."
+    },
+    {
+      "sources": [
+        "domains/orchestration/workflows/planning/future_plan_mutation.py"
+      ],
+      "targets": [
+        "domains/orchestration/workflows/planning/mutation.py",
+        "domains/orchestration/workflows/planning/mutation_operations.py",
+        "domains/orchestration/workflows/planning/mutation_materialization.py"
+      ],
+      "action": "split",
+      "phase": "R4",
+      "reason": "Keep transaction and optimistic-version checks in the coordinator; isolate pure graph edits and step materialization."
+    },
+    {
+      "sources": [
+        "domains/orchestration/workflows/planning/feasibility.py"
+      ],
+      "targets": [
+        "domains/orchestration/workflows/planning/feasibility.py"
+      ],
+      "action": "keep",
+      "phase": "R4",
+      "reason": "Keep one canonical agent/resource feasibility gate shared by user and automatic plans; do not duplicate per source."
+    },
+    {
+      "sources": [
+        "domains/orchestration/workflows/planning/project_plan/builder.py",
+        "domains/orchestration/workflows/planning/project_plan/context.py",
+        "domains/orchestration/workflows/planning/project_plan/models.py"
+      ],
+      "targets": [
+        "domains/orchestration/workflows/templates/builder.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Build the organizational template with an explicit local context/result, not three wrapper modules."
+    },
+    {
+      "sources": [
+        "domains/orchestration/workflows/planning/project_plan/member_roles.py",
+        "domains/orchestration/workflows/planning/project_plan/members.py"
+      ],
+      "targets": [
+        "domains/orchestration/workflows/templates/members.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Unify member role classification used by the organizational template."
+    },
+    {
+      "sources": [
+        "domains/orchestration/workflows/planning/project_plan/member_matching.py"
+      ],
+      "targets": [
+        "domains/orchestration/workflows/planning/member_matching.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Use one ranked member matching policy with explicit caller-specific constraints."
+    },
+    {
+      "sources": [
+        "domains/orchestration/workflows/planning/project_plan/validation.py"
+      ],
+      "targets": [
+        "domains/orchestration/workflows/definitions/graph.py"
+      ],
+      "action": "move",
+      "phase": "R4",
+      "reason": "Canonical graph/condition validation is shared by every plan source; retain stdlib TopologicalSorter."
+    },
+    {
+      "sources": [
+        "domains/orchestration/workflows/planning/project_plans.py"
+      ],
+      "targets": [
+        "domains/orchestration/workflows/templates/builder.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "Remove the one-call ProjectPlanningService facade."
+    },
+    {
+      "sources": [
+        "domains/orchestration/workflows/planning/team_step_planner.py"
+      ],
+      "targets": [
+        "domains/orchestration/workflows/planning/team_project_plan.py"
+      ],
+      "action": "merge",
+      "phase": "R4",
+      "reason": "One materializer turns canonical plan nodes into task steps."
+    },
+    {
+      "sources": [
+        "domains/workspace/projects/artifacts/service.py"
+      ],
+      "targets": [
+        "domains/workspace/projects/artifacts.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Output artifact prepare/commit/abort has one implementation and no independent package boundary."
+    },
+    {
+      "sources": [
+        "domains/workspace/projects/export_models.py"
+      ],
+      "targets": [
+        "domains/workspace/data_transfer/models.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Workspace-wide archive jobs are not project-only state."
+    },
+    {
+      "sources": [
+        "domains/workspace/projects/exports/archive_repository.py",
+        "domains/workspace/projects/exports/archive_blob_reader.py"
+      ],
+      "targets": [
+        "domains/workspace/data_transfer/repository.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Archive job lookup/blob reads form one storage access boundary with size/integrity checks."
+    },
+    {
+      "sources": [
+        "domains/workspace/projects/exports/archive_import.py"
+      ],
+      "targets": [
+        "domains/workspace/data_transfer/importers/archive.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Keep archive import orchestration with its metadata importers."
+    },
+    {
+      "sources": [
+        "domains/workspace/projects/exports/archive_artifact_import.py"
+      ],
+      "targets": [
+        "domains/workspace/data_transfer/importers/artifacts.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Preserve artifact version/history restore rules and compensation."
+    },
+    {
+      "sources": [
+        "domains/workspace/projects/exports/archive_file_import.py"
+      ],
+      "targets": [
+        "domains/workspace/data_transfer/importers/files.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Preserve scoped file restore rules and storage compensation."
+    },
+    {
+      "sources": [
+        "domains/workspace/projects/imports/fields.py",
+        "domains/workspace/projects/imports/resolution.py",
+        "domains/workspace/projects/imports/dependency_resolution.py",
+        "domains/workspace/projects/imports/context.py"
+      ],
+      "targets": [
+        "domains/workspace/data_transfer/importers/context.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Replace private imports with a typed import context/resolution API; retain dependency remapping."
+    },
+    {
+      "sources": [
+        "domains/workspace/projects/imports/checksum.py",
+        "domains/workspace/projects/imports/conflicts.py",
+        "domains/workspace/projects/imports/preview.py"
+      ],
+      "targets": [
+        "domains/workspace/data_transfer/importers/preview.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Preview integrity/conflict construction shares one owner; preserve preview token and apply validation."
+    },
+    {
+      "sources": [
+        "domains/workspace/projects/exports/service.py"
+      ],
+      "targets": [
+        "domains/workspace/data_transfer/service.py"
+      ],
+      "action": "edit-boundary",
+      "phase": "R5",
+      "reason": "Keep an intentional export use-case boundary only where it controls lifecycle; remove duplicate forwarding-only methods."
+    },
+    {
+      "sources": [
+        "domains/workspace/projects/exports/payloads.py"
+      ],
+      "targets": [
+        "domains/workspace/data_transfer/serialization.py"
+      ],
+      "action": "edit-boundary",
+      "phase": "R5",
+      "reason": "Explicit snapshot serializers replace 15 imported private helpers; keep redaction and archive format stable."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/lifecycle/settings.py"
+      ],
+      "targets": [
+        "domains/workspace/data_lifecycle/settings.py"
+      ],
+      "action": "edit-boundary",
+      "phase": "R5",
+      "reason": "Normalize lifecycle settings once and expose public typed settings, not imported private functions."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/lifecycle/actions/archive.py",
+        "domains/workspace/tenants/lifecycle/actions/integrity.py",
+        "domains/workspace/tenants/lifecycle/actions/restore.py",
+        "domains/workspace/tenants/lifecycle/actions/service.py"
+      ],
+      "targets": [
+        "domains/workspace/data_lifecycle/actions.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "One recovery action coordinator dispatches explicit actions with shared idempotency and audit rules."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/lifecycle/diagnostics/service.py",
+        "domains/workspace/tenants/lifecycle/diagnostics/payloads.py"
+      ],
+      "targets": [
+        "domains/workspace/data_lifecycle/diagnostics.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Diagnostic projections stay with their reader, not a service/18-private-helper dependency chain."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/lifecycle/diagnostics/queries.py"
+      ],
+      "targets": [
+        "domains/workspace/data_lifecycle/queries.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Retain read-query isolation for workspace lifecycle diagnostics."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/lifecycle/scheduling/service.py",
+        "domains/workspace/tenants/lifecycle/scheduling/summary.py",
+        "domains/workspace/tenants/lifecycle/scheduling/policy.py"
+      ],
+      "targets": [
+        "domains/workspace/data_lifecycle/scheduling.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Scheduler coordination/due-policy/summary share a feature; keep job-type transactions separate."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/lifecycle/scheduling/backup.py"
+      ],
+      "targets": [
+        "domains/workspace/data_lifecycle/scheduled_backup.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Preserve independent scheduled job transaction and idempotency semantics."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/lifecycle/scheduling/restore.py"
+      ],
+      "targets": [
+        "domains/workspace/data_lifecycle/scheduled_restore.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Preserve independent scheduled job transaction and idempotency semantics."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/lifecycle/scheduling/retention.py"
+      ],
+      "targets": [
+        "domains/workspace/data_lifecycle/scheduled_retention.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Preserve independent scheduled job transaction and idempotency semantics."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/workspace_management.py"
+      ],
+      "targets": [
+        "domains/workspace/tenants/service.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Remove redundant workspace prefix; distinguish quota configuration from reservation mutation."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/workspace_invites.py"
+      ],
+      "targets": [
+        "domains/workspace/tenants/invites.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Remove redundant workspace prefix; distinguish quota configuration from reservation mutation."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/workspace_members.py"
+      ],
+      "targets": [
+        "domains/workspace/tenants/members.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Remove redundant workspace prefix; distinguish quota configuration from reservation mutation."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/workspace_lifecycle_errors.py"
+      ],
+      "targets": [
+        "domains/workspace/tenants/errors.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Remove redundant workspace prefix; distinguish quota configuration from reservation mutation."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/workspace_quotas.py"
+      ],
+      "targets": [
+        "domains/workspace/tenants/quota_management.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Remove redundant workspace prefix; distinguish quota configuration from reservation mutation."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/quotas.py"
+      ],
+      "targets": [
+        "domains/workspace/tenants/reservations.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Remove redundant workspace prefix; distinguish quota configuration from reservation mutation."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/workspace_settings.py"
+      ],
+      "targets": [
+        "domains/workspace/tenants/settings.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Remove redundant workspace prefix; distinguish quota configuration from reservation mutation."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/workspace_snapshots.py"
+      ],
+      "targets": [
+        "domains/workspace/tenants/snapshots.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Remove redundant workspace prefix; distinguish quota configuration from reservation mutation."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/workspace_reads.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/queries.py",
+        "domains/orchestration/runs/queries.py",
+        "observability/audit/queries.py"
+      ],
+      "action": "split",
+      "phase": "R5",
+      "reason": "Move task/run/audit queries to their real owners instead of a workspace catch-all reader."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/workspace_service.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/service.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Team CRUD and membership have one service owner."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/execution_overview.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/execution/overview.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Co-locate public overview entrypoint with its repository and projections."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/execution_loop.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/execution/loop.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Co-locate loop coordination with finalization/status/queue dependencies."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/execution/loop_status.py",
+        "domains/workspace/teams/execution/loop_payloads.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/execution/loop_state.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Use one typed loop result/status model instead of shared private dictionary helpers."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/execution/loop_queue.py",
+        "domains/workspace/teams/execution/queue_dispatch.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/execution/queue.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Queue scan/dispatch is a single loop enqueue use-case."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/execution/runtime_candidates.py",
+        "domains/workspace/teams/execution/queue_runtime.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/execution/runtime_candidates.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Unify runtime candidate construction with its policy helpers."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/execution/overview_summary.py",
+        "domains/workspace/teams/execution/overview_bottlenecks.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/execution/summary.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Share execution summary/bottleneck projection logic; keep intervention decisions separate."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/command_center.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/operations/command_center.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Command-center API and collaborators belong in the same feature directory."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/operations/command_center_action_plan.py",
+        "domains/workspace/teams/operations/command_center_grouping.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/operations/action_plan.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "A typed action plan owns normalization/grouping; no private helper imports."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/operations/command_center_apply.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/operations/actions.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Keep effectful action application separate from projection."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/operations_console.py",
+        "domains/workspace/teams/operations/console_payloads.py",
+        "domains/workspace/teams/operations/console_controls.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/operations/console.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Assemble team/session/control/readiness views in one console projection owner."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/operations/console_normalization.py",
+        "domains/workspace/teams/operations/command_center_payloads.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/operations/views.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Replace duplicate dict/list/UUID shims with core.utils and explicit local view schemas."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/operations/provider_actions.py",
+        "domains/workspace/teams/operations/provider_credentials.py",
+        "domains/workspace/teams/operations/provider_summary.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/providers/views.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Share credential/readiness projections with provider management."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/operations/provider_management.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/providers/management.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Provider choices/readiness share one team-provider feature."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/provider_readiness_service.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/providers/service.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Readiness entrypoint belongs alongside provider member/repository logic."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/operating_context_service.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/organization/service.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Team organizational context remains separate from execution scheduling."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/project_service.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/projects/service.py"
+      ],
+      "action": "move",
+      "phase": "R5",
+      "reason": "Team project projection entrypoint belongs beside its project queries."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/projects/assemblers.py",
+        "domains/workspace/teams/projects/tasks.py",
+        "domains/workspace/teams/projects/governance.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/projects/views.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Group project-space projection fields; keep repository and runtime/quota math separate."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/projects/dashboard.py",
+        "domains/workspace/teams/projects/dashboard_views.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/projects/dashboard.py"
+      ],
+      "action": "merge-review-entrypoint",
+      "phase": "R5",
+      "reason": "Consolidate dashboard projections but preserve implementation until missing production entrypoint is resolved."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/runtime/workspace_binding.py",
+        "domains/workspace/teams/runtime/workspace_binding_commit.py",
+        "domains/workspace/teams/runtime/workspace_binding_payloads.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/runtime/binding.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "One binding use-case owns validation, snapshot assembly and commit; not a separate committer abstraction."
+    },
+    {
+      "sources": [
+        "domains/workspace/teams/workspace_command_center.py",
+        "domains/workspace/teams/operations/workspace_actions.py"
+      ],
+      "targets": [
+        "domains/workspace/teams/operations/workspace.py"
+      ],
+      "action": "merge",
+      "phase": "R5",
+      "reason": "Workspace-wide team aggregation and action suggestions have one owner."
+    },
+    {
+      "sources": [
+        "runtime/environment/run_environment.py"
+      ],
+      "targets": [
+        "runtime/environment/run_environment.py",
+        "runtime/environment/pool/service.py",
+        "runtime/environment/pool/reset.py",
+        "runtime/environment/pool/reclaim.py",
+        "runtime/environment/pool/policy.py"
+      ],
+      "action": "split",
+      "phase": "R6",
+      "reason": "Run coordinator selects none/isolated/pooled/persistent; real pool acquisition, reset, orphan reclaim and matching policy live in pool."
+    },
+    {
+      "sources": [
+        "runtime/environment/pool/leases.py"
+      ],
+      "targets": [
+        "runtime/environment/leases.py",
+        "runtime/environment/pool/leases.py"
+      ],
+      "action": "split",
+      "phase": "R6",
+      "reason": "Separate generic runtime lease status from atomic pool acquisition; keep claim/release locking explicit."
+    },
+    {
+      "sources": [
+        "runtime/environment/backends/registry.py"
+      ],
+      "targets": [
+        "runtime/environment/backends/registry.py",
+        "runtime/environment/backends/contracts.py",
+        "runtime/environment/backends/docker.py",
+        "runtime/environment/backends/self_hosted.py",
+        "bootstrap/runtime.py"
+      ],
+      "action": "split",
+      "phase": "R6",
+      "reason": "Separate neutral backend registry/contracts, concrete resource backends and application composition; resource backend must not construct MCP/agent domain services."
+    },
+    {
+      "sources": [
+        "runtime/environment/backends/egress.py"
+      ],
+      "targets": [
+        "runtime/environment/policies/egress.py"
+      ],
+      "action": "move",
+      "phase": "R6",
+      "reason": "Network policy is provider-neutral policy, not Docker backend implementation."
+    },
+    {
+      "sources": [
+        "runtime/environment/backends/template_guard.py"
+      ],
+      "targets": [
+        "runtime/environment/policies/templates.py"
+      ],
+      "action": "move",
+      "phase": "R6",
+      "reason": "Template validation belongs with policy resolution."
+    },
+    {
+      "sources": [
+        "runtime/environment/manager_factory.py"
+      ],
+      "targets": [
+        "bootstrap/runtime.py"
+      ],
+      "action": "move",
+      "phase": "R6",
+      "reason": "Factory construction is composition; inject a neutral factory protocol into consumers."
+    },
+    {
+      "sources": [
+        "runtime/environment/lifecycle/cleanup.py"
+      ],
+      "targets": [
+        "runtime/environment/cleanup.py"
+      ],
+      "action": "move",
+      "phase": "R6",
+      "reason": "Resource cleanup is a cohesive module without an extra generic lifecycle directory."
+    },
+    {
+      "sources": [
+        "runtime/environment/lifecycle/events.py"
+      ],
+      "targets": [
+        "runtime/environment/events.py"
+      ],
+      "action": "move",
+      "phase": "R6",
+      "reason": "Runtime event append owner is visible at environment boundary."
+    },
+    {
+      "sources": [
+        "runtime/environment/lifecycle/control.py"
+      ],
+      "targets": [
+        "runtime/environment/contracts.py"
+      ],
+      "action": "merge",
+      "phase": "R6",
+      "reason": "The lifecycle control protocol is part of runtime contracts, not a singleton sublayer."
+    },
+    {
+      "sources": [
+        "runtime/environment/service.py"
+      ],
+      "targets": [
+        "runtime/environment/service.py"
+      ],
+      "action": "edit-boundary",
+      "phase": "R6",
+      "reason": "Retain scoped runtime control entrypoint and workspace checks; inject policies/factory and remove only redundant unguarded forwarding."
+    },
+    {
+      "sources": [
+        "runtime/environment/spaces/quota_counter.py",
+        "runtime/environment/spaces/quotas.py"
+      ],
+      "targets": [
+        "runtime/environment/spaces/quotas.py"
+      ],
+      "action": "merge",
+      "phase": "R6",
+      "reason": "Co-locate quota configuration and atomic counter operations; preserve lock/revert behavior."
+    },
+    {
+      "sources": [
+        "runtime/environment/spaces/reservation_attachment.py",
+        "runtime/environment/spaces/reservation_capacity.py",
+        "runtime/environment/spaces/reservation_release.py",
+        "runtime/environment/spaces/reservation_usage.py"
+      ],
+      "targets": [
+        "runtime/environment/spaces/reservations.py"
+      ],
+      "action": "merge",
+      "phase": "R6",
+      "reason": "One reservation lifecycle owns reserve/attach/release and shared normalization; preserve force-release checks and counter compensation."
+    },
+    {
+      "sources": [
+        "runtime/environment/spaces/events.py",
+        "runtime/environment/spaces/blockers.py"
+      ],
+      "targets": [
+        "runtime/environment/spaces/lifecycle_support.py"
+      ],
+      "action": "merge",
+      "phase": "R6",
+      "reason": "Keep lifecycle evidence/unblocking helpers local to runtime-space control."
+    },
+    {
+      "sources": [
+        "runtime/operations/models.py"
+      ],
+      "targets": [
+        "runtime/workers/models.py"
+      ],
+      "action": "move",
+      "phase": "R6",
+      "reason": "Worker node/heartbeat/lease persistence belongs to the worker subsystem."
+    },
+    {
+      "sources": [
+        "runtime/workers/execution/models.py"
+      ],
+      "targets": [
+        "runtime/workers/contracts.py"
+      ],
+      "action": "merge",
+      "phase": "R6",
+      "reason": "Runner configuration/summary are worker contracts, not ORM models."
+    },
+    {
+      "sources": [
+        "runtime/operations/workers/lease_writer.py",
+        "runtime/operations/workers/lease_heartbeats.py",
+        "runtime/operations/workers/lease_maintenance.py",
+        "runtime/operations/workers/lease_queries.py",
+        "runtime/operations/recovery/lease_expiration.py"
+      ],
+      "targets": [
+        "runtime/workers/leases.py"
+      ],
+      "action": "merge",
+      "phase": "R6",
+      "reason": "One authoritative lease service owns claim token/heartbeat/expiry/finalization; preserve existing uncommitted fencing work."
+    },
+    {
+      "sources": [
+        "runtime/operations/workers/heartbeats.py",
+        "runtime/operations/workers/node_control.py",
+        "runtime/operations/workers/node_registry.py",
+        "runtime/operations/workers/node_repository.py"
+      ],
+      "targets": [
+        "runtime/workers/nodes.py"
+      ],
+      "action": "merge",
+      "phase": "R6",
+      "reason": "Worker registration/control/heartbeat share one state owner, separate from operations reporting."
+    },
+    {
+      "sources": [
+        "runtime/operations/workers/capacity.py"
+      ],
+      "targets": [
+        "runtime/workers/capacity.py",
+        "runtime/operations/workers/capacity.py"
+      ],
+      "action": "split",
+      "phase": "R6",
+      "reason": "Move claim eligibility/capacity normalization to workers; retain aggregate operational projection in operations."
+    },
+    {
+      "sources": [
+        "runtime/operations/workers/lifecycle.py"
+      ],
+      "targets": [
+        "runtime/workers/leases.py",
+        "runtime/operations/workers/lifecycle.py"
+      ],
+      "action": "split",
+      "phase": "R6",
+      "reason": "Lease event mutation belongs to workers; operational lifecycle queries remain read-only."
+    },
+    {
+      "sources": [
+        "runtime/operations/recovery/actions.py",
+        "runtime/operations/recovery/audit.py",
+        "runtime/operations/recovery/service.py"
+      ],
+      "targets": [
+        "runtime/workers/recovery/service.py"
+      ],
+      "action": "merge",
+      "phase": "R6",
+      "reason": "Recovery command, audit and use-case coordinator share a transaction owner."
+    },
+    {
+      "sources": [
+        "runtime/operations/recovery/diagnostics.py",
+        "runtime/operations/recovery/domain.py",
+        "runtime/operations/recovery/queries.py"
+      ],
+      "targets": [
+        "runtime/operations/recovery.py"
+      ],
+      "action": "merge",
+      "phase": "R6",
+      "reason": "Stale-run detection is an operational read model; command recovery is injected separately."
+    },
+    {
+      "sources": [
+        "runtime/operations/recovery/queue_rehydration.py"
+      ],
+      "targets": [
+        "runtime/workers/recovery/rehydration.py"
+      ],
+      "action": "move",
+      "phase": "R6",
+      "reason": "Durable-queue rehydration is worker recovery; retain current in-progress ownership changes."
+    },
+    {
+      "sources": [
+        "runtime/operations/queues/governance.py"
+      ],
+      "targets": [
+        "runtime/operations/queues/governance.py",
+        "runtime/workers/recovery/reconciliation.py"
+      ],
+      "action": "split",
+      "phase": "R6",
+      "reason": "Separate queue diagnostics from queue/run mutation; keep Postgres durable state authoritative."
+    },
+    {
+      "sources": [
+        "runtime/operations/runtimes/cleanup.py"
+      ],
+      "targets": [
+        "runtime/environment/cleanup_jobs.py"
+      ],
+      "action": "move",
+      "phase": "R6",
+      "reason": "Runtime cleanup mutation is owned by environment; maintenance adapter coordinates project cleanup via injected service."
+    },
+    {
+      "sources": [
+        "runtime/operations/scheduler.py"
+      ],
+      "targets": [
+        "runtime/operations/scheduler.py",
+        "domains/orchestration/workflows/scheduling/control.py"
+      ],
+      "action": "split",
+      "phase": "R6",
+      "reason": "Move pause/resume/unblock scheduler mutations to orchestration; retain operational backlog projections."
+    },
+    {
+      "sources": [
+        "runtime/workers/queue.py"
+      ],
+      "targets": [
+        "runtime/workers/queue.py"
+      ],
+      "action": "keep",
+      "phase": "R6",
+      "reason": "Keep Redis atomic lease/Lua operations cohesive; do not split scripts from ownership invariants merely to reduce line count."
+    },
+    {
+      "sources": [
+        "runtime/self_hosted/service.py"
+      ],
+      "targets": [
+        "runtime/self_hosted/service.py"
+      ],
+      "action": "edit-boundary",
+      "phase": "R6",
+      "reason": "Retain authenticated worker boundary; direct callers to owning identity/dispatch/project services instead of exposing every operation through a forwarding facade."
+    },
+    {
+      "sources": [
+        "core/common/feature_flags.py"
+      ],
+      "targets": [
+        "core/feature_flags.py"
+      ],
+      "action": "retain-review-entrypoint",
+      "phase": "R8",
+      "reason": "Static app graph/repository symbol checks found no production importer. Retain behavior; verify entry registration before deciding integration or removal. Not evidence of a completed feature."
+    },
+    {
+      "sources": [
+        "domains/capabilities/tools/runtime_tools.py"
+      ],
+      "targets": [
+        "domains/capabilities/tools/runtime_tools.py"
+      ],
+      "action": "retain-review-entrypoint",
+      "phase": "R8",
+      "reason": "Static app graph/repository symbol checks found no production importer. Retain behavior; verify entry registration before deciding integration or removal. Not evidence of a completed feature."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/collaboration/recovery.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/collaboration/recovery.py"
+      ],
+      "action": "retain-review-entrypoint",
+      "phase": "R8",
+      "reason": "Static app graph/repository symbol checks found no production importer. Retain behavior; verify entry registration before deciding integration or removal. Not evidence of a completed feature."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/observation/monitor.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/observation/monitor.py"
+      ],
+      "action": "retain-review-entrypoint",
+      "phase": "R8",
+      "reason": "Static app graph/repository symbol checks found no production importer. Retain behavior; verify entry registration before deciding integration or removal. Not evidence of a completed feature."
+    },
+    {
+      "sources": [
+        "domains/orchestration/tasks/observation/transcript.py"
+      ],
+      "targets": [
+        "domains/orchestration/tasks/observation/transcript.py"
+      ],
+      "action": "retain-review-entrypoint",
+      "phase": "R8",
+      "reason": "Static app graph/repository symbol checks found no production importer. Retain behavior; verify entry registration before deciding integration or removal. Not evidence of a completed feature."
+    },
+    {
+      "sources": [
+        "domains/workspace/storage/runtime_files.py"
+      ],
+      "targets": [
+        "domains/workspace/storage/runtime_files.py"
+      ],
+      "action": "retain-review-entrypoint",
+      "phase": "R8",
+      "reason": "Static app graph/repository symbol checks found no production importer. Retain behavior; verify entry registration before deciding integration or removal. Not evidence of a completed feature."
+    },
+    {
+      "sources": [
+        "domains/workspace/tenants/health/service.py"
+      ],
+      "targets": [
+        "domains/workspace/tenants/health/service.py"
+      ],
+      "action": "retain-review-entrypoint",
+      "phase": "R8",
+      "reason": "Static app graph/repository symbol checks found no production importer. Retain behavior; verify entry registration before deciding integration or removal. Not evidence of a completed feature."
+    },
+    {
+      "sources": [
+        "core/db/session.py"
+      ],
+      "targets": [
+        "core/db/session.py"
+      ],
+      "action": "edit-boundary",
+      "phase": "R1",
+      "reason": "Remove business model-registration import; explicitly initialize ORM metadata at API/worker/Alembic/test bootstrap."
+    },
+    {
+      "sources": [
+        "core/common/config.py"
+      ],
+      "targets": [
+        "core/config.py"
+      ],
+      "action": "move",
+      "phase": "R1",
+      "reason": "Preserve production validation and environment names; split transport-specific initialization, not configuration semantics."
+    },
+    {
+      "sources": [
+        "domains/workspace/storage/storage.py"
+      ],
+      "targets": [
+        "domains/workspace/storage/storage.py"
+      ],
+      "action": "keep",
+      "phase": "R5",
+      "reason": "Local/S3 implementations have a real SDK storage boundary; do not inline them into file CRUD."
+    },
+    {
+      "sources": [
+        "domains/workspace/reviews/policy.py"
+      ],
+      "targets": [
+        "domains/workspace/reviews/policy.py"
+      ],
+      "action": "edit-boundary",
+      "phase": "R5",
+      "reason": "Make reused review policy operations public/typed and reuse shared normalization; avoid imports of private helper functions across the feature."
+    },
+    {
+      "sources": [
+        "main.py"
+      ],
+      "targets": [
+        "main.py",
+        "bootstrap/resources.py"
+      ],
+      "action": "split",
+      "phase": "R1",
+      "reason": "Keep the ASGI app factory entrypoint; explicit startup/shutdown resource ownership belongs to bootstrap."
+    },
+    {
+      "sources": [
+        "runtime/environment/contracts.py"
+      ],
+      "targets": [
+        "runtime/environment/contracts.py",
+        "runtime/contracts.py"
+      ],
+      "action": "split",
+      "phase": "R6",
+      "reason": "One canonical execution-mode vocabulary belongs to provider-neutral runtime contracts; Docker command/mount/limits remain environment contracts."
+    }
+  ],
+  "new_files": []
+}
