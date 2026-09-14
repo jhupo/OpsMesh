@@ -126,7 +126,7 @@ def test_create_normalizes_openai_compatible_base_url() -> None:
     assert credential.base_url == "https://dash.ovload.com/v1"
 
 
-def test_update_normalizes_openai_compatible_base_url_and_drops_query() -> None:
+def test_update_rejects_credential_bearing_base_url() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     service = _command_service(session)
@@ -141,14 +141,15 @@ def test_update_normalizes_openai_compatible_base_url_and_drops_query() -> None:
         is_default=False,
     )
 
-    updated = service.update(
-        workspace_id=workspace.id,
-        credential_id=credential.id,
-        actor_user_id=user.id,
-        base_url="https://dash.ovload.com/?token=secret",
-    )
+    with pytest.raises(ValueError, match="credentials"):
+        service.update(
+            workspace_id=workspace.id,
+            credential_id=credential.id,
+            actor_user_id=user.id,
+            base_url="https://dash.ovload.com/?token=secret",
+        )
 
-    assert updated.base_url == "https://dash.ovload.com/v1"
+    assert credential.base_url is None
 
 
 def test_update_can_set_and_clear_model_api() -> None:
@@ -837,7 +838,7 @@ def test_update_audit_redacts_full_base_url() -> None:
         provider="openai-compatible",
         api_key="sk-router",
         default_model="router/default",
-        base_url="https://router.example.test/v1/private-path?token=secret",
+        base_url="https://router.example.test/v1/private-path",
         is_default=False,
     )
 
@@ -846,7 +847,7 @@ def test_update_audit_redacts_full_base_url() -> None:
         credential_id=credential.id,
         actor_user_id=user.id,
         default_model="router/new",
-        base_url="https://new-router.example.test/v1/private-path?token=secret",
+        base_url="https://new-router.example.test/v1/private-path",
     )
 
     audit = session.scalar(

@@ -56,7 +56,21 @@
 - `lint-imports --no-cache`：8 kept, 0 broken；
 - `git diff --check`：通过。
 
-P0-2 至 P1-11 仍保持未完成状态，不能使用本节证据代替它们的环境验收。
+P0-3 至 P1-11 仍保持未完成状态，不能使用本节证据代替它们的环境验收。
+
+`P0-2` 已在当前 checkout 完成配置、身份与租户安全收口。运行时 egress、模型 provider
+和 secret redaction 现在共享统一的 URL 形状校验与 host 提取规则：带 userinfo、fragment
+或敏感 query 参数的 URL 在配置和调用边界直接拒绝；生产 release API 强制 HTTPS；S3/OTEL
+endpoint 也在启动校验；redacted summary、审计和 provider policy 不会回显 URL 凭据。现有
+authenticated context、workspace membership、role/capability grant 和 webhook 的权限回归
+继续作为身份边界证据。当前定向证据命令及结果为：
+
+- `pytest -q --basetemp=.pytest-tmp-p0-2 backend/tests/test_architecture.py backend/tests/test_config.py backend/tests/test_runtime_egress.py backend/tests/test_model_provider_base_url.py`：80 passed；
+- `pytest -q backend/tests/test_model_provider_service.py backend/tests/test_auth_api.py backend/tests/test_authorization.py backend/tests/test_webhooks.py`：通过；
+- `ruff check backend/app backend/tests/test_architecture.py`：通过；
+- `lint-imports --no-cache`：8 kept, 0 broken；
+- `alembic heads`：`0086_knowledge_revisions`（单 head）；
+- `git diff --check`：通过。
 
 ## 2. 目标架构与不变量
 

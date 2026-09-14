@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.egress import EgressUrlPolicy, validate_egress_url
+from backend.app.core.security.egress import EgressUrlPolicy, url_host, validate_egress_url
 from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 
 MODEL_PROVIDER_NOT_ACTIVE = "model_provider_not_active"
@@ -40,7 +40,7 @@ def credential_is_selectable(credential: ModelProviderCredential | None) -> bool
 def model_provider_base_url_host(base_url: str | None) -> str | None:
     if not base_url:
         return None
-    return urlparse(base_url).netloc or None
+    return url_host(base_url)
 
 
 def normalize_openai_compatible_base_url(base_url: str | None) -> str | None:

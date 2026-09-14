@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from backend.app.core.security.egress import url_host
 from backend.app.core.security.redaction import REDACTED_VALUE, is_sensitive_payload_key
 
 _URL_CONFIG_KEYS = {
@@ -248,8 +249,7 @@ def _is_url_config_key(key: str) -> bool:
 
 
 def _url_host(value: str) -> str | None:
-    parsed = urlparse(value)
-    return parsed.netloc or None
+    return url_host(value)
 
 
 def _safe_metadata_token(value: str) -> str:

@@ -1,5 +1,11 @@
 import pytest
 
+from backend.app.core.security.egress import (
+    EgressUrlPolicy,
+    EgressUrlValidationError,
+    url_host,
+    validate_egress_url,
+)
 from backend.app.runtime.environment.backends.docker import (
     _docker_network_environment,
     _docker_network_mode,
@@ -73,3 +79,23 @@ def test_forced_network_disable_overrides_requested_egress() -> None:
     request = _request(policy.as_dict(), disabled=True)
     assert _docker_network_mode(request) == "none"
     assert _docker_network_environment(request) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user:password@example.com/api",
+        "https://example.com/api?token=secret",
+        "https://example.com/api#secret",
+    ],
+)
+def test_egress_url_rejects_unsafe_configuration(url: str) -> None:
+    with pytest.raises(EgressUrlValidationError, match="URL"):
+        validate_egress_url(
+            url,
+            policy=EgressUrlPolicy(allowed_schemes=frozenset({"https"})),
+        )
+
+
+def test_url_host_never_returns_user_information() -> None:
+    assert url_host("https://user:password@example.com:8443/api") == "example.com:8443"

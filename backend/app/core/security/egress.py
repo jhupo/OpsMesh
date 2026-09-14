@@ -3,7 +3,25 @@ from __future__ import annotations
 import ipaddress
 import socket
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
+
+_SENSITIVE_QUERY_KEYS = frozenset(
+    {
+        "access_token",
+        "api_key",
+        "apikey",
+        "authorization",
+        "client_secret",
+        "credential",
+        "credentials",
+        "key",
+        "password",
+        "secret",
+        "sig",
+        "signature",
+        "token",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -26,12 +44,8 @@ class EgressUrlValidationError(ValueError):
 
 
 def validate_egress_url(url: str, *, policy: EgressUrlPolicy) -> str:
+    validate_url_shape(url, allowed_schemes=policy.allowed_schemes)
     parsed = urlparse(url)
-    scheme = parsed.scheme.lower()
-    if scheme not in policy.allowed_schemes:
-        raise EgressUrlValidationError("URL scheme is not allowed")
-    if not parsed.hostname:
-        raise EgressUrlValidationError("URL host is required")
     try:
         _ = parsed.port
     except ValueError as exc:
@@ -49,6 +63,47 @@ def validate_egress_url(url: str, *, policy: EgressUrlPolicy) -> str:
     for address in _resolve_host(host, policy=policy):
         _validate_address(address, policy=policy)
     return url
+
+
+def validate_url_shape(url: str, *, allowed_schemes: frozenset[str]) -> str:
+    """Validate URL syntax and reject credential-bearing configuration values."""
+    if not isinstance(url, str) or not url.strip():
+        raise EgressUrlValidationError("URL is required")
+    if any(ord(character) < 0x20 for character in url):
+        raise EgressUrlValidationError("URL contains control characters")
+
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in allowed_schemes:
+        raise EgressUrlValidationError("URL scheme is not allowed")
+    if not parsed.hostname:
+        raise EgressUrlValidationError("URL host is required")
+    if parsed.username is not None or parsed.password is not None:
+        raise EgressUrlValidationError("URL credentials are not allowed")
+    if parsed.fragment:
+        raise EgressUrlValidationError("URL fragments are not allowed")
+    for key, _ in parse_qsl(parsed.query, keep_blank_values=True):
+        normalized_key = key.strip().lower().replace("-", "_")
+        if (
+            normalized_key in _SENSITIVE_QUERY_KEYS
+            or normalized_key.endswith("_token")
+            or normalized_key.endswith("_secret")
+        ):
+            raise EgressUrlValidationError("URL query must not contain credentials")
+    return url
+
+
+def url_host(url: str) -> str | None:
+    """Return a redaction-safe host and optional port without user information."""
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+    if not hostname:
+        return None
+    rendered_hostname = f"[{hostname}]" if ":" in hostname else hostname
+    return f"{rendered_hostname}:{port}" if port is not None else rendered_hostname
 
 
 def _normalized_hostname(hostname: str) -> str:

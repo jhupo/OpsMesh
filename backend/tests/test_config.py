@@ -249,6 +249,20 @@ def test_s3_storage_blank_optional_settings_are_unset() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
+        ("release_update_github_api_url", "http://api.github.com"),
+        ("release_update_github_api_url", "https://api.github.com?token=secret"),
+        ("s3_endpoint_url", "https://user:password@minio.example.com:9000"),
+        ("otel_exporter_otlp_endpoint", "https://collector.example.com#secret"),
+    ],
+)
+def test_settings_reject_unsafe_endpoint_configuration(field: str, value: str) -> None:
+    with pytest.raises(ValueError, match="URL"):
+        Settings(environment="test", **{field: value})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
         ("release_update_timeout_seconds", 29),
         ("release_update_timeout_seconds", 7_201),
         ("release_update_check_cache_seconds", -1),
@@ -267,7 +281,7 @@ def test_s3_storage_redacted_summary_hides_credentials() -> None:
         environment="test",
         storage_backend="s3",
         s3_bucket="opsmesh",
-        s3_endpoint_url="https://access:secret@minio.example.com:9000",
+        s3_endpoint_url="https://minio.example.com:9000",
         s3_region="us-east-1",
         s3_prefix="tenant-a",
         s3_access_key_id="access-key",
@@ -280,7 +294,7 @@ def test_s3_storage_redacted_summary_hides_credentials() -> None:
 
     assert summary["storage_backend"] == "s3"
     assert summary["s3_bucket"] == "opsmesh"
-    assert summary["s3_endpoint_url"] == "https://***:***@minio.example.com:9000"
+    assert summary["s3_endpoint_url"] == "https://minio.example.com:9000"
     assert summary["s3_region"] == "us-east-1"
     assert summary["s3_prefix"] == "tenant-a"
     assert summary["s3_access_key_id_configured"] is True

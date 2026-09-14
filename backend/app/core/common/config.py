@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from backend.app.core.common.resources import recommend_runtime_resources
 from backend.app.core.secrets.service import redact_secret_provider_configs
+from backend.app.core.security.egress import validate_url_shape
 
 LogFormat = Literal["json", "text"]
 StorageBackend = Literal["local", "s3"]
@@ -140,6 +141,17 @@ class Settings(BaseSettings):
             if value is not None:
                 stripped = value.strip()
                 setattr(self, field_name, stripped or None)
+        self.release_update_github_api_url = validate_url_shape(
+            self.release_update_github_api_url,
+            allowed_schemes=frozenset({"https"}),
+        ).rstrip("/")
+        for endpoint_name in ("s3_endpoint_url", "otel_exporter_otlp_endpoint"):
+            endpoint = getattr(self, endpoint_name)
+            if endpoint is not None:
+                validate_url_shape(
+                    endpoint,
+                    allowed_schemes=frozenset({"http", "https"}),
+                )
         if self.storage_backend == "s3" and not self.s3_bucket.strip():
             raise ValueError("OPSMESH_S3_BUCKET must be set when OPSMESH_STORAGE_BACKEND=s3")
         if self.otel_batch_max_export_size > self.otel_batch_max_queue_size:
@@ -263,7 +275,7 @@ class Settings(BaseSettings):
             "release_update_timeout_seconds": self.release_update_timeout_seconds,
             "release_update_repository": self.release_update_repository,
             "release_update_check_cache_seconds": self.release_update_check_cache_seconds,
-            "release_update_github_api_url": self.release_update_github_api_url,
+            "release_update_github_api_url": _redact_url(self.release_update_github_api_url),
             "credential_encryption_key_id": self.credential_encryption_key_id,
             "credential_encryption_previous_key_ids": sorted(
                 self.credential_encryption_previous_secrets
@@ -280,15 +292,16 @@ class Settings(BaseSettings):
 def _redact_url(value: str) -> str:
     try:
         parsed = urlsplit(value)
+        port = parsed.port
     except ValueError:
         return "<invalid-url>"
     if not parsed.netloc:
         return value
     hostname = parsed.hostname or ""
-    port = f":{parsed.port}" if parsed.port is not None else ""
+    rendered_port = f":{port}" if port is not None else ""
     username = parsed.username
     redacted_auth = "***:***@" if username is not None else ""
-    netloc = f"{redacted_auth}{hostname}{port}"
+    netloc = f"{redacted_auth}{hostname}{rendered_port}"
     return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
 
 
