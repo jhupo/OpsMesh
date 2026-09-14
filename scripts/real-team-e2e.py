@@ -15,7 +15,7 @@ from backend.app.domains.agents.providers.service import ModelProviderCredential
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.orchestration.tasks.overview import TaskCreateRequest
+from backend.app.api.schemas.orchestration.tasks.core import TaskCreateRequest
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.bootstrap.models import register_models
 from backend.app.core.db.session import SessionLocal

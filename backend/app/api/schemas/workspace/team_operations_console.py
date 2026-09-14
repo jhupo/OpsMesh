@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from backend.app.api.schemas.orchestration.tasks.overview import (
+from backend.app.api.schemas.orchestration.tasks.management import (
     TaskHandoffQueueResponse,
     TaskManagerQueueResponse,
 )

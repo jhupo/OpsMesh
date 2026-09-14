@@ -3,18 +3,9 @@ from uuid import UUID
 from pydantic import BaseModel, Field, model_validator
 
 from backend.app.domains.capabilities.catalog.contracts import (
-    CapabilityParameterPolicy,
-    CapabilityPolicyScope,
-    CapabilityResourceResponse,
     CapabilityTeamPolicy,
-    CapabilityToolDescriptor,
-    EffectiveCapabilityCatalogResponse,
-    EffectiveCapabilityDenial,
-    EffectiveCapabilityResource,
-    EffectiveCapabilityTool,
     ResourceAccessMode,
     ResourceType,
-    WorkspaceCapabilityCatalogResponse,
 )
 
 
@@ -58,23 +49,3 @@ class TeamCapabilityPolicyResponse(BaseModel):
     team_id: UUID
     capability_policy: CapabilityTeamPolicy
     capability_policy_version: int
-
-
-__all__ = [
-    "CapabilityParameterPolicy",
-    "CapabilityPolicyScope",
-    "CapabilityResourceCreateRequest",
-    "CapabilityResourceResponse",
-    "CapabilityResourceUpdateRequest",
-    "CapabilityTeamPolicy",
-    "CapabilityToolDescriptor",
-    "EffectiveCapabilityCatalogResponse",
-    "EffectiveCapabilityDenial",
-    "EffectiveCapabilityResource",
-    "EffectiveCapabilityTool",
-    "ResourceAccessMode",
-    "ResourceType",
-    "TeamCapabilityPolicyResponse",
-    "TeamCapabilityPolicyUpdateRequest",
-    "WorkspaceCapabilityCatalogResponse",
-]

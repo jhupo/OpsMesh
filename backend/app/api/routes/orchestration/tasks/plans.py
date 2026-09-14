@@ -11,12 +11,14 @@ from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
 from backend.app.api.schemas.orchestration.definitions import OrchestrationApplyRequest
-from backend.app.api.schemas.orchestration.tasks.overview import (
+from backend.app.api.schemas.orchestration.tasks.core import (
+    TaskResponse,
+)
+from backend.app.api.schemas.orchestration.tasks.management import (
     TaskPlanDiagnosticsResponse,
     TaskPlanMutationRequest,
     TaskPlanRegenerateRequest,
     TaskPlanRetryRequest,
-    TaskResponse,
 )
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext

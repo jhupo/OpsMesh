@@ -7,18 +7,20 @@ from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.capabilities.catalog import (
     CapabilityResourceCreateRequest,
-    CapabilityResourceResponse,
     CapabilityResourceUpdateRequest,
-    EffectiveCapabilityCatalogResponse,
     TeamCapabilityPolicyResponse,
     TeamCapabilityPolicyUpdateRequest,
-    WorkspaceCapabilityCatalogResponse,
 )
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.capabilities.catalog.contracts import (
+    CapabilityResourceResponse,
+    EffectiveCapabilityCatalogResponse,
+    WorkspaceCapabilityCatalogResponse,
+)
 from backend.app.domains.capabilities.catalog.effective import EffectiveCapabilityCatalogService
 from backend.app.domains.capabilities.catalog.service import WorkspaceCapabilityCatalogService
 from backend.app.domains.capabilities.governance.policy import TeamCapabilityPolicyService

@@ -12,7 +12,6 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.api.schemas.orchestration.tasks.control import TaskDeliveryDecisionRequest
 from backend.app.core.common.config import Settings
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
@@ -29,6 +28,9 @@ from backend.app.domains.orchestration.approvals.models import Approval, Pending
 from backend.app.domains.orchestration.runs.models import AgentRun, AgentRunStateSnapshot
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.tasks.contracts import (
+    TaskDeliveryDecisionRequest,
+)
 from backend.app.domains.orchestration.tasks.delivery.decisions import TaskDeliveryDecisionService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.operations.transfers import (

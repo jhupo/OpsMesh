@@ -19,11 +19,13 @@ from backend.app.api.routes.orchestration.tasks.streaming import (
     _task_stream_complete,
     get_task_event_bus,
 )
-from backend.app.api.schemas.orchestration.tasks.overview import (
+from backend.app.api.schemas.orchestration.tasks.core import (
     TaskFeedbackRequest,
-    TaskLiveStatusResponse,
     TaskMessageResponse,
     TaskPlanningAttemptResponse,
+)
+from backend.app.api.schemas.orchestration.tasks.status import (
+    TaskLiveStatusResponse,
 )
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.common.trace_context import current_trace_metadata
@@ -230,4 +232,3 @@ async def list_task_planning_attempts(
         limit=page.limit,
         offset=page.offset,
     )
-

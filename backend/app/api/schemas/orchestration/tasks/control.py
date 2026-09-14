@@ -6,27 +6,6 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.orchestration.tasks.contracts import (
-    TaskControlActionRequest,
-    TaskCorrectionRequest,
-    TaskDeliveryDecisionRequest,
-)
-
-__all__ = [
-    "TaskControlActionRequest",
-    "TaskCorrectionRequest",
-    "TaskDeliveryDecisionRequest",
-    "TaskOperatorActionRequest",
-    "TaskOperatorActionResponse",
-    "TaskCorrectionResponse",
-    "TaskCorrectionStepDiagnostic",
-    "TaskCorrectionRunDiagnostic",
-    "TaskCorrectionArtifactDiagnostic",
-    "TaskCorrectionDiagnosticItem",
-    "TaskCorrectionDiagnosticsResponse",
-    "TaskDeliveryDecisionResponse",
-    "TaskControlActionResponse",
-]
 
 
 class TaskOperatorActionRequest(BaseModel):

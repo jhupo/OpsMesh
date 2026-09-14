@@ -7,7 +7,7 @@ from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
-from backend.app.api.schemas.orchestration.tasks.overview import (
+from backend.app.api.schemas.orchestration.tasks.management import (
     TaskTransferCreateRequest,
     TaskTransferDecisionRequest,
     TaskTransferResponse,

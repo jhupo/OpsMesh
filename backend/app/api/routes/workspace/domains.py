@@ -9,13 +9,9 @@ from backend.app.api.dependencies.workers import (
 )
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.workspace.domains import (
-    DomainItemCreateRequest,
     DomainItemResponse,
-    DomainProjectCreateRequest,
     DomainProjectResponse,
-    ReviewCommentCreateRequest,
     ReviewCommentResponse,
-    RevisionRequestCreateRequest,
     RevisionRequestResponse,
     TaskViewResponse,
 )
@@ -23,6 +19,12 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.workspace.domains.contracts import (
+    DomainItemCreateRequest,
+    DomainProjectCreateRequest,
+    ReviewCommentCreateRequest,
+    RevisionRequestCreateRequest,
+)
 from backend.app.domains.workspace.domains.service import DomainTaskService
 from backend.app.runtime.workers.queue import RedisQueue
 

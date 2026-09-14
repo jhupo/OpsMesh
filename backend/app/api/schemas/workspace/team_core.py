@@ -4,8 +4,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-from backend.app.api.schemas.capabilities.catalog import CapabilityTeamPolicy
 from backend.app.core.contracts import ORMModel, TimestampedModel
+from backend.app.domains.capabilities.catalog.contracts import (
+    CapabilityTeamPolicy,
+)
 
 
 class AgentTeamCreateRequest(BaseModel):

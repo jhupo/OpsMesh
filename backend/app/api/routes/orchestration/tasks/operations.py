@@ -9,26 +9,34 @@ from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
-from backend.app.api.schemas.orchestration.tasks.overview import (
-    TaskControlActionRequest,
+from backend.app.api.schemas.orchestration.tasks.control import (
     TaskControlActionResponse,
-    TaskControlDiagnosticsResponse,
     TaskCorrectionDiagnosticsResponse,
-    TaskCorrectionRequest,
     TaskCorrectionResponse,
-    TaskDeliveryDecisionRequest,
     TaskDeliveryDecisionResponse,
-    TaskDeliveryReviewResponse,
-    TaskExecutionDiagnosticsResponse,
-    TaskManagerDiagnosticsResponse,
-    TaskObservationResponse,
     TaskOperatorActionRequest,
     TaskOperatorActionResponse,
+)
+from backend.app.api.schemas.orchestration.tasks.management import (
+    TaskExecutionDiagnosticsResponse,
+    TaskManagerDiagnosticsResponse,
+)
+from backend.app.api.schemas.orchestration.tasks.status import (
+    TaskControlDiagnosticsResponse,
+    TaskDeliveryReviewResponse,
+    TaskObservationResponse,
+)
+from backend.app.api.schemas.orchestration.tasks.timeline import (
     TaskTimelineResponse,
 )
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.orchestration.tasks.contracts import (
+    TaskControlActionRequest,
+    TaskCorrectionRequest,
+    TaskDeliveryDecisionRequest,
+)
 from backend.app.domains.orchestration.tasks.control.diagnostics import (
     TaskControlDiagnosticsService,
 )

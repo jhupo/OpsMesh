@@ -4,7 +4,9 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session
 
-from backend.app.api.schemas.orchestration.tasks.overview import TaskTransferResponse
+from backend.app.api.schemas.orchestration.tasks.management import (
+    TaskTransferResponse,
+)
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.models import AgentProfile

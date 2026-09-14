@@ -15,11 +15,13 @@ from backend.app.api.idempotency import (
     run_idempotent_create,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.orchestration.tasks.overview import (
+from backend.app.api.schemas.orchestration.tasks.core import (
     TaskCreateRequest,
+    TaskResponse,
+)
+from backend.app.api.schemas.orchestration.tasks.management import (
     TaskHandoffQueueResponse,
     TaskManagerQueueResponse,
-    TaskResponse,
 )
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
