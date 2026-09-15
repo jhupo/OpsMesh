@@ -15,8 +15,8 @@ from backend.app.domains.agents.messages.service import AgentMailboxService
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.tools.context import ToolContext
 from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
-from backend.app.domains.capabilities.tools.product_events import ProductToolEventRecorder
-from backend.app.domains.capabilities.tools.product_normalization import (
+from backend.app.domains.capabilities.tools.events import ProductToolEventRecorder
+from backend.app.domains.capabilities.tools.normalization import (
     bounded_optional,
     optional_uuid_from_metadata,
 )

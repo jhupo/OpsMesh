@@ -24,7 +24,7 @@ from backend.app.domains.capabilities.tools.errors import (
     ToolPermissionError,
     ToolResourceNotFoundError,
 )
-from backend.app.domains.capabilities.tools.product_service import ProductToolService
+from backend.app.domains.capabilities.tools.service import ProductToolService
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep

@@ -82,7 +82,7 @@ HTTP 依赖归 `api/dependencies`；ORM 注册归显式启动装配。加密、�
 
 [消息服务](C:/Users/Administrator/Desktop/github/OpsMesh/backend/app/domains/agents/messages/service.py:18)
 继承六个 Mixin，成员共同依赖 `_session`、`_page`、`_require_thread` 等隐式接口。
-[产品工具服务](C:/Users/Administrator/Desktop/github/OpsMesh/backend/app/domains/capabilities/tools/product_service.py:23)
+[产品工具服务](C:/Users/Administrator/Desktop/github/OpsMesh/backend/app/domains/capabilities/tools/service.py:23)
 也通过文件、记忆、邮箱三组父类共享状态。
 
 决定：邮箱收敛为命令服务、查询服务、合同、模型四个文件；产品工具保留各业务处理器，但改为显式组合和注入，

@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.domains.capabilities.tools.context import ToolContext
-from backend.app.domains.capabilities.tools.product_service import ProductToolService
+from backend.app.domains.capabilities.tools.service import ProductToolService
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent
 from backend.app.domains.workspace.storage.runtime_policy import (

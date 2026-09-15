@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from backend.app.domains.capabilities.tools.context import ToolContext
 from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
-from backend.app.domains.capabilities.tools.product_events import ProductToolEventRecorder
+from backend.app.domains.capabilities.tools.events import ProductToolEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import TaskStep
 from backend.app.domains.workspace.storage.artifact_models import Artifact

@@ -11,8 +11,8 @@ from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.capabilities.tools.context import ToolContext
-from backend.app.domains.capabilities.tools.product_memory import KnowledgeCitationAccessError
-from backend.app.domains.capabilities.tools.product_service import ProductToolService
+from backend.app.domains.capabilities.tools.memory import KnowledgeCitationAccessError
+from backend.app.domains.capabilities.tools.service import ProductToolService
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.knowledge.ingestion import KnowledgeSourceIngestionService
 from backend.app.domains.knowledge.models import (

@@ -8,9 +8,9 @@ from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.tools.context import ToolContext
 from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
-from backend.app.domains.capabilities.tools.product_files import WorkspaceFileProductTools
-from backend.app.domains.capabilities.tools.product_mailbox import AgentMailboxProductTools
-from backend.app.domains.capabilities.tools.product_memory import WorkspaceMemoryProductTools
+from backend.app.domains.capabilities.tools.files import WorkspaceFileProductTools
+from backend.app.domains.capabilities.tools.mailbox import AgentMailboxProductTools
+from backend.app.domains.capabilities.tools.memory import WorkspaceMemoryProductTools
 from backend.app.domains.workspace.storage.artifact_persistence import ArtifactPersistenceService
 from backend.app.domains.workspace.storage.content import (
     DEFAULT_AGENT_FILE_READ_MAX_BYTES,

@@ -18,8 +18,8 @@ from backend.app.domains.agents.memory.semantic import (
 from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
 from backend.app.domains.capabilities.tools.context import ToolContext
 from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
-from backend.app.domains.capabilities.tools.product_events import ProductToolEventRecorder
-from backend.app.domains.capabilities.tools.product_normalization import normalized_tags
+from backend.app.domains.capabilities.tools.events import ProductToolEventRecorder
+from backend.app.domains.capabilities.tools.normalization import normalized_tags
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.knowledge.ingestion import KnowledgeSourceIngestionService
 from backend.app.domains.knowledge.models import KnowledgeCitation

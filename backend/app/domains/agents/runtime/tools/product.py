@@ -47,7 +47,7 @@ from backend.app.domains.capabilities.catalog.product_tools import (
 )
 from backend.app.domains.capabilities.tools.context import ToolContext
 from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
-from backend.app.domains.capabilities.tools.product_service import ProductToolService
+from backend.app.domains.capabilities.tools.service import ProductToolService
 from backend.app.domains.orchestration.approvals.policy import (
     ApprovalPolicyDecision,
     ApprovalPolicyEngine,
