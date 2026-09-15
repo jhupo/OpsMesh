@@ -19,13 +19,13 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.workspace.domains.contracts import (
+from backend.app.domains.workspace.extensions.contracts import (
     DomainItemCreateRequest,
     DomainProjectCreateRequest,
     ReviewCommentCreateRequest,
     RevisionRequestCreateRequest,
 )
-from backend.app.domains.workspace.domains.service import DomainTaskService
+from backend.app.domains.workspace.extensions.service import DomainTaskService
 from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["domain-tasks"])

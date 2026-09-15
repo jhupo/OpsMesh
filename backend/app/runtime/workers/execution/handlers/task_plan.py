@@ -5,7 +5,7 @@ from sqlalchemy import select
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
-from backend.app.domains.workspace.domains.models import RevisionRequest
+from backend.app.domains.workspace.extensions.models import RevisionRequest
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
 from backend.app.runtime.workers.execution.revision import RevisionRequestPlanner

@@ -26,7 +26,7 @@ _MODEL_MODULES = (
     "backend.app.domains.orchestration.runs.models",
     "backend.app.domains.orchestration.tasks.models",
     "backend.app.domains.orchestration.workflows.planning.attempt_models",
-    "backend.app.domains.workspace.domains.models",
+    "backend.app.domains.workspace.extensions.models",
     "backend.app.domains.workspace.projects.export_models",
     "backend.app.domains.workspace.projects.models",
     "backend.app.domains.workspace.storage.artifact_models",

@@ -8,13 +8,13 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.base import Base
 from backend.app.core.db.pagination import page_scalars
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.domains.contracts import (
+from backend.app.domains.workspace.extensions.contracts import (
     DomainItemCreateRequest,
     DomainProjectCreateRequest,
     ReviewCommentCreateRequest,
     RevisionRequestCreateRequest,
 )
-from backend.app.domains.workspace.domains.models import (
+from backend.app.domains.workspace.extensions.models import (
     DomainItem,
     DomainProject,
     ReviewComment,

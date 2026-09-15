@@ -11,7 +11,7 @@
 | R2 | API 路由/schema 清理 | 进行中 | 已删除转发文件、tasks 聚合文件、公共模型和通知转发文件；混合 schema 不再导出领域合同，管理路由也不再使用只改类名的空继承包装，路由、测试和 E2E 脚本直接引用所属模块。任务转移、通知租户隔离与脱敏、任务领域视图、管理队列/Worker/Runtime 三个功能场景通过；剩余路由归属和 OpenAPI 对照仍待完成 |
 | R3 | Agent/provider/session/mailbox/tools/MCP | 进行中 | Mailbox 命令、校验、读取、收件箱和汇总已分别收敛到 `domains/agents/messages/service.py` 与 `queries.py`，删除 5 个唯一调用的 Mixin 碎片；工具组合模块已按功能收敛为 `tools/{files,mailbox,memory,normalization,events,service}.py`；Provider catalog 的 capability/metadata/model_api/policy/view 已扁平到 `domains/agents/providers` 并删除空 catalog 包；持久会话已迁移到 `domains/agents/sessions`，ORM、仓储、管理和视图的导入已全部更新，旧 `runtime/sessions` 空包已清理。MCP 的 `catalog/execution/transport` 是实际协议与生命周期边界，按最终方案保留，不做机械合并；Mailbox、工具、Provider、会话相关场景通过，MCP 相关场景继续核验 |
 | R4 | 任务/Run/工作流职责 | 待实施 | |
-| R5 | Workspace/team/project/archive/data lifecycle | 待实施 | |
+| R5 | Workspace/team/project/archive/data lifecycle | 进行中 | Workspace 原 `domains` 子包已按方案归并为 `extensions`，保留 `api/routes/workspace/domains.py` 的 HTTP 路径与领域语义；模型注册、Worker 计划、知识库文档和路由导入已全部切换，旧 `workspace/domains` 包已清理。团队、项目、归档、数据生命周期仍待继续核对 |
 | R6 | 容器池/后端/Worker/recovery | 待实施 | 保留既有未提交租约和队列工作 |
 | R7 | 观测与成本边界 | 待实施 | |
 | R8 | 入口核对、旧引用和残留清理 | 待实施 | |

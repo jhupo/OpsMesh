@@ -18,7 +18,7 @@ from backend.app.domains.agents.memory.retrieval_search import (
 )
 from backend.app.domains.knowledge.models import KnowledgeSource
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.workspace.domains.models import DomainItem
+from backend.app.domains.workspace.extensions.models import DomainItem
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 

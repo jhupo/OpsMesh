@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.workspace.domains.models import RevisionRequest
+from backend.app.domains.workspace.extensions.models import RevisionRequest
 
 
 class RevisionRequestPlanner:
