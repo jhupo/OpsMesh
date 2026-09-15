@@ -5,16 +5,16 @@ from backend.app.domains.agents.providers.policy import (
     is_openai_compatible_provider,
     model_provider_key,
 )
-from backend.app.domains.agents.runtime.execution.capability_policy import (
+from backend.app.domains.agents.runtime.capability_policy import (
     required_runtime_capabilities,
 )
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAdapter,
     AgentRuntimeCapabilities,
 )
-from backend.app.domains.agents.runtime.execution.errors import AgentRuntimeCapabilityError
+from backend.app.domains.agents.runtime.errors import AgentRuntimeCapabilityError
 
 
 class ProviderAgentRuntimeRegistry:

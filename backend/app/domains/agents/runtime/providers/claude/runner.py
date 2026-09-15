@@ -3,50 +3,38 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
 from typing import Protocol, cast
-from uuid import UUID, uuid5
 
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
-    SdkMcpTool,
     StreamEvent,
     TextBlock,
     ToolResultBlock,
     ToolUseBlock,
     create_sdk_mcp_server,
-    tool,
 )
 from claude_agent_sdk import __version__ as claude_sdk_version
 from claude_agent_sdk.types import (
     EffortLevel,
-    HookCallback,
-    HookContext,
-    HookEvent,
-    HookInput,
-    HookJSONOutput,
-    HookMatcher,
     McpServerConfig,
     SandboxSettings,
-    SessionKey,
     SessionStore,
-    SessionStoreEntry,
     ThinkingConfig,
 )
 from pydantic import TypeAdapter, ValidationError
 
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.agents.providers.model_api import ANTHROPIC_MESSAGES_API
-from backend.app.domains.agents.runtime.execution.base import BaseSDKAgentRuntimeAdapter
-from backend.app.domains.agents.runtime.execution.cancellation import (
+from backend.app.domains.agents.runtime.base import BaseSDKAgentRuntimeAdapter
+from backend.app.domains.agents.runtime.cancellation import (
     cancel_active_tools,
     raise_if_cancelled,
     stop_cancellation_watcher,
 )
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeCapabilities,
@@ -55,76 +43,33 @@ from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeGuardrailResult,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
-    AgentRuntimeSession,
     AgentRuntimeStreamEvent,
     AgentRuntimeStructuredOutput,
-    AgentRuntimeToolDefinition,
 )
-from backend.app.domains.agents.runtime.execution.errors import AgentRuntimeCancelledError
-from backend.app.domains.agents.runtime.execution.guardrails import (
+from backend.app.domains.agents.runtime.errors import AgentRuntimeCancelledError
+from backend.app.domains.agents.runtime.guardrails import (
     evaluate_guardrail_stage,
     guardrail_events,
     validated_structured_output,
 )
-from backend.app.domains.agents.runtime.execution.observer import AgentRuntimeExecutionObserver
-from backend.app.domains.agents.runtime.execution.usage import runtime_usage
+from backend.app.domains.agents.runtime.observer import AgentRuntimeExecutionObserver
+from backend.app.domains.agents.runtime.providers.claude.sessions import (
+    ClaudeAgentSessionStore,
+    _is_rejected_resume,
+    _rejected_result,
+    _resume_session_id,
+    _session_id,
+)
+from backend.app.domains.agents.runtime.providers.claude.tools import (
+    _ApprovalState,
+    _claude_hooks,
+    _product_tool_name,
+    _sdk_tool,
+)
+from backend.app.domains.agents.runtime.usage import runtime_usage
 
-_SDK_TOOL_PREFIX = "mcp__opsmesh__"
-_SESSION_NAMESPACE = UUID("6bd4b8b9-8a4b-49db-9b6c-d0b7d7da4be6")
 _EFFORT_SETTING: TypeAdapter[EffortLevel] = TypeAdapter(EffortLevel)
 _THINKING_SETTING: TypeAdapter[ThinkingConfig] = TypeAdapter(ThinkingConfig)
-
-
-class ClaudeAgentSessionStore:
-    """Mirror Claude's opaque JSONL transcript into the product session."""
-
-    def __init__(self, session: AgentRuntimeSession, *, session_id: str) -> None:
-        self._session = session
-        self._session_id = session_id
-
-    async def append(self, key: SessionKey, entries: list[SessionStoreEntry]) -> None:
-        if key["session_id"] != self._session_id:
-            raise ValueError("Claude transcript key does not match the product session")
-        if not entries:
-            return
-        await self._session.add_items(
-            [
-                {
-                    "_opsmesh_runtime": "claude_agent_sdk",
-                    "session_id": self._session_id,
-                    "project_key": key.get("project_key"),
-                    "subpath": key.get("subpath"),
-                    "entry": json.loads(json.dumps(entry)),
-                }
-                for entry in entries
-            ]
-        )
-
-    async def load(self, key: SessionKey) -> list[SessionStoreEntry] | None:
-        if key["session_id"] != self._session_id:
-            raise ValueError("Claude transcript key does not match the product session")
-        items = await self._session.get_items()
-        entries: list[SessionStoreEntry] = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            if item.get("_opsmesh_runtime") != "claude_agent_sdk":
-                continue
-            if item.get("session_id") != self._session_id:
-                continue
-            if item.get("subpath") != key.get("subpath"):
-                continue
-            entry = item.get("entry")
-            if isinstance(entry, dict):
-                entries.append(json.loads(json.dumps(entry)))
-        return entries or None
-
-
-@dataclass
-class _ApprovalState:
-    reviews: dict[str, dict[str, object]]
-    deferred: dict[str, dict[str, object]]
-    active_calls: dict[str, str]
 
 
 class _ClaudeClient(Protocol):
@@ -214,7 +159,7 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
                 await store.load({"project_key": "opsmesh", "session_id": session_id}) is not None
             )
         if _is_rejected_resume(request):
-            return _rejected_result(request)
+            return _rejected_result(request, self.capabilities)
 
         approval_state = _ApprovalState(reviews={}, deferred={}, active_calls={})
         if request.approval_decisions:
@@ -601,276 +546,6 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
                 "terminal_reason": result.terminal_reason,
             }
         )
-
-
-def _sdk_tool(
-    definition: AgentRuntimeToolDefinition,
-    request: AgentRunRequest,
-    approval_state: _ApprovalState,
-) -> SdkMcpTool[dict[str, object]]:
-    sdk_name = definition.name
-
-    @tool(sdk_name, definition.description, dict(definition.input_schema))
-    async def invoke(arguments: dict[str, object]) -> dict[str, object]:
-        await raise_if_cancelled(request.cancellation)
-        executor = request.tool_executor
-        if executor is None:
-            return _tool_error("No runtime tool executor is configured")
-        try:
-            tool_call_id = approval_state.active_calls.get(definition.name)
-            if not tool_call_id:
-                return _tool_error("Claude tool call is missing its runtime call ID")
-            result = await executor.execute_tool(
-                context=request.context,
-                tool_name=definition.name,
-                arguments=arguments,
-                tool_call_id=tool_call_id,
-                approval_granted=True,
-            )
-            await raise_if_cancelled(request.cancellation)
-            if result.status == "completed":
-                payload = result.output or {}
-                return {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": json.dumps(payload, ensure_ascii=False),
-                        }
-                    ]
-                }
-            return _tool_error(
-                json.dumps(result.error or {"code": "tool_failed"}, ensure_ascii=False)
-            )
-        except AgentRuntimeCancelledError:
-            raise
-        except Exception as exc:
-            return _tool_error(str(exc))
-
-    return invoke
-
-
-def _claude_hooks(
-    request: AgentRunRequest,
-    approval_state: _ApprovalState,
-    observer: AgentRuntimeExecutionObserver,
-    has_tools: bool,
-) -> dict[HookEvent, list[HookMatcher]]:
-    hooks: dict[HookEvent, list[HookMatcher]] = {
-        "Stop": [HookMatcher(hooks=[_claude_lifecycle_hook("agent.stop", request, observer)])]
-    }
-    if not has_tools:
-        return hooks
-    hooks["PreToolUse"] = [
-        HookMatcher(
-            matcher=f"{_SDK_TOOL_PREFIX}.*",
-            hooks=[
-                _approval_hook(request, approval_state),
-                _claude_lifecycle_hook("agent.tool.started", request, observer),
-            ],
-        )
-    ]
-    hooks["PostToolUse"] = [
-        HookMatcher(
-            matcher=f"{_SDK_TOOL_PREFIX}.*",
-            hooks=[_claude_lifecycle_hook("agent.tool.completed", request, observer)],
-        )
-    ]
-    hooks["PostToolUseFailure"] = [
-        HookMatcher(
-            matcher=f"{_SDK_TOOL_PREFIX}.*",
-            hooks=[_claude_lifecycle_hook("agent.tool.failed", request, observer)],
-        )
-    ]
-    return hooks
-
-
-def _claude_lifecycle_hook(
-    event_type: str,
-    request: AgentRunRequest,
-    observer: AgentRuntimeExecutionObserver,
-) -> HookCallback:
-    async def record(
-        input_data: HookInput,
-        tool_use_id: str | None,
-        context: HookContext,
-    ) -> HookJSONOutput:
-        if event_type == "agent.tool.started":
-            await raise_if_cancelled(request.cancellation)
-        tool_name = input_data.get("tool_name")
-        payload: dict[str, object] = {"agent": request.agent_profile.name}
-        if isinstance(tool_name, str) and tool_name:
-            payload["tool_name"] = _product_tool_name(tool_name)
-        if tool_use_id:
-            payload["tool_call_id"] = tool_use_id
-        observer.lifecycle(
-            event_type,
-            event_type.replace(".", " ").capitalize() + ".",
-            payload,
-        )
-        return {}
-
-    return record
-
-
-def _approval_hook(
-    request: AgentRunRequest,
-    approval_state: _ApprovalState,
-) -> HookCallback:
-    async def review(
-        input_data: HookInput,
-        tool_use_id: str | None,
-        context: HookContext,
-    ) -> HookJSONOutput:
-        if input_data["hook_event_name"] != "PreToolUse":
-            raise ValueError("Tool approval requires a PreToolUse hook event")
-        tool_name = str(input_data.get("tool_name") or "")
-        call_id = tool_use_id or str(input_data.get("tool_use_id") or "")
-        product_name = _product_tool_name(tool_name)
-        definition = next(
-            (item for item in request.context.tool_definitions if item.name == product_name),
-            None,
-        )
-        if definition is None or product_name not in request.context.allowed_tools:
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": (
-                        "Tool is not present in the authorized run manifest"
-                    ),
-                }
-            }
-        executor = request.tool_executor
-        if executor is None:
-            raise ValueError("Claude tool execution requires a runtime tool executor")
-        review: object = executor.review_tool_call(
-            context=request.context,
-            tool_name=product_name,
-            arguments=dict(input_data["tool_input"]),
-        )
-        if not isinstance(review, dict):
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": "Tool approval review returned an invalid decision",
-                }
-            }
-        decision = review.get("decision")
-        approval_state.reviews[call_id] = dict(review)
-        approval_state.active_calls.pop(product_name, None)
-        if decision == "deny":
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": str(
-                        review.get("reason") or "Tool denied by policy"
-                    ),
-                }
-            }
-        if decision == "allow":
-            if call_id:
-                approval_state.active_calls[product_name] = call_id
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "allow",
-                    "permissionDecisionReason": "Tool allowed by OpsMesh policy",
-                }
-            }
-        if decision != "require_approval":
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": "Tool approval review returned an invalid decision",
-                }
-            }
-        if call_id:
-            approval_state.deferred[call_id] = {
-                "tool_name": product_name,
-                "arguments": redact_sensitive_payload(dict(input_data["tool_input"])),
-            }
-        return {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "defer",
-                "permissionDecisionReason": (
-                    "OpsMesh policy requires approval before tool execution"
-                ),
-            }
-        }
-
-    return review
-
-
-def _tool_error(message: str) -> dict[str, object]:
-    return {"content": [{"type": "text", "text": message}], "is_error": True}
-
-
-def _product_tool_name(name: str) -> str:
-    return name[len(_SDK_TOOL_PREFIX) :] if name.startswith(_SDK_TOOL_PREFIX) else name
-
-
-def _session_id(request: AgentRunRequest) -> str:
-    if request.session is None:
-        return str(uuid5(_SESSION_NAMESPACE, str(request.context.run_id)))
-    return str(
-        uuid5(
-            _SESSION_NAMESPACE,
-            f"{request.context.workspace_id}:{request.session.session_id}",
-        )
-    )
-
-
-def _resume_session_id(request: AgentRunRequest) -> str | None:
-    if request.resume_state is None:
-        return None
-    try:
-        payload = json.loads(request.resume_state.serialized_state)
-    except json.JSONDecodeError as exc:
-        raise ValueError("Stored Claude Agent SDK state is not valid JSON") from exc
-    session_id = payload.get("session_id") if isinstance(payload, dict) else None
-    if not isinstance(session_id, str):
-        raise ValueError("Stored Claude Agent SDK state is missing session_id")
-    expected = _session_id(request)
-    if session_id != expected:
-        raise ValueError("Stored Claude Agent SDK state does not match the product session")
-    return session_id
-
-
-def _is_rejected_resume(request: AgentRunRequest) -> bool:
-    if not request.approval_decisions:
-        return False
-    if request.resume_state is None:
-        raise ValueError("Approval decisions require a Claude Agent SDK resume state")
-    payload = json.loads(request.resume_state.serialized_state)
-    call_id = payload.get("tool_call_id") if isinstance(payload, dict) else None
-    tool_name = payload.get("tool_name") if isinstance(payload, dict) else None
-    if not isinstance(payload, dict) or payload.get("session_id") != _session_id(request):
-        raise ValueError("Stored Claude Agent SDK state does not match the product session")
-    for decision in request.approval_decisions:
-        if decision.tool_call_id != call_id or decision.tool_name != tool_name:
-            raise ValueError("Stored approval decision does not match the Claude SDK interruption")
-        if decision.status not in {"approved", "rejected"}:
-            raise ValueError("Stored tool approval decision is invalid")
-    return any(decision.status == "rejected" for decision in request.approval_decisions)
-
-
-def _rejected_result(request: AgentRunRequest) -> AgentRunResult:
-    decision = request.approval_decisions[0]
-    return AgentRunResult(
-        final_output=decision.reason or f"Tool {decision.tool_name} was rejected by policy.",
-        events=(
-            AgentRuntimeEvent(
-                event_type="tool.rejected",
-                message="Tool approval was rejected; Claude session was not resumed.",
-                payload={"tool_name": decision.tool_name, "tool_call_id": decision.tool_call_id},
-            ),
-        ),
-        capabilities=ClaudeAgentSDKRunner.capabilities,
-    )
 
 
 def _string_setting(settings: dict[str, object], key: str) -> str | None:

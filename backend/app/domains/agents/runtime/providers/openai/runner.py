@@ -28,8 +28,8 @@ from backend.app.domains.agents.providers.policy import (
     is_openai_compatible_provider,
     normalize_openai_compatible_base_url,
 )
-from backend.app.domains.agents.runtime.execution.base import BaseSDKAgentRuntimeAdapter
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.base import BaseSDKAgentRuntimeAdapter
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAgentDefinition,
@@ -41,34 +41,34 @@ from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeEvent,
     AgentRuntimeGuardrailResult,
 )
-from backend.app.domains.agents.runtime.execution.errors import (
+from backend.app.domains.agents.runtime.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimePolicyError,
     normalize_agent_error,
 )
-from backend.app.domains.agents.runtime.execution.guardrails import (
+from backend.app.domains.agents.runtime.guardrails import (
     guardrail_events,
     validated_structured_output,
 )
-from backend.app.domains.agents.runtime.execution.observer import AgentRuntimeExecutionObserver
-from backend.app.domains.agents.runtime.execution.usage import runtime_usage
-from backend.app.domains.agents.runtime.openai.compaction import openai_run_session
-from backend.app.domains.agents.runtime.openai.guardrails import (
+from backend.app.domains.agents.runtime.observer import AgentRuntimeExecutionObserver
+from backend.app.domains.agents.runtime.providers.openai.compaction import openai_run_session
+from backend.app.domains.agents.runtime.providers.openai.guardrails import (
     OpenAIRuntimeOutputSchema,
     OpenAIRuntimeOutputSchemaError,
     merged_openai_guardrail_results,
     openai_input_guardrails,
     openai_output_guardrails,
 )
-from backend.app.domains.agents.runtime.openai.lifecycle import OpenAIRuntimeHooks
-from backend.app.domains.agents.runtime.openai.results import (
+from backend.app.domains.agents.runtime.providers.openai.lifecycle import OpenAIRuntimeHooks
+from backend.app.domains.agents.runtime.providers.openai.results import (
     OpenAIAgentsResultMapper,
     jsonable,
 )
-from backend.app.domains.agents.runtime.openai.sandbox import sandbox_run_config
-from backend.app.domains.agents.runtime.openai.settings import OpenAIModelSettingsMapper
-from backend.app.domains.agents.runtime.openai.streaming import run_openai_streamed
-from backend.app.domains.agents.runtime.openai.tools import OpenAIToolBridge
+from backend.app.domains.agents.runtime.providers.openai.sandbox import sandbox_run_config
+from backend.app.domains.agents.runtime.providers.openai.settings import OpenAIModelSettingsMapper
+from backend.app.domains.agents.runtime.providers.openai.streaming import run_openai_streamed
+from backend.app.domains.agents.runtime.providers.openai.tools import OpenAIToolBridge
+from backend.app.domains.agents.runtime.usage import runtime_usage
 
 
 class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):

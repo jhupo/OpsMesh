@@ -7,9 +7,10 @@ import pytest
 from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
+from backend.app.bootstrap.providers import build_agent_runtime_registry
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.providers.policy import normalize_openai_compatible_base_url
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAgentRef,
@@ -24,12 +25,10 @@ from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeToolResult,
     AgentRunTracing,
 )
-from backend.app.domains.agents.runtime.execution.errors import (
+from backend.app.domains.agents.runtime.errors import (
     AgentRuntimeCapabilityError,
     normalize_agent_error,
 )
-from backend.app.domains.agents.runtime.execution.factory import build_agent_runtime_registry
-from backend.app.domains.agents.runtime.execution.registry import ProviderAgentRuntimeRegistry
 from backend.app.domains.agents.runtime.providers.openai.results import (
     OpenAIAgentsResultMapper,
     runtime_event_from_sdk_item,
@@ -39,6 +38,7 @@ from backend.app.domains.agents.runtime.providers.openai.tools import (
     OpenAIToolBridge,
     runtime_allowed_tools,
 )
+from backend.app.domains.agents.runtime.registry import ProviderAgentRuntimeRegistry
 from backend.app.domains.agents.runtime.sandbox.contracts import SandboxManifest
 from backend.app.domains.agents.sessions.models import (
     PersistentAgentSessionRef,
@@ -1058,7 +1058,9 @@ def test_openai_tool_bridge_denies_non_allowing_policy_decisions(decision: str |
     context = AgentRuntimeContext(workspace_id=uuid4(), task_id=None, run_id=uuid4())
     tool = OpenAIToolBridge().function_tool(
         AgentRuntimeToolDefinition(
-            name="write_artifact", source="product", description="Write",
+            name="write_artifact",
+            source="product",
+            description="Write",
             input_schema={"type": "object"},
         ),
         Executor(),

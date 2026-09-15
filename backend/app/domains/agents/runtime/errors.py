@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeCapabilities,
     AgentRuntimeCapability,
     AgentRuntimeGuardrailResult,

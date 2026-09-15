@@ -13,8 +13,8 @@ from agents import (
 )
 from agents.tool_context import ToolContext
 
-from backend.app.domains.agents.runtime.execution.cancellation import raise_if_cancelled
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.cancellation import raise_if_cancelled
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeCancellation,
     AgentRuntimeContext,

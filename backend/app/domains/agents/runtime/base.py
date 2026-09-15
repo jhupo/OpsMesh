@@ -4,13 +4,13 @@ import json
 from abc import ABC, abstractmethod
 from dataclasses import replace
 
-from backend.app.domains.agents.runtime.execution.cancellation import raise_if_cancelled
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.cancellation import raise_if_cancelled
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeCapabilities,
 )
-from backend.app.domains.agents.runtime.execution.observer import AgentRuntimeExecutionObserver
+from backend.app.domains.agents.runtime.observer import AgentRuntimeExecutionObserver
 
 
 class BaseSDKAgentRuntimeAdapter(ABC):

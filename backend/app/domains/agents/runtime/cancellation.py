@@ -3,11 +3,11 @@ from contextlib import suppress
 from inspect import isawaitable
 from typing import Any
 
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeCancellation,
 )
-from backend.app.domains.agents.runtime.execution.errors import AgentRuntimeCancelledError
+from backend.app.domains.agents.runtime.errors import AgentRuntimeCancelledError
 
 
 async def raise_if_cancelled(cancellation: AgentRuntimeCancellation | None) -> None:

@@ -12,7 +12,7 @@ from backend.app.domains.agents.memory.authorization import (
     memory_read_scopes,
     memory_write_scopes,
 )
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolResult,

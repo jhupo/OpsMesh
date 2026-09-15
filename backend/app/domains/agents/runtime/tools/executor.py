@@ -9,11 +9,11 @@ from backend.app.core.common.config import Settings
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.memory.policy import working_memory_policy
 from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
-from backend.app.domains.agents.runtime.execution.errors import normalize_agent_error
+from backend.app.domains.agents.runtime.errors import normalize_agent_error
 from backend.app.domains.agents.runtime.tools.gateway import (
     AgentToolGateway,
     PreparedToolCall,
