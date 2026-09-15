@@ -13,8 +13,6 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
 from backend.app.domains.orchestration.models import OrchestrationDefinition, OrchestrationRevision
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
@@ -29,9 +27,10 @@ from backend.app.domains.orchestration.workflows.definitions.conditions import (
     condition_step_references,
 )
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
-from backend.app.domains.orchestration.workflows.definitions.graph import (
-    WorkflowGraphError,
-    validate_workflow_graph,
+from backend.app.domains.orchestration.workflows.definitions.graph import WorkflowGraphError
+from backend.app.domains.orchestration.workflows.definitions.validation import (
+    DefinitionValidationError,
+    DefinitionValidationService,
 )
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.orchestration.workflows.planning.feasibility import PlanFeasibilityService
@@ -62,6 +61,7 @@ class OrchestrationDefinitionService:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._validator = DefinitionValidationService(session)
 
     def list_definitions(
         self,
@@ -599,107 +599,14 @@ class OrchestrationDefinitionService:
         workspace_id: UUID,
         nodes: list[WorkflowNode],
     ) -> list[dict[str, object]]:
-        if not nodes or len(nodes) > 128:
-            raise OrchestrationDefinitionError(
-                "Orchestration must contain 1 to 128 nodes",
-                code="orchestration_node_count_invalid",
-            )
-        node_ids = [node.package_id for node in nodes]
-        if len(set(node_ids)) != len(node_ids):
-            raise OrchestrationDefinitionError(
-                "Orchestration node IDs must be unique",
-                code="orchestration_duplicate_node",
-            )
-        reserved = {"manager-planning", "manager-summary"}
-        if reserved.intersection(node_ids):
-            raise OrchestrationDefinitionError(
-                "Orchestration node ID is reserved",
-                code="orchestration_reserved_node",
-            )
         try:
-            validate_workflow_graph(
-                [node.model_dump(mode="json", by_alias=True, exclude_none=True) for node in nodes],
-                set(node_ids),
+            return self._validator.validate_nodes(
+                workspace_id,
+                nodes,
+                validate_subworkflow=self._validate_subworkflow_reference,
             )
-        except ProjectPlanValidationError as exc:
+        except DefinitionValidationError as exc:
             raise OrchestrationDefinitionError(str(exc), code=exc.code) from exc
-
-        profile_ids = {
-            node.assigned_agent_profile_id
-            for node in nodes
-            if node.assigned_agent_profile_id is not None
-        }
-        if profile_ids:
-            profiles = self._session.scalars(
-                select(AgentProfile).where(
-                    AgentProfile.workspace_id == workspace_id,
-                    AgentProfile.id.in_(profile_ids),
-                    AgentProfile.status == "active",
-                )
-            ).all()
-            if {profile.id for profile in profiles} != profile_ids:
-                raise OrchestrationDefinitionError(
-                    "Orchestration references an unavailable agent profile",
-                    code="orchestration_agent_reference_invalid",
-                )
-
-        resource_ids = {resource_id for node in nodes for resource_id in node.required_resource_ids}
-        if resource_ids:
-            resources = self._session.scalars(
-                select(CapabilityResource).where(
-                    CapabilityResource.workspace_id == workspace_id,
-                    CapabilityResource.id.in_(resource_ids),
-                    CapabilityResource.status == "active",
-                )
-            ).all()
-            if {resource.id for resource in resources} != resource_ids:
-                raise OrchestrationDefinitionError(
-                    "Orchestration references an unavailable resource",
-                    code="orchestration_resource_reference_invalid",
-                )
-
-        server_ids = {item.mcp_server_id for node in nodes for item in node.required_mcp_tools}
-        servers: dict[UUID, McpServer] = {}
-        if server_ids:
-            servers = {
-                server.id: server
-                for server in self._session.scalars(
-                    select(McpServer).where(
-                        McpServer.workspace_id == workspace_id,
-                        McpServer.id.in_(server_ids),
-                        McpServer.status == "active",
-                    )
-                ).all()
-            }
-        if set(servers) != server_ids:
-            raise OrchestrationDefinitionError(
-                "Orchestration references an unavailable MCP server",
-                code="orchestration_mcp_server_reference_invalid",
-            )
-        for node in nodes:
-            for item in node.required_mcp_tools:
-                allowlist = self._session.scalar(
-                    select(McpToolAllowlist).where(
-                        McpToolAllowlist.workspace_id == workspace_id,
-                        McpToolAllowlist.mcp_server_id == item.mcp_server_id,
-                        McpToolAllowlist.tool_name == item.tool_name,
-                        McpToolAllowlist.status == "active",
-                    )
-                )
-                if allowlist is None or (
-                    item.mcp_tool_allowlist_id is not None
-                    and allowlist.id != item.mcp_tool_allowlist_id
-                ):
-                    raise OrchestrationDefinitionError(
-                        f"MCP tool {item.tool_name} is not allowlisted",
-                        code="orchestration_mcp_tool_reference_invalid",
-                    )
-
-        for node in nodes:
-            if node.node_type == "subworkflow":
-                self._validate_subworkflow_reference(workspace_id, node)
-
-        return [node.model_dump(mode="json", by_alias=True, exclude_none=True) for node in nodes]
 
     def _validate_subworkflow_reference(
         self,
@@ -708,7 +615,7 @@ class OrchestrationDefinitionService:
     ) -> None:
         definition_id = node.subworkflow_definition_id
         if definition_id is None:
-            raise OrchestrationDefinitionError(
+            raise DefinitionValidationError(
                 "Subworkflow node requires a definition",
                 code="orchestration_subworkflow_definition_invalid",
             )
@@ -720,7 +627,7 @@ class OrchestrationDefinitionService:
             )
         )
         if definition is None:
-            raise OrchestrationDefinitionError(
+            raise DefinitionValidationError(
                 "Subworkflow definition is unavailable",
                 code="orchestration_subworkflow_definition_invalid",
             )
@@ -733,7 +640,7 @@ class OrchestrationDefinitionService:
                 OrchestrationRevision.version == node.subworkflow_version
             )
         if self._session.scalar(revision_query.limit(1)) is None:
-            raise OrchestrationDefinitionError(
+            raise DefinitionValidationError(
                 "Subworkflow definition has no published revision",
                 code="orchestration_subworkflow_revision_invalid",
             )

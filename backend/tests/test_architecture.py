@@ -412,6 +412,7 @@ def test_workflow_graph_validation_has_definition_boundary() -> None:
     definitions = ROOT / "backend/app/domains/orchestration/workflows/definitions"
     templates = ROOT / "backend/app/domains/orchestration/workflows/templates"
     assert (definitions / "graph.py").is_file()
+    assert (definitions / "validation.py").is_file()
     assert not (templates / "graph.py").exists()
 
 
