@@ -15,9 +15,9 @@ from backend.app.domains.orchestration.runs.runtime_authorization import (
     RunRuntimeAuthorizationError,
     runtime_binding_for_snapshot,
 )
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
+from backend.app.domains.orchestration.tasks.control.ownership import task_owner_can_execute_step
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.operations.ownership import task_owner_can_execute_step
 from backend.app.domains.orchestration.workflows.scheduling.service import WorkspaceScheduler
 from backend.app.domains.orchestration.workflows.steps.dependencies import dependencies_satisfied
 from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService

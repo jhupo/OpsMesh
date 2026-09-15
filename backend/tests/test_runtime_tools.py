@@ -8,16 +8,16 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.admin.models import PlatformPolicy
-from backend.app.core.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.core.db.base import Base
 from backend.app.domains.capabilities.tools.context import ToolContext
 from backend.app.domains.capabilities.tools.runtime_tools import RuntimeToolService
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStatus
+from backend.app.domains.platform.admin.models import PlatformPolicy
+from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.domains.workspace.tenants.models import Workspace

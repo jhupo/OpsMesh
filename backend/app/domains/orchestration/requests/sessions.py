@@ -16,7 +16,7 @@ from backend.app.domains.orchestration.requests.authorization import (
     authorized_task_for_run,
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
 
 

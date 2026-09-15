@@ -11,14 +11,14 @@ from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.runs.status import (
+from backend.app.domains.orchestration.runs.state import (
     RunStatus,
     can_transition_run,
     require_run_transition,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.service import TaskStateService
-from backend.app.domains.orchestration.tasks.status import (
+from backend.app.domains.orchestration.tasks.state import TaskStateService
+from backend.app.domains.orchestration.tasks.state import (
     TaskStatus,
     can_transition_task,
     require_task_transition,

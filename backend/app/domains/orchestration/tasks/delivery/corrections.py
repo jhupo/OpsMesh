@@ -10,8 +10,7 @@ from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.tasks.contracts import TaskCorrectionRequest
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.service import TaskStateService
-from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStateService, TaskStatus
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.queue import RedisQueue

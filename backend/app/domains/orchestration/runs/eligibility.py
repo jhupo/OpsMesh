@@ -8,10 +8,12 @@ from sqlalchemy.orm import Session
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.service import TaskStateService
-from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
-from backend.app.domains.orchestration.tasks.step_service import TaskStepStateService
-from backend.app.domains.orchestration.tasks.step_status import TaskStepStatus
+from backend.app.domains.orchestration.tasks.state import (
+    TERMINAL_TASK_STATUSES,
+    TaskStateService,
+    TaskStatus,
+)
+from backend.app.domains.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
 from backend.app.domains.orchestration.workflows.definitions.conditions import (
     evaluate_task_step_condition,
 )

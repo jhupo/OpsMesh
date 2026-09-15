@@ -10,8 +10,7 @@ from backend.app.domains.orchestration.approvals.service import ApprovalService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.service import TaskStateService
-from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStateService, TaskStatus
 from backend.app.domains.orchestration.workflows.planning.agent_plan import (
     bootstrap_plan,
     is_agent_planning_step,

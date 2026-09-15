@@ -13,18 +13,18 @@ from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.approvals.models import Approval, PendingToolInvocation
 from backend.app.domains.orchestration.models import SubworkflowInvocation
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
-from backend.app.domains.orchestration.tasks.execution.handoff import (
+from backend.app.domains.orchestration.runs.state import RunStatus
+from backend.app.domains.orchestration.tasks.collaboration.handoff import (
     handoff_needs_attention,
     handoff_queue_item,
     handoff_queue_summary,
 )
-from backend.app.domains.orchestration.tasks.execution.payloads import (
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.domains.orchestration.tasks.observation.execution_views import (
     build_step_payload,
     downstream_map,
     handoff_state,
 )
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.workspace.teams.models import AgentTeam
 
 ACTIVE_RUN_STATUSES = {

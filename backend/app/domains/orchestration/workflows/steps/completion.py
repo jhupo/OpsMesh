@@ -10,11 +10,11 @@ from backend.app.domains.capabilities.resources.schema import validate_json_valu
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.step_service import (
+from backend.app.domains.orchestration.tasks.steps import (
     TaskStepStateService,
+    TaskStepStatus,
     step_message_payload,
 )
-from backend.app.domains.orchestration.tasks.step_status import TaskStepStatus
 from backend.app.domains.orchestration.workflows.planning.pm_acceptance import PmAcceptanceService
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]

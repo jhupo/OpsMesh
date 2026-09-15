@@ -25,9 +25,9 @@ from backend.app.domains.orchestration.runs.lifecycle import (
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.resources import RunResourceReservationService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.domains.orchestration.workflows.scheduling.service import WorkspaceScheduler
 from backend.app.domains.orchestration.workflows.steps.launcher import RunStepLauncher
 from backend.app.domains.orchestration.workflows.steps.scheduling_state import (

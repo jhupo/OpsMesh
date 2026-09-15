@@ -1,7 +1,10 @@
 from uuid import UUID
 
 from backend.app.core.common.values import dict_list, string_list
-from backend.app.domains.orchestration.tasks.management.contracts import FollowUpCycle, ManagerSteps
+from backend.app.domains.orchestration.tasks.collaboration.contracts import (
+    FollowUpCycle,
+    ManagerSteps,
+)
 from backend.app.domains.orchestration.tasks.models import TaskMessage, TaskStep
 
 

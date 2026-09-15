@@ -22,12 +22,12 @@ from backend.app.domains.orchestration.runs.resources import (
 )
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.planning.org_structure import normalize_role
-from backend.app.domains.orchestration.workflows.templates.validation import (
-    ProjectPlanValidationError,
-)
 from backend.app.domains.orchestration.workflows.scheduling.policy import (
     SchedulerPolicyResolver,
     WorkspaceSchedulerPolicy,
+)
+from backend.app.domains.orchestration.workflows.templates.validation import (
+    ProjectPlanValidationError,
 )
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.tenants.models import WorkspaceQuota

@@ -19,12 +19,12 @@ from backend.app.domains.orchestration.workflows.planning.agent_plan import (
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
 from backend.app.domains.orchestration.workflows.planning.feasibility import PlanFeasibilityService
+from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
+    ProjectPlanStepMaterializer,
+)
 from backend.app.domains.orchestration.workflows.templates.validation import (
     ProjectPlanValidationError,
     validate_project_plan,
-)
-from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
-    ProjectPlanStepMaterializer,
 )
 
 

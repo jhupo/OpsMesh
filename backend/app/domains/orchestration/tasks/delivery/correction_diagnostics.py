@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.values import dict_or_empty, uuid_or_none
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 

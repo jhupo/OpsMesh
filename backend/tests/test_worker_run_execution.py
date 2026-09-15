@@ -84,9 +84,9 @@ from backend.app.domains.orchestration.runs.resources import RunResourceReservat
 from backend.app.domains.orchestration.runs.service import (
     RunOrchestrationService,
 )
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.orchestration.workflows.steps.launcher import RunStepLauncher
 from backend.app.domains.orchestration.workflows.steps.scheduling_state import (

@@ -32,11 +32,15 @@ from backend.app.api.schemas.orchestration.tasks.timeline import (
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
+    TaskManagerDiagnosticsService,
+)
 from backend.app.domains.orchestration.tasks.contracts import (
     TaskControlActionRequest,
     TaskCorrectionRequest,
     TaskDeliveryDecisionRequest,
 )
+from backend.app.domains.orchestration.tasks.control.actions import TaskOperatorActionService
 from backend.app.domains.orchestration.tasks.control.diagnostics import (
     TaskControlDiagnosticsService,
 )
@@ -47,15 +51,11 @@ from backend.app.domains.orchestration.tasks.delivery.correction_diagnostics imp
 from backend.app.domains.orchestration.tasks.delivery.corrections import TaskCorrectionService
 from backend.app.domains.orchestration.tasks.delivery.decisions import TaskDeliveryDecisionService
 from backend.app.domains.orchestration.tasks.delivery.review import TaskDeliveryReviewService
-from backend.app.domains.orchestration.tasks.execution.diagnostics import (
+from backend.app.domains.orchestration.tasks.observation.execution import (
     TaskExecutionDiagnosticsService,
-)
-from backend.app.domains.orchestration.tasks.management.diagnostics import (
-    TaskManagerDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.observation.service import TaskObservationService
 from backend.app.domains.orchestration.tasks.observation.timeline import TaskTimelineService
-from backend.app.domains.orchestration.tasks.operations.actions import TaskOperatorActionService
 from backend.app.runtime.workers.queue import RedisQueue
 
 if TYPE_CHECKING:

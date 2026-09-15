@@ -46,13 +46,13 @@ from backend.app.domains.agents.sessions.models import (
     PersistentAgentSessionItem,
 )
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.delivery.correction_diagnostics import (
     TaskCorrectionDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
-from backend.app.domains.orchestration.tasks.execution.diagnostics import (
+from backend.app.domains.orchestration.tasks.observation.execution import (
     TaskExecutionDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.message_append import (
@@ -67,7 +67,7 @@ from backend.app.domains.orchestration.tasks.models import (
 )
 from backend.app.domains.orchestration.tasks.observation.service import TaskObservationService
 from backend.app.domains.orchestration.tasks.observation.timeline import TaskTimelineService
-from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
 from backend.app.domains.workspace.storage.artifact_models import Artifact

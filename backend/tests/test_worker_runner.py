@@ -36,7 +36,7 @@ from backend.app.domains.orchestration.runs.authorization_snapshot import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.collaboration.state import (
     TaskCollaborationStateService,
 )
@@ -47,7 +47,7 @@ from backend.app.domains.orchestration.tasks.models import (
     TaskMessage,
     TaskStep,
 )
-from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.domains.workspace.projects.export_models import (
     WorkspaceExportJob,
     WorkspaceExportJobStatus,

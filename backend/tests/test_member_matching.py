@@ -10,7 +10,7 @@ from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.planning.member_matching import (
     MemberMatchingService,

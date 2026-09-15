@@ -5,9 +5,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.orchestration.tasks.management.contracts import TaskOperatorActionResult
+from backend.app.domains.orchestration.tasks.collaboration.contracts import TaskOperatorActionResult
+from backend.app.domains.orchestration.tasks.control.dependencies import manager_agent_id
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.operations.dependencies import manager_agent_id
 
 
 class ManagerReviewRequestService:

@@ -13,7 +13,7 @@ from backend.app.domains.orchestration.runs.queries import (
     active_task_ids_by_agent,
     latest_events_by_run,
 )
-from backend.app.domains.orchestration.tasks.management.diagnostics import (
+from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep

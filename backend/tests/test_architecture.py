@@ -324,10 +324,7 @@ def test_task_modules_are_nested_by_function() -> None:
         "collaboration",
         "control",
         "delivery",
-        "execution",
-        "management",
         "observation",
-        "operations",
     }
     assert {path.name for path in tasks.iterdir() if path.is_dir()} >= expected
     root_modules = {path.stem for path in tasks.glob("*.py") if path.name != "__init__.py"}
@@ -339,9 +336,8 @@ def test_task_modules_are_nested_by_function() -> None:
         "message_append",
         "models",
         "service",
-        "status",
-        "step_service",
-        "step_status",
+        "state",
+        "steps",
     }
     for name in (
         "control.py",
@@ -351,8 +347,39 @@ def test_task_modules_are_nested_by_function() -> None:
         "observation_utils.py",
         "operator_actions.py",
         "workspace_service.py",
+        "operations",
+        "status.py",
+        "step_service.py",
+        "step_status.py",
     ):
         assert not (tasks / name).exists(), name
+    assert (tasks / "control/actions.py").is_file()
+    assert (tasks / "control/dependencies.py").is_file()
+    assert (tasks / "control/ownership.py").is_file()
+    assert (tasks / "control/queue_actions.py").is_file()
+    assert (tasks / "collaboration/transfers.py").is_file()
+    assert (tasks / "collaboration/transfer_package.py").is_file()
+    assert (tasks / "collaboration/manager_diagnostics.py").is_file()
+    assert (tasks / "collaboration/manager_lifecycle.py").is_file()
+    assert (tasks / "collaboration/manager_queue.py").is_file()
+    assert (tasks / "collaboration/manager_review_requests.py").is_file()
+    assert (tasks / "observation/execution.py").is_file()
+    assert (tasks / "observation/execution_views.py").is_file()
+
+
+def test_task_and_run_status_contracts_are_not_duplicated() -> None:
+    tasks = ROOT / "backend/app/domains/orchestration/tasks"
+    runs = ROOT / "backend/app/domains/orchestration/runs"
+    assert (tasks / "state.py").is_file()
+    assert (tasks / "steps.py").is_file()
+    assert (runs / "state.py").is_file()
+    for path in (
+        tasks / "status.py",
+        tasks / "step_status.py",
+        tasks / "step_service.py",
+        runs / "status.py",
+    ):
+        assert not path.exists(), path
 
 
 def test_workflow_modules_are_nested_by_function() -> None:
@@ -361,7 +388,7 @@ def test_workflow_modules_are_nested_by_function() -> None:
     assert {path.name for path in workflows.iterdir() if path.is_dir()} >= expected
     root_modules = {path.stem for path in workflows.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == {"statuses"}
-    assert (workflows / "planning/project_plan/__init__.py").is_file()
+    assert (workflows / "templates/__init__.py").is_file()
     for name in (
         "blocked_reasons.py",
         "conditions.py",

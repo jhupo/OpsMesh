@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.contracts import (
     TaskCorrectionRequest,
     TaskDeliveryDecisionRequest,
@@ -20,8 +20,7 @@ from backend.app.domains.orchestration.tasks.delivery.corrections import (
 from backend.app.domains.orchestration.tasks.delivery.review import TaskDeliveryReviewService
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.service import TaskStateService
-from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStateService, TaskStatus
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.queue import RedisQueue
 

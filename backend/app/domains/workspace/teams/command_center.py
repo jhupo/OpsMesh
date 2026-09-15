@@ -4,11 +4,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks.execution.diagnostics import (
-    TaskExecutionDiagnosticsService,
-)
-from backend.app.domains.orchestration.tasks.management.diagnostics import (
+from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
+)
+from backend.app.domains.orchestration.tasks.observation.execution import (
+    TaskExecutionDiagnosticsService,
 )
 from backend.app.domains.workspace.teams.execution_overview import TeamExecutionOverviewService
 from backend.app.domains.workspace.teams.operations.command_center_action_plan import (

@@ -32,13 +32,13 @@ from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks.execution.diagnostics import (
-    TaskExecutionDiagnosticsService,
-)
-from backend.app.domains.orchestration.tasks.management.diagnostics import (
+from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.operations.workspace import (
+from backend.app.domains.orchestration.tasks.observation.execution import (
+    TaskExecutionDiagnosticsService,
+)
+from backend.app.domains.orchestration.tasks.service import (
     TaskCreateCommand,
     WorkspaceTaskService,
 )

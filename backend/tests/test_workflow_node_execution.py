@@ -16,7 +16,7 @@ from backend.app.domains.orchestration.runs.execution import (
     RunExecutionService,
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.definitions.conditions import (
     evaluate_task_step_condition,

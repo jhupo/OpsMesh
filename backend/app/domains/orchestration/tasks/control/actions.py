@@ -6,23 +6,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.orchestration.tasks.management.contracts import TaskOperatorActionResult
-from backend.app.domains.orchestration.tasks.management.review_requests import (
+from backend.app.domains.orchestration.tasks.collaboration.contracts import TaskOperatorActionResult
+from backend.app.domains.orchestration.tasks.collaboration.manager_review_requests import (
     ManagerReviewRequestService,
 )
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.operations.action_recording import (
-    TaskOperatorActionRecorder,
-)
-from backend.app.domains.orchestration.tasks.operations.dependencies import (
+from backend.app.domains.orchestration.tasks.control.dependencies import (
     completed_source_steps,
     dependency_step_ids,
     without_blocking_keys,
 )
-from backend.app.domains.orchestration.tasks.service import TaskStateService
-from backend.app.domains.orchestration.tasks.status import TaskStatus
-from backend.app.domains.orchestration.tasks.step_service import TaskStepStateService
-from backend.app.domains.orchestration.tasks.step_status import TaskStepStatus
+from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.orchestration.tasks.state import TaskStateService, TaskStatus
+from backend.app.domains.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
+from backend.app.observability.audit.service import AuditService
 
 TASK_OPERATOR_ACTIONS = {
     "requeue_blocked_steps",
@@ -32,6 +29,71 @@ TASK_OPERATOR_ACTIONS = {
 }
 TERMINAL_STEP_STATUSES = {"completed", "cancelled", "skipped"}
 TERMINAL_TASK_STATUSES = {"completed", "cancelled"}
+
+
+class TaskOperatorActionRecorder:
+    """Persist the operator message and audit event in the action transaction."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def append_message(
+        self,
+        task: Task,
+        *,
+        action: str,
+        result: TaskOperatorActionResult,
+        instruction: str | None,
+        reason: str | None,
+        metadata: dict[str, object],
+    ) -> TaskMessage:
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
+            message_type=f"task.operator.{action}",
+            body=f"Operator action applied: {action}.",
+            payload={
+                "action": action,
+                "instruction": instruction,
+                "reason": reason,
+                "changed_step_ids": [str(step_id) for step_id in result["changed_step_ids"]],
+                "created_step_ids": [str(step_id) for step_id in result["created_step_ids"]],
+                "warnings": result["warnings"],
+                "metadata": metadata,
+            },
+        )
+
+    def record_audit(
+        self,
+        *,
+        workspace_id: UUID,
+        actor_user_id: UUID,
+        task: Task,
+        action: str,
+        task_step_ids: list[UUID],
+        agent_profile_id: UUID | None,
+        result: TaskOperatorActionResult,
+        message: TaskMessage,
+        reason: str | None,
+        metadata: dict[str, object],
+    ) -> None:
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=actor_user_id,
+            action=f"task.operator.{action}",
+            target_type="task",
+            target_id=task.id,
+            metadata={
+                "task_step_ids": [str(step_id) for step_id in task_step_ids],
+                "agent_profile_id": str(agent_profile_id) if agent_profile_id else None,
+                "changed_step_ids": [str(step_id) for step_id in result["changed_step_ids"]],
+                "created_step_ids": [str(step_id) for step_id in result["created_step_ids"]],
+                "message_id": str(message.id),
+                "reason": reason,
+                "metadata": metadata,
+            },
+        )
+
+
 class TaskOperatorActionService:
     """Apply user/operator actions that turn task diagnostics into runnable work."""
 

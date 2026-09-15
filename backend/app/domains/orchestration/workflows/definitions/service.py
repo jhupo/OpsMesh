@@ -19,7 +19,7 @@ from backend.app.domains.orchestration.models import OrchestrationDefinition, Or
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES
+from backend.app.domains.orchestration.tasks.state import TERMINAL_TASK_STATUSES
 from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
@@ -34,15 +34,15 @@ from backend.app.domains.orchestration.workflows.planning.feasibility import Pla
 from backend.app.domains.orchestration.workflows.planning.member_matching import (
     MemberMatchingService,
 )
+from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
+    ProjectPlanStepMaterializer,
+)
+from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.orchestration.workflows.templates.validation import (
     ProjectPlanValidationError,
     validate_project_plan,
     validate_workflow_graph,
 )
-from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
-    ProjectPlanStepMaterializer,
-)
-from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
 from backend.app.observability.audit.service import AuditService

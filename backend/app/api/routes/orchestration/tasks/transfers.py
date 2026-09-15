@@ -15,7 +15,7 @@ from backend.app.api.schemas.orchestration.tasks.management import (
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.orchestration.tasks.operations.transfers import (
+from backend.app.domains.orchestration.tasks.collaboration.transfers import (
     TaskTransferCommand,
     TaskTransferDecision,
     TaskTransferError,

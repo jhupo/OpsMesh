@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.domains.orchestration.workflows.templates.member_matching import (
+from backend.app.domains.orchestration.workflows.planning.member_matching import (
     request_department,
     requested_member_match,
 )

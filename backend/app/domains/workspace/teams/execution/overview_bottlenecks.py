@@ -4,7 +4,7 @@ from uuid import UUID
 
 from backend.app.core.common.values import dedupe_strings
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import TaskStep
 from backend.app.domains.workspace.teams.execution.overview_contracts import (
     ExecutionBottleneck,

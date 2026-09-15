@@ -12,27 +12,26 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.service import TaskStateService
-from backend.app.domains.orchestration.tasks.step_service import TaskStepStateService
-from backend.app.domains.orchestration.tasks.step_status import TaskStepStatus
+from backend.app.domains.orchestration.tasks.state import TaskStateService
+from backend.app.domains.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
 from backend.app.domains.orchestration.workflows.definitions.conditions import (
     condition_step_references,
 )
 from backend.app.domains.orchestration.workflows.planning.agent_plan import PlannedWork
 from backend.app.domains.orchestration.workflows.planning.feasibility import PlanFeasibilityService
-from backend.app.domains.orchestration.workflows.templates.validation import (
-    ProjectPlanValidationError,
-    validate_project_plan,
-)
 from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
     ProjectPlanStepMaterializer,
     after_step_ids_for_package,
     step_dependencies_for_package,
 )
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.domains.orchestration.workflows.templates.validation import (
+    ProjectPlanValidationError,
+    validate_project_plan,
+)
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.queue import RedisQueue

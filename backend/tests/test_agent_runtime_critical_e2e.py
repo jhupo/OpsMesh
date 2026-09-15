@@ -27,18 +27,18 @@ from backend.app.domains.orchestration.approvals.decisions import ApprovalDecisi
 from backend.app.domains.orchestration.approvals.models import Approval, PendingToolInvocation
 from backend.app.domains.orchestration.runs.models import AgentRun, AgentRunStateSnapshot
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.contracts import (
     TaskDeliveryDecisionRequest,
 )
 from backend.app.domains.orchestration.tasks.delivery.decisions import TaskDeliveryDecisionService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.operations.transfers import (
+from backend.app.domains.orchestration.tasks.collaboration.transfers import (
     TaskTransferCommand,
     TaskTransferDecision,
     TaskTransferService,
 )
-from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.workspace.projects.models import (
     WorkspaceProject,

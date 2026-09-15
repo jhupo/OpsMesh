@@ -42,9 +42,9 @@ from backend.app.domains.orchestration.runs.runtime_authorization import (
 from backend.app.domains.orchestration.runs.runtime_event_messages import (
     RunRuntimeEventMessageMapper,
 )
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.status import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.domains.orchestration.workflows.definitions.data import resolve_workflow_inputs
 from backend.app.domains.orchestration.workflows.definitions.subworkflows import (
     SubworkflowExecutionService,

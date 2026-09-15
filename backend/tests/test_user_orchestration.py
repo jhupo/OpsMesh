@@ -7,10 +7,10 @@ from sqlalchemy import select
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
-from backend.app.domains.orchestration.tasks.execution.diagnostics import (
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.orchestration.tasks.observation.execution import (
     TaskExecutionDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,

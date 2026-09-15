@@ -8,13 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.orchestration.tasks.management.contracts import (
+from backend.app.domains.orchestration.tasks.collaboration.contracts import (
     ManagerAgent,
     ManagerDiagnostics,
     ManagerQueueItem,
     ManagerSteps,
 )
-from backend.app.domains.orchestration.tasks.management.lifecycle import (
+from backend.app.domains.orchestration.tasks.collaboration.manager_lifecycle import (
     acceptance_payload,
     blocked_reasons,
     decision_from_message,
@@ -23,14 +23,14 @@ from backend.app.domains.orchestration.tasks.management.lifecycle import (
     overall_status,
     step_id,
 )
-from backend.app.domains.orchestration.tasks.management.queue import (
+from backend.app.domains.orchestration.tasks.collaboration.manager_queue import (
     manager_queue_item,
     manager_queue_summary,
 )
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.operations.dependencies import (
+from backend.app.domains.orchestration.tasks.control.dependencies import (
     manager_agent_id as resolve_manager_agent_id,
 )
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.teams.models import AgentTeam
 
 

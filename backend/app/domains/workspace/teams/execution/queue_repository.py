@@ -6,7 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES
+from backend.app.domains.orchestration.tasks.state import TERMINAL_TASK_STATUSES
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.service import (
     TEAM_RUNTIME_PAUSED,

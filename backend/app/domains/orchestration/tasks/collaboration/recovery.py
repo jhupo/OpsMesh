@@ -20,10 +20,10 @@ from backend.app.domains.orchestration.tasks.collaboration.recovery_plan import 
 from backend.app.domains.orchestration.tasks.collaboration.state import (
     TaskCollaborationStateService,
 )
-from backend.app.domains.orchestration.tasks.execution.diagnostics import (
+from backend.app.domains.orchestration.tasks.control.actions import TaskOperatorActionService
+from backend.app.domains.orchestration.tasks.observation.execution import (
     TaskExecutionDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.operations.actions import TaskOperatorActionService
 from backend.app.observability.audit.service import AuditService
 
 

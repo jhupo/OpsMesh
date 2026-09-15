@@ -7,12 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.management.diagnostics import (
+from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.service import TaskStateService
-from backend.app.domains.orchestration.tasks.status import TERMINAL_TASK_STATUSES, TaskStatus
+from backend.app.domains.orchestration.tasks.state import (
+    TERMINAL_TASK_STATUSES,
+    TaskStateService,
+    TaskStatus,
+)
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.domains.workspace.teams.execution.loop_payloads import (
     _final_output_from_acceptance,
