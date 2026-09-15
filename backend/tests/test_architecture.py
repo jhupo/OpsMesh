@@ -609,6 +609,22 @@ def test_team_execution_modules_are_nested_by_lifecycle() -> None:
         assert not (teams / name).exists(), name
 
 
+def test_team_provider_modules_are_nested_by_function() -> None:
+    teams = ROOT / "backend/app/domains/workspace/teams"
+    providers = teams / "providers"
+    assert (providers / "management.py").is_file()
+    assert (providers / "service.py").is_file()
+    assert (providers / "views.py").is_file()
+    for name in (
+        "provider_readiness_service.py",
+        "operations/provider_management.py",
+        "operations/provider_actions.py",
+        "operations/provider_credentials.py",
+        "operations/provider_summary.py",
+    ):
+        assert not (teams / name).exists(), name
+
+
 def test_agent_provider_modules_are_nested_by_function() -> None:
     providers = ROOT / "backend/app/domains/agents/providers"
     expected = {"audit", "credentials", "health", "resolution"}

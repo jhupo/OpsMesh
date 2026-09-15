@@ -17,17 +17,13 @@ from backend.app.domains.workspace.teams.operations.console_normalization import
     _string_list,
     _uuid_or_none,
 )
-from backend.app.domains.workspace.teams.operations.provider_actions import (
-    _provider_management_suggested_actions,
-)
-from backend.app.domains.workspace.teams.operations.provider_credentials import (
+from backend.app.domains.workspace.teams.providers.views import (
     _active_credential_ids,
+    _agent_model_provider_payload,
     _default_model_api_payload,
     _model_api_options_payload,
     _model_provider_credential_option_payload,
-)
-from backend.app.domains.workspace.teams.operations.provider_summary import (
-    _agent_model_provider_payload,
+    _provider_management_suggested_actions,
 )
 
 
