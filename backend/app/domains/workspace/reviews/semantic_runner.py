@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.config import Settings
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
-from backend.app.domains.agents.providers.resolution.service import ModelProviderResolutionService
+from backend.app.domains.agents.providers.resolution import ModelProviderResolutionService
 from backend.app.domains.workspace.reviews.config import ResourceReviewSettings
 from backend.app.domains.workspace.reviews.llm import LlmResourceReviewer
 from backend.app.domains.workspace.reviews.llm_review import (

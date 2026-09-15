@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from uuid import UUID
 
 from sqlalchemy import select
@@ -10,8 +8,8 @@ from backend.app.domains.agents.providers.contracts import (
     ModelProviderUnavailableError,
     ResolvedModelProvider,
 )
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.domains.agents.providers.model_api import model_api_for_provider
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.agents.providers.policy import credential_is_selectable
 
 
@@ -21,16 +19,11 @@ class ModelProviderResolver:
         self._secret_service = secret_service
 
     def resolve_for_agent(
-        self,
-        *,
-        workspace_id: UUID,
-        agent_credential_id: UUID | None,
-        agent_model: str,
+        self, *, workspace_id: UUID, agent_credential_id: UUID | None, agent_model: str
     ) -> ResolvedModelProvider:
         if agent_credential_id is not None:
             credential = self._selectable_credential(
-                workspace_id=workspace_id,
-                credential_id=agent_credential_id,
+                workspace_id=workspace_id, credential_id=agent_credential_id
             )
             if credential is None:
                 raise ValueError("Agent model provider credential not found or unavailable")
@@ -46,17 +39,10 @@ class ModelProviderResolver:
         return self._resolved_provider(credential, model=model)
 
     def resolve_for_review(
-        self,
-        *,
-        workspace_id: UUID,
-        credential_id: UUID | None,
-        review_model: str,
+        self, *, workspace_id: UUID, credential_id: UUID | None, review_model: str
     ) -> ResolvedModelProvider:
         credential = (
-            self._selectable_credential(
-                workspace_id=workspace_id,
-                credential_id=credential_id,
-            )
+            self._selectable_credential(workspace_id=workspace_id, credential_id=credential_id)
             if credential_id is not None
             else self._default_credential(workspace_id)
         )
@@ -67,10 +53,7 @@ class ModelProviderResolver:
         return self._resolved_provider(credential, model=review_model)
 
     def get_active(
-        self,
-        *,
-        workspace_id: UUID,
-        credential_id: UUID,
+        self, *, workspace_id: UUID, credential_id: UUID
     ) -> ModelProviderCredential | None:
         return self._session.scalar(
             select(ModelProviderCredential).where(
@@ -81,10 +64,7 @@ class ModelProviderResolver:
         )
 
     def _resolved_provider(
-        self,
-        credential: ModelProviderCredential,
-        *,
-        model: str,
+        self, credential: ModelProviderCredential, *, model: str
     ) -> ResolvedModelProvider:
         payload = self._secret_service.decrypt_payload(credential.encrypted_api_key)
         api_key = payload.get("api_key")
@@ -95,10 +75,7 @@ class ModelProviderResolver:
             model=model,
             base_url=credential.base_url,
             api_key=api_key,
-            model_api=model_api_for_provider(
-                credential.provider,
-                credential.budget_metadata,
-            ),
+            model_api=model_api_for_provider(credential.provider, credential.budget_metadata),
             credential_id=credential.id,
         )
 
@@ -115,10 +92,28 @@ class ModelProviderResolver:
         return None
 
     def _selectable_credential(
-        self,
-        *,
-        workspace_id: UUID,
-        credential_id: UUID,
+        self, *, workspace_id: UUID, credential_id: UUID
     ) -> ModelProviderCredential | None:
         credential = self.get_active(workspace_id=workspace_id, credential_id=credential_id)
         return credential if credential_is_selectable(credential) else None
+
+
+class ModelProviderResolutionService:
+    def __init__(self, session: Session, secret_service: SecretEncryptionService) -> None:
+        self._resolver = ModelProviderResolver(session, secret_service)
+
+    def resolve_for_agent(
+        self, *, workspace_id: UUID, agent_credential_id: UUID | None, agent_model: str
+    ) -> ResolvedModelProvider:
+        return self._resolver.resolve_for_agent(
+            workspace_id=workspace_id,
+            agent_credential_id=agent_credential_id,
+            agent_model=agent_model,
+        )
+
+    def resolve_for_review(
+        self, *, workspace_id: UUID, credential_id: UUID | None, review_model: str
+    ) -> ResolvedModelProvider:
+        return self._resolver.resolve_for_review(
+            workspace_id=workspace_id, credential_id=credential_id, review_model=review_model
+        )

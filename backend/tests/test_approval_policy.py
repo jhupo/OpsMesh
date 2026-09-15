@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
 )
@@ -17,7 +17,7 @@ from backend.app.domains.orchestration.approvals.policy import (
 )
 from backend.app.domains.orchestration.requests.request_approval import ModelRequestApprovalService
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.workspace.reviews.model_request import ModelRequestReviewService
 
 

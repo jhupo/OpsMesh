@@ -10,15 +10,15 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
 from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     memory_content_fingerprint,
 )
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeExecutionBinding,
     AgentRuntimeResourceGrant,
@@ -39,7 +39,7 @@ from backend.app.domains.orchestration.runs.models import (
     AgentRun,
     authorization_snapshot_fingerprint,
 )
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
@@ -1149,7 +1149,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
 
 
 def test_waiting_runtime_status_transition_is_allowed() -> None:
-    from backend.app.domains.orchestration.runs.status import can_transition_run
+    from backend.app.domains.orchestration.runs.state import can_transition_run
 
     assert can_transition_run(RunStatus.RUNNING, RunStatus.WAITING_RUNTIME)
     assert can_transition_run(RunStatus.WAITING_RUNTIME, RunStatus.QUEUED)

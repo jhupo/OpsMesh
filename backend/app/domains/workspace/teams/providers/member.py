@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_text
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
-from backend.app.domains.agents.providers.health.summary import (
+from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.health import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
 )

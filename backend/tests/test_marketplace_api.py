@@ -18,7 +18,7 @@ from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.capabilities.marketplace.contracts import MarketplaceInstallRequest
 from backend.app.domains.capabilities.marketplace.models import (
     MarketplaceListing,

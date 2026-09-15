@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import dict_or_empty, json_safe_payload
 from backend.app.domains.agents.messages.models import AgentMessage
-from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest, AgentRunResult
-from backend.app.domains.agents.runtime.execution.errors import (
+from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
+from backend.app.domains.agents.runtime.errors import (
     AgentRuntimePolicyError,
     normalize_agent_error,
 )

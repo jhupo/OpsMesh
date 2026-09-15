@@ -662,57 +662,91 @@ def test_team_provider_modules_are_nested_by_function() -> None:
 
 def test_agent_provider_modules_are_nested_by_function() -> None:
     providers = ROOT / "backend/app/domains/agents/providers"
-    expected = {"audit", "credentials", "health", "resolution"}
-    assert {path.name for path in providers.iterdir() if path.is_dir()} >= expected
+    expected = {
+        "audit",
+        "capabilities",
+        "contracts",
+        "credentials",
+        "health",
+        "metadata",
+        "model_api",
+        "models",
+        "policy",
+        "probes",
+        "queries",
+        "resolution",
+        "snapshots",
+        "views",
+    }
     root_modules = {path.stem for path in providers.glob("*.py") if path.name != "__init__.py"}
-    assert root_modules >= {"capabilities", "contracts", "metadata", "model_api", "policy", "views"}
+    assert root_modules >= expected
     assert not (providers / "catalog").exists()
     for name in (
-        "agent_summary.py",
-        "audit_payloads.py",
-        "audit_responses.py",
-        "audit_writer.py",
-        "credential_commands.py",
-        "credential_queries.py",
-        "health.py",
-        "health_service.py",
-        "health_state.py",
-        "health_summary.py",
-        "models.py",
-        "resolution.py",
-        "resolution_service.py",
-        "resolver.py",
+        "audit",
+        "credentials",
+        "health",
+        "resolution",
     ):
-        assert not (providers / name).exists(), name
+        assert not (providers / name).is_dir(), name
 
 
-def test_agent_runtime_vendor_modules_are_nested_by_provider() -> None:
+def test_agent_runtime_vendor_modules_follow_target_layout() -> None:
     runtime = ROOT / "backend/app/domains/agents/runtime"
     assert {path.name for path in runtime.iterdir() if path.is_dir()} >= {
-        "execution",
-        "openai",
-        "claude",
+        "providers",
         "sandbox",
         "tools",
     }
-    assert not (runtime / "providers").exists()
+    assert not (runtime / "execution").exists()
+    assert (runtime / "providers/openai/runner.py").is_file()
+    assert (runtime / "providers/claude/runner.py").is_file()
+    assert (runtime / "providers/claude/sessions.py").is_file()
+    assert (runtime / "providers/claude/tools.py").is_file()
+    assert {path.stem for path in runtime.glob("*.py") if path.name != "__init__.py"} >= {
+        "base",
+        "cancellation",
+        "capability_policy",
+        "contracts",
+        "errors",
+        "events",
+        "guardrails",
+        "observer",
+        "registry",
+        "state",
+        "tokens",
+        "usage",
+    }
+    for name in (
+        "openai",
+        "claude",
+        "execution",
+    ):
+        assert not (runtime / name).is_file(), name
     agents = ROOT / "backend/app/domains/agents"
     assert (agents / "sessions").is_dir()
-    for name in (
-        "claude_runner.py",
-        "claude_sandbox.py",
-        "openai_agents.py",
-        "openai_compaction.py",
-        "openai_guardrails.py",
-        "openai_lifecycle.py",
-        "openai_results.py",
-        "openai_sandbox.py",
-        "openai_session.py",
-        "openai_settings.py",
-        "openai_streaming.py",
-        "openai_tools.py",
-    ):
-        assert not (runtime / name).exists(), name
+
+
+def test_agent_provider_modules_are_flattened_by_capability() -> None:
+    providers = ROOT / "backend/app/domains/agents/providers"
+    expected = {
+        "audit.py",
+        "capabilities.py",
+        "contracts.py",
+        "credentials.py",
+        "health.py",
+        "metadata.py",
+        "model_api.py",
+        "models.py",
+        "policy.py",
+        "probes.py",
+        "queries.py",
+        "resolution.py",
+        "snapshots.py",
+        "views.py",
+    }
+    assert {path.name for path in providers.glob("*.py") if path.name != "__init__.py"} >= expected
+    for name in ("audit", "credentials", "health", "resolution"):
+        assert not (providers / name).is_dir(), name
 
 
 def test_memory_modules_are_flattened_under_domain_owner() -> None:
@@ -916,9 +950,8 @@ def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
 
 def test_agent_runtime_provider_adapters_do_not_add_a_wrapper_level() -> None:
     runtime = ROOT / "backend/app/domains/agents/runtime"
-    assert (runtime / "openai/runner.py").is_file()
-    assert (runtime / "claude/runner.py").is_file()
-    assert not (runtime / "providers").exists()
+    assert (runtime / "providers/openai/runner.py").is_file()
+    assert (runtime / "providers/claude/runner.py").is_file()
 
 
 def test_runtime_space_reservations_are_owned_by_spaces_module() -> None:
@@ -1210,7 +1243,7 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
             "S3 SDK access stays in its storage adapter",
         ),
         (
-            "domains/agents/runtime/execution/contracts.py",
+            "domains/agents/runtime/contracts.py",
             "from typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    from openai import OpenAI",
             "Agent runtime contracts do not depend on vendor SDKs or HTTP transport",
         ),

@@ -25,7 +25,7 @@ from backend.app.domains.agents.providers.policy import (
     canonical_model_provider,
     is_openai_compatible_provider,
 )
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
 
 

@@ -13,7 +13,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import backend.app.domains.agents.providers.health.service as model_provider_health_service_module
+import backend.app.domains.agents.providers.health as model_provider_health_service_module
 from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
@@ -32,15 +32,15 @@ from backend.app.domains.agents.memory.models import (
 )
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.credentials.commands import (
+from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
-from backend.app.domains.agents.providers.health.probes import (
+from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.probes import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
-from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest, AgentRunResult
+from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.agents.sessions.models import (
     PersistentAgentSession,
     PersistentAgentSessionItem,
@@ -73,7 +73,7 @@ from backend.app.domains.workspace.reviews.model_request import ModelRequestRevi
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.teams.operations_console import TeamOperationsConsoleService
+from backend.app.domains.workspace.teams.operations.console import TeamOperationsConsoleService
 from backend.app.domains.workspace.tenants.models import (
     Workspace,
     WorkspaceInvite,
@@ -101,7 +101,7 @@ from backend.app.runtime.operations.timeline.service import (
     TimelineFilters,
 )
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.app.runtime.workers.scheduling.models import WorkspaceScheduledJob
 

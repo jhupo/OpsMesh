@@ -8,7 +8,7 @@ from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUse
 from claude_agent_sdk.types import PreToolUseHookInput
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeApprovalDecision,
     AgentRuntimeContext,
@@ -19,12 +19,16 @@ from backend.app.domains.agents.runtime.execution.contracts import (
 )
 from backend.app.domains.agents.runtime.providers.claude.runner import (
     ClaudeAgentSDKRunner,
+    _effort_setting,
+    _thinking_setting,
+)
+from backend.app.domains.agents.runtime.providers.claude.sessions import (
     ClaudeAgentSessionStore,
+    _session_id,
+)
+from backend.app.domains.agents.runtime.providers.claude.tools import (
     _approval_hook,
     _ApprovalState,
-    _effort_setting,
-    _session_id,
-    _thinking_setting,
 )
 
 
@@ -305,8 +309,13 @@ def test_claude_agent_session_store_mirrors_only_claude_entries() -> None:
 
 @pytest.mark.parametrize(
     ("decision", "expected"),
-    [(None, "deny"), ("unknown", "deny"), ("deny", "deny"),
-     ("allow", "allow"), ("require_approval", "defer")],
+    [
+        (None, "deny"),
+        ("unknown", "deny"),
+        ("deny", "deny"),
+        ("allow", "allow"),
+        ("require_approval", "defer"),
+    ],
 )
 def test_claude_approval_hook_fails_closed_on_unknown_decision(
     decision: str | None, expected: str
@@ -337,7 +346,8 @@ def test_claude_approval_hook_fails_closed_on_unknown_decision(
 def test_claude_model_settings_use_sdk_shapes_without_silent_fallback() -> None:
     assert _effort_setting({"effort": "high"}) == "high"
     assert _thinking_setting({"thinking": {"type": "enabled", "budget_tokens": 2048}}) == {
-        "type": "enabled", "budget_tokens": 2048,
+        "type": "enabled",
+        "budget_tokens": 2048,
     }
     assert _thinking_setting({}) is None
     with pytest.raises(ValueError, match="Invalid Claude SDK effort"):

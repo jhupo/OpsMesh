@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunResult,
     AgentRuntimeStructuredOutput,
 )
@@ -33,7 +33,7 @@ from backend.app.domains.workspace.tenants.models import WorkspaceQuota
 from backend.app.observability.costs.models import WorkspaceCostBudget
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.tests.test_worker_run_execution import (
     _build_agent_request,

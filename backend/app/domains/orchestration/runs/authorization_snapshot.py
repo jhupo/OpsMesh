@@ -15,14 +15,14 @@ from backend.app.core.common.values import (
 )
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.agents.providers.metadata import budget_is_exhausted
 from backend.app.domains.agents.providers.model_api import (
     canonical_model_api,
     model_api_for_agent_provider,
 )
-from backend.app.domains.agents.providers.resolution.snapshot import ModelProviderResolutionService
-from backend.app.domains.agents.runtime.execution.guardrails import runtime_controls_snapshot
+from backend.app.domains.agents.providers.snapshots import ModelProviderResolutionService
+from backend.app.domains.agents.runtime.guardrails import runtime_controls_snapshot
 from backend.app.domains.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,

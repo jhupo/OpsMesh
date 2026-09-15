@@ -27,10 +27,10 @@ from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.providers.contracts import (
     ModelProviderUnavailableError,
 )
-from backend.app.domains.agents.providers.credentials.commands import (
+from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
@@ -38,7 +38,7 @@ from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
-from backend.app.domains.agents.runtime.execution.state import AgentRunStateStore
+from backend.app.domains.agents.runtime.state import AgentRunStateStore
 from backend.app.domains.agents.sessions.models import PersistentAgentSession
 from backend.app.domains.capabilities.models import (
     CapabilityResource,
@@ -114,7 +114,7 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceReservation,
 )
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 
 

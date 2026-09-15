@@ -11,7 +11,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import backend.app.domains.agents.providers.health.service as model_provider_health_service_module
+import backend.app.domains.agents.providers.health as model_provider_health_service_module
 from backend.app.api.dependencies.workers import (
     get_worker_queue,
 )
@@ -22,11 +22,11 @@ from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.providers.credentials.commands import (
+from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
-from backend.app.domains.agents.providers.health.probes import (
+from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.probes import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
@@ -34,7 +34,7 @@ from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMem
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.execution.runner import WorkerRunner, WorkerRunnerConfig
+from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.scheduling.models import (
     WorkspaceScheduledJob,

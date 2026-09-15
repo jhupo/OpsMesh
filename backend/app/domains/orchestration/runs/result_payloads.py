@@ -2,7 +2,7 @@ import json
 from dataclasses import asdict
 from uuid import UUID
 
-from backend.app.domains.agents.runtime.execution.contracts import AgentRunResult
+from backend.app.domains.agents.runtime.contracts import AgentRunResult
 
 
 def run_output_payload(result: AgentRunResult) -> dict[str, object]:

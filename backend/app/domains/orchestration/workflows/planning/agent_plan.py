@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeOutputSchema
+from backend.app.domains.agents.runtime.contracts import AgentRuntimeOutputSchema
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
 from backend.app.domains.orchestration.workflows.templates.context import (

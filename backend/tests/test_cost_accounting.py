@@ -12,13 +12,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
     AgentRuntimeUsage,
 )
-from backend.app.domains.agents.runtime.execution.usage import runtime_usage
+from backend.app.domains.agents.runtime.usage import runtime_usage
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError

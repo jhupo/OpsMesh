@@ -12,7 +12,7 @@ from backend.app.domains.agents.providers.model_api import (
     canonical_model_api,
     model_api_options_for_provider,
 )
-from backend.app.domains.agents.providers.resolution.service import ModelProviderResolutionService
+from backend.app.domains.agents.providers.resolution import ModelProviderResolutionService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 

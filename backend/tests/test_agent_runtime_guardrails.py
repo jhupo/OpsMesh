@@ -14,7 +14,7 @@ import backend.app.domains.agents.runtime.providers.openai.runner as openai_runt
 from backend.app.core.common.config import Settings
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.profiles.commands import AgentProfileCommandService
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeGuardrail,
@@ -22,7 +22,7 @@ from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeGuardrails,
     AgentRuntimeOutputSchema,
 )
-from backend.app.domains.agents.runtime.execution.errors import (
+from backend.app.domains.agents.runtime.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimeOutputValidationError,
     normalize_agent_error,
@@ -327,7 +327,7 @@ def test_policy_failure_appends_redacted_durable_event() -> None:
 def test_guardrail_execution_rejects_invalid_direct_contract(
     kind: str, config: dict[str, object]
 ) -> None:
-    from backend.app.domains.agents.runtime.execution.guardrails import evaluate_guardrail
+    from backend.app.domains.agents.runtime.guardrails import evaluate_guardrail
 
     with pytest.raises(ValueError):
         evaluate_guardrail(

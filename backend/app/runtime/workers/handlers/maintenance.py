@@ -2,7 +2,7 @@ import asyncio
 
 from backend.app.core.secrets.rotation import HostedSecretReencryptService
 from backend.app.domains.agents.providers.contracts import provider_health_probes
-from backend.app.domains.agents.providers.health.service import ModelProviderHealthService
+from backend.app.domains.agents.providers.health import ModelProviderHealthService
 from backend.app.observability.audit.integrity import AuditIntegrityService
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext

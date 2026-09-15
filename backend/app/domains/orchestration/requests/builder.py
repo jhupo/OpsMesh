@@ -14,14 +14,14 @@ from backend.app.domains.agents.memory.working import (
     working_memory_context,
 )
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolExecutor,
 )
-from backend.app.domains.agents.runtime.execution.guardrails import runtime_controls_from_snapshot
-from backend.app.domains.agents.runtime.execution.state import AgentRunStateStore
-from backend.app.domains.agents.runtime.claude.sandbox import sandbox_settings_for_claude
+from backend.app.domains.agents.runtime.guardrails import runtime_controls_from_snapshot
+from backend.app.domains.agents.runtime.state import AgentRunStateStore
+from backend.app.domains.agents.runtime.providers.claude.sandbox import sandbox_settings_for_claude
 from backend.app.domains.agents.runtime.sandbox.contracts import SandboxManifest
 from backend.app.domains.agents.sessions.models import (
     PersistentAgentSessionRef,

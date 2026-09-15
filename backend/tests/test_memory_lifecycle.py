@@ -15,9 +15,9 @@ from sqlalchemy.types import JSON
 
 from backend.app.core.common.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.configuration import (
     MemoryConfigurationConflictError,
@@ -54,14 +54,14 @@ from backend.app.domains.agents.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryUpsert,
 )
-from backend.app.domains.agents.providers.credentials.commands import (
+from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
-from backend.app.runtime.workers.execution.handlers.memory_embedding import (
+from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.handlers.memory_embedding import (
     MemoryEmbeddingJobHandler,
 )
 from backend.app.runtime.workers.queue import RedisQueue

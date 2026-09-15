@@ -23,7 +23,7 @@ from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.models import AgentProfile, AgentProfileVersion
-from backend.app.domains.agents.providers.credentials.commands import (
+from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
 from backend.app.domains.agents.runtime.sessions.models import (

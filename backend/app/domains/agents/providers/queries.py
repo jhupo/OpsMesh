@@ -9,11 +9,8 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
-from backend.app.domains.agents.providers.health.summary import (
-    model_provider_health_check_schedule_summary,
-)
-from backend.app.domains.agents.providers.resolution.resolver import ModelProviderResolver
+from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.resolution import ModelProviderResolver
 from backend.app.observability.audit.models import AuditEvent
 
 
@@ -67,6 +64,10 @@ class ModelProviderCredentialQueryService:
         workspace_id: UUID,
         credential_id: UUID,
     ) -> dict[str, object]:
+        from backend.app.domains.agents.providers.health import (
+            model_provider_health_check_schedule_summary,
+        )
+
         return model_provider_health_check_schedule_summary(
             self._session,
             workspace_id=workspace_id,

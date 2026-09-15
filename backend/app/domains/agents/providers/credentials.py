@@ -9,16 +9,18 @@ from backend.app.core.security.egress import (
     MODEL_PROVIDER_BASE_URL_POLICY,
     EgressUrlPolicy,
 )
-from backend.app.domains.agents.providers.audit.payloads import budget_metadata_with_model_api
-from backend.app.domains.agents.providers.audit.writer import ModelProviderAuditWriter
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
-from backend.app.domains.agents.providers.credentials.queries import (
-    ModelProviderCredentialQueryService,
+from backend.app.domains.agents.providers.audit import (
+    ModelProviderAuditWriter,
+    budget_metadata_with_model_api,
 )
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.agents.providers.policy import (
     ModelProviderDefaultService,
     canonical_model_provider,
     validated_base_url,
+)
+from backend.app.domains.agents.providers.queries import (
+    ModelProviderCredentialQueryService,
 )
 
 

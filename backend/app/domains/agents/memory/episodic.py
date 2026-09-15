@@ -14,7 +14,7 @@ from backend.app.domains.agents.memory.models import (
 )
 from backend.app.domains.agents.memory.policy import EpisodicMemoryPolicy, episodic_memory_policy
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.execution.contracts import AgentRunResult
+from backend.app.domains.agents.runtime.contracts import AgentRunResult
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage

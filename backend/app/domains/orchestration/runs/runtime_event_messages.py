@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.runtime.execution.contracts import AgentRunResult
-from backend.app.domains.agents.runtime.execution.events import RuntimeEventTaskMessageMapper
+from backend.app.domains.agents.runtime.contracts import AgentRunResult
+from backend.app.domains.agents.runtime.events import RuntimeEventTaskMessageMapper
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService

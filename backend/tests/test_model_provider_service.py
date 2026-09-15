@@ -9,7 +9,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-import backend.app.domains.agents.providers.health.service as model_provider_health_service_module
+import backend.app.domains.agents.providers.health as model_provider_health_service_module
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.base import Base
 from backend.app.core.secrets.service import SecretEncryptionService
@@ -17,23 +17,23 @@ from backend.app.domains.access.models import User
 from backend.app.domains.agents.providers.contracts import (
     ModelProviderUnavailableError,
 )
-from backend.app.domains.agents.providers.credentials.commands import (
+from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
-from backend.app.domains.agents.providers.credentials.queries import (
+from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.queries import (
     ModelProviderCredentialQueryService,
 )
-from backend.app.domains.agents.providers.health.probes import (
+from backend.app.domains.agents.providers.probes import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
-from backend.app.domains.agents.providers.health.service import ModelProviderHealthService
+from backend.app.domains.agents.providers.health import ModelProviderHealthService
 from backend.app.domains.agents.providers.model_api import (
     model_api_for_agent_provider,
     unsupported_agent_model_api,
 )
-from backend.app.domains.agents.providers.resolution.service import ModelProviderResolutionService
+from backend.app.domains.agents.providers.resolution import ModelProviderResolutionService
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.observability.audit.models import AuditEvent
 

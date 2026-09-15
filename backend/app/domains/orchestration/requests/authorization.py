@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.values import dict_or_empty, string_list, uuid_or_none
 from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeResourceGrant,
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,

@@ -20,8 +20,8 @@ from backend.app.domains.agents.memory.models import (
 )
 from backend.app.domains.agents.memory.policy import WorkingMemoryPolicy
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeToolResult
-from backend.app.domains.agents.runtime.execution.tokens import truncate_to_token_bound
+from backend.app.domains.agents.runtime.contracts import AgentRuntimeToolResult
+from backend.app.domains.agents.runtime.tokens import truncate_to_token_bound
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 

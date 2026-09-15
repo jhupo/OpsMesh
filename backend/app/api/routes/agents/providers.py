@@ -20,16 +20,16 @@ from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.egress import EgressUrlValidationError
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.agents.providers.audit.contracts import ModelProviderUsageAuditResponse
-from backend.app.domains.agents.providers.audit.responses import usage_audit_response
+from backend.app.domains.agents.providers.audit import ModelProviderUsageAuditResponse
+from backend.app.domains.agents.providers.audit import usage_audit_response
 from backend.app.domains.agents.providers.contracts import provider_health_probes
-from backend.app.domains.agents.providers.credentials.commands import (
+from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.providers.credentials.queries import (
+from backend.app.domains.agents.providers.queries import (
     ModelProviderCredentialQueryService,
 )
-from backend.app.domains.agents.providers.health.service import ModelProviderHealthService
+from backend.app.domains.agents.providers.health import ModelProviderHealthService
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-credentials",

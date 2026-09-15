@@ -10,8 +10,8 @@ from backend.app.domains.agents.providers.capabilities import (
     list_model_capabilities,
     resolve_model_capability,
 )
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
-from backend.app.domains.agents.providers.health.summary import (
+from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.providers.health import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
 )

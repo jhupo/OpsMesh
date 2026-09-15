@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-import backend.app.domains.agents.runtime.execution.contracts as runtime_contracts
-from backend.app.domains.agents.runtime.execution.contracts import (
+import backend.app.domains.agents.runtime.contracts as runtime_contracts
+from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeAgentRef,
     AgentRuntimeCapabilities,
     AgentRuntimeCapability,

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.models import SecurityEvent
-from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest, AgentRunResult
+from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.execution import (
     RunExecutionDependencies,
@@ -37,7 +37,7 @@ from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,

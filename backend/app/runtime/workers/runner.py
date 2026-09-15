@@ -16,7 +16,7 @@ from backend.app.core.common.trace_context import (
     new_trace_context,
     telemetry_span,
 )
-from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeExecutor
+from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutor
 from backend.app.domains.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,

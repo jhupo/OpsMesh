@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.values import dict_or_empty, uuid_or_none
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.agents.providers.metadata import (
     budget_metadata_summary,
 )

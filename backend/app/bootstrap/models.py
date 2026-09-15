@@ -16,7 +16,7 @@ _MODEL_MODULES = (
     "backend.app.domains.agents.memory.models",
     "backend.app.domains.agents.messages.models",
     "backend.app.domains.agents.models",
-    "backend.app.domains.agents.providers.credentials.models",
+    "backend.app.domains.agents.providers.models",
     "backend.app.domains.agents.sessions.models",
     "backend.app.domains.capabilities.marketplace.models",
     "backend.app.domains.capabilities.models",

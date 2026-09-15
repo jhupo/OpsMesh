@@ -16,7 +16,7 @@ from backend.app.domains.agents.providers.model_api import (
     require_provider_model_api,
     unsupported_agent_model_api,
 )
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 
 
 class AgentModelValidator:

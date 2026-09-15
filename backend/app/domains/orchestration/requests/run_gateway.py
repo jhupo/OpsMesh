@@ -6,12 +6,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings
 from backend.app.core.common.trace_context import current_trace_context, telemetry_span
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeExecutor,
 )
-from backend.app.domains.agents.runtime.execution.errors import (
+from backend.app.domains.agents.runtime.errors import (
     AgentRuntimeCancelledError,
     AgentRuntimePolicyError,
 )

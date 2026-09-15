@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.providers.health.probes import (
+from backend.app.domains.agents.providers.probes import (
     AnthropicHealthProbe,
     ModelProviderHealthTarget,
     OpenAICompatibleHealthProbe,

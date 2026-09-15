@@ -6,15 +6,15 @@ from enum import IntEnum
 
 from backend.app.domains.agents.memory.policy import ContextBudgetPolicy
 from backend.app.domains.agents.providers.capabilities import resolve_model_capability
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentTool,
     AgentRuntimeOutputSchema,
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
 )
-from backend.app.domains.agents.runtime.execution.errors import AgentRuntimePolicyError
-from backend.app.domains.agents.runtime.execution.tokens import (
+from backend.app.domains.agents.runtime.errors import AgentRuntimePolicyError
+from backend.app.domains.agents.runtime.tokens import (
     estimate_token_upper_bound,
     truncate_to_token_bound,
 )

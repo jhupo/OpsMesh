@@ -17,7 +17,7 @@ from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.credentials.commands import (
+from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
 from backend.app.domains.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist

@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.runtime.execution.errors import AgentRuntimePolicyError
+from backend.app.domains.agents.runtime.errors import AgentRuntimePolicyError
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.projects.models import AgentRunProjectIOState
 from backend.app.domains.workspace.projects.snapshots.manifest import (

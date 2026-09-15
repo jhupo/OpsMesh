@@ -16,7 +16,7 @@ from backend.app.core.common.config import Settings
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.execution.contracts import (
+from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeInterruption,
@@ -54,7 +54,7 @@ from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMembe
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.contracts import RuntimeCommandResult
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,

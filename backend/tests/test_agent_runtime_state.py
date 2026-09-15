@@ -8,10 +8,10 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.runtime.execution.contracts import AgentRuntimeResumeState
-from backend.app.domains.agents.runtime.execution.state import AgentRunStateStore
+from backend.app.domains.access.models import User
+from backend.app.domains.agents.runtime.contracts import AgentRuntimeResumeState
+from backend.app.domains.agents.runtime.state import AgentRunStateStore
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 

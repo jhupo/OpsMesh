@@ -14,12 +14,12 @@ from backend.app.core.secrets.rotation import HostedSecretReencryptService
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.capabilities.models import McpCredentialReference
 from backend.app.domains.integrations.webhooks.models import WebhookSubscription
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.registry import WorkerJobHandler
 
 OLD_SECRET = "old-credential-secret"
 NEW_SECRET = "new-credential-secret"
