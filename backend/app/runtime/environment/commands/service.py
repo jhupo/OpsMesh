@@ -10,7 +10,7 @@ from backend.app.domains.orchestration.approvals.policy import (
     ApprovalPolicyDecision,
     ApprovalPolicyEngine,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.manager_factory import RuntimeManagerFactory
 from backend.app.runtime.environment.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
 from backend.app.runtime.environment.queries import RuntimeControlQueryService

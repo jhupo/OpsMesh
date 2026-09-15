@@ -20,7 +20,7 @@ from backend.app.domains.workspace.teams.execution.loop_payloads import (
 )
 from backend.app.domains.workspace.teams.execution.loop_support import COMPLETED_STEP_STATUSES
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class TeamExecutionFinalizationService:

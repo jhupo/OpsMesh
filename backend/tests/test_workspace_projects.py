@@ -13,14 +13,14 @@ from sqlalchemy.pool import StaticPool
 from backend.app.core.common.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.models import User
 from backend.app.core.rate_limits.service import FixedWindowRateLimiter
+from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.projects.policy import validate_project_configuration
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app_with_dependencies
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 
 TOKEN = "project-test-token"
 

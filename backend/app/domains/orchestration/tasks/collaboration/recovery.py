@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import UTC, datetime
 from uuid import UUID
@@ -24,7 +24,7 @@ from backend.app.domains.orchestration.tasks.execution.diagnostics import (
     TaskExecutionDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.operations.actions import TaskOperatorActionService
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class TaskCollaborationRecoveryService:

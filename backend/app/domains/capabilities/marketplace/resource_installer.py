@@ -14,7 +14,7 @@ from backend.app.domains.capabilities.marketplace.listing_payloads import (
 from backend.app.domains.capabilities.marketplace.models import MarketplaceListing
 from backend.app.domains.capabilities.mcp.catalog.servers import McpServerService
 from backend.app.domains.capabilities.models import Skill, WorkspaceSkillInstall
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class MarketplaceResourceInstaller:

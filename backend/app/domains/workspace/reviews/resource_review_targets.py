@@ -18,7 +18,7 @@ from backend.app.domains.workspace.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_REJECTED,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 ResourceReviewTarget: TypeAlias = (
     AgentProfile

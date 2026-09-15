@@ -53,7 +53,7 @@ def test_ci_tests_propagates_pytest_failure_without_wrapper_traceback(
     monkeypatch.setattr(
         ci_tests.subprocess,
         "check_output",
-        lambda *args, **kwargs: "backend/app/observability/notification_service.py",
+        lambda *args, **kwargs: "backend/app/observability/notifications/service.py",
     )
 
     def run(args: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:

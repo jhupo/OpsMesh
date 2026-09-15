@@ -32,7 +32,7 @@ from backend.app.domains.workspace.tenants.workspace_settings import (
     semantic_resource_review_settings,
     validate_resource_review_settings,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 T = TypeVar("T")
 

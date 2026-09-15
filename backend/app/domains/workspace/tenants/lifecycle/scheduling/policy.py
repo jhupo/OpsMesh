@@ -13,7 +13,7 @@ from backend.app.domains.workspace.tenants.lifecycle.settings import (
     _ensure_utc_datetime,
     _positive_int,
 )
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 
 
 def _scheduled_archive_export_request(

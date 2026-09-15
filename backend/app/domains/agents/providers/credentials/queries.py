@@ -14,7 +14,7 @@ from backend.app.domains.agents.providers.health.summary import (
     model_provider_health_check_schedule_summary,
 )
 from backend.app.domains.agents.providers.resolution.resolver import ModelProviderResolver
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 
 
 class ModelProviderCredentialQueryService:

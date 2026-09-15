@@ -34,7 +34,7 @@ from backend.app.domains.orchestration.workflows.planning.team_project_plan impo
 )
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.queue import RedisQueue
 
 MUTABLE_STEP_STATUSES = frozenset({TaskStepStatus.QUEUED.value, TaskStepStatus.BLOCKED.value})

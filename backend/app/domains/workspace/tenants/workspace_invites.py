@@ -29,7 +29,7 @@ from backend.app.domains.workspace.tenants.workspace_snapshots import (
     invite_snapshot,
     member_snapshot,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 @dataclass(frozen=True)

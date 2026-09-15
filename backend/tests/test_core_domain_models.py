@@ -25,7 +25,7 @@ from backend.app.domains.orchestration.tasks.status import (
 )
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 
 
 def test_core_domain_round_trip() -> None:

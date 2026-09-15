@@ -8,7 +8,7 @@ from backend.app.domains.orchestration.requests.request_reviewing import (
     model_provider_request_snapshot,
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload
 
 

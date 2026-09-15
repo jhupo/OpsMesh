@@ -19,7 +19,7 @@ from backend.app.domains.workspace.tenants.workspace_lifecycle_errors import (
     WorkspaceMemberPermissionError,
 )
 from backend.app.domains.workspace.tenants.workspace_snapshots import member_snapshot
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class WorkspaceMemberService:

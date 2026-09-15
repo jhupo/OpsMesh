@@ -31,7 +31,7 @@ from backend.app.domains.orchestration.workflows.scheduling.policy import (
 )
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.tenants.models import WorkspaceQuota
-from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
+from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 
 _ACTIVE_STATUS = "active"

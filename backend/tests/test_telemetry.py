@@ -41,7 +41,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.sdk._logs.export import InMemoryLogExporter
 from sqlalchemy import create_engine
 
-import backend.app.observability.tracing as tracing
+import backend.app.observability.telemetry.tracing as tracing
 from backend.app.core.common.config import Settings
 from backend.app.core.common.trace_context import TraceContext, telemetry_span
 
@@ -104,7 +104,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import SpanKind
 from sqlalchemy import create_engine
 
-import backend.app.observability.tracing as tracing
+import backend.app.observability.telemetry.tracing as tracing
 from backend.app.core.common.config import Settings
 from backend.app.api.middleware import RequestContextMiddleware
 

@@ -33,7 +33,7 @@ from backend.app.domains.orchestration.workflows.definitions.service import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

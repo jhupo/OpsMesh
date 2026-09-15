@@ -14,13 +14,13 @@ from backend.app.core.common.values import ensure_aware_utc
 from backend.app.domains.agents.providers.policy import canonical_model_provider
 from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.observability.audit_service import AuditService
-from backend.app.observability.cost_models import (
+from backend.app.observability.audit.service import AuditService
+from backend.app.observability.costs.models import (
     ModelPricingRule,
     ModelUsageRecord,
     WorkspaceCostBudget,
 )
-from backend.app.observability.cost_usage import NormalizedModelUsage, normalize_model_usage
+from backend.app.observability.costs.usage import NormalizedModelUsage, normalize_model_usage
 
 _MILLION = Decimal(1_000_000)
 _COST_QUANTUM = Decimal("0.000000000001")

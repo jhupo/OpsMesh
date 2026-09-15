@@ -11,7 +11,7 @@ from backend.app.core.common.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,

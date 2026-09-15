@@ -22,7 +22,7 @@ from backend.app.domains.orchestration.workflows.statuses import (
 )
 from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
 from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.reservation_release import (
     RuntimeSpaceReservationReleaseService,

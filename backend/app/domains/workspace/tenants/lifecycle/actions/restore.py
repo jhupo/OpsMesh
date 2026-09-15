@@ -16,7 +16,7 @@ from backend.app.domains.workspace.tenants.lifecycle.scheduling.policy import (
     _scheduled_restore_drill_request,
 )
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class RecoveryRestoreDrillAction:

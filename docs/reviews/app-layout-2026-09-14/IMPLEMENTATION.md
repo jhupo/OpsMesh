@@ -13,7 +13,7 @@
 | R4 | 任务/Run/工作流职责 | 待实施 | |
 | R5 | Workspace/team/project/archive/data lifecycle | 进行中 | Workspace 原 `domains` 子包已按方案归并为 `extensions`，保留 `api/routes/workspace/domains.py` 的 HTTP 路径与领域语义；模型注册、Worker 计划、知识库文档和路由导入已全部切换，旧 `workspace/domains` 包已清理。团队、项目、归档、数据生命周期仍待继续核对 |
 | R6 | 容器池/后端/Worker/recovery | 待实施 | 保留既有未提交租约和队列工作 |
-| R7 | 观测与成本边界 | 待实施 | |
+| R7 | 观测与成本边界 | 进行中 | 观测实现已按最终目录归入 `observability/{audit,costs,notifications,telemetry}`，模型注册和所有生产/测试引用已切换；成本、通知、审计、OpenTelemetry 相关功能测试通过。后续继续核对观测服务内部职责和运行时聚合边界 |
 | R8 | 入口核对、旧引用和残留清理 | 待实施 | |
 
 原始审查文件为实施前快照，不随代码迁移覆写。`audit_app_layout.py --check` 用于检查原始快照，

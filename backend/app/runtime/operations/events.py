@@ -10,8 +10,8 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.models import RuntimeEvent
 
 T = TypeVar("T")

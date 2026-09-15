@@ -29,6 +29,20 @@ def select_tests(changed: list[str]) -> list[str]:
             for test in candidates:
                 if domain in test.stem or path.stem in test.stem:
                     tests.add(test.as_posix())
+            if len(path.parts) >= 4 and path.parts[2] == "observability":
+                feature_tests = {
+                    "audit": {
+                        "backend/tests/test_audit_integrity_api.py",
+                        "backend/tests/test_audit_redaction.py",
+                    },
+                    "costs": {
+                        "backend/tests/test_cost_accounting.py",
+                        "backend/tests/test_cost_api.py",
+                    },
+                    "notifications": {"backend/tests/test_notifications_api.py"},
+                    "telemetry": {"backend/tests/test_telemetry.py"},
+                }
+                tests.update(feature_tests.get(path.parts[3], set()))
     return sorted(tests)
 
 

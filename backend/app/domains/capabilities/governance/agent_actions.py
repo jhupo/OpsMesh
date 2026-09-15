@@ -13,7 +13,7 @@ from backend.app.domains.capabilities.governance.rules import (
     string_list,
 )
 from backend.app.domains.capabilities.skills.diagnostics import SkillToolDiagnosticsService
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class CapabilityGovernanceAgentActionService:

@@ -16,7 +16,7 @@ from backend.app.domains.capabilities.catalog.contracts import (
 from backend.app.domains.capabilities.catalog.service import WorkspaceCapabilityCatalogService
 from backend.app.domains.capabilities.resources.schema import validate_partial_parameters
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 PolicyKey = TypeVar("PolicyKey", str, UUID)
 

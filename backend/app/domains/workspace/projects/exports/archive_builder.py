@@ -18,7 +18,7 @@ from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.security import safe_filename
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class WorkspaceArchiveExportBuilder:

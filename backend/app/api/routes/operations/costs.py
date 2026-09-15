@@ -21,8 +21,8 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.observability.cost_models import WorkspaceCostBudget
-from backend.app.observability.cost_service import CostAccountingService
+from backend.app.observability.costs.models import WorkspaceCostBudget
+from backend.app.observability.costs.service import CostAccountingService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/costs", tags=["costs"])
 

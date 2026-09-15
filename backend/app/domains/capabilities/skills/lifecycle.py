@@ -19,7 +19,7 @@ from backend.app.domains.capabilities.skills.contracts import (
     WorkspaceSkillRollbackRequest,
     WorkspaceSkillUpgradeRequest,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 T = TypeVar("T")
 

@@ -10,8 +10,8 @@ from backend.app.domains.workspace.projects.export_models import (
 )
 from backend.app.domains.workspace.tenants.lifecycle.settings import _ensure_utc_datetime
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.service import AuditService
 
 
 class WorkspaceDataLifecycleRepository:

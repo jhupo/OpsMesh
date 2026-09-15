@@ -31,7 +31,7 @@ from backend.app.domains.workspace.storage.storage_transactions import (
     CompensatingObjectStorageWrites,
 )
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
 

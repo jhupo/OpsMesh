@@ -10,7 +10,7 @@ from backend.app.domains.agents.service import AgentManagementService
 from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.teams.organization.org_chart import TeamOrgChartBuilder
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.spaces.service import RuntimeSpaceService
 
 

@@ -25,7 +25,7 @@ from backend.app.domains.workspace.reviews.policy import (
     REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE,
 )
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class McpCredentialService:

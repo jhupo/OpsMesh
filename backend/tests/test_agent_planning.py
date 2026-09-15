@@ -30,7 +30,7 @@ from backend.app.domains.orchestration.workflows.planning.future_plan_mutation i
 )
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.tenants.models import WorkspaceQuota
-from backend.app.observability.cost_models import WorkspaceCostBudget
+from backend.app.observability.costs.models import WorkspaceCostBudget
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.execution.registry import WorkerJobHandler

@@ -35,7 +35,7 @@ from backend.app.domains.agents.memory.semantic import (
     SemanticMemoryConflictError,
     SemanticMemoryUpsert,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/memories", tags=["workspace-memory"])
 

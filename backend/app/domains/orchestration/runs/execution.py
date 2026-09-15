@@ -52,7 +52,7 @@ from backend.app.domains.orchestration.workflows.definitions.subworkflows import
 from backend.app.domains.workspace.projects.io.service import RunProjectIOService
 from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.run_environment import (
     RunRuntimeEnvironmentService,

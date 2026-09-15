@@ -58,7 +58,7 @@ from backend.app.domains.workspace.teams.execution_loop import TeamExecutionLoop
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.observability.cost_models import (
+from backend.app.observability.costs.models import (
     ModelPricingRule,
     ModelUsageRecord,
     WorkspaceCostBudget,

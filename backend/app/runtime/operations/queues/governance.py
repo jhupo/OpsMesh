@@ -13,7 +13,7 @@ from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.runs.status import RunStatus
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.operations.contracts.queue import (
     QueueGovernanceDiagnosticsResponse,
     QueueGovernanceIssueResponse,

@@ -22,7 +22,7 @@ from backend.app.domains.capabilities.marketplace.talent_repository import (
 )
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class TalentHiringService:

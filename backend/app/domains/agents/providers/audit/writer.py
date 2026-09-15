@@ -12,7 +12,7 @@ from backend.app.domains.agents.providers.health.state import (
     provider_health_audit_metadata,
 )
 from backend.app.domains.agents.providers.policy import model_provider_base_url_host
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class ModelProviderAuditWriter:

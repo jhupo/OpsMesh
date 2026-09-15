@@ -6,7 +6,7 @@ from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.approvals.service import ApprovalService
 from backend.app.domains.workspace.reviews.models import ResourceReview
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class ResourceReviewApprovalService:

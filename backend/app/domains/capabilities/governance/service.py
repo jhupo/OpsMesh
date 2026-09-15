@@ -14,7 +14,7 @@ from backend.app.domains.capabilities.governance.rules import (
     GOVERNANCE_APPLY_ACTIONS,
     governance_actions,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class CapabilityGovernanceService:

@@ -13,7 +13,7 @@ from backend.app.domains.workspace.teams.runtime.state_builder import (
     TeamRuntimeState,
     TeamRuntimeStateBuilder,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class TeamWorkspaceRuntimeBindingCommitter:

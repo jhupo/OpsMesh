@@ -35,7 +35,7 @@ from backend.app.domains.agents.providers.model_api import (
 )
 from backend.app.domains.agents.providers.resolution.service import ModelProviderResolutionService
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 
 
 def test_agent_model_api_override_is_limited_to_provider_supported_protocols() -> None:

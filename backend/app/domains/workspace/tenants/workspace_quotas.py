@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.domains.workspace.tenants.contracts import WorkspaceQuotaUpsertPayload
 from backend.app.domains.workspace.tenants.models import WorkspaceQuota, WorkspaceReservation
 from backend.app.domains.workspace.tenants.workspace_snapshots import quota_snapshot
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 EXECUTION_SLOT_QUOTA_KEYS = ("active_runs", "docker_runtimes", "self_hosted_jobs")
 

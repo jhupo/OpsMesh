@@ -29,7 +29,7 @@ from backend.app.domains.workspace.projects.snapshots.service import RunProjectS
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent
 from backend.app.domains.workspace.storage.storage import ObjectStorage, create_storage
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.models import SelfHostedJobClaim

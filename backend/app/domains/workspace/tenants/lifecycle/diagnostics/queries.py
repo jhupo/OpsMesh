@@ -26,7 +26,7 @@ from backend.app.domains.workspace.tenants.lifecycle.diagnostics.payloads import
     _restore_test_payload,
 )
 from backend.app.domains.workspace.tenants.lifecycle.settings import _safe_count_map, _safe_int
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 
 ARCHIVE_COVERAGE_COLUMNS = {

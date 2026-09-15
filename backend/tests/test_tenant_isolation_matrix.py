@@ -42,7 +42,7 @@ from backend.app.domains.workspace.storage.storage import LocalStorage
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
-from backend.app.observability.notification_models import WorkspaceNotification
+from backend.app.observability.notifications.models import WorkspaceNotification
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,

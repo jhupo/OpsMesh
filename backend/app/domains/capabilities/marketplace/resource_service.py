@@ -33,7 +33,7 @@ from backend.app.domains.capabilities.models import McpServer, Skill
 from backend.app.domains.workspace.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class MarketplaceService:

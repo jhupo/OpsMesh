@@ -24,8 +24,8 @@ from backend.app.domains.agents.runtime.execution.contracts import (
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.observability.cost_service import CostAccountingService
+from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.costs.service import CostAccountingService
 
 TOKEN = "cost-api-token"
 

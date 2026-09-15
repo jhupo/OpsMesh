@@ -9,13 +9,13 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.observability.contracts import (
+from backend.app.observability.notifications.contracts import (
     NotificationCountsResponse,
     NotificationMarkReadRequest,
     NotificationMarkReadResponse,
     NotificationResponse,
 )
-from backend.app.observability.notification_service import NotificationCenterService
+from backend.app.observability.notifications.service import NotificationCenterService
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/notifications",

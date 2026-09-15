@@ -10,8 +10,8 @@ from backend.app.core.db.pagination import page_scalars
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.service import AuditService
 
 T = TypeVar("T")
 

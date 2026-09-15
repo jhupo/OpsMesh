@@ -12,15 +12,15 @@ from starlette.requests import Request
 from backend.app.core.common.config import Settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
 from backend.app.core.security.models import SecurityEvent
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.core.security.service import SecurityAuditService
+from backend.app.domains.access.models import User
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.domains.workspace.tenants.workspace_reads import WorkspaceReadService
-from backend.app.observability.audit_integrity import AuditIntegrityService
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.integrity import AuditIntegrityService
+from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.service import AuditService
 
 
 def test_audit_service_redacts_sensitive_metadata_before_db_write() -> None:

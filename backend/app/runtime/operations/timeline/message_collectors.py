@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.messages.models import AgentMessage
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.operations.timeline.models import (
     TimelineEvent,
     TimelineFilters,

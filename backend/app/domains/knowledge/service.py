@@ -24,7 +24,7 @@ from backend.app.domains.knowledge.contracts import (
 )
 from backend.app.domains.knowledge.models import KnowledgeSource, KnowledgeSourceRevision
 from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class KnowledgeSourceVersionConflictError(ValueError):

@@ -18,7 +18,7 @@ from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.domains.workspace.storage.storage_transactions import (
     CompensatingObjectStorageWrites,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 T = TypeVar("T")
 

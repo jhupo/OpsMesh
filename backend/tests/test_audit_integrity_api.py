@@ -16,12 +16,12 @@ from backend.app.api.dependencies.workers import (
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.models import User
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.access.models import User
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
-from backend.app.observability.audit_models import AuditEvent, AuditIntegrityCheck
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.models import AuditEvent, AuditIntegrityCheck
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.execution.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue

@@ -38,8 +38,8 @@ from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.observability.audit_models import AuditEvent
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 
 

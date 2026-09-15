@@ -33,7 +33,7 @@ from backend.app.domains.agents.runtime.sessions.models import (
 from backend.app.domains.workspace.reviews.service import ResourceReview
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.workers.queue import RedisQueue
 
 TOKEN = "test-token"

@@ -20,7 +20,7 @@ from backend.app.domains.agents.memory.policy import (
 )
 from backend.app.domains.agents.providers.policy import is_openai_compatible_provider
 from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 EMBEDDING_DIMENSIONS = 1_536
 

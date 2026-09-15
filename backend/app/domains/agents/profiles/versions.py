@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.domains.agents.models import AgentProfile, AgentProfileVersion
 from backend.app.domains.agents.profiles.model_validation import AgentModelValidator
 from backend.app.domains.agents.profiles.payloads import profile_audit_state, profile_snapshot
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class AgentVersionRecorder:

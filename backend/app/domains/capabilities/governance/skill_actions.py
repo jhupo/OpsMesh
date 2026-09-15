@@ -14,7 +14,7 @@ from backend.app.domains.capabilities.governance.rules import (
 )
 from backend.app.domains.capabilities.models import WorkspaceSkillInstall
 from backend.app.domains.capabilities.skills.diagnostics import SkillToolDiagnosticsService
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class CapabilityGovernanceSkillActionService:

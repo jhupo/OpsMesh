@@ -33,8 +33,8 @@ from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.orchestration.runs.contracts import AgentRunResponse, RunEventResponse
-from backend.app.observability.audit_integrity import AuditIntegrityService
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.integrity import AuditIntegrityService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.operations.contracts.events import (
     RuntimeEventResponse,
     SecurityEventResponse,

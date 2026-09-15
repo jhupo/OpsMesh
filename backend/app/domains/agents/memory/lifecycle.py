@@ -20,7 +20,7 @@ from backend.app.domains.agents.memory.semantic import (
 )
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 @dataclass(frozen=True, slots=True)

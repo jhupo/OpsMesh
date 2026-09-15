@@ -15,7 +15,7 @@ from backend.app.domains.workspace.tenants.lifecycle.repository import (
     WorkspaceDataLifecycleRepository,
 )
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class RecoveryArchiveIntegrityAction:

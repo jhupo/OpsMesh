@@ -14,7 +14,7 @@ from backend.app.domains.orchestration.runs.models import AgentRunStateSnapshot
 from backend.app.domains.workspace.reviews.resource_review_targets import (
     ResourceReviewDecisionService,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
 

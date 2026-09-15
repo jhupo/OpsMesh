@@ -24,7 +24,7 @@ from backend.app.domains.capabilities.mcp.catalog.rules import (
 )
 from backend.app.domains.capabilities.mcp.catalog.service import McpCatalogService
 from backend.app.domains.capabilities.models import McpToolAllowlist
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class CapabilityGovernanceMcpActionService:

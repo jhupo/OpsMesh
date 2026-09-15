@@ -15,7 +15,7 @@ from backend.app.domains.workspace.tenants.lifecycle.scheduling.policy import (
     _scheduled_archive_export_request,
 )
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.queue import RedisQueue
 
 

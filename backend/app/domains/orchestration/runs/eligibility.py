@@ -20,7 +20,7 @@ from backend.app.domains.orchestration.workflows.steps.dependencies import (
     dependencies_satisfied,
     dependency_decision,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 STEP_STATUS_QUEUED = "queued"
 STEP_STATUS_RUNNING = "running"

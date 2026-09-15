@@ -32,7 +32,7 @@ from backend.app.domains.workspace.projects.policy import (
 )
 from backend.app.domains.workspace.projects.snapshots.format import sha256_json
 from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class WorkspaceProjectService:

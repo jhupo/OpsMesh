@@ -16,7 +16,7 @@ from backend.app.domains.capabilities.marketplace.models import TalentListingRev
 from backend.app.domains.capabilities.marketplace.talent_repository import (
     TalentMarketplaceRepository,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 
 class TalentReviewService:

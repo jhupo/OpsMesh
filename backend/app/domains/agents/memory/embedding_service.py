@@ -26,7 +26,7 @@ from backend.app.domains.agents.providers.policy import (
     is_openai_compatible_provider,
 )
 from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
-from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
+from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
 
 
 class MemoryEmbeddingError(RuntimeError):

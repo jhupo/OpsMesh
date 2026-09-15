@@ -29,7 +29,7 @@ from backend.app.domains.workspace.storage.storage import (
     StorageObjectReadError,
     StorageObjectTooLargeError,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.url_fetch import RuntimeUrlFetchError
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue

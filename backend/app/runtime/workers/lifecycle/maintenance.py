@@ -19,7 +19,7 @@ from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
 from backend.app.domains.workspace.storage.storage import create_storage
 from backend.app.domains.workspace.teams.execution_loop import TeamExecutionLoopQueueService
 from backend.app.domains.workspace.tenants.lifecycle.service import WorkspaceDataLifecycleService
-from backend.app.observability.audit_integrity import AuditIntegrityService
+from backend.app.observability.audit.integrity import AuditIntegrityService
 from backend.app.runtime.environment.dependencies import get_docker_runtime_client
 from backend.app.runtime.operations.runtimes.cleanup import RuntimeCleanupService
 from backend.app.runtime.operations.workers.lease_maintenance import WorkerLeaseMaintenanceService

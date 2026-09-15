@@ -21,8 +21,8 @@ from backend.app.domains.agents.runtime.execution.contracts import (
 from backend.app.domains.agents.runtime.execution.usage import runtime_usage
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.observability.cost_service import CostAccountingService, CostBudgetExceededError
-from backend.app.observability.cost_usage import normalize_model_usage
+from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
+from backend.app.observability.costs.usage import normalize_model_usage
 
 
 def test_usage_normalization_handles_provider_aliases_and_redacts_raw_payload() -> None:

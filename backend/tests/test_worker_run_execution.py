@@ -105,7 +105,7 @@ from backend.app.domains.workspace.tenants.models import (
     WorkspaceQuota,
     WorkspaceReservation,
 )
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,

@@ -29,7 +29,7 @@ from backend.app.domains.orchestration.workflows.definitions.service import (
 )
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 from backend.tests.test_capability_resources import (
     _client as _api_client,
 )

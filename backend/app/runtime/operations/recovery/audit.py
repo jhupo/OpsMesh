@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import non_empty_string_or_none
 from backend.app.domains.orchestration.runs.status import RunStatus
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.operations.recovery.actions import StaleRunRecoveryCounts
 
 

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.workspace.teams.models import AgentTeam as _AgentTeamModel
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
 

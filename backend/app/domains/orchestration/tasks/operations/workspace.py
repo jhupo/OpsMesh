@@ -16,7 +16,7 @@ from backend.app.domains.orchestration.workflows.planning.attempts import TaskPl
 from backend.app.domains.workspace.projects.models import WorkspaceProject
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.spaces.service import RuntimeSpaceService
 from backend.app.runtime.workers.queue import RedisQueue
 

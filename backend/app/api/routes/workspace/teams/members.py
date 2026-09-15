@@ -46,7 +46,7 @@ from backend.app.domains.workspace.teams.workspace_service import (
     TeamMemberUpdateCommand,
     WorkspaceTeamService,
 )
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

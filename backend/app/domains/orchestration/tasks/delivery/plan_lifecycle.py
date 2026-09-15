@@ -18,7 +18,7 @@ from backend.app.domains.orchestration.workflows.planning.ownership import (
 )
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
-from backend.app.observability.audit_service import AuditService
+from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.queue import RedisQueue
 
 

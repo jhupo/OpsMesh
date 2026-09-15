@@ -22,9 +22,9 @@ from backend.app.api.dependencies.workers import (
 from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.models import User
 from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.access.models import User
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.capabilities.models import Skill, WorkspaceSkillInstall
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
@@ -35,7 +35,7 @@ from backend.app.domains.workspace.storage.storage import LocalStorage
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.workers.execution.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.runtime.workers.queue import RedisQueue

@@ -20,9 +20,9 @@ from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.models import User
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.domains.access.models import User
 from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeInterruption,
@@ -54,7 +54,7 @@ from backend.app.domains.workspace.reviews.policy import (
 )
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.queue import RedisQueue
 

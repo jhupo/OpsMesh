@@ -51,7 +51,7 @@ from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.storage import LocalStorage
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.observability.audit_models import AuditEvent
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.contracts import RuntimeCommandResult
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.workers.execution.registry import WorkerJobHandler
