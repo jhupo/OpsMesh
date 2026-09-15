@@ -19,7 +19,7 @@ from backend.app.domains.workspace.teams.models import (
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
     AgentTeam,
 )
-from backend.app.domains.workspace.teams.operating_context_service import (
+from backend.app.domains.workspace.teams.organization.service import (
     TeamOperatingContextService,
 )
 from backend.app.domains.workspace.teams.runtime.binding import (
