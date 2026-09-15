@@ -16,7 +16,7 @@ from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeStreamEvent,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.domains.agents.runtime.providers.openai.tools import OpenAIProductFunctionTool
+from backend.app.domains.agents.runtime.openai.tools import OpenAIProductFunctionTool
 
 
 class OpenAIAgentsResultMapper:
@@ -228,6 +228,7 @@ class OpenAIAgentsResultMapper:
         except Exception as exc:  # pragma: no cover - SDK internals are best-effort.
             payload["resume_input_error"] = type(exc).__name__
             sdk_continuation["resume_input_error"] = type(exc).__name__
+
 
 def runtime_event_from_sdk_item(item: object) -> AgentRuntimeEvent | None:
     event_type = getattr(item, "type", None) or getattr(item, "event_type", None)

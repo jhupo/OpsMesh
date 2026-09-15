@@ -14,7 +14,7 @@
 | R5 | Workspace/team/project/archive/data lifecycle | 已完成 | Workspace 原 `domains` 子包已按方案归并为 `extensions`；全量归档与导入导出已从 `projects/{exports,imports}` 收敛到 `data_transfer`，其中归档/仓储/序列化归入根模块，导入实现归入 `data_transfer/importers`；Workspace 生命周期已从 `tenants/lifecycle` 收敛到 `data_lifecycle`，动作、诊断、调度分别合并为稳定边界模块，旧嵌套目录与空包已删除。团队执行入口、人工控制台、项目 dashboard、运行时绑定、组织上下文和团队主服务已分别收敛到 `teams/{execution,operations,projects,runtime,organization}`，根目录仅保留模型与主服务。项目、归档导入导出、运行 I/O、生命周期调度、配额、团队控制台和工作区 API 场景通过。 |
 | R6 | 容器池/后端/Worker/recovery | 待实施 | 保留既有未提交租约和队列工作 |
 | R7 | 观测与成本边界 | 进行中 | 观测实现已按最终目录归入 `observability/{audit,costs,notifications,telemetry}`，模型注册和所有生产/测试引用已切换；成本、通知、审计、OpenTelemetry 相关功能测试通过。后续继续核对观测服务内部职责和运行时聚合边界 |
-| R8 | 入口核对、旧引用和残留清理 | 待实施 | |
+| R8 | 入口核对、旧引用和残留清理 | 进行中 | 已完成 `runtime/workers/execution` 层压平，处理器归入 `runtime/workers/handlers`；Agent SDK 适配器去掉无职责的 `runtime/providers` 包壳，直接归入 `runtime/openai` 与 `runtime/claude`；旧导入路径、空包和旧目录门禁已清理。仍需继续核对其他跨领域入口与历史快照引用。 |
 
 原始审查文件为实施前快照，不随代码迁移覆写。`audit_app_layout.py --check` 用于检查原始快照，
 重构后出现源文件差异是预期结果，不能用它代替当前阶段测试。

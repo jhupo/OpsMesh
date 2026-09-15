@@ -180,8 +180,8 @@ backend/app/
 |   |   |-- messages/
 |   |   |-- memory/
 |   |   `-- runtime/        # SDK 执行合同、注册表、状态；含厂商与工具适配
-|   |       |-- providers/openai/
-|   |       |-- providers/claude/
+|   |       |-- openai/        # OpenAI Agents SDK 适配
+|   |       |-- claude/        # Claude Agent SDK 适配
 |   |       `-- tools/
 |   |-- capabilities/
 |   |   |-- catalog/
@@ -218,8 +218,7 @@ backend/app/
 |   |   |-- policies/
 |   |   |-- commands/
 |   |   `-- spaces/
-|   |-- workers/            # runner、queue、leases、nodes、state
-|   |   |-- handlers/
+|   |-- workers/            # runner、queue、leases、nodes、state、handlers
 |   |   |-- scheduling/
 |   |   `-- recovery/
 |   |-- self_hosted/        # enrollment/dispatch/projects/worker
@@ -252,6 +251,7 @@ backend/app/
 - providers 去掉 audit/catalog/credentials/health/resolution 五个微型子包，按凭证、解析、健康探测、快照、审计等文件组织。
 - providers 的审计四文件合并；健康写入/状态/摘要合并；实际 SDK 探针继续独立。
 - runtime/execution 泛化层去掉。厂商注册装配进入 bootstrap；纯合同和执行控制留在 Agent runtime。
+- Agent runtime 的 OpenAI/Claude 适配器直接位于 `runtime/openai`、`runtime/claude`，不再增加没有独立职责的 `runtime/providers` 包壳。
 - Claude runner 中的会话持久化、SDK 工具/审批钩子与执行生命周期分开；OpenAI 已有 tools/results/guardrails/session/compaction 等真实边界，保留。
 - SDK 自带的运行、续接、压缩和协议处理继续由 SDK 实现。产品记忆授权、持久化、配额和审计不因为“SDK 也有 memory”而删除。
 - memory 的 working/episodic/semantic、检索、嵌入与生命周期有不同状态和策略，不为了减少文件将三层记忆合成一个 service。
@@ -318,6 +318,7 @@ runtime/environment/
 
 - `none/isolated/pooled/persistent` 的产品语义不能改变。none 不提供宿主机执行兜底；SDK 无沙箱时不能自动获得 shell/文件/stdio 权限。
 - execution mode 只保留一份中立词汇定义；资源后端依赖 runtime 合同，不依赖 Agent 厂商类。
+- Worker 执行实现直接位于 `runtime/workers`，处理器位于 `runtime/workers/handlers`；不保留只有实现分类意义的 `runtime/workers/execution` 中间层。
 - 池重用保留按 Workspace/策略隔离、独占租约、Run 专属目录、资源和网络限制、重置失败隔离/销毁及回收审计。
 - Worker 节点/租约模型和写服务回 workers；状态、心跳、fencing token、ack/reclaim 属于一个执行协议。
 - RedisQueue 的原子操作和 Lua 脚本继续放在同一实现，不能为减少行数拆断租约所有权判断。

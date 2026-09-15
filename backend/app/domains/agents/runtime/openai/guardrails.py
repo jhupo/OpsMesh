@@ -175,9 +175,6 @@ def _append_unique(
     candidate: AgentRuntimeGuardrailResult,
 ) -> None:
     identity = (candidate.stage, candidate.name, candidate.kind, candidate.status)
-    if any(
-        (item.stage, item.name, item.kind, item.status) == identity
-        for item in results
-    ):
+    if any((item.stage, item.name, item.kind, item.status) == identity for item in results):
         return
     results.append(candidate)

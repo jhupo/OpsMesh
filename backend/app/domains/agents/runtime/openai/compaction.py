@@ -17,7 +17,7 @@ from backend.app.domains.agents.providers.policy import (
 )
 from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest
 from backend.app.domains.agents.runtime.execution.tokens import estimate_token_upper_bound
-from backend.app.domains.agents.runtime.providers.openai.session import OpenAISessionAdapter
+from backend.app.domains.agents.runtime.openai.session import OpenAISessionAdapter
 
 
 @asynccontextmanager

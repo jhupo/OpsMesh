@@ -914,6 +914,13 @@ def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
     assert not (agents / "memory/agent_policy.py").exists()
 
 
+def test_agent_runtime_provider_adapters_do_not_add_a_wrapper_level() -> None:
+    runtime = ROOT / "backend/app/domains/agents/runtime"
+    assert (runtime / "openai/runner.py").is_file()
+    assert (runtime / "claude/runner.py").is_file()
+    assert not (runtime / "providers").exists()
+
+
 def test_runtime_space_reservations_are_owned_by_spaces_module() -> None:
     spaces = ROOT / "backend/app/runtime/environment/spaces"
     assert {
