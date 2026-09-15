@@ -885,6 +885,15 @@ def test_workflow_templates_are_not_nested_under_planning() -> None:
     assert (workflows / "templates/validation.py").is_file()
 
 
+def test_plan_mutation_is_split_by_responsibility() -> None:
+    planning = ROOT / "backend/app/domains/orchestration/workflows/planning"
+    assert (planning / "mutation.py").is_file()
+    assert (planning / "mutation_operations.py").is_file()
+    assert (planning / "mutation_materialization.py").is_file()
+    assert not (planning / "future_plan_mutation.py").exists()
+    assert not (planning / "team_step_planner.py").exists()
+
+
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:
     missing = []
     for path in (ROOT / "backend/app").rglob("*.py"):

@@ -23,7 +23,7 @@ from backend.app.domains.orchestration.tasks.delivery.plan_lifecycle import (
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.orchestration.workflows.planning.completion import PlannerCompletionService
-from backend.app.domains.orchestration.workflows.planning.future_plan_mutation import (
+from backend.app.domains.orchestration.workflows.planning.mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
     TaskPlanMutationService,

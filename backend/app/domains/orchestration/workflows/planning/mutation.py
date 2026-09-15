@@ -22,10 +22,15 @@ from backend.app.domains.orchestration.workflows.definitions.conditions import (
 )
 from backend.app.domains.orchestration.workflows.planning.agent_plan import PlannedWork
 from backend.app.domains.orchestration.workflows.planning.feasibility import PlanFeasibilityService
+from backend.app.domains.orchestration.workflows.planning.mutation_materialization import (
+    project_step,
+)
+from backend.app.domains.orchestration.workflows.planning.mutation_operations import (
+    raw_packages,
+)
 from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
     ProjectPlanStepMaterializer,
     after_step_ids_for_package,
-    step_dependencies_for_package,
 )
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.orchestration.workflows.templates.validation import (
@@ -120,7 +125,7 @@ class TaskPlanMutationService:
             )
 
         state = _MutationState(
-            packages=[dict(package) for package in _raw_packages(plan)],
+        packages=[dict(package) for package in raw_packages(plan)],
             steps=self._load_steps(task),
             active_run_step_ids=self._active_run_step_ids(task),
             created_package_ids=set(),
@@ -143,7 +148,7 @@ class TaskPlanMutationService:
             active_new_work,
             command.reason,
         )
-        self._require_locked_regions_unchanged(_raw_packages(plan), state.packages)
+        self._require_locked_regions_unchanged(raw_packages(plan), state.packages)
         next_plan = self._build_next_plan(plan, state.packages, command, actor_user_id, mutation_id)
         self._validate_next_plan(task, next_plan, state)
         self._sync_steps(task, state, command.reason)
@@ -642,7 +647,7 @@ class TaskPlanMutationService:
             validate_project_plan(plan, task.team_snapshot)
         except ProjectPlanValidationError as exc:
             self._reject(exc.code, "Mutated project plan failed DAG validation")
-        package_map = self._package_map(_raw_packages(plan))
+        package_map = self._package_map(raw_packages(plan))
         for package in package_map.values():
             if self._is_cancelled(package):
                 continue
@@ -656,7 +661,7 @@ class TaskPlanMutationService:
                     "Future work cannot depend on cancelled work",
                 )
         feasible_packages: list[dict[str, object]] = []
-        for package in _raw_packages(plan):
+        for package in raw_packages(plan):
             if self._is_cancelled(package):
                 continue
             step = state.steps.get(str(package["package_id"]))
@@ -715,33 +720,16 @@ class TaskPlanMutationService:
                 after_ids = after_step_ids_for_package(package, state.steps)
             except KeyError:
                 self._reject("plan_mutation_missing_dependency", "Dependency step was not found")
-            self._update_step_projection(existing_step, package, after_ids)
+            try:
+                project_step(existing_step, package, after_ids)
+            except ValueError:
+                self._reject("plan_mutation_agent_invalid", "Agent profile ID is invalid")
             if (
                 existing_step.status == TaskStepStatus.BLOCKED.value
                 and package_id in state.changed_package_ids
             ):
                 TaskStepStateService().transition(existing_step, TaskStepStatus.QUEUED)
         self._session.flush()
-
-    def _update_step_projection(
-        self,
-        step: TaskStep,
-        package: dict[str, object],
-        after_ids: list[str],
-    ) -> None:
-        step.assigned_agent_profile_id = self._uuid(
-            package.get("assigned_agent_profile_id"),
-            "plan_mutation_agent_invalid",
-        )
-        step.required_role = str(package.get("required_role") or "")
-        step.required_skills = _strings(package.get("required_skills"))
-        step.expected_artifacts = _strings(package.get("expected_artifacts"))
-        step.acceptance_criteria = _strings(package.get("acceptance_criteria"))
-        review_policy = package.get("review_policy")
-        step.review_policy = dict(review_policy) if isinstance(review_policy, dict) else {}
-        step.title = str(package.get("title") or "Work package")
-        step.description = str(package.get("description") or "")
-        step.dependencies = step_dependencies_for_package(package, after_ids)
 
     def _enqueue_if_requested(
         self,
@@ -990,20 +978,6 @@ class TaskPlanMutationService:
     @staticmethod
     def _reject(code: str, message: str) -> NoReturn:
         raise TaskPlanMutationError(message, code=code)
-
-
-def _raw_packages(plan: dict[str, object]) -> list[dict[str, object]]:
-    raw_packages = plan.get("work_packages")
-    if not isinstance(raw_packages, list) or not raw_packages:
-        raise TaskPlanMutationError("Project plan must include work packages", code="plan_invalid")
-    packages = [package for package in raw_packages if isinstance(package, dict)]
-    if len(packages) != len(raw_packages):
-        raise TaskPlanMutationError("Work package must be an object", code="plan_invalid")
-    return packages
-
-
-def _strings(value: object) -> list[str]:
-    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
 
 __all__ = [
