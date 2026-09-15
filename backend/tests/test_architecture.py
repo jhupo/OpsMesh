@@ -688,14 +688,14 @@ def test_agent_provider_modules_are_nested_by_function() -> None:
 
 def test_agent_runtime_vendor_modules_are_nested_by_provider() -> None:
     runtime = ROOT / "backend/app/domains/agents/runtime"
-    providers = runtime / "providers"
-    assert {path.name for path in providers.iterdir() if path.is_dir()} >= {"openai", "claude"}
     assert {path.name for path in runtime.iterdir() if path.is_dir()} >= {
         "execution",
-        "providers",
+        "openai",
+        "claude",
         "sandbox",
         "tools",
     }
+    assert not (runtime / "providers").exists()
     agents = ROOT / "backend/app/domains/agents"
     assert (agents / "sessions").is_dir()
     for name in (
@@ -712,7 +712,7 @@ def test_agent_runtime_vendor_modules_are_nested_by_provider() -> None:
         "openai_streaming.py",
         "openai_tools.py",
     ):
-        assert not (providers / name).exists(), name
+        assert not (runtime / name).exists(), name
 
 
 def test_memory_modules_are_flattened_under_domain_owner() -> None:
