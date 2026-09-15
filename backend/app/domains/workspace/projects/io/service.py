@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.config import Settings
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.projects.artifacts.service import ProjectOutputArtifactWriter
 from backend.app.domains.workspace.projects.file_boundaries import (

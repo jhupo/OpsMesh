@@ -9,7 +9,8 @@ from backend.app.core.common.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.workspace.projects.exports.contracts import (
+from backend.app.domains.workspace.data_lifecycle.service import WorkspaceDataLifecycleService
+from backend.app.domains.workspace.data_transfer.contracts import (
     WorkspaceDataLifecycleResponse,
     WorkspaceRecoveryReadinessActionRequest,
     WorkspaceRecoveryReadinessActionResponse,
@@ -18,7 +19,6 @@ from backend.app.domains.workspace.projects.exports.contracts import (
     WorkspaceRetentionResponse,
 )
 from backend.app.domains.workspace.storage.storage import create_storage
-from backend.app.domains.workspace.tenants.lifecycle.service import WorkspaceDataLifecycleService
 from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter()

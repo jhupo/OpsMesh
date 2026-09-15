@@ -418,7 +418,7 @@ def test_workflow_graph_validation_has_definition_boundary() -> None:
 
 def test_tenant_modules_are_nested_by_function() -> None:
     tenants = ROOT / "backend/app/domains/workspace/tenants"
-    expected = {"health", "lifecycle"}
+    expected = {"health"}
     assert {path.name for path in tenants.iterdir() if path.is_dir()} >= expected
     root_modules = {path.stem for path in tenants.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == {
@@ -434,12 +434,7 @@ def test_tenant_modules_are_nested_by_function() -> None:
         "workspace_snapshots",
         "workspace_quotas",
     }
-    for name in (
-        "lifecycle/actions",
-        "lifecycle/diagnostics",
-        "lifecycle/scheduling",
-    ):
-        assert (tenants / name / "__init__.py").is_file(), name
+    assert (ROOT / "backend/app/domains/workspace/data_lifecycle").is_dir()
     for name in (
         "data_lifecycle.py",
         "data_lifecycle_actions.py",
@@ -539,12 +534,11 @@ def test_self_hosted_runtime_modules_are_nested_by_function() -> None:
 
 def test_project_modules_are_nested_by_function() -> None:
     projects = ROOT / "backend/app/domains/workspace/projects"
-    expected = {"artifacts", "exports", "imports", "io", "snapshots"}
+    expected = {"artifacts", "io", "snapshots"}
     assert {path.name for path in projects.iterdir() if path.is_dir()} >= expected
     root_modules = {path.stem for path in projects.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == {
         "contracts",
-        "export_models",
         "file_boundaries",
         "models",
         "policy",
@@ -566,6 +560,33 @@ def test_project_modules_are_nested_by_function() -> None:
         "serialization.py",
     ):
         assert not (projects / name).exists(), name
+
+
+def test_workspace_transfer_and_lifecycle_have_stable_boundaries() -> None:
+    workspace = ROOT / "backend/app/domains/workspace"
+    transfer = workspace / "data_transfer"
+    lifecycle = workspace / "data_lifecycle"
+    assert {path.name for path in workspace.iterdir() if path.is_dir()} >= {
+        "data_lifecycle",
+        "data_transfer",
+    }
+    assert {
+        path.name for path in transfer.iterdir() if path.is_dir() and path.name != "__pycache__"
+    } == {"importers"}
+    assert {
+        path.name for path in lifecycle.iterdir() if path.is_dir() and path.name != "__pycache__"
+    } == set()
+    assert (transfer / "service.py").is_file()
+    assert (transfer / "contracts.py").is_file()
+    assert (transfer / "repository.py").is_file()
+    assert (transfer / "importers/archive.py").is_file()
+    assert (transfer / "importers/preview.py").is_file()
+    assert (lifecycle / "actions.py").is_file()
+    assert (lifecycle / "diagnostics.py").is_file()
+    assert (lifecycle / "scheduling.py").is_file()
+    assert not (transfer / "exports").exists()
+    assert not (workspace / "projects/exports").exists()
+    assert not (workspace / "projects/imports").exists()
 
 
 def test_agent_provider_modules_are_nested_by_function() -> None:

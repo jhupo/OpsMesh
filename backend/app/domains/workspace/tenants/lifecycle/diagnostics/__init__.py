@@ -1,1 +1,0 @@
-"""Workspace tenant feature package."""

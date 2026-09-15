@@ -8,13 +8,15 @@ from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.workspace.projects.exports.contracts import (
+from backend.app.domains.workspace.data_transfer.contracts import (
     WorkspaceExportRequest,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
 )
-from backend.app.domains.workspace.projects.exports.service import WorkspaceExportService
-from backend.app.domains.workspace.projects.imports.metadata import WorkspaceMetadataImportService
+from backend.app.domains.workspace.data_transfer.importers.metadata import (
+    WorkspaceMetadataImportService,
+)
+from backend.app.domains.workspace.data_transfer.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.security import content_disposition_attachment
 
 router = APIRouter()
