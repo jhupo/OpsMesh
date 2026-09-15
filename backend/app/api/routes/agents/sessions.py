@@ -16,7 +16,7 @@ from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.agents.runtime.sessions.management import (
+from backend.app.domains.agents.sessions.management import (
     PersistentAgentSessionManagementService,
 )
 from backend.app.domains.agents.service import AgentManagementService

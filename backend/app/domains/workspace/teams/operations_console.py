@@ -7,10 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.sessions.management import (
+from backend.app.domains.agents.sessions.management import (
     PersistentAgentSessionManagementService,
 )
-from backend.app.domains.agents.runtime.sessions.views import PersistentSessionSummary
+from backend.app.domains.agents.sessions.views import PersistentSessionSummary
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.domains.workspace.teams.command_center import TeamCommandCenterService
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
@@ -224,5 +224,4 @@ def _agent_payload(agent: AgentProfile | None) -> dict[str, object] | None:
         "model_provider_credential_id": agent.model_provider_credential_id,
         "model_provider": _agent_model_provider_payload(agent),
     }
-
 

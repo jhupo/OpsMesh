@@ -36,7 +36,7 @@ from backend.app.domains.agents.providers.model_api import (
     require_known_model_api,
 )
 from backend.app.domains.agents.providers.views import agent_profile_response
-from backend.app.domains.agents.runtime.sessions.management import (
+from backend.app.domains.agents.sessions.management import (
     PersistentAgentSessionManagementService,
 )
 from backend.app.domains.agents.service import AgentManagementService

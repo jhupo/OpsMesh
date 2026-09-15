@@ -6,7 +6,7 @@ from uuid import UUID
 
 from backend.app.core.common.values import coerce_int_or_zero, datetime_or_none
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.domains.agents.runtime.sessions.models import PersistentAgentSession
+from backend.app.domains.agents.sessions.models import PersistentAgentSession
 from backend.app.domains.workspace.teams.models import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
     TEAM_RUNTIME_PAUSED,

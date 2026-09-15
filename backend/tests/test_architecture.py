@@ -555,9 +555,10 @@ def test_agent_runtime_vendor_modules_are_nested_by_provider() -> None:
         "execution",
         "providers",
         "sandbox",
-        "sessions",
         "tools",
     }
+    agents = ROOT / "backend/app/domains/agents"
+    assert (agents / "sessions").is_dir()
     for name in (
         "claude_runner.py",
         "claude_sandbox.py",

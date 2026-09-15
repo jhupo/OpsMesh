@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import uuid_or_none
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.sessions.models import (
+from backend.app.domains.agents.sessions.models import (
     PersistentAgentSession,
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,

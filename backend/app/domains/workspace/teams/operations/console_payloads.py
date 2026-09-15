@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from backend.app.core.common.values import dict_list, dict_or_empty
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.agents.runtime.sessions.views import PersistentSessionSummary
+from backend.app.domains.agents.sessions.views import PersistentSessionSummary
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.operations.console_normalization import (
     _redacted_dict_or_none,
