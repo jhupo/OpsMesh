@@ -5,10 +5,10 @@ from pydantic import BaseModel, Field, HttpUrl, computed_field, field_serializer
 
 from backend.app.core.contracts import ORMModel
 from backend.app.core.secrets.service import hosted_secret_metadata
-from backend.app.domains.agents.providers.catalog.capabilities import resolve_model_capability
-from backend.app.domains.agents.providers.catalog.metadata import sanitize_budget_metadata
-from backend.app.domains.agents.providers.catalog.model_api import model_api_for_provider
-from backend.app.domains.agents.providers.catalog.policy import model_provider_base_url_host
+from backend.app.domains.agents.providers.capabilities import resolve_model_capability
+from backend.app.domains.agents.providers.metadata import sanitize_budget_metadata
+from backend.app.domains.agents.providers.model_api import model_api_for_provider
+from backend.app.domains.agents.providers.policy import model_provider_base_url_host
 
 
 class ModelProviderCredentialCreateRequest(BaseModel):
@@ -93,9 +93,7 @@ class ModelProviderCredentialResponse(ORMModel):
     @property
     def last_health_check_at(self) -> datetime | None:
         timestamps = [
-            value
-            for value in (self.last_success_at, self.last_failure_at)
-            if value is not None
+            value for value in (self.last_success_at, self.last_failure_at) if value is not None
         ]
         return max(timestamps) if timestamps else None
 

@@ -8,7 +8,7 @@ from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.catalog.policy import normalize_openai_compatible_base_url
+from backend.app.domains.agents.providers.policy import normalize_openai_compatible_base_url
 from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,

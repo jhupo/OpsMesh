@@ -39,7 +39,7 @@ from claude_agent_sdk.types import (
 from pydantic import TypeAdapter, ValidationError
 
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.agents.providers.catalog.model_api import ANTHROPIC_MESSAGES_API
+from backend.app.domains.agents.providers.model_api import ANTHROPIC_MESSAGES_API
 from backend.app.domains.agents.runtime.execution.base import BaseSDKAgentRuntimeAdapter
 from backend.app.domains.agents.runtime.execution.cancellation import (
     cancel_active_tools,
@@ -356,15 +356,9 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             env["ANTHROPIC_BASE_URL"] = request.base_url.rstrip("/")
         sandbox_settings = request.context.metadata.get("sandbox_settings")
         sandbox_session = request.context.metadata.get("sandbox_session")
-        sandbox_root = (
-            sandbox_session.get("root")
-            if isinstance(sandbox_session, dict)
-            else None
-        )
+        sandbox_root = sandbox_session.get("root") if isinstance(sandbox_session, dict) else None
         sandbox_cli_path = (
-            sandbox_session.get("cli_path")
-            if isinstance(sandbox_session, dict)
-            else None
+            sandbox_session.get("cli_path") if isinstance(sandbox_session, dict) else None
         )
         resume_id = _resume_session_id(request) or (session_id if resume_existing else None)
         approved_resume = bool(request.approval_decisions and resume_id)
@@ -406,7 +400,6 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
                 )
             options.sandbox = cast(SandboxSettings, dict(sandbox_settings))
         return options
-
 
     def _interruptions(
         self,

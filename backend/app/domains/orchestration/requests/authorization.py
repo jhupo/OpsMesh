@@ -165,13 +165,16 @@ class RunAuthorizationService:
         run: AgentRun,
         denial: RunRuntimeAuthorizationError,
     ) -> None:
-        if self.session.scalar(
-            select(RunEvent.id).where(
-                RunEvent.workspace_id == run.workspace_id,
-                RunEvent.agent_run_id == run.id,
-                RunEvent.event_type == "runtime.authorization_blocked",
+        if (
+            self.session.scalar(
+                select(RunEvent.id).where(
+                    RunEvent.workspace_id == run.workspace_id,
+                    RunEvent.agent_run_id == run.id,
+                    RunEvent.event_type == "runtime.authorization_blocked",
+                )
             )
-        ) is not None:
+            is not None
+        ):
             return
         RunEventRecorder(self.session).append_event(
             run,
@@ -200,9 +203,9 @@ class RunAuthorizationService:
                     "runtime_space_id": str(run.runtime_space_id)
                     if run.runtime_space_id is not None
                     else None,
-                    "authorization_snapshot_fingerprint": authorization_snapshot_for_run(
-                        run
-                    ).get("fingerprint"),
+                    "authorization_snapshot_fingerprint": authorization_snapshot_for_run(run).get(
+                        "fingerprint"
+                    ),
                 },
                 created_at=datetime.now(UTC),
             )
@@ -225,18 +228,13 @@ class RunAuthorizationService:
         )
         if lock:
             statement = statement.with_for_update()
-        resources = {
-            resource.id: resource
-            for resource in self.session.scalars(statement).all()
-        }
+        resources = {resource.id: resource for resource in self.session.scalars(statement).all()}
         if len(resources) != len(grants):
             raise ValueError("Authorization snapshot references a disabled capability resource")
         for grant in grants:
             resource = resources.get(grant.resource_id)
             if resource is None:
-                raise ValueError(
-                    "Authorization snapshot references a disabled capability resource"
-                )
+                raise ValueError("Authorization snapshot references a disabled capability resource")
             if (
                 resource.version != grant.version
                 or resource.resource_type != grant.resource_type

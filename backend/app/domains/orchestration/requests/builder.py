@@ -151,9 +151,11 @@ class RunRequestBuilder:
                     else None
                 ),
             }
-        metadata["sandbox_settings"] = sandbox_settings_for_claude(
-            network_disabled=runtime_binding.network_disabled
-        ) if _runtime_execution_mode(run) != "none" else {"enabled": False}
+        metadata["sandbox_settings"] = (
+            sandbox_settings_for_claude(network_disabled=runtime_binding.network_disabled)
+            if _runtime_execution_mode(run) != "none"
+            else {"enabled": False}
+        )
         project_workspace = project_runtime_context(self.session, run)
         if project_workspace is not None:
             metadata["project_workspace"] = project_workspace
@@ -194,9 +196,7 @@ class RunRequestBuilder:
                 metadata["sandbox_session"] = sandbox_metadata
                 if model_provider["provider"] == "anthropic" and hasattr(backend, "sdk_process"):
                     process = backend.sdk_process(session)
-                    sandbox_metadata["cli_path"] = (
-                        process.install_claude_cli_wrapper()
-                    )
+                    sandbox_metadata["cli_path"] = process.install_claude_cli_wrapper()
         persistent_session_ref = self.persistent_session_ref_for_run(run, task, profile)
         working_policy = working_memory_policy(authorization_snapshot.get("memory_policy"))
         working_entries = AgentWorkingMemoryService(self.session).prepare_run(
@@ -342,9 +342,7 @@ class RunRequestBuilder:
         }:
             workspace = metadata.get("project_workspace")
             root = (
-                workspace.get("working_directory")
-                if isinstance(workspace, dict)
-                else "/workspace"
+                workspace.get("working_directory") if isinstance(workspace, dict) else "/workspace"
             )
             sandbox = SandboxManifest(run_id=run.id, root=str(root))
         return AgentRunRequest(

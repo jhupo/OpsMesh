@@ -31,11 +31,11 @@ from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.agents.messages.models import AgentMessage
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.profiles.contracts import AgentProfileResponse
-from backend.app.domains.agents.providers.catalog.agent_summary import agent_profile_response
-from backend.app.domains.agents.providers.catalog.model_api import (
+from backend.app.domains.agents.providers.model_api import (
     configured_model_api,
     require_known_model_api,
 )
+from backend.app.domains.agents.providers.views import agent_profile_response
 from backend.app.domains.agents.runtime.sessions.management import (
     PersistentAgentSessionManagementService,
 )

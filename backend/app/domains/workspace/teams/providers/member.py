@@ -4,17 +4,17 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_text
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.catalog.metadata import budget_is_exhausted
-from backend.app.domains.agents.providers.catalog.model_api import (
-    configured_model_api,
-    default_model_api,
-    model_api_for_agent_provider,
-    unsupported_agent_model_api,
-)
 from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.domains.agents.providers.health.summary import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
+)
+from backend.app.domains.agents.providers.metadata import budget_is_exhausted
+from backend.app.domains.agents.providers.model_api import (
+    configured_model_api,
+    default_model_api,
+    model_api_for_agent_provider,
+    unsupported_agent_model_api,
 )
 from backend.app.domains.workspace.teams.models import AgentTeamMember
 from backend.app.domains.workspace.teams.providers.payloads import (
@@ -84,22 +84,14 @@ class TeamProviderReadinessMemberBuilder:
                 credential.health_status if credential is not None else None
             ),
             "failure_count": credential.failure_count if credential is not None else 0,
-            "last_failure_at": (
-                credential.last_failure_at if credential is not None else None
-            ),
-            "last_failure_code": (
-                credential.last_failure_code if credential is not None else None
-            ),
+            "last_failure_at": (credential.last_failure_at if credential is not None else None),
+            "last_failure_code": (credential.last_failure_code if credential is not None else None),
             "last_failure_message": _last_failure_message(credential),
             "budget_exhausted": (
-                budget_is_exhausted(credential.budget_metadata)
-                if credential is not None
-                else False
+                budget_is_exhausted(credential.budget_metadata) if credential is not None else False
             ),
             "last_health_check_at": (
-                model_provider_last_health_check_at(credential)
-                if credential is not None
-                else None
+                model_provider_last_health_check_at(credential) if credential is not None else None
             ),
             "scheduled_health_check": schedule,
         }

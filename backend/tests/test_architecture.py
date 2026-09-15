@@ -57,9 +57,7 @@ def _absolute_import_targets(path: Path) -> list[tuple[str, int]]:
 def test_consolidated_domains_have_one_source_owner() -> None:
     app = ROOT / "backend/app"
     assert {
-        path.name
-        for path in app.iterdir()
-        if path.is_dir() and path.name != "__pycache__"
+        path.name for path in app.iterdir() if path.is_dir() and path.name != "__pycache__"
     } == {
         "api",
         "bootstrap",
@@ -117,8 +115,7 @@ def test_boundary_ownership_matrix_has_no_reverse_direct_imports() -> None:
                 continue
             for imported, line_number in _absolute_import_targets(path):
                 if any(
-                    _is_module_in_boundary(imported, forbidden)
-                    for forbidden in forbidden_modules
+                    _is_module_in_boundary(imported, forbidden) for forbidden in forbidden_modules
                 ):
                     violations.append(
                         f"{path.relative_to(ROOT)}:{line_number}: {module} imports {imported}"
@@ -232,11 +229,7 @@ def test_team_features_are_nested_by_function() -> None:
         "runtime",
     }
     assert {path.name for path in teams.iterdir() if path.is_dir()} >= expected
-    root_modules = {
-        path.stem
-        for path in teams.glob("*.py")
-        if path.name != "__init__.py"
-    }
+    root_modules = {path.stem for path in teams.glob("*.py") if path.name != "__init__.py"}
     assert root_modules <= {
         "models",
         "command_center",
@@ -274,11 +267,7 @@ def test_runtime_features_are_nested_by_function() -> None:
         "spaces",
     }
     assert {path.name for path in runtime.iterdir() if path.is_dir()} >= expected
-    root_modules = {
-        path.stem
-        for path in runtime.glob("*.py")
-        if path.name != "__init__.py"
-    }
+    root_modules = {path.stem for path in runtime.glob("*.py") if path.name != "__init__.py"}
     assert root_modules <= {
         "contracts",
         "dependencies",
@@ -291,9 +280,9 @@ def test_runtime_features_are_nested_by_function() -> None:
         "provisioning_executor",
         "queries",
         "run_environment",
-            "service",
-            "security_events",
-            "url_fetch",
+        "service",
+        "security_events",
+        "url_fetch",
     }
     for name in (
         "backend_registry.py",
@@ -329,11 +318,7 @@ def test_task_modules_are_nested_by_function() -> None:
         "operations",
     }
     assert {path.name for path in tasks.iterdir() if path.is_dir()} >= expected
-    root_modules = {
-        path.stem
-        for path in tasks.glob("*.py")
-        if path.name != "__init__.py"
-    }
+    root_modules = {path.stem for path in tasks.glob("*.py") if path.name != "__init__.py"}
     assert root_modules <= {
         "contracts",
         "events",
@@ -362,11 +347,7 @@ def test_workflow_modules_are_nested_by_function() -> None:
     workflows = ROOT / "backend/app/domains/orchestration/workflows"
     expected = {"definitions", "planning", "scheduling", "steps"}
     assert {path.name for path in workflows.iterdir() if path.is_dir()} >= expected
-    root_modules = {
-        path.stem
-        for path in workflows.glob("*.py")
-        if path.name != "__init__.py"
-    }
+    root_modules = {path.stem for path in workflows.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == {"statuses"}
     assert (workflows / "planning/project_plan/__init__.py").is_file()
     for name in (
@@ -392,11 +373,7 @@ def test_tenant_modules_are_nested_by_function() -> None:
     tenants = ROOT / "backend/app/domains/workspace/tenants"
     expected = {"health", "lifecycle"}
     assert {path.name for path in tenants.iterdir() if path.is_dir()} >= expected
-    root_modules = {
-        path.stem
-        for path in tenants.glob("*.py")
-        if path.name != "__init__.py"
-    }
+    root_modules = {path.stem for path in tenants.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == {
         "contracts",
         "models",
@@ -440,11 +417,7 @@ def test_worker_modules_are_nested_by_function() -> None:
     assert {path.name for path in workers.iterdir() if path.is_dir()} >= expected
     assert (workers / "queue.py").is_file()
     assert not (workers / "queue").exists()
-    root_modules = {
-        path.stem
-        for path in workers.glob("*.py")
-        if path.name != "__init__.py"
-    }
+    root_modules = {path.stem for path in workers.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == {"cli", "contracts", "queue"}
     assert (workers / "execution/handlers/__init__.py").is_file()
     for name in (
@@ -482,11 +455,7 @@ def test_self_hosted_runtime_modules_are_nested_by_function() -> None:
     runtime = ROOT / "backend/app/runtime/self_hosted"
     expected = {"enrollment", "dispatch", "worker", "projects"}
     assert {path.name for path in runtime.iterdir() if path.is_dir()} >= expected
-    root_modules = {
-        path.stem
-        for path in runtime.glob("*.py")
-        if path.name != "__init__.py"
-    }
+    root_modules = {path.stem for path in runtime.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == {"contracts", "models", "service"}
     assert not (runtime / "worker/dependencies.py").exists()
     assert (ROOT / "backend/app/api/routes/self_hosted/dependencies.py").is_file()
@@ -525,11 +494,7 @@ def test_project_modules_are_nested_by_function() -> None:
     projects = ROOT / "backend/app/domains/workspace/projects"
     expected = {"artifacts", "exports", "imports", "io", "snapshots"}
     assert {path.name for path in projects.iterdir() if path.is_dir()} >= expected
-    root_modules = {
-        path.stem
-        for path in projects.glob("*.py")
-        if path.name != "__init__.py"
-    }
+    root_modules = {path.stem for path in projects.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == {
         "contracts",
         "export_models",
@@ -558,30 +523,23 @@ def test_project_modules_are_nested_by_function() -> None:
 
 def test_agent_provider_modules_are_nested_by_function() -> None:
     providers = ROOT / "backend/app/domains/agents/providers"
-    expected = {"audit", "catalog", "credentials", "health", "resolution"}
+    expected = {"audit", "credentials", "health", "resolution"}
     assert {path.name for path in providers.iterdir() if path.is_dir()} >= expected
-    root_modules = {
-        path.stem
-        for path in providers.glob("*.py")
-        if path.name != "__init__.py"
-    }
-    assert root_modules == {"contracts"}
+    root_modules = {path.stem for path in providers.glob("*.py") if path.name != "__init__.py"}
+    assert root_modules >= {"capabilities", "contracts", "metadata", "model_api", "policy", "views"}
+    assert not (providers / "catalog").exists()
     for name in (
         "agent_summary.py",
         "audit_payloads.py",
         "audit_responses.py",
         "audit_writer.py",
-        "capabilities.py",
         "credential_commands.py",
         "credential_queries.py",
         "health.py",
         "health_service.py",
         "health_state.py",
         "health_summary.py",
-        "metadata.py",
-        "model_api.py",
         "models.py",
-        "policy.py",
         "resolution.py",
         "resolution_service.py",
         "resolver.py",
@@ -635,11 +593,7 @@ def test_memory_modules_are_flattened_under_domain_owner() -> None:
         "semantic",
         "working",
     }
-    root_modules = {
-        path.stem
-        for path in memory.glob("*.py")
-        if path.name != "__init__.py"
-    }
+    root_modules = {path.stem for path in memory.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == expected
     assert {
         path.name for path in memory.iterdir() if path.is_dir() and path.name != "__pycache__"
@@ -661,11 +615,7 @@ def test_operations_features_are_nested_by_function() -> None:
     operations = ROOT / "backend/app/runtime/operations"
     expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}
     assert {path.name for path in operations.iterdir() if path.is_dir()} >= expected
-    root_modules = {
-        path.stem
-        for path in operations.glob("*.py")
-        if path.name != "__init__.py"
-    }
+    root_modules = {path.stem for path in operations.glob("*.py") if path.name != "__init__.py"}
     assert root_modules <= {
         "control_plane",
         "control_plane_service",
@@ -678,8 +628,8 @@ def test_operations_features_are_nested_by_function() -> None:
         "overview_payloads",
         "overview_queries",
         "run_activity",
-            "scheduler",
-            "model_providers",
+        "scheduler",
+        "model_providers",
     }
     for name in (
         "dead_letters.py",
@@ -1007,9 +957,7 @@ def test_application_source_directories_are_not_empty() -> None:
             continue
         source_files = [path for path in directory.glob("*.py") if path.name != "__init__.py"]
         child_packages = [
-            path
-            for path in directory.iterdir()
-            if path.is_dir() and path.name != "__pycache__"
+            path for path in directory.iterdir() if path.is_dir() and path.name != "__pycache__"
         ]
         if not source_files and not child_packages:
             empty.append(str(directory.relative_to(ROOT)))

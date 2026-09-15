@@ -19,12 +19,12 @@ from agents.handoffs import handoff as sdk_handoff
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
 
-from backend.app.domains.agents.providers.catalog.model_api import (
+from backend.app.domains.agents.providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
     canonical_model_api,
 )
-from backend.app.domains.agents.providers.catalog.policy import (
+from backend.app.domains.agents.providers.policy import (
     is_openai_compatible_provider,
     normalize_openai_compatible_base_url,
 )
@@ -256,9 +256,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             use_responses=_use_responses_api(request.model_api),
         ).get_model(model_name)
         nested_calls = agent_tool_calls if agent_tool_calls is not None else []
-        runtime_guardrail_results = (
-            guardrail_results if guardrail_results is not None else []
-        )
+        runtime_guardrail_results = guardrail_results if guardrail_results is not None else []
         tools = self._tool_bridge.tools(request)
         tools.extend(
             self._build_agent_tools(
@@ -323,9 +321,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             ) -> str:
                 invocation = getattr(result, "agent_tool_invocation", None)
                 status = (
-                    "waiting_approval"
-                    if getattr(result, "interruptions", None)
-                    else "completed"
+                    "waiting_approval" if getattr(result, "interruptions", None) else "completed"
                 )
                 calls.append(
                     _agent_tool_result(
@@ -425,9 +421,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             handoff_description=definition.target.handoff_description,
             instructions=definition.target.instructions,
             model=model,
-            model_settings=self._settings_mapper.map_settings(
-                definition.target.model_settings
-            ),
+            model_settings=self._settings_mapper.map_settings(definition.target.model_settings),
             tools=tools,
             input_guardrails=input_guardrails,
             output_guardrails=output_guardrails,
@@ -577,7 +571,6 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             output_guardrails=output_guardrails,
         )
 
-
     def _run_config(self, request: AgentRunRequest) -> RunConfig | None:
         if request.tracing is None and request.sandbox is None:
             return None
@@ -672,7 +665,6 @@ def _agent_tool_events(
         )
         for call in calls
     ]
-
 
 
 def _use_responses_api(model_api: str | None) -> bool | None:

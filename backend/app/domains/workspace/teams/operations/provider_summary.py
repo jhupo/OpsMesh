@@ -3,13 +3,13 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.catalog.agent_summary import agent_model_provider_summary
-from backend.app.domains.agents.providers.catalog.metadata import sanitize_budget_metadata
 from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.domains.agents.providers.health.summary import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
 )
+from backend.app.domains.agents.providers.metadata import sanitize_budget_metadata
+from backend.app.domains.agents.providers.views import agent_model_provider_summary
 from backend.app.domains.workspace.teams.operations.console_normalization import _uuid_or_none
 from backend.app.domains.workspace.teams.operations.provider_credentials import (
     _empty_health_check_schedule_payload,

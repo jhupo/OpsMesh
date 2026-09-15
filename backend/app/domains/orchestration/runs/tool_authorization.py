@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import dict_or_empty, string_list, uuid_or_none
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.catalog.policy import (
+from backend.app.domains.agents.providers.policy import (
     is_anthropic_provider,
     is_openai_compatible_provider,
 )
@@ -135,11 +135,15 @@ class AgentToolAuthorizationSnapshotService:
                 raise ValueError("Agent tool graph exceeds the maximum authorized node count")
             target_provider = model_provider_snapshot(target)
             _require_same_provider_family(source_model_provider, target_provider)
-            target_catalog = EffectiveCapabilityCatalogService(self.session).build(
-                workspace_id=task.workspace_id,
-                agent_profile_id=target.id,
-                team_id=team.id,
-            ).model_dump(mode="json")
+            target_catalog = (
+                EffectiveCapabilityCatalogService(self.session)
+                .build(
+                    workspace_id=task.workspace_id,
+                    agent_profile_id=target.id,
+                    team_id=team.id,
+                )
+                .model_dump(mode="json")
+            )
             scoped_catalog = _intersect_catalog(source_catalog, target_catalog)
             tool_name = _agent_tool_name(target)
             if tool_name in tool_names:
@@ -435,8 +439,7 @@ def _intersect_catalog(
 ) -> dict[str, object]:
     scoped = deepcopy(target)
     parent_tools = {
-        _descriptor_key(item): item
-        for item in _object_list(parent.get("tools"), "parent tools")
+        _descriptor_key(item): item for item in _object_list(parent.get("tools"), "parent tools")
     }
     tools: list[dict[str, object]] = []
     for target_item in _object_list(target.get("tools"), "target tools"):
@@ -516,10 +519,7 @@ def _tool_has_required_resource(
     if resource_type is None:
         return True
     modes = set(string_list(descriptor.get("required_access_modes")))
-    return any(
-        item_type == resource_type and mode in modes
-        for item_type, mode in available_access
-    )
+    return any(item_type == resource_type and mode in modes for item_type, mode in available_access)
 
 
 def _descriptor_key(item: dict[str, object]) -> str:

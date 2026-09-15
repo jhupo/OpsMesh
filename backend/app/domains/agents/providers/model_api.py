@@ -1,4 +1,4 @@
-from backend.app.domains.agents.providers.catalog.policy import is_anthropic_provider
+from backend.app.domains.agents.providers.policy import is_anthropic_provider
 
 ANTHROPIC_MESSAGES_API = "anthropic_messages"
 OPENAI_CHAT_COMPLETIONS_API = "chat_completions"
@@ -10,6 +10,7 @@ KNOWN_MODEL_APIS = frozenset(
         OPENAI_RESPONSES_API,
     }
 )
+
 
 def configured_model_api(metadata: dict[str, object]) -> str | None:
     value = metadata.get("model_api")

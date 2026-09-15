@@ -21,7 +21,7 @@ from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEmbeddingEvent,
     WorkspaceMemoryEntry,
 )
-from backend.app.domains.agents.providers.catalog.policy import (
+from backend.app.domains.agents.providers.policy import (
     canonical_model_provider,
     is_openai_compatible_provider,
 )

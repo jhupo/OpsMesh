@@ -8,7 +8,7 @@ from backend.app.core.common.config import Settings
 from backend.app.core.common.values import uuid_or_none
 from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.catalog.model_api import (
+from backend.app.domains.agents.providers.model_api import (
     canonical_model_api,
     model_api_options_for_provider,
 )

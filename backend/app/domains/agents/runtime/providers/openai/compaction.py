@@ -7,11 +7,11 @@ from contextlib import asynccontextmanager
 from agents import OpenAIResponsesCompactionSession, Session
 from openai import AsyncOpenAI
 
-from backend.app.domains.agents.providers.catalog.model_api import (
+from backend.app.domains.agents.providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     canonical_model_api,
 )
-from backend.app.domains.agents.providers.catalog.policy import (
+from backend.app.domains.agents.providers.policy import (
     canonical_model_provider,
     normalize_openai_compatible_base_url,
 )

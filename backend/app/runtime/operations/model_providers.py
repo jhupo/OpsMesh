@@ -9,22 +9,22 @@ from sqlalchemy.orm import Session
 from backend.app.core.common.values import dict_or_empty, uuid_or_none
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.catalog.agent_summary import (
-    agent_model_provider_summary,
-)
-from backend.app.domains.agents.providers.catalog.metadata import (
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.metadata import (
     budget_metadata_summary,
 )
-from backend.app.domains.agents.providers.catalog.model_api import (
+from backend.app.domains.agents.providers.model_api import (
     canonical_model_api,
     model_api_for_provider,
     model_api_options_for_provider,
 )
-from backend.app.domains.agents.providers.catalog.policy import (
+from backend.app.domains.agents.providers.policy import (
     credential_is_selectable,
     credential_not_selectable_reasons,
 )
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.views import (
+    agent_model_provider_summary,
+)
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.domains.workspace.tenants.models import Workspace
@@ -80,9 +80,7 @@ class ModelProviderOperationsService:
             workspace_id=workspace_id,
             generated_at=datetime.now(UTC),
             summary=summary,
-            credentials=[
-                self._credential_payload(credential) for credential in credentials
-            ],
+            credentials=[self._credential_payload(credential) for credential in credentials],
             agents=agent_payloads,
             runs=run_payloads,
             fallback=fallback,

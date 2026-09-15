@@ -18,7 +18,7 @@ MODEL_PROVIDER_BUDGET_EXHAUSTED = "model_provider_budget_exhausted"
 def credential_not_selectable_reasons(
     credential: ModelProviderCredential | None,
 ) -> list[str]:
-    from backend.app.domains.agents.providers.catalog.metadata import budget_is_exhausted
+    from backend.app.domains.agents.providers.metadata import budget_is_exhausted
 
     if credential is None:
         return ["model_provider_missing"]
@@ -36,6 +36,7 @@ def credential_is_selectable(credential: ModelProviderCredential | None) -> bool
     if credential is None:
         return False
     return not credential_not_selectable_reasons(credential)
+
 
 def model_provider_base_url_host(base_url: str | None) -> str | None:
     if not base_url:
@@ -58,6 +59,7 @@ def normalize_openai_compatible_base_url(base_url: str | None) -> str | None:
         normalized_path = f"{path}/v1"
     return urlunparse((parsed.scheme, parsed.netloc, normalized_path, "", "", ""))
 
+
 class ModelProviderDefaultService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -73,6 +75,7 @@ class ModelProviderDefaultService:
         if credential_id is not None:
             statement = statement.where(ModelProviderCredential.id != credential_id)
         self._session.execute(statement.values(is_default=False))
+
 
 OPENAI_COMPATIBLE_PROVIDERS = {"openai", "openai-compatible"}
 ANTHROPIC_PROVIDERS = {"anthropic"}
@@ -100,6 +103,7 @@ def is_openai_compatible_provider(provider: str | None) -> bool:
 
 def is_anthropic_provider(provider: str | None) -> bool:
     return canonical_model_provider(provider) in ANTHROPIC_PROVIDERS
+
 
 def validated_base_url(
     base_url: str | None,

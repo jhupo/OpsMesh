@@ -20,6 +20,7 @@ class ResolvedModelProvider:
 class ModelProviderUnavailableError(ValueError):
     pass
 
+
 ProviderProbeName = Literal["models", "inference"]
 _PROBES = TypeAdapter(tuple[ProviderProbeName, ...])
 

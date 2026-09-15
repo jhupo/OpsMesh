@@ -10,14 +10,14 @@ import openai
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
-from backend.app.domains.agents.providers.catalog.model_api import (
+from backend.app.domains.agents.providers.contracts import ProviderProbeName
+from backend.app.domains.agents.providers.model_api import (
     ANTHROPIC_MESSAGES_API,
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
     canonical_model_api,
 )
-from backend.app.domains.agents.providers.catalog.policy import canonical_model_provider
-from backend.app.domains.agents.providers.contracts import ProviderProbeName
+from backend.app.domains.agents.providers.policy import canonical_model_provider
 
 ProviderHealthStatus = Literal["healthy", "degraded", "unhealthy"]
 ProbeOperation = Callable[[], Awaitable[dict[str, object]]]
@@ -326,9 +326,7 @@ def _aggregate_status(checks: tuple[ModelProviderHealthCheck, ...]) -> ProviderH
 
 def _models_metadata(models: Iterable[object], model: str) -> dict[str, object]:
     model_ids = [
-        model_id
-        for item in models
-        if isinstance((model_id := getattr(item, "id", None)), str)
+        model_id for item in models if isinstance((model_id := getattr(item, "id", None)), str)
     ]
     return {
         "model_count": len(model_ids),

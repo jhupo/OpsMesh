@@ -8,17 +8,17 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.models import AgentProfile
 from backend.app.domains.agents.profiles.contracts import AgentProfileResponse
-from backend.app.domains.agents.providers.catalog.capabilities import resolve_model_capability
-from backend.app.domains.agents.providers.catalog.metadata import budget_is_exhausted
-from backend.app.domains.agents.providers.catalog.model_api import (
+from backend.app.domains.agents.providers.capabilities import resolve_model_capability
+from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.metadata import budget_is_exhausted
+from backend.app.domains.agents.providers.model_api import (
     configured_model_api,
     default_model_api,
     model_api_for_agent_provider,
     model_api_options_for_provider,
     unsupported_agent_model_api,
 )
-from backend.app.domains.agents.providers.catalog.policy import model_provider_base_url_host
-from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
+from backend.app.domains.agents.providers.policy import model_provider_base_url_host
 from backend.app.domains.agents.providers.resolution.snapshot import (
     ModelProviderResolutionService,
     ModelProviderResolutionSnapshot,

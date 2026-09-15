@@ -18,7 +18,7 @@ from backend.app.domains.agents.memory.policy import (
     hybrid_retrieval_policy,
     memory_lifecycle_policy,
 )
-from backend.app.domains.agents.providers.catalog.policy import is_openai_compatible_provider
+from backend.app.domains.agents.providers.policy import is_openai_compatible_provider
 from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.observability.audit_service import AuditService
 

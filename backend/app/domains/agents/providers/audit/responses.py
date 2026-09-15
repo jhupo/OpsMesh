@@ -1,6 +1,6 @@
 from backend.app.core.security.redaction import redact_sensitive_payload_item
 from backend.app.domains.agents.providers.audit.contracts import ModelProviderUsageAuditResponse
-from backend.app.domains.agents.providers.catalog.model_api import canonical_model_api
+from backend.app.domains.agents.providers.model_api import canonical_model_api
 from backend.app.observability.audit_models import AuditEvent
 
 _SENSITIVE_METADATA_KEYS = {

@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 
-from backend.app.domains.agents.providers.catalog.policy import (
+from backend.app.domains.agents.providers.policy import (
     is_anthropic_provider,
     is_openai_compatible_provider,
     model_provider_key,
@@ -37,9 +37,7 @@ class ProviderAgentRuntimeRegistry:
         adapter = self.adapter_for(request.provider)
         required = required_runtime_capabilities(request)
         missing = tuple(
-            capability
-            for capability in required
-            if not adapter.capabilities.supports(capability)
+            capability for capability in required if not adapter.capabilities.supports(capability)
         )
         if missing:
             raise AgentRuntimeCapabilityError(adapter.capabilities, missing)
@@ -54,6 +52,5 @@ class ProviderAgentRuntimeRegistry:
 
     def capability_matrix(self) -> dict[str, AgentRuntimeCapabilities]:
         return {
-            provider: adapter.capabilities
-            for provider, adapter in sorted(self._adapters.items())
+            provider: adapter.capabilities for provider, adapter in sorted(self._adapters.items())
         }

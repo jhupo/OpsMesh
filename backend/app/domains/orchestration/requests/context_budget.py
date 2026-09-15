@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from backend.app.domains.agents.memory.policy import ContextBudgetPolicy
-from backend.app.domains.agents.providers.catalog.capabilities import resolve_model_capability
+from backend.app.domains.agents.providers.capabilities import resolve_model_capability
 from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentTool,

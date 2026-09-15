@@ -5,28 +5,28 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.providers.catalog.capabilities import (
+from backend.app.domains.agents.providers.capabilities import (
     list_model_capabilities,
     resolve_model_capability,
-)
-from backend.app.domains.agents.providers.catalog.metadata import (
-    budget_is_exhausted,
-    sanitize_budget_metadata,
-)
-from backend.app.domains.agents.providers.catalog.model_api import (
-    default_model_api,
-    model_api_for_provider,
-    model_api_options_for_provider,
-)
-from backend.app.domains.agents.providers.catalog.policy import (
-    credential_is_selectable,
-    credential_not_selectable_reasons,
-    model_provider_base_url_host,
 )
 from backend.app.domains.agents.providers.credentials.models import ModelProviderCredential
 from backend.app.domains.agents.providers.health.summary import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
+)
+from backend.app.domains.agents.providers.metadata import (
+    budget_is_exhausted,
+    sanitize_budget_metadata,
+)
+from backend.app.domains.agents.providers.model_api import (
+    default_model_api,
+    model_api_for_provider,
+    model_api_options_for_provider,
+)
+from backend.app.domains.agents.providers.policy import (
+    credential_is_selectable,
+    credential_not_selectable_reasons,
+    model_provider_base_url_host,
 )
 
 
@@ -89,11 +89,7 @@ def _default_model_api_payload(provider: object) -> str | None:
 
 
 def _active_credential_ids(credentials: Iterable[ModelProviderCredential]) -> list[UUID]:
-    return [
-        credential.id
-        for credential in credentials
-        if _credential_selectable(credential)
-    ]
+    return [credential.id for credential in credentials if _credential_selectable(credential)]
 
 
 def _credential_selectable(credential: ModelProviderCredential) -> bool:

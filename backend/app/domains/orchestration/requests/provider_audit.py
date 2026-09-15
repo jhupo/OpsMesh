@@ -100,7 +100,5 @@ def run_scope_metadata(run: AgentRun) -> dict[str, object]:
     return {
         "task_id": str(run.task_id) if run.task_id is not None else None,
         "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
-        "agent_profile_id": str(run.agent_profile_id)
-        if run.agent_profile_id is not None
-        else None,
+        "agent_profile_id": str(run.agent_profile_id) if run.agent_profile_id is not None else None,
     }

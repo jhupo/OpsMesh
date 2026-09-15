@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from backend.app.domains.agents.providers.catalog.policy import canonical_model_provider
+from backend.app.domains.agents.providers.policy import canonical_model_provider
 
 
 @dataclass(frozen=True)
@@ -151,9 +151,7 @@ def list_model_capabilities(
             item for item in capabilities if _provider_key(item.provider) == provider_key
         ]
     if capability_key:
-        capabilities = [
-            item for item in capabilities if capability_key in item.capabilities
-        ]
+        capabilities = [item for item in capabilities if capability_key in item.capabilities]
     return capabilities
 
 

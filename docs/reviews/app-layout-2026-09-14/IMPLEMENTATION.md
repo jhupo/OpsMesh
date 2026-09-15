@@ -9,7 +9,7 @@
 | R1 | 访问域与 HTTP 依赖边界 | 已完成 | 用户/令牌/权限迁至 `domains/access`；FastAPI 认证、平台管理员和队列依赖迁至 `api/dependencies`；认证、授权和架构门禁通过 |
 | R1 | 平台控制面与外部集成归属 | 已完成 | 管理策略、发布、更新迁至 `domains/platform`；Webhook 迁至 `domains/integrations/webhooks`；模型注册、动态入口和相关导入已更新 |
 | R2 | API 路由/schema 清理 | 进行中 | 已删除转发文件、tasks 聚合文件、公共模型和通知转发文件；混合 schema 不再导出领域合同，管理路由也不再使用只改类名的空继承包装，路由、测试和 E2E 脚本直接引用所属模块。任务转移、通知租户隔离与脱敏、任务领域视图、管理队列/Worker/Runtime 三个功能场景通过；剩余路由归属和 OpenAPI 对照仍待完成 |
-| R3 | Agent/provider/session/mailbox/tools/MCP | 进行中 | Mailbox 命令、校验、读取、收件箱和汇总已分别收敛到 `domains/agents/messages/service.py` 与 `queries.py`，删除 5 个唯一调用的 Mixin 碎片；工具组合模块已按功能收敛为 `tools/{files,mailbox,memory,normalization,events,service}.py`，并清除 `product_*` 路径。Mailbox API、工具权限/租户隔离、知识库入库场景通过；Provider/session/MCP 仍待逐项核对 |
+| R3 | Agent/provider/session/mailbox/tools/MCP | 进行中 | Mailbox 命令、校验、读取、收件箱和汇总已分别收敛到 `domains/agents/messages/service.py` 与 `queries.py`，删除 5 个唯一调用的 Mixin 碎片；工具组合模块已按功能收敛为 `tools/{files,mailbox,memory,normalization,events,service}.py`，Provider catalog 的 capability/metadata/model_api/policy/view 已扁平到 `domains/agents/providers` 并删除空 catalog 包。Mailbox API、工具权限/租户隔离、知识库入库、Provider capability/registry/健康解析场景通过；session/MCP 仍待逐项核对 |
 | R4 | 任务/Run/工作流职责 | 待实施 | |
 | R5 | Workspace/team/project/archive/data lifecycle | 待实施 | |
 | R6 | 容器池/后端/Worker/recovery | 待实施 | 保留既有未提交租约和队列工作 |

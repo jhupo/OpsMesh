@@ -12,12 +12,8 @@ from sqlalchemy.orm import Session, sessionmaker
 import backend.app.domains.agents.providers.health.service as model_provider_health_service_module
 from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
 from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.providers.catalog.model_api import (
-    model_api_for_agent_provider,
-    unsupported_agent_model_api,
-)
+from backend.app.domains.access.models import User
 from backend.app.domains.agents.providers.contracts import (
     ModelProviderUnavailableError,
 )
@@ -33,6 +29,10 @@ from backend.app.domains.agents.providers.health.probes import (
     ModelProviderHealthCheckResult,
 )
 from backend.app.domains.agents.providers.health.service import ModelProviderHealthService
+from backend.app.domains.agents.providers.model_api import (
+    model_api_for_agent_provider,
+    unsupported_agent_model_api,
+)
 from backend.app.domains.agents.providers.resolution.service import ModelProviderResolutionService
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.observability.audit_models import AuditEvent

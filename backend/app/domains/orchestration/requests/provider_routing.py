@@ -5,9 +5,9 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import optional_string, uuid_or_none
-from backend.app.domains.agents.providers.catalog.model_api import canonical_model_api
 from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
 from backend.app.domains.agents.providers.health.service import ModelProviderHealthService
+from backend.app.domains.agents.providers.model_api import canonical_model_api
 from backend.app.domains.agents.providers.resolution.service import ModelProviderResolutionService
 from backend.app.domains.agents.runtime.execution.contracts import AgentRunRequest
 from backend.app.domains.agents.runtime.execution.errors import normalize_agent_error
