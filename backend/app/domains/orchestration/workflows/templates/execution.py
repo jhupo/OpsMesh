@@ -5,16 +5,16 @@ from backend.app.domains.orchestration.workflows.definitions.contracts import Wo
 from backend.app.domains.orchestration.workflows.planning.member_matching import (
     MemberMatchingService,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.context import (
+from backend.app.domains.orchestration.workflows.templates.context import (
     PlanningContext,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
+from backend.app.domains.orchestration.workflows.templates.members import (
     lead_package_for_member,
     lead_package_for_request,
     member_agent_profile_id,
     requested_member_match,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.normalization import (
+from backend.app.domains.orchestration.workflows.templates.normalization import (
     execution_dependencies,
     merge_dependencies,
     requested_work_packages,
@@ -23,11 +23,11 @@ from backend.app.domains.orchestration.workflows.planning.project_plan.normaliza
     string_tuple,
     unique_package_id,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.packages import (
+from backend.app.domains.orchestration.workflows.templates.packages import (
     member_execution_package,
     requested_package,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.validation import (
+from backend.app.domains.orchestration.workflows.templates.validation import (
     ProjectPlanValidationError,
 )
 

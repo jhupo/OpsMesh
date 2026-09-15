@@ -8,17 +8,17 @@ from backend.app.domains.orchestration.workflows.definitions.contracts import Wo
 from backend.app.domains.orchestration.workflows.planning.member_matching import (
     MemberMatchingService,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.context import (
+from backend.app.domains.orchestration.workflows.templates.context import (
     PlanningContext,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.execution import (
+from backend.app.domains.orchestration.workflows.templates.execution import (
     ExecutionPackageAppender,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.leadership import (
+from backend.app.domains.orchestration.workflows.templates.leadership import (
     LeadershipPackageAppender,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.models import ProjectPlan
-from backend.app.domains.orchestration.workflows.planning.project_plan.validation import (
+from backend.app.domains.orchestration.workflows.templates.models import ProjectPlan
+from backend.app.domains.orchestration.workflows.templates.validation import (
     validate_project_plan,
 )
 

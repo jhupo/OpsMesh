@@ -21,7 +21,7 @@ from backend.app.domains.orchestration.workflows.planning.attempt_models import 
 from backend.app.domains.orchestration.workflows.planning.ownership import (
     require_automatic_plan_ownership,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plans import (
+from backend.app.domains.orchestration.workflows.templates import (
     ProjectPlanningService,
     ProjectPlanValidationError,
     validate_project_plan,

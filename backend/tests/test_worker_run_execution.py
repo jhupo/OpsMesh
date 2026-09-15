@@ -39,7 +39,7 @@ from backend.app.domains.agents.runtime.execution.contracts import (
     AgentRuntimeResumeState,
 )
 from backend.app.domains.agents.runtime.execution.state import AgentRunStateStore
-from backend.app.domains.agents.runtime.sessions.models import PersistentAgentSession
+from backend.app.domains.agents.sessions.models import PersistentAgentSession
 from backend.app.domains.capabilities.models import (
     CapabilityResource,
     McpCredentialReference,

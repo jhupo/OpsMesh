@@ -23,7 +23,7 @@ from backend.app.domains.orchestration.workflows.definitions.conditions import (
 )
 from backend.app.domains.orchestration.workflows.planning.agent_plan import PlannedWork
 from backend.app.domains.orchestration.workflows.planning.feasibility import PlanFeasibilityService
-from backend.app.domains.orchestration.workflows.planning.project_plan.validation import (
+from backend.app.domains.orchestration.workflows.templates.validation import (
     ProjectPlanValidationError,
     validate_project_plan,
 )

@@ -36,7 +36,7 @@ from backend.app.domains.orchestration.workflows.planning.pm_final_output import
 from backend.app.domains.orchestration.workflows.planning.pm_follow_up_work import (
     PmFollowUpWorkService,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.validation import (
+from backend.app.domains.orchestration.workflows.templates.validation import (
     ProjectPlanValidationError,
 )
 from backend.app.domains.orchestration.workflows.steps.completion import TaskStepCompletionService

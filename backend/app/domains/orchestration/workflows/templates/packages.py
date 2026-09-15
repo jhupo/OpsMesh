@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
-from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
+from backend.app.domains.orchestration.workflows.templates.members import (
     member_agent_profile_id,
     member_role,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.normalization import (
+from backend.app.domains.orchestration.workflows.templates.normalization import (
     dict_or_default,
     expected_artifacts_for_role,
     skill_names,
@@ -13,7 +13,7 @@ from backend.app.domains.orchestration.workflows.planning.project_plan.normaliza
     string_or_default,
     uuid_or_none,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.validation import (
+from backend.app.domains.orchestration.workflows.templates.validation import (
     ProjectPlanValidationError,
 )
 

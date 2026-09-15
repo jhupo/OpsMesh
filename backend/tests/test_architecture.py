@@ -67,6 +67,18 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         "runtime",
     }
     assert {path.name for path in app.glob("*.py")} == {"__init__.py", "delivery.py", "main.py"}
+    observability = app / "observability"
+    assert {path.name for path in observability.iterdir() if path.is_dir()} >= {
+        "audit",
+        "costs",
+        "notifications",
+        "telemetry",
+    }
+    assert {
+        path.name
+        for path in observability.iterdir()
+        if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
+    } == set()
     for name in (
         "core/common",
         "core/db",
@@ -836,6 +848,14 @@ def test_mcp_modules_are_nested_by_function() -> None:
         "types.py",
     ):
         assert not (mcp / name).exists(), name
+
+
+def test_workflow_templates_are_not_nested_under_planning() -> None:
+    workflows = ROOT / "backend/app/domains/orchestration/workflows"
+    assert (workflows / "templates").is_dir()
+    assert not (workflows / "planning/project_plan").exists()
+    assert (workflows / "templates/builder.py").is_file()
+    assert (workflows / "templates/validation.py").is_file()
 
 
 def test_local_application_imports_resolve_without_compatibility_shims() -> None:

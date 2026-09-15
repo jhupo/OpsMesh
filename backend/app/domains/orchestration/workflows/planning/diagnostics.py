@@ -23,7 +23,7 @@ from backend.app.domains.orchestration.workflows.planning.member_matching import
     MemberMatchingService,
 )
 from backend.app.domains.orchestration.workflows.planning.org_structure import build_org_structure
-from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
+from backend.app.domains.orchestration.workflows.templates.members import (
     snapshot_agent_ids,
 )
 

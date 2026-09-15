@@ -17,7 +17,7 @@ from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, Ta
 from backend.app.domains.orchestration.workflows.planning.member_matching import (
     MemberMatchingService,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.validation import (
+from backend.app.domains.orchestration.workflows.templates.validation import (
     is_pm_summary_step,
 )
 

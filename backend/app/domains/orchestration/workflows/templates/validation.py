@@ -8,7 +8,7 @@ from backend.app.domains.orchestration.workflows.definitions.conditions import (
     condition_step_references,
     validate_condition,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
+from backend.app.domains.orchestration.workflows.templates.members import (
     snapshot_agent_ids,
 )
 

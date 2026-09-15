@@ -10,7 +10,7 @@
 | R1 | 平台控制面与外部集成归属 | 已完成 | 管理策略、发布、更新迁至 `domains/platform`；Webhook 迁至 `domains/integrations/webhooks`；模型注册、动态入口和相关导入已更新 |
 | R2 | API 路由/schema 清理 | 进行中 | 已删除转发文件、tasks 聚合文件、公共模型和通知转发文件；混合 schema 不再导出领域合同，管理路由也不再使用只改类名的空继承包装，路由、测试和 E2E 脚本直接引用所属模块。任务转移、通知租户隔离与脱敏、任务领域视图、管理队列/Worker/Runtime 三个功能场景通过；剩余路由归属和 OpenAPI 对照仍待完成 |
 | R3 | Agent/provider/session/mailbox/tools/MCP | 进行中 | Mailbox 命令、校验、读取、收件箱和汇总已分别收敛到 `domains/agents/messages/service.py` 与 `queries.py`，删除 5 个唯一调用的 Mixin 碎片；工具组合模块已按功能收敛为 `tools/{files,mailbox,memory,normalization,events,service}.py`；Provider catalog 的 capability/metadata/model_api/policy/view 已扁平到 `domains/agents/providers` 并删除空 catalog 包；持久会话已迁移到 `domains/agents/sessions`，ORM、仓储、管理和视图的导入已全部更新，旧 `runtime/sessions` 空包已清理。MCP 的 `catalog/execution/transport` 是实际协议与生命周期边界，按最终方案保留，不做机械合并；删除了无生产调用方的 SSE 手工解析，远程传输继续使用 SDK/客户端路径，保留 stdio 合同封包和结果校验。Mailbox、工具、Provider、会话、MCP 相关场景通过 |
-| R4 | 任务/Run/工作流职责 | 待实施 | |
+| R4 | 任务/Run/工作流职责 | 进行中 | 组织结构计划模板已从 `workflows/planning/project_plan` 提升到 `workflows/templates`，并同步更新生产与测试引用，删除旧空包；模板生成、成员匹配、条件校验和 Step 物化逻辑保持不变。Task/Run 状态职责和自动/用户编排共用管线仍待继续核对 |
 | R5 | Workspace/team/project/archive/data lifecycle | 进行中 | Workspace 原 `domains` 子包已按方案归并为 `extensions`，保留 `api/routes/workspace/domains.py` 的 HTTP 路径与领域语义；模型注册、Worker 计划、知识库文档和路由导入已全部切换，旧 `workspace/domains` 包已清理。团队、项目、归档、数据生命周期仍待继续核对 |
 | R6 | 容器池/后端/Worker/recovery | 待实施 | 保留既有未提交租约和队列工作 |
 | R7 | 观测与成本边界 | 进行中 | 观测实现已按最终目录归入 `observability/{audit,costs,notifications,telemetry}`，模型注册和所有生产/测试引用已切换；成本、通知、审计、OpenTelemetry 相关功能测试通过。后续继续核对观测服务内部职责和运行时聚合边界 |

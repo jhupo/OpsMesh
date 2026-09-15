@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.workflows.planning.project_plans import (
+from backend.app.domains.orchestration.workflows.templates import (
     ProjectPlanningService,
     ProjectPlanValidationError,
     validate_project_plan,

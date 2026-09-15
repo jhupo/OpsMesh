@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
+from backend.app.domains.orchestration.workflows.templates.members import (
     execution_members,
     executive_members,
     first_member_agent_profile_id,
@@ -13,7 +13,7 @@ from backend.app.domains.orchestration.workflows.planning.project_plan.members i
     member_agent_profile_ids,
     snapshot_members,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.normalization import (
+from backend.app.domains.orchestration.workflows.templates.normalization import (
     uuid_or_none,
 )
 

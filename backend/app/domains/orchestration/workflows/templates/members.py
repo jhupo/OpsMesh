@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.domains.orchestration.workflows.planning.project_plan.member_matching import (
+from backend.app.domains.orchestration.workflows.templates.member_matching import (
     request_department,
     requested_member_match,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.member_roles import (
+from backend.app.domains.orchestration.workflows.templates.member_roles import (
     first_member_agent_profile_id,
     is_executive_role,
     is_lead_role,
@@ -20,7 +20,7 @@ from backend.app.domains.orchestration.workflows.planning.project_plan.member_ro
     role_text,
     role_tokens,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.normalization import (
+from backend.app.domains.orchestration.workflows.templates.normalization import (
     int_or_default,
     same_label,
 )

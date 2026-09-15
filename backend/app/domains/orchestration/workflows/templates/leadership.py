@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
-from backend.app.domains.orchestration.workflows.planning.project_plan.members import (
+from backend.app.domains.orchestration.workflows.templates.members import (
     member_agent_profile_id,
     member_department,
     member_key,
     member_role,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.normalization import (
+from backend.app.domains.orchestration.workflows.templates.normalization import (
     slug,
     unique_package_id,
 )
-from backend.app.domains.orchestration.workflows.planning.project_plan.packages import (
+from backend.app.domains.orchestration.workflows.templates.packages import (
     executive_alignment_package,
     executive_approval_package,
     lead_breakdown_package,
