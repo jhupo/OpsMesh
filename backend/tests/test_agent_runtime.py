@@ -40,7 +40,7 @@ from backend.app.domains.agents.runtime.providers.openai.tools import (
     runtime_allowed_tools,
 )
 from backend.app.domains.agents.runtime.sandbox.contracts import SandboxManifest
-from backend.app.domains.agents.runtime.sessions.models import (
+from backend.app.domains.agents.sessions.models import (
     PersistentAgentSessionRef,
     SQLAlchemyAgentSession,
 )

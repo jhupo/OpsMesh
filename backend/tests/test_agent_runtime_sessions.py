@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.runtime.sessions.management import (
+from backend.app.domains.agents.sessions.management import (
     PersistentAgentSessionManagementService,
 )
-from backend.app.domains.agents.runtime.sessions.models import (
+from backend.app.domains.agents.sessions.models import (
     ACTIVE_SESSION_STATUS,
     ARCHIVED_SESSION_STATUS,
     FROZEN_SESSION_STATUS,

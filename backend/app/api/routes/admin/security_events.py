@@ -6,8 +6,8 @@ from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.admin.dependencies import admin_security_event_service
 from backend.app.api.routes.admin.responses import page_response
 from backend.app.api.schemas.platform.admin import AdminSecurityEventResponse
-from backend.app.core.admin.security_events import AdminSecurityEventService
 from backend.app.core.common.pagination import PageParams
+from backend.app.domains.platform.admin.security_events import AdminSecurityEventService
 
 router = APIRouter()
 

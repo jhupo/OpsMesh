@@ -74,9 +74,7 @@ def scheduler_numeric_limits(value: object) -> dict[str, float] | None:
     result = {
         str(key): float(raw_value)
         for key, raw_value in value.items()
-        if isinstance(raw_value, int | float)
-        and not isinstance(raw_value, bool)
-        and raw_value >= 0
+        if isinstance(raw_value, int | float) and not isinstance(raw_value, bool) and raw_value >= 0
     }
     return result or None
 
@@ -89,9 +87,7 @@ def step_resource_requirements(step: TaskStep) -> dict[str, float]:
     return {
         str(key): float(raw_value)
         for key, raw_value in raw_requirements.items()
-        if isinstance(raw_value, int | float)
-        and not isinstance(raw_value, bool)
-        and raw_value > 0
+        if isinstance(raw_value, int | float) and not isinstance(raw_value, bool) and raw_value > 0
     }
 
 

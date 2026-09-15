@@ -17,8 +17,7 @@ def cross_project_action_plan(
         if employee.get("overloaded") is True:
             actions.append(employee_action(employee, action="redistribute_agent_work", priority=95))
         elif (
-            employee.get("at_capacity") is True
-            and int_value(employee.get("active_team_count")) > 1
+            employee.get("at_capacity") is True and int_value(employee.get("active_team_count")) > 1
         ):
             actions.append(
                 employee_action(employee, action="rebalance_cross_team_capacity", priority=75)

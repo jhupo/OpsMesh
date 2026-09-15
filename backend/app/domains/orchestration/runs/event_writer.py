@@ -14,23 +14,42 @@ class RunEventWriter:
         self._session = session
 
     def append(
-        self, *, workspace_id: UUID, run_id: UUID, event_type: str, message: str,
+        self,
+        *,
+        workspace_id: UUID,
+        run_id: UUID,
+        event_type: str,
+        message: str,
         metadata: dict[str, object] | None = None,
     ) -> RunEvent:
         # Serialize sequence allocation on the parent run until the caller commits.
         with self._session.no_autoflush:
-            run = self._session.scalar(select(AgentRun).where(
-                AgentRun.id == run_id, AgentRun.workspace_id == workspace_id,
-            ).with_for_update())
+            run = self._session.scalar(
+                select(AgentRun)
+                .where(
+                    AgentRun.id == run_id,
+                    AgentRun.workspace_id == workspace_id,
+                )
+                .with_for_update()
+            )
         if run is None:
             raise ValueError("Run event target not found in workspace")
         self._session.flush()
-        sequence = (self._session.scalar(select(func.max(RunEvent.sequence)).where(
-            RunEvent.workspace_id == workspace_id, RunEvent.agent_run_id == run_id,
-        )) or 0) + 1
+        sequence = (
+            self._session.scalar(
+                select(func.max(RunEvent.sequence)).where(
+                    RunEvent.workspace_id == workspace_id,
+                    RunEvent.agent_run_id == run_id,
+                )
+            )
+            or 0
+        ) + 1
         event = RunEvent(
-            workspace_id=workspace_id, agent_run_id=run_id, sequence=sequence,
-            event_type=event_type, message=redact_sensitive_text(message),
+            workspace_id=workspace_id,
+            agent_run_id=run_id,
+            sequence=sequence,
+            event_type=event_type,
+            message=redact_sensitive_text(message),
             event_metadata=redact_sensitive_payload(with_current_trace_metadata(metadata)),
             created_at=datetime.now(UTC),
         )

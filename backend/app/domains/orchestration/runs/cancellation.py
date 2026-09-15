@@ -61,4 +61,3 @@ class DatabaseRunCancellation:
                 )
             except TimeoutError:
                 continue
-

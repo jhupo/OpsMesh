@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from backend.app.domains.agents.runtime.sessions.models import (
+from backend.app.domains.agents.sessions.models import (
     PersistentAgentSession,
     PersistentAgentSessionItem,
 )

@@ -32,8 +32,11 @@ class RunEventRecorder:
         metadata: dict[str, object] | None = None,
     ) -> RunEvent:
         return RunEventWriter(self.session).append(
-            workspace_id=run.workspace_id, run_id=run.id,
-            event_type=event_type, message=message, metadata=metadata,
+            workspace_id=run.workspace_id,
+            run_id=run.id,
+            event_type=event_type,
+            message=message,
+            metadata=metadata,
         )
 
     def append_run_claimed_event(self, run: AgentRun, job: JobPayload) -> None:

@@ -18,9 +18,9 @@ from backend.app.core.common.config import Settings
 from backend.app.core.common.request_context import current_log_context
 from backend.app.core.common.trace_context import TraceContext, trace_context
 from backend.app.core.db.base import Base
-from backend.app.core.identity.models import User
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.messages.models import AgentMessage
 from backend.app.domains.agents.models import AgentProfile
@@ -425,7 +425,7 @@ def test_worker_runner_maintenance_reclaims_job_after_crash_before_lease() -> No
         ),
     )
 
-    def crash_before_lease(_: JobPayload) -> None:
+    def crash_before_lease(_: JobPayload, **__: object) -> None:
         raise SystemExit("crash before lease")
 
     runner._lease_reporter.start_lease = crash_before_lease  # type: ignore[method-assign]
@@ -2423,6 +2423,38 @@ def test_worker_runner_maintenance_requeues_stale_queued_and_fails_waiting_runti
             "Runtime tool result did not arrive before the recovery window expired"
         )
         assert waiting_task.status == TaskStatus.FAILED.value
+
+
+def test_worker_runner_maintenance_rehydrates_missing_queued_run() -> None:
+    session_factory = _session_factory()
+    queue = _queue()
+    workspace_id, run_id, _ = _seed_run(session_factory, slug="missing-queued-run")
+    runner = WorkerRunner(
+        queue=queue,
+        session_factory=session_factory,
+        config=WorkerRunnerConfig(
+            worker_id="worker-queue-rehydration",
+            queue_name="agent_runs",
+        ),
+    )
+
+    maintenance = runner.run_maintenance()
+
+    assert maintenance.queue_rehydrated_runs == 1
+    assert maintenance.queue_recovery_failures == 0
+    job = queue.dequeue()
+    assert job is not None
+    assert job.workspace_id == workspace_id
+    assert job.resource_id == run_id
+    with session_factory() as session:
+        event = session.scalar(
+            select(RunEvent).where(
+                RunEvent.agent_run_id == run_id,
+                RunEvent.event_type == "run.queue_rehydrated",
+            )
+        )
+        assert event is not None
+        assert event.event_metadata["source"] == "worker_maintenance"
 
 
 def test_worker_runner_maintenance_expires_stale_worker_leases() -> None:

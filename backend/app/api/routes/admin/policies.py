@@ -12,9 +12,9 @@ from backend.app.api.schemas.platform.admin import (
     AdminRiskyExecutionPolicyUpdateRequest,
     AdminWorkerControlPolicyUpdateRequest,
 )
-from backend.app.core.admin.policy_control import AdminPolicyService
-from backend.app.core.admin.worker_policy_control import AdminWorkerPolicyControlService
 from backend.app.core.common.pagination import PageParams
+from backend.app.domains.platform.admin.policy_control import AdminPolicyService
+from backend.app.domains.platform.admin.worker_policy_control import AdminWorkerPolicyControlService
 
 router = APIRouter()
 

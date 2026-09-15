@@ -6,9 +6,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.admin.policy_reader import PlatformPolicyService
-from backend.app.core.admin.risky_policy_values import RiskyExecutionPolicy
 from backend.app.core.common.config import Settings
+from backend.app.domains.platform.admin.policy_reader import PlatformPolicyService
+from backend.app.domains.platform.admin.risky_policy_values import RiskyExecutionPolicy
 from backend.app.domains.workspace.reviews.model_request import ModelRequestReviewService
 from backend.app.domains.workspace.reviews.tool_execution import ToolExecutionReviewService
 

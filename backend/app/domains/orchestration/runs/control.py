@@ -30,6 +30,7 @@ from backend.app.runtime.environment.spaces.reservation_release import (
 
 EnqueueRun = Callable[[AgentRun, UUID | None], bool]
 
+
 @dataclass(frozen=True)
 class StaleRunRecoverySummary:
     recovered_runs: int
@@ -74,9 +75,7 @@ class RunControlService:
                 run,
                 completed_at=completed_at,
             )
-            cancelled_approvals += AgentToolApprovalLifecycleService(
-                self.session
-            ).cancel_for_run(
+            cancelled_approvals += AgentToolApprovalLifecycleService(self.session).cancel_for_run(
                 workspace_id=workspace_id,
                 run_id=run.id,
                 actor_user_id=actor_user_id,
@@ -117,9 +116,7 @@ class RunControlService:
             run,
             completed_at=completed_at,
         )
-        cancelled_approvals = AgentToolApprovalLifecycleService(
-            self.session
-        ).cancel_for_run(
+        cancelled_approvals = AgentToolApprovalLifecycleService(self.session).cancel_for_run(
             workspace_id=workspace_id,
             run_id=run.id,
             actor_user_id=actor_user_id,
@@ -165,9 +162,7 @@ class RunControlService:
             raise ValueError("Only failed runs can be retried")
 
         task = (
-            self.session.get(Task, failed_run.task_id)
-            if failed_run.task_id is not None
-            else None
+            self.session.get(Task, failed_run.task_id) if failed_run.task_id is not None else None
         )
         if task is not None:
             TaskStateService().transition(task, TaskStatus.QUEUED)
@@ -246,9 +241,7 @@ class RunControlService:
         cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
         candidates = self.session.scalars(
             select(AgentRun)
-            .where(
-                AgentRun.status.in_(STALE_RECOVERABLE_RUN_STATUS_VALUES)
-            )
+            .where(AgentRun.status.in_(STALE_RECOVERABLE_RUN_STATUS_VALUES))
             .order_by(AgentRun.updated_at.asc(), AgentRun.created_at.asc())
             .limit(limit * 3)
         ).all()
@@ -303,10 +296,14 @@ class RunControlService:
         )
 
     def _runtime_wall_time_expired(self, run: AgentRun, *, now: datetime) -> bool:
-        if run.status not in {
-            RunStatus.RUNNING.value,
-            RunStatus.WAITING_RUNTIME.value,
-        } or run.runtime_id is None:
+        if (
+            run.status
+            not in {
+                RunStatus.RUNNING.value,
+                RunStatus.WAITING_RUNTIME.value,
+            }
+            or run.runtime_id is None
+        ):
             return False
         runtime = self.session.scalar(
             select(WorkspaceRuntime).where(
@@ -437,6 +434,7 @@ class RunControlService:
                 released_at=released_at,
             ),
         )
+
 
 def stale_recovery_anchor(run: AgentRun) -> datetime | None:
     if run.status == RunStatus.RUNNING.value:

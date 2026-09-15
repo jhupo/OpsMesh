@@ -55,8 +55,7 @@ def _command_center_payload(command_center: dict[str, object] | None) -> dict[st
         "overview": redact_sensitive_payload(dict_or_empty(command_center.get("overview"))),
         "queues": redact_sensitive_payload(dict_or_empty(command_center.get("queues"))),
         "action_plan": [
-            redact_sensitive_payload(item)
-            for item in dict_list(command_center.get("action_plan"))
+            redact_sensitive_payload(item) for item in dict_list(command_center.get("action_plan"))
         ],
     }
 
@@ -77,4 +76,3 @@ def _session_payload(summary: PersistentSessionSummary | None) -> dict[str, obje
         "latest_item_metadata": _redacted_dict_or_none(summary.latest_item_metadata),
         "updated_at": summary.updated_at,
     }
-

@@ -84,8 +84,7 @@ class TeamProviderManagementBuilder:
                 None,
             ),
             "credentials": [
-                _model_provider_credential_option_payload(credential)
-                for credential in credentials
+                _model_provider_credential_option_payload(credential) for credential in credentials
             ],
             "agent_bindings": agent_bindings,
             "run_diagnostics": self._provider_run_diagnostics_payload(
@@ -94,7 +93,6 @@ class TeamProviderManagementBuilder:
             ),
             "suggested_actions": _provider_management_suggested_actions(agent_bindings),
         }
-
 
     def _agent_provider_binding_payload(
         self,
@@ -151,7 +149,6 @@ class TeamProviderManagementBuilder:
             "available_credential_ids": _active_credential_ids(credential_by_id.values()),
         }
 
-
     def _provider_run_diagnostics_payload(
         self,
         *,
@@ -176,10 +173,7 @@ class TeamProviderManagementBuilder:
                 .limit(limit + 1)
             )
         )
-        items = [
-            self._provider_run_payload(run)
-            for run in runs[:limit]
-        ]
+        items = [self._provider_run_payload(run) for run in runs[:limit]]
         return redact_sensitive_payload(
             {
                 "total": len(runs),
@@ -194,7 +188,6 @@ class TeamProviderManagementBuilder:
                 ),
             }
         )
-
 
     def _provider_run_payload(self, run: AgentRun) -> dict[str, object]:
         snapshot = _run_model_provider_snapshot(run.input)
@@ -223,4 +216,3 @@ class TeamProviderManagementBuilder:
             "created_at": run.created_at,
             "updated_at": run.updated_at,
         }
-

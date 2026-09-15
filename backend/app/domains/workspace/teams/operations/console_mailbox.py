@@ -35,9 +35,7 @@ class TeamOperationsMailboxReader:
             select(func.max(AgentMessage.created_at)).where(
                 AgentMessage.workspace_id == workspace_id,
                 AgentMessage.agent_team_id == agent_team_id,
-                (
-                    AgentMessage.sender_agent_profile_id == agent_profile_id
-                )
+                (AgentMessage.sender_agent_profile_id == agent_profile_id)
                 | (AgentMessage.recipient_agent_profile_id == agent_profile_id),
             )
         )
@@ -45,7 +43,6 @@ class TeamOperationsMailboxReader:
             "unread_count": int(unread_count or 0),
             "latest_message_at": latest_message_at,
         }
-
 
     def team_payload(
         self,

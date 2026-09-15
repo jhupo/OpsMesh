@@ -22,9 +22,7 @@ def _controls_payload(
     provider_management: dict[str, object],
     runtime_blocking: dict[str, object],
 ) -> dict[str, object]:
-    action_plan = (
-        dict_list(command_center.get("action_plan")) if command_center is not None else []
-    )
+    action_plan = dict_list(command_center.get("action_plan")) if command_center is not None else []
     provider_management_actions = dict_list(provider_management.get("suggested_actions"))
     return {
         "can_start": runtime_state.status != "running",
@@ -40,7 +38,8 @@ def _controls_payload(
             item
             for item in [*provider_management_actions, *action_plan]
             if isinstance(item, dict)
-            and item.get("source") in {
+            and item.get("source")
+            in {
                 "provider_management",
                 "provider_readiness",
                 "team_runtime",
@@ -68,9 +67,7 @@ def _readiness_payload(
         item.get("readiness_status") == "blocked"
         for item in dict_list(provider_management.get("agent_bindings"))
     )
-    blocked_step_count = _int_value(
-        _runtime_blocked_steps_payload(runtime_blocking).get("count")
-    )
+    blocked_step_count = _int_value(_runtime_blocked_steps_payload(runtime_blocking).get("count"))
     queue_backlog = (
         _int_value(runtime_queue.get("queued"))
         + _int_value(runtime_queue.get("scheduled_retry"))

@@ -42,9 +42,7 @@ def _runtime_payload(
         "scheduling": redact_sensitive_payload(
             _runtime_scheduling_payload(state.metadata, state.generated_at)
         ),
-        "blocked_steps": redact_sensitive_payload(
-            _runtime_blocked_steps_payload(runtime_blocking)
-        ),
+        "blocked_steps": redact_sensitive_payload(_runtime_blocked_steps_payload(runtime_blocking)),
         "queue": redact_sensitive_payload(runtime_queue),
         "ready": (
             state.status == "running"
@@ -218,11 +216,7 @@ def _runtime_scheduling_payload(
         scheduling_policy.get("loop_interval_seconds"),
         _positive_int(metadata.get("loop_interval_seconds"), 300),
     )
-    next_due_at = (
-        anchor + timedelta(seconds=loop_interval_seconds)
-        if anchor is not None
-        else None
-    )
+    next_due_at = anchor + timedelta(seconds=loop_interval_seconds) if anchor is not None else None
     return {
         "scheduled_loop_enabled": scheduling_policy.get("scheduled_loop_enabled", True)
         is not False,

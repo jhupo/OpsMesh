@@ -12,8 +12,8 @@ from backend.app.api.schemas.platform.admin import (
     AdminForceStopRuntimeRequest,
     AdminWorkspaceRuntimeResponse,
 )
-from backend.app.core.admin.runtime_control import AdminRuntimeService
 from backend.app.core.common.pagination import PageParams
+from backend.app.domains.platform.admin.runtime_control import AdminRuntimeService
 from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter()

@@ -117,9 +117,7 @@ def _provider_readiness_summary(provider_readiness: dict[str, object]) -> dict[s
         "ready_member_count": _int(provider_readiness.get("ready_member_count")),
         "degraded_member_count": _int(provider_readiness.get("degraded_member_count")),
         "blocked_member_count": _int(provider_readiness.get("blocked_member_count")),
-        "runtime_ready_member_count": _int(
-            provider_readiness.get("runtime_ready_member_count")
-        ),
+        "runtime_ready_member_count": _int(provider_readiness.get("runtime_ready_member_count")),
         "runtime_degraded_member_count": _int(
             provider_readiness.get("runtime_degraded_member_count")
         ),
@@ -133,9 +131,7 @@ def _provider_readiness_summary(provider_readiness: dict[str, object]) -> dict[s
         is True,
         "blocking_reasons": _dict(provider_readiness.get("blocking_reasons")),
         "warning_reasons": _dict(provider_readiness.get("warning_reasons")),
-        "runtime_blocking_reasons": _dict(
-            provider_readiness.get("runtime_blocking_reasons")
-        ),
+        "runtime_blocking_reasons": _dict(provider_readiness.get("runtime_blocking_reasons")),
         "runtime_warning_reasons": _dict(provider_readiness.get("runtime_warning_reasons")),
     }
 
