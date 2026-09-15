@@ -140,7 +140,7 @@ def test_boundary_ownership_matrix_has_no_reverse_direct_imports() -> None:
     [
         "backend.app.runtime.operations.workers.lifecycle",
         "backend.app.runtime.operations.recovery.service",
-        "backend.app.domains.workspace.teams.execution_loop",
+        "backend.app.domains.workspace.teams.execution.loop",
     ],
 )
 def test_consolidated_services_import_in_a_fresh_process(module: str) -> None:
@@ -587,6 +587,26 @@ def test_workspace_transfer_and_lifecycle_have_stable_boundaries() -> None:
     assert not (transfer / "exports").exists()
     assert not (workspace / "projects/exports").exists()
     assert not (workspace / "projects/imports").exists()
+
+
+def test_team_execution_modules_are_nested_by_lifecycle() -> None:
+    teams = ROOT / "backend/app/domains/workspace/teams"
+    execution = teams / "execution"
+    assert (execution / "loop.py").is_file()
+    assert (execution / "overview.py").is_file()
+    assert (execution / "queue.py").is_file()
+    assert (execution / "runtime_candidates.py").is_file()
+    assert (execution / "summary.py").is_file()
+    for name in (
+        "execution_loop.py",
+        "execution_overview.py",
+        "execution/loop_queue.py",
+        "execution/queue_dispatch.py",
+        "execution/queue_runtime.py",
+        "execution/overview_bottlenecks.py",
+        "execution/overview_summary.py",
+    ):
+        assert not (teams / name).exists(), name
 
 
 def test_agent_provider_modules_are_nested_by_function() -> None:

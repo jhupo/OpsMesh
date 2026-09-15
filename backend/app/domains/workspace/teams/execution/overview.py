@@ -25,13 +25,11 @@ from backend.app.domains.workspace.teams.execution.member_workload import (
     active_run_phase_counts,
     member_items,
 )
-from backend.app.domains.workspace.teams.execution.overview_contracts import (
-    ACTIVE_RUN_STATUSES,
-)
+from backend.app.domains.workspace.teams.execution.overview_contracts import ACTIVE_RUN_STATUSES
 from backend.app.domains.workspace.teams.execution.overview_repository import (
     TeamExecutionOverviewRepository,
 )
-from backend.app.domains.workspace.teams.execution.overview_summary import overview_summary
+from backend.app.domains.workspace.teams.execution.summary import overview_summary
 
 
 class TeamExecutionOverviewService:

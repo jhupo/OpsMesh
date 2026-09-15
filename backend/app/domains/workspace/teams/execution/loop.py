@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -11,19 +13,17 @@ from backend.app.domains.workspace.teams.execution.loop_payloads import (
     _advanced,
     _iteration_summary,
 )
-from backend.app.domains.workspace.teams.execution.loop_queue import (
-    TeamExecutionLoopEnqueueSummary,
-    TeamExecutionLoopQueueService,
-)
 from backend.app.domains.workspace.teams.execution.loop_status import TeamExecutionLoopStatusService
 from backend.app.domains.workspace.teams.execution.loop_support import (
     TeamExecutionLoopIterationRecorder,
     TeamExecutionLoopRepository,
     enqueue_team_execution_loop_job,
 )
-from backend.app.domains.workspace.teams.execution.runtime_candidates import (
-    _runtime_status,
+from backend.app.domains.workspace.teams.execution.queue import (
+    TeamExecutionLoopEnqueueSummary,
+    TeamExecutionLoopQueueService,
 )
+from backend.app.domains.workspace.teams.execution.runtime_candidates import _runtime_status
 from backend.app.domains.workspace.teams.runtime.service import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,
