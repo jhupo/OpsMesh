@@ -9,22 +9,22 @@ from backend.app.api.routes.admin.dependencies import (
 from backend.app.api.schemas.platform.admin import (
     AdminDeadLetterJobsResponse,
     AdminOperationsSummaryResponse,
-    AdminQueueMetricsResponse,
     AdminRequeueDeadLetterResponse,
 )
-from backend.app.core.admin.operations_summary import AdminOperationsSummaryService
-from backend.app.core.admin.queue_operations import AdminQueueOperationsService
+from backend.app.domains.platform.admin.operations_summary import AdminOperationsSummaryService
+from backend.app.domains.platform.admin.queue_operations import AdminQueueOperationsService
+from backend.app.runtime.operations.contracts.queue import QueueMetricsResponse
 
 router = APIRouter()
 
 
-@router.get("/queues/{queue_name}/metrics", response_model=AdminQueueMetricsResponse)
+@router.get("/queues/{queue_name}/metrics", response_model=QueueMetricsResponse)
 async def admin_queue_metrics(
     queue_name: str,
     service: AdminQueueOperationsService = Depends(admin_queue_operations_service),
-) -> AdminQueueMetricsResponse:
+) -> QueueMetricsResponse:
     metrics = service.queue_metrics(queue_name)
-    return AdminQueueMetricsResponse(**metrics.model_dump())
+    return QueueMetricsResponse(**metrics.model_dump())
 
 
 @router.get("/operations/summary", response_model=AdminOperationsSummaryResponse)

@@ -8,27 +8,27 @@ from backend.app.api.routes.admin.responses import page_response
 from backend.app.api.schemas.platform.admin import (
     AdminQuarantineRuntimeSpaceRequest,
     AdminQuarantineRuntimeSpaceResponse,
-    AdminRuntimeSpaceResponse,
 )
-from backend.app.core.admin.runtime_control import AdminRuntimeService
 from backend.app.core.common.pagination import PageParams
+from backend.app.domains.platform.admin.runtime_control import AdminRuntimeService
+from backend.app.runtime.environment.spaces.contracts import RuntimeSpaceResponse
 
 router = APIRouter()
 
 
-@router.get("/runtime-spaces", response_model=PageResponse[AdminRuntimeSpaceResponse])
+@router.get("/runtime-spaces", response_model=PageResponse[RuntimeSpaceResponse])
 async def list_admin_runtime_spaces(
     page: PageParams = Depends(pagination_params),
     status: str | None = Query(default=None),
     workspace_id: UUID | None = Query(default=None),
     service: AdminRuntimeService = Depends(admin_runtime_service),
-) -> PageResponse[AdminRuntimeSpaceResponse]:
+) -> PageResponse[RuntimeSpaceResponse]:
     items, total = service.list_runtime_spaces(
         page,
         status=status,
         workspace_id=workspace_id,
     )
-    return page_response(items, total, page, AdminRuntimeSpaceResponse)
+    return page_response(items, total, page, RuntimeSpaceResponse)
 
 
 @router.post(

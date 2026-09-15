@@ -5,16 +5,9 @@ from uuid import UUID
 from pydantic import BaseModel, field_serializer
 
 from backend.app.api.schemas.operations.runtimes import WorkspaceRuntimeResponse
-from backend.app.api.schemas.operations.workers import (
-    RuntimeLeaseResponse,
-    WorkerLeaseResponse,
-    WorkerNodeResponse,
-)
-from backend.app.api.schemas.workspace.workspaces import WorkspaceResponse
+from backend.app.api.schemas.operations.workers import RuntimeLeaseResponse
 from backend.app.core.contracts import ORMModel, TimestampedModel
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.runtime.environment.spaces.contracts import RuntimeSpaceResponse
-from backend.app.runtime.operations.contracts.queue import QueueMetricsResponse
 from backend.app.runtime.workers.contracts import JobPayload
 
 
@@ -32,24 +25,8 @@ class AdminOverviewResponse(BaseModel):
     critical_security_events: int
 
 
-class AdminRuntimeSpaceResponse(RuntimeSpaceResponse):
-    pass
-
-
-class AdminWorkerNodeResponse(WorkerNodeResponse):
-    pass
-
-
-class AdminWorkerLeaseResponse(WorkerLeaseResponse):
-    pass
-
-
 class AdminRuntimeLeaseResponse(RuntimeLeaseResponse):
     docker_container_id: str | None = None
-
-
-class AdminQueueMetricsResponse(QueueMetricsResponse):
-    pass
 
 
 class AdminOperationsSummaryResponse(BaseModel):
@@ -105,10 +82,6 @@ class AdminRequeueDeadLetterResponse(BaseModel):
 
 class AdminWorkspaceRuntimeResponse(WorkspaceRuntimeResponse):
     docker_container_id: str | None = None
-
-
-class AdminWorkspaceResponse(WorkspaceResponse):
-    pass
 
 
 class AdminSecurityEventResponse(ORMModel):

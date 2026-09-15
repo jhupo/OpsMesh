@@ -3,9 +3,10 @@ from fastapi import APIRouter, Depends, Query
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.admin.dependencies import admin_overview_service
 from backend.app.api.routes.admin.responses import page_response
-from backend.app.api.schemas.platform.admin import AdminOverviewResponse, AdminWorkspaceResponse
-from backend.app.core.admin.overview import AdminOverviewService
+from backend.app.api.schemas.platform.admin import AdminOverviewResponse
+from backend.app.api.schemas.workspace.workspaces import WorkspaceResponse
 from backend.app.core.common.pagination import PageParams
+from backend.app.domains.platform.admin.overview import AdminOverviewService
 
 router = APIRouter()
 
@@ -17,11 +18,11 @@ async def admin_overview(
     return AdminOverviewResponse(**service.overview())
 
 
-@router.get("/workspaces", response_model=PageResponse[AdminWorkspaceResponse])
+@router.get("/workspaces", response_model=PageResponse[WorkspaceResponse])
 async def list_admin_workspaces(
     page: PageParams = Depends(pagination_params),
     status: str | None = Query(default=None),
     service: AdminOverviewService = Depends(admin_overview_service),
-) -> PageResponse[AdminWorkspaceResponse]:
+) -> PageResponse[WorkspaceResponse]:
     items, total = service.list_workspaces(page, status=status)
-    return page_response(items, total, page, AdminWorkspaceResponse)
+    return page_response(items, total, page, WorkspaceResponse)
