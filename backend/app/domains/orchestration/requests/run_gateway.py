@@ -4,8 +4,7 @@ from dataclasses import dataclass
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.trace_context import current_trace_context, telemetry_span
+from backend.app.core.config import Settings
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -22,6 +21,7 @@ from backend.app.domains.orchestration.requests.request_approval import ModelReq
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
+from backend.app.observability.telemetry.trace_context import current_trace_context, telemetry_span
 from backend.app.runtime.workers.contracts import JobPayload
 
 MarkRunFailed = Callable[[AgentRun, Exception], None]

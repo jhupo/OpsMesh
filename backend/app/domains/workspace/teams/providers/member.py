@@ -3,8 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.health import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
@@ -16,6 +15,7 @@ from backend.app.domains.agents.providers.model_api import (
     model_api_for_agent_provider,
     unsupported_agent_model_api,
 )
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.workspace.teams.models import AgentTeamMember
 from backend.app.domains.workspace.teams.providers.payloads import (
     _capability_provider,

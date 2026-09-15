@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import re
 
-from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionError
-from backend.app.domains.capabilities.models import McpCredentialReference
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.capabilities.mcp.execution.contracts import McpExecutionError
+from backend.app.domains.capabilities.mcp.models import McpCredentialReference
 
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SELF_HOSTED_ENV_PROVIDER = "self_hosted_env"

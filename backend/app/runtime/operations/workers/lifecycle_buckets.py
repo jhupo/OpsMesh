@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from backend.app.core.common.values import age_seconds, ensure_aware_utc, string_list
+from backend.app.core.utils import age_seconds, ensure_aware_utc, string_list
 from backend.app.runtime.operations.contracts.capacity import WorkerLifecycleBucketResponse
-from backend.app.runtime.operations.models import WorkerLease, WorkerNode
 from backend.app.runtime.workers.contracts import JobPayload
+from backend.app.runtime.workers.models import WorkerLease, WorkerNode
 
 TERMINAL_LEASE_STATUSES = {"completed", "failed", "expired"}
 

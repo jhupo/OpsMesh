@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from backend.app.core.common.values import uuid_or_none
+from backend.app.core.utils import uuid_or_none
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
     ProjectPlanStepMaterializer,

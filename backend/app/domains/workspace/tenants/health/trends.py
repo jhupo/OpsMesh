@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from backend.app.core.common.values import int_or_zero
+from backend.app.core.utils import int_or_zero
 from backend.app.domains.workspace.tenants.models import WorkspaceHealthSnapshot
 
 

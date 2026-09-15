@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_text_fragments
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.collaboration.transfer_package import (

@@ -8,8 +8,7 @@ from types import TracebackType
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.bootstrap.providers import build_agent_runtime_registry
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
@@ -30,15 +29,15 @@ from backend.app.domains.orchestration.approvals.agent_tool_interruptions import
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.domains.orchestration.approvals.service import ApprovalService
 from backend.app.domains.orchestration.approvals.waiting import ApprovalWaitingService
-from backend.app.domains.orchestration.requests.authorization import RunAuthorizationService
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.requests.run_gateway import ModelRunGateway
+from backend.app.domains.orchestration.runs.authorization.policy import (
+    RunRuntimeAuthorizationError,
+)
+from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.lifecycle import RunLifecycleService
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.runs.runtime_authorization import (
-    RunRuntimeAuthorizationError,
-)
 from backend.app.domains.orchestration.runs.runtime_event_messages import (
     RunRuntimeEventMessageMapper,
 )
@@ -53,11 +52,9 @@ from backend.app.domains.workspace.projects.io.service import RunProjectIOServic
 from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.observability.audit.service import AuditService
+from backend.app.runtime.contracts import RuntimeEnvironmentError
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
-from backend.app.runtime.environment.run_environment import (
-    RunRuntimeEnvironmentService,
-    RuntimeEnvironmentError,
-)
+from backend.app.runtime.environment.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.queue import RedisQueue
 
@@ -95,7 +92,6 @@ class RunExecutionService:
 
     def __post_init__(self) -> None:
         self.settings = self.settings or get_settings()
-        self.agent_runner = self.agent_runner or build_agent_runtime_registry()
 
     async def run_agent(self, job: JobPayload) -> AgentRun:
         run = self.session.get(AgentRun, job.resource_id)

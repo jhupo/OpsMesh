@@ -9,7 +9,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
 from backend.app.core.db.session import get_db_session

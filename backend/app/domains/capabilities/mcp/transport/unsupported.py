@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionError
-from backend.app.domains.capabilities.models import McpCredentialReference, McpServer
+from backend.app.domains.capabilities.mcp.execution.contracts import McpExecutionError
+from backend.app.domains.capabilities.mcp.models import (
+    McpCredentialReference,
+    McpServer,
+)
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.domains.capabilities.models import McpServer
+from backend.app.domains.capabilities.mcp.models import McpServer
 
 MCP_LIMIT_COUNTED_STATUSES = (
     "completed",

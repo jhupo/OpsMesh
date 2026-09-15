@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeResumeState
 from backend.app.domains.orchestration.runs.models import AgentRunStateSnapshot
 

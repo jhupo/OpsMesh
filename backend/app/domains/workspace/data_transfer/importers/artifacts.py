@@ -7,7 +7,6 @@ from backend.app.domains.workspace.data_transfer.contracts import (
     WorkspaceArchiveImportRequest,
     WorkspaceImportResponse,
 )
-from backend.app.domains.workspace.data_transfer.importers.checksum import _validated_checksum
 from backend.app.domains.workspace.data_transfer.importers.context import (
     _archive_resolution_action,
     _dict_field,
@@ -17,6 +16,7 @@ from backend.app.domains.workspace.data_transfer.importers.context import (
     _uuid_or_none,
     resolved_dependency_id,
 )
+from backend.app.domains.workspace.data_transfer.importers.preview import _validated_checksum
 from backend.app.domains.workspace.data_transfer.repository import (
     WorkspaceArchiveBlobReader,
 )

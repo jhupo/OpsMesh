@@ -15,34 +15,38 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.api.dependencies.redis import get_redis_client
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.core.rate_limits.service import FixedWindowRateLimiter
-from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.rate_limits import FixedWindowRateLimiter
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.models import User
+from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
+from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
 from backend.app.domains.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,
 )
-from backend.app.domains.integrations.webhooks.service import (
+from backend.app.domains.integrations.webhooks.policy import (
     WEBHOOK_REPLAY_COOLDOWN_SECONDS,
     WEBHOOK_REPLAY_WORKSPACE_LIMIT,
+)
+from backend.app.domains.integrations.webhooks.scheduler import (
     WebhookDeliveryScheduler,
-    WebhookDeliveryService,
-    WebhookHttpResponse,
+)
+from backend.app.domains.integrations.webhooks.subscriptions import (
     WebhookSubscriptionService,
 )
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.workers.registry import WorkerJobHandler
 
 TOKEN = "test-token"
 SECRET = "test-credential-secret"
@@ -534,7 +538,7 @@ def test_worker_handler_dispatches_webhook_delivery_job(monkeypatch: pytest.Monk
             )
 
     monkeypatch.setattr(
-        "backend.app.runtime.workers.execution.handlers.io.WebhookDeliveryService",
+        "backend.app.runtime.workers.handlers.io.WebhookDeliveryService",
         RecordingDeliveryService,
     )
 

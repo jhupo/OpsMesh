@@ -10,17 +10,17 @@ from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceMemberResponse,
     WorkspaceMemberUpdateRequest,
 )
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.workspace.tenants.workspace_lifecycle_errors import (
+from backend.app.domains.workspace.tenants.errors import (
     WorkspaceMemberConflictError,
     WorkspaceMemberNotFoundError,
     WorkspaceMemberPermissionError,
 )
-from backend.app.domains.workspace.tenants.workspace_management import WorkspaceService
-from backend.app.domains.workspace.tenants.workspace_members import WorkspaceMemberService
+from backend.app.domains.workspace.tenants.members import WorkspaceMemberService
+from backend.app.domains.workspace.tenants.service import WorkspaceService
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 

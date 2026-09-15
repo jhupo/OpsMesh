@@ -205,6 +205,77 @@ def check_snapshot() -> None:
     )
 
 
+def check_target_layout() -> None:
+    footprint = json.loads((OUTPUT / "target-footprint.json").read_text(encoding="utf-8"))
+    with (OUTPUT / "file-dispositions.csv").open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    if len(rows) != footprint["source_files"]:
+        raise SystemExit("Disposition manifest no longer covers the full source inventory.")
+    actions = Counter(row["action"] for row in rows)
+    if dict(actions) != footprint["actions"]:
+        raise SystemExit(
+            "Disposition action counts differ from the target footprint: "
+            f"declared={footprint['actions']!r}, actual={dict(actions)!r}"
+        )
+
+    planned_files = set(footprint["target_sources"])
+    if len(planned_files) != footprint["planned_implementation_files"]:
+        raise SystemExit(
+            "Target implementation count differs from the declared footprint: "
+            f"declared={footprint['planned_implementation_files']}, "
+            f"actual={len(planned_files)}"
+        )
+    actual_files = {
+        path.relative_to(APP).as_posix() for path in APP.rglob("*.py") if path.name != "__init__.py"
+    }
+    if actual_files != planned_files:
+        missing = sorted(planned_files - actual_files)
+        unplanned = sorted(actual_files - planned_files)
+        raise SystemExit(
+            f"Target implementation files differ: missing={missing!r}, unplanned={unplanned!r}"
+        )
+
+    all_targets = {target for row in rows for target in row["targets"].split(";") if target}
+    missing_targets = sorted(target for target in all_targets if not (APP / target).exists())
+    if missing_targets:
+        raise SystemExit(f"Disposition targets are missing: {missing_targets!r}")
+    stale_sources = sorted(
+        row["source"]
+        for row in rows
+        if row["targets"]
+        and row["source"] not in row["targets"].split(";")
+        and row["source"] not in all_targets
+        and (APP / row["source"]).exists()
+    )
+    if stale_sources:
+        raise SystemExit(f"Superseded source paths still exist: {stale_sources!r}")
+
+    planned_packages = {"."}
+    for path in planned_files:
+        planned_packages.update(
+            parent.as_posix() for parent in Path(path).parents if parent.as_posix() != "."
+        )
+    if len(planned_packages) != footprint["planned_package_directories"]:
+        raise SystemExit(
+            "Target package count differs from the declared footprint: "
+            f"declared={footprint['planned_package_directories']}, "
+            f"actual={len(planned_packages)}"
+        )
+    actual_packages = {
+        init.parent.relative_to(APP).as_posix() or "." for init in APP.rglob("__init__.py")
+    }
+    if actual_packages != planned_packages:
+        missing = sorted(planned_packages - actual_packages)
+        unplanned = sorted(actual_packages - planned_packages)
+        raise SystemExit(
+            f"Target package directories differ: missing={missing!r}, unplanned={unplanned!r}"
+        )
+    print(
+        f"Verified target layout: {len(actual_files)} implementation files, "
+        f"{len(actual_packages)} package directories, no stale paths."
+    )
+
+
 def write_dispositions() -> None:
     inventory = json.loads((OUTPUT / "source-inventory.json").read_text(encoding="utf-8"))
     rules = json.loads((OUTPUT / "disposition-rules.json").read_text(encoding="utf-8"))
@@ -316,11 +387,11 @@ def write_dispositions() -> None:
                     "callers": ";".join(record["callers"]),
                     "dependencies": ";".join(record["dependencies"]),
                     "private_imports": ";".join(record["private_imports"]),
-                "review_method": (
-                    "full-source AST/import inventory; per-file declaration review; "
-                    "selective implementation inspection "
-                    "(not exhaustive line-by-line verification)"
-                ),
+                    "review_method": (
+                        "full-source AST/import inventory; per-file declaration review; "
+                        "selective implementation inspection "
+                        "(not exhaustive line-by-line verification)"
+                    ),
                 }
             )
     for target in rules["new_files"]:
@@ -355,6 +426,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--facts", action="store_true")
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--target-check", action="store_true")
     parser.add_argument("--manifest", action="store_true")
     args = parser.parse_args()
     if args.facts:
@@ -362,6 +434,9 @@ def main() -> None:
         return
     if args.check:
         check_snapshot()
+        return
+    if args.target_check:
+        check_target_layout()
         return
     if args.manifest:
         write_dispositions()

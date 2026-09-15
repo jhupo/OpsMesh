@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.runs.state import (
     RunStatus,

@@ -6,8 +6,8 @@ from uuid import UUID
 
 from redis import Redis
 
-from backend.app.core.common.values import age_seconds
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.core.utils import age_seconds
 from backend.app.runtime.operations.contracts.queue import OperationsQueueInsightsResponse
 from backend.app.runtime.operations.queues.insight_buckets import QueueInsightBucketBuilder
 from backend.app.runtime.workers.contracts import JobPayload

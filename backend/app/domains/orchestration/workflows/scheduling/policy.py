@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import (
+from backend.app.core.utils import (
     non_empty_string_or_none,
     positive_int_or_default,
     positive_int_or_none,

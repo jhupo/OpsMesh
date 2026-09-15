@@ -5,7 +5,7 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 
 
 @dataclass(frozen=True)

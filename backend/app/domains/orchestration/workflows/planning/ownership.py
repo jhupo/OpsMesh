@@ -1,7 +1,7 @@
 """Protect authored execution graphs from automatic plan replacement."""
 
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.workflows.templates.validation import (
+from backend.app.domains.orchestration.workflows.definitions.graph import (
     ProjectPlanValidationError,
 )
 

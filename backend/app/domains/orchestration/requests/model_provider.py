@@ -4,10 +4,10 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.values import uuid_or_none
-from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.config import Settings
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.core.utils import uuid_or_none
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.model_api import (
     canonical_model_api,
     model_api_options_for_provider,

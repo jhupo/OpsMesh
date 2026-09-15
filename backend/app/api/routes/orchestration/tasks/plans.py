@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
 from backend.app.api.schemas.orchestration.definitions import OrchestrationApplyRequest
@@ -24,20 +24,22 @@ from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks.delivery.plan_lifecycle import (
-    TaskPlanLifecycleService,
-    TaskPlanRegenerateCommand,
-    TaskPlanRetryCommand,
-)
 from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.orchestration.workflows.definitions.application import (
+    OrchestrationDefinitionApplicationService,
+)
 from backend.app.domains.orchestration.workflows.definitions.service import (
     OrchestrationDefinitionError,
-    OrchestrationDefinitionService,
 )
 from backend.app.domains.orchestration.workflows.planning.diagnostics import (
     ProjectPlanDiagnosticsService,
 )
-from backend.app.domains.orchestration.workflows.planning.future_plan_mutation import (
+from backend.app.domains.orchestration.workflows.planning.lifecycle import (
+    TaskPlanLifecycleService,
+    TaskPlanRegenerateCommand,
+    TaskPlanRetryCommand,
+)
+from backend.app.domains.orchestration.workflows.planning.mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
     TaskPlanMutationService,
@@ -70,7 +72,7 @@ async def apply_orchestration_to_task(
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     try:
-        OrchestrationDefinitionService(session).apply_to_task(
+        OrchestrationDefinitionApplicationService(session).apply_to_task(
             task,
             request.orchestration_definition_id,
             request.orchestration_version,

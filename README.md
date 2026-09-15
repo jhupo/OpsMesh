@@ -379,7 +379,7 @@ backend/app/api/schemas/{...}/                Transport contracts grouped by the
 backend/app/api/services/workspace/{...}/     Workspace export, import, lifecycle, and file services
 backend/app/domains/agents/                           Agent profiles, SDK runtime, memory, and providers
 backend/app/domains/agents/{profiles,memory,messages,providers,runtime}/  Agent lifecycle and execution domains
-backend/app/domains/agents/runtime/providers/         OpenAI and Claude SDK adapters
+backend/app/domains/agents/runtime/providers/{openai,claude}/ OpenAI and Claude SDK adapters
 backend/app/domains/capabilities/                     Skills, MCP, tools, marketplace, and policy
 backend/app/domains/capabilities/{catalog,governance,resources,skills,marketplace,tools}/  Capability feature modules
 backend/app/domains/capabilities/mcp/{transport,catalog,execution}/  MCP transport, catalog, and execution modules; shared policy.py stays at the MCP boundary

@@ -10,10 +10,10 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
@@ -23,7 +23,7 @@ from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent, AuditIntegrityCheck
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue
 
 TOKEN = "audit-integrity-api-token"

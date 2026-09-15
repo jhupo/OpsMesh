@@ -8,27 +8,29 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
-from backend.app.core.security.models import SecurityEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutionBinding
 from backend.app.domains.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
-from backend.app.domains.capabilities.models import (
-    CapabilityResource,
+from backend.app.domains.capabilities.mcp.models import (
     McpServer,
     McpToolAllowlist,
 )
-from backend.app.domains.orchestration.requests.authorization import RunAuthorizationService
+from backend.app.domains.capabilities.resources.models import CapabilityResource
+from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
 from backend.app.domains.orchestration.runs.models import (
     AgentRun,
     RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.domains.orchestration.runs.runtime_authorization import (
+from backend.app.domains.orchestration.runs.authorization.policy import (
     RunRuntimeAuthorizationError,
+)
+from backend.app.domains.orchestration.runs.authorization.runtime import (
     RunRuntimeAuthorizationService,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep

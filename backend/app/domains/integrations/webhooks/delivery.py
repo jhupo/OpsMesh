@@ -6,8 +6,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.rate_limits.service import FixedWindowRateLimiter
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.rate_limits import FixedWindowRateLimiter
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.integrations.webhooks.delivery_state import WebhookDeliveryStateRecorder
 from backend.app.domains.integrations.webhooks.http_client import (
     HttpxWebhookHttpClient,

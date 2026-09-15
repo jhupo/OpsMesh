@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
 from backend.app.api.schemas.orchestration.tasks.management import (

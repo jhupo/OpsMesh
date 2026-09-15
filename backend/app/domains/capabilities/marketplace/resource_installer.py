@@ -2,9 +2,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.db.errors import flush_or_raise_conflict
-from backend.app.domains.agents.service import AgentManagementService
+from backend.app.domains.agents.profiles.service import AgentManagementService
 from backend.app.domains.capabilities.marketplace.listing_payloads import (
     agent_create_request_from_listing,
     marketplace_source_checksum,
@@ -13,7 +13,10 @@ from backend.app.domains.capabilities.marketplace.listing_payloads import (
 )
 from backend.app.domains.capabilities.marketplace.models import MarketplaceListing
 from backend.app.domains.capabilities.mcp.catalog.servers import McpServerService
-from backend.app.domains.capabilities.models import Skill, WorkspaceSkillInstall
+from backend.app.domains.capabilities.skills.models import (
+    Skill,
+    WorkspaceSkillInstall,
+)
 from backend.app.observability.audit.service import AuditService
 
 

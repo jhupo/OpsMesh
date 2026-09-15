@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from uuid import UUID
 
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember

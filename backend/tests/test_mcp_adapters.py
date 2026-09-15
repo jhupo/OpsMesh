@@ -5,9 +5,9 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.core.security.egress import EgressUrlPolicy
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionError
+from backend.app.domains.capabilities.mcp.execution.contracts import McpExecutionError
 from backend.app.domains.capabilities.mcp.transport.remote import (
     HostedMcpToolAdapter,
     SseMcpToolAdapter,
@@ -19,7 +19,10 @@ from backend.app.domains.capabilities.mcp.transport.stdio_credentials import (
     self_hosted_stdio_environment_refs,
 )
 from backend.app.domains.capabilities.mcp.transport.unsupported import UnsupportedMcpToolAdapter
-from backend.app.domains.capabilities.models import McpCredentialReference, McpServer
+from backend.app.domains.capabilities.mcp.models import (
+    McpCredentialReference,
+    McpServer,
+)
 from backend.app.runtime.environment.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,

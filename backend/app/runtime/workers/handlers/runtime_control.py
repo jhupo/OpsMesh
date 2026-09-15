@@ -1,9 +1,11 @@
-from backend.app.runtime.environment.contracts import RuntimeLimits, validate_runtime_execution_mode
+from backend.app.runtime.contracts import validate_runtime_execution_mode
+from backend.app.runtime.environment.cleanup_jobs import RuntimeCleanupService
+from backend.app.runtime.environment.contracts import RuntimeLimits
+from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.environment.service import RuntimeControlService
-from backend.app.runtime.operations.runtimes.cleanup import RuntimeCleanupService
-from backend.app.runtime.operations.workers.lease_maintenance import WorkerLeaseMaintenanceService
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.leases import WorkerLeaseMaintenanceService
 from backend.app.runtime.workers.routing import (
     bool_value,
     optional_uuid,
@@ -43,7 +45,7 @@ class RuntimeCleanupJobHandler:
         cleanup = RuntimeCleanupService(self._context.session)
         cleanup.cleanup_terminal_run_workspaces(
             settings=self._context.settings,
-            docker_client=self._context.docker_client(),
+            docker_client=self._context.runtime_docker_client,
             workspace_id=job.workspace_id,
             limit=positive_int(
                 routing.get("limit"),
@@ -53,7 +55,7 @@ class RuntimeCleanupJobHandler:
             ),
         )
         cleanup.cleanup_terminal_run_environments(
-            docker_client=self._context.docker_client(),
+            docker_client=self._context.runtime_docker_client,
             workspace_id=job.workspace_id,
             limit=positive_int(
                 routing.get("limit"),
@@ -63,7 +65,7 @@ class RuntimeCleanupJobHandler:
             ),
         )
         cleanup.cleanup_orphaned_pool_leases(
-            docker_client=self._context.docker_client(),
+            docker_client=self._context.runtime_docker_client,
             workspace_id=job.workspace_id,
             stale_after_seconds=stale_after_seconds,
             limit=positive_int(
@@ -89,7 +91,11 @@ class RuntimeControlJobHandler:
         service = RuntimeControlService(
             self._context.session,
             settings=settings,
-            docker_client=self._context.docker_client(),
+            manager_provider=DockerRuntimeManagerProvider(
+                self._context.session,
+                settings,
+                self._context.docker_client(),
+            ),
         )
         match action:
             case "create":

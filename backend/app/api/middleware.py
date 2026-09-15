@@ -14,12 +14,13 @@ from starlette.responses import Response
 from starlette.status import HTTP_429_TOO_MANY_REQUESTS, HTTP_503_SERVICE_UNAVAILABLE
 from starlette.types import ASGIApp
 
+from backend.app.api.client_ip import resolve_client_ip
 from backend.app.api.errors import error_response
-from backend.app.core.common.client_ip import resolve_client_ip
-from backend.app.core.common.config import Settings
-from backend.app.core.common.metrics import record_http_request
-from backend.app.core.common.request_context import request_id_var
-from backend.app.core.common.trace_context import (
+from backend.app.core.config import Settings
+from backend.app.core.security.rate_limits import FixedWindowRateLimiter
+from backend.app.observability.telemetry.metrics import record_http_request
+from backend.app.observability.telemetry.request_context import request_id_var
+from backend.app.observability.telemetry.trace_context import (
     PARENT_SPAN_ID_HEADER,
     SPAN_ID_HEADER,
     TRACE_ID_HEADER,
@@ -31,7 +32,6 @@ from backend.app.core.common.trace_context import (
     trace_context_from_headers,
     traceparent_header,
 )
-from backend.app.core.rate_limits.service import FixedWindowRateLimiter
 
 logger = logging.getLogger(__name__)
 

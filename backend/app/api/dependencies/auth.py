@@ -5,14 +5,15 @@ from uuid import UUID
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.request_context import set_log_context
+from backend.app.api.client_ip import security_request_context
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
-from backend.app.core.security.service import SecurityAuditService
 from backend.app.domains.access.context import AuthenticatedUser, WorkspaceContext
 from backend.app.domains.access.errors import AuthenticationError, PermissionDeniedError
 from backend.app.domains.access.permissions import AccountAction, WorkspaceAction
 from backend.app.domains.access.service import AuthorizationService
+from backend.app.observability.audit.security_events import SecurityAuditService
+from backend.app.observability.telemetry.request_context import set_log_context
 
 AUTHORIZATION_HEADER = Header(default=None)
 SETTINGS_DEPENDENCY = Depends(get_settings)
@@ -30,7 +31,7 @@ async def require_internal_token(
     valid = _is_internal_token(token, settings)
     if not valid:
         SecurityAuditService(session).record_request_event(
-            request=request,
+            request_context=security_request_context(request),
             action="auth.internal_token.rejected",
             outcome="denied",
             severity="warning",
@@ -148,7 +149,7 @@ def workspace_dependency(action: WorkspaceAction) -> Callable[..., object]:
             return context
         except PermissionDeniedError as exc:
             SecurityAuditService(session).record_request_event(
-                request=request,
+                request_context=security_request_context(request),
                 action="auth.workspace.rejected",
                 outcome="denied",
                 severity="warning",
@@ -172,7 +173,7 @@ def account_action_dependency(action: AccountAction) -> Callable[..., object]:
         if current_user.allows_account_action(action):
             return current_user
         SecurityAuditService(session).record_request_event(
-            request=request,
+            request_context=security_request_context(request),
             action="auth.account_scope.rejected",
             outcome="denied",
             severity="warning",
@@ -219,7 +220,7 @@ def _record_auth_failure(
     metadata: dict[str, object] | None = None,
 ) -> None:
     SecurityAuditService(session).record_request_event(
-        request=request,
+        request_context=security_request_context(request),
         action=action,
         outcome="denied",
         severity="warning",

@@ -17,7 +17,7 @@ from backend.app.domains.workspace.teams.operations.views import (
     _uuid_value,
 )
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
-from backend.app.runtime.environment.lifecycle.control import RuntimeLifecycleControl
+from backend.app.runtime.environment.contracts import RuntimeLifecycleControl
 from backend.app.runtime.environment.policies.quotas import RuntimeQuotaExceededError
 from backend.app.runtime.environment.policies.safety import RuntimeSafetyError
 

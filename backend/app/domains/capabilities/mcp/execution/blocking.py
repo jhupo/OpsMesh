@@ -6,15 +6,19 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.trace_context import with_current_trace_metadata
-from backend.app.core.security.models import SecurityEvent
-from backend.app.domains.capabilities.mcp.execution.context import snapshot_audit_metadata
-from backend.app.domains.capabilities.mcp.execution.logs import McpToolCallLogService
-from backend.app.domains.capabilities.mcp.execution.notifications import McpExecutionNotifier
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionRequest
-from backend.app.domains.capabilities.tools.errors import ToolPermissionError
+from backend.app.domains.capabilities.mcp.execution.contracts import (
+    McpExecutionRequest,
+    snapshot_audit_metadata,
+)
+from backend.app.domains.capabilities.mcp.execution.events import (
+    McpExecutionNotifier,
+    McpToolCallLogService,
+)
+from backend.app.domains.capabilities.tools.contracts import ToolPermissionError
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
+from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.observability.telemetry.trace_context import with_current_trace_metadata
 
 
 @dataclass(slots=True)

@@ -4,8 +4,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import get_settings
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.config import get_settings
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService

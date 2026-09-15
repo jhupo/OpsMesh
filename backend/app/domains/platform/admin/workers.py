@@ -6,14 +6,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.pagination import PageParams
 from backend.app.domains.platform.admin.base import AdminSessionService
 from backend.app.domains.platform.admin.common import (
     normalized_worker_capacity,
     worker_node_snapshot,
 )
 from backend.app.domains.platform.admin.worker_policy_control import AdminWorkerPolicyControlService
-from backend.app.runtime.operations.models import WorkerLease, WorkerNode
+from backend.app.runtime.workers.models import WorkerLease, WorkerNode
 
 
 class AdminWorkerService(AdminSessionService):

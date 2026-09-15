@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.capabilities.models import McpServer
+from backend.app.domains.capabilities.mcp.models import McpServer
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker, McpJobCompletePayload

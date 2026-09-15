@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.capabilities.mcp.models import McpServer
 from backend.app.domains.capabilities.mcp.transport.contracts import McpToolAdapter
 from backend.app.domains.capabilities.mcp.transport.remote import (
     HostedMcpToolAdapter,
@@ -10,7 +11,6 @@ from backend.app.domains.capabilities.mcp.transport.remote import (
     StreamableHttpMcpToolAdapter,
 )
 from backend.app.domains.capabilities.mcp.transport.unsupported import UnsupportedMcpToolAdapter
-from backend.app.domains.capabilities.models import McpServer
 
 
 @dataclass(frozen=True)

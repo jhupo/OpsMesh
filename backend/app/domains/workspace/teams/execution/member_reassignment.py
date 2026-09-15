@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.core.common.values import string_list
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.utils import string_list
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.tasks.models import TaskStep
 from backend.app.domains.workspace.teams.execution.overview_contracts import (
     REASSIGNABLE_SPECIALIST_STEP_STATUSES,

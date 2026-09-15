@@ -25,6 +25,9 @@ from backend.app.domains.orchestration.tasks.steps import (
     TaskStepStatus,
     step_message_payload,
 )
+from backend.app.domains.orchestration.workflows.definitions.graph import (
+    ProjectPlanValidationError,
+)
 from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
 from backend.app.domains.orchestration.workflows.planning.completion import PlannerCompletionService
 from backend.app.domains.orchestration.workflows.planning.pm_acceptance import PmAcceptanceService
@@ -35,9 +38,6 @@ from backend.app.domains.orchestration.workflows.planning.pm_follow_up_work impo
     PmFollowUpWorkService,
 )
 from backend.app.domains.orchestration.workflows.steps.completion import TaskStepCompletionService
-from backend.app.domains.orchestration.workflows.templates.validation import (
-    ProjectPlanValidationError,
-)
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]
 ReleaseRunReservations = Callable[[AgentRun, datetime], None]

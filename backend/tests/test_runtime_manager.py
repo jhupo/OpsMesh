@@ -12,11 +12,11 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -25,7 +25,7 @@ from backend.app.runtime.environment.contracts import (
     RuntimeLimits,
     RuntimeMount,
 )
-from backend.app.runtime.environment.manager import RuntimeManager
+from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider, RuntimeManager
 from backend.app.runtime.environment.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -1331,13 +1331,14 @@ def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
     )
     session.commit()
     docker = FakeDockerClient()
+    settings = Settings(
+        storage_root=".opsmesh-test-storage",
+        runtime_allowed_images=["python:3.12-slim"],
+    )
     service = RuntimeControlService(
         session,
-        settings=Settings(
-            storage_root=".opsmesh-test-storage",
-            runtime_allowed_images=["python:3.12-slim"],
-        ),
-        docker_client=docker,
+        settings=settings,
+        manager_provider=DockerRuntimeManagerProvider(session, settings, docker),
     )
 
     runtime = service.create_runtime(

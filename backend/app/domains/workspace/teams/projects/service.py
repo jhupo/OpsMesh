@@ -5,7 +5,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.workspace.teams.projects.assemblers import build_project_space_response
 from backend.app.domains.workspace.teams.projects.matching import (
     memory_entry_matches_project,
     workspace_file_matches_project,
@@ -16,6 +15,7 @@ from backend.app.domains.workspace.teams.projects.types import (
     relationship_ids,
     runtime_space_ids,
 )
+from backend.app.domains.workspace.teams.projects.views import build_project_space_response
 
 
 class TeamProjectSpaceService:

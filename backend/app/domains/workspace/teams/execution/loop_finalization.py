@@ -17,7 +17,7 @@ from backend.app.domains.orchestration.tasks.state import (
     TaskStatus,
 )
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
-from backend.app.domains.workspace.teams.execution.loop_payloads import (
+from backend.app.domains.workspace.teams.execution.loop_state import (
     _final_output_from_acceptance,
     _result,
 )

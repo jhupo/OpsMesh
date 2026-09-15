@@ -12,10 +12,10 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -28,16 +28,16 @@ from backend.app.domains.orchestration.approvals.models import Approval, Pending
 from backend.app.domains.orchestration.runs.models import AgentRun, AgentRunStateSnapshot
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.contracts import (
-    TaskDeliveryDecisionRequest,
-)
-from backend.app.domains.orchestration.tasks.delivery.decisions import TaskDeliveryDecisionService
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.collaboration.transfers import (
     TaskTransferCommand,
     TaskTransferDecision,
     TaskTransferService,
 )
+from backend.app.domains.orchestration.tasks.contracts import (
+    TaskDeliveryDecisionRequest,
+)
+from backend.app.domains.orchestration.tasks.delivery.decisions import TaskDeliveryDecisionService
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.workspace.projects.models import (
@@ -54,8 +54,8 @@ from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMembe
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.contracts import RuntimeCommandResult
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
     _seed_workspace,
@@ -287,7 +287,7 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
         ]
     )
     session.flush()
-    from backend.app.domains.capabilities.models import CapabilityResource
+    from backend.app.domains.capabilities.resources.models import CapabilityResource
 
     runtime_resource = CapabilityResource(
         workspace_id=workspace.id,

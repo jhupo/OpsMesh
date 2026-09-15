@@ -4,13 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.platform.audit import AuditEventResponse
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.orchestration.runs.contracts import (
@@ -20,10 +20,11 @@ from backend.app.domains.orchestration.runs.contracts import (
     RunEventResponse,
 )
 from backend.app.domains.orchestration.runs.control import RunControlService
+from backend.app.domains.orchestration.runs.queries import RunQueryService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.workspace.projects.io.support import RunProjectIOQueryService
 from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
-from backend.app.domains.workspace.tenants.workspace_reads import WorkspaceReadService
+from backend.app.observability.audit.queries import AuditQueryService
 from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
@@ -36,7 +37,7 @@ async def list_runs(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[AgentRunResponse]:
-    items, total = WorkspaceReadService(session).list_runs(
+    items, total = RunQueryService(session).list_runs(
         context.workspace.id,
         page,
         status_filter,
@@ -51,7 +52,7 @@ async def list_run_events(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[RunEventResponse]:
-    items, total = WorkspaceReadService(session).list_run_events(
+    items, total = RunQueryService(session).list_events(
         context.workspace.id,
         agent_run_id,
         page,
@@ -157,5 +158,5 @@ async def list_audit_events(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[AuditEventResponse]:
-    items, total = WorkspaceReadService(session).list_audit_events(context.workspace.id, page)
+    items, total = AuditQueryService(session).list_events(context.workspace.id, page)
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)

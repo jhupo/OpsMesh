@@ -1,21 +1,16 @@
 from __future__ import annotations
 
-from typing import Protocol
-from uuid import UUID
-
 from sqlalchemy.orm import Session
 
-from backend.app.domains.capabilities.tools.context import ToolContext
-from backend.app.domains.orchestration.runs.event_writer import RunEventWriter
+from backend.app.domains.capabilities.tools.contracts import ToolContext
+from backend.app.domains.orchestration.runs.events import RunEventWriter
 
 
-class ProductToolContext(Protocol):
-    _session: Session
+class ProductToolEventRecorder:
+    def __init__(self, session: Session) -> None:
+        self._session = session
 
-    def _sender_agent_profile_id(self, context: ToolContext) -> UUID: ...
-
-class ProductToolEventRecorder(ProductToolContext):
-    def _append_tool_event(self, context: ToolContext, event_type: str, tool_name: str) -> None:
+    def append(self, context: ToolContext, event_type: str, tool_name: str) -> None:
         if context.agent_run_id is None:
             return
         RunEventWriter(self._session).append(

@@ -13,15 +13,15 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings, get_settings
+from backend.app.core.pagination import PageParams
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeContext,
@@ -29,7 +29,7 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeResumeState,
 )
 from backend.app.domains.agents.runtime.state import AgentRunStateStore
-from backend.app.domains.capabilities.models import McpServer
+from backend.app.domains.capabilities.mcp.models import McpServer
 from backend.app.domains.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,
 )

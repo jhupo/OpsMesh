@@ -11,9 +11,9 @@ from agents.exceptions import InputGuardrailTripwireTriggered
 from sqlalchemy import select
 
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
-from backend.app.core.common.config import Settings
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.profiles.commands import AgentProfileCommandService
+from backend.app.core.config import Settings
+from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.domains.agents.profiles.service import AgentManagementService
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
@@ -31,7 +31,7 @@ from backend.app.domains.agents.runtime.providers.claude.runner import ClaudeAge
 from backend.app.domains.agents.runtime.providers.openai.guardrails import OpenAIRuntimeOutputSchema
 from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
-from backend.app.domains.orchestration.runs.authorization_snapshot import (
+from backend.app.domains.orchestration.runs.authorization.snapshot import (
     RunAuthorizationSnapshotService,
 )
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
@@ -342,7 +342,7 @@ def test_agent_profile_rejects_invalid_guardrail_configuration() -> None:
     _, workspace = _seed_workspace(session)
 
     with pytest.raises(ValueError, match="unsupported kind"):
-        AgentProfileCommandService(session, Settings(environment="test")).create_agent(
+        AgentManagementService(session, Settings(environment="test")).create_agent(
             workspace.id,
             {
                 "name": "Invalid Guardrail Agent",

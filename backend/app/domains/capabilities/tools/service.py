@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-from uuid import UUID
-
 from sqlalchemy.orm import Session
 
-from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.capabilities.tools.context import ToolContext
-from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.capabilities.tools.events import ProductToolEventRecorder
 from backend.app.domains.capabilities.tools.files import WorkspaceFileProductTools
 from backend.app.domains.capabilities.tools.mailbox import AgentMailboxProductTools
 from backend.app.domains.capabilities.tools.memory import WorkspaceMemoryProductTools
@@ -20,11 +16,7 @@ from backend.app.domains.workspace.storage.content import (
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 
 
-class ProductToolService(
-    WorkspaceFileProductTools,
-    WorkspaceMemoryProductTools,
-    AgentMailboxProductTools,
-):
+class ProductToolService:
     def __init__(
         self,
         session: Session,
@@ -34,11 +26,11 @@ class ProductToolService(
         readable_content_types: frozenset[str] = DEFAULT_AGENT_READABLE_CONTENT_TYPES,
         memory_embedding_secret_service: SecretEncryptionService | None = None,
     ) -> None:
-        self._session = session
-        self._artifact_persistence = (
+        events = ProductToolEventRecorder(session)
+        artifact_persistence = (
             ArtifactPersistenceService(session, storage) if storage is not None else None
         )
-        self._workspace_file_content_reader = (
+        content_reader = (
             WorkspaceFileContentReader(
                 storage,
                 max_bytes=max_file_read_bytes,
@@ -47,13 +39,15 @@ class ProductToolService(
             if storage is not None
             else None
         )
-        self._memory_embedding_secret_service = memory_embedding_secret_service
-
-    def _sender_agent_profile_id(self, context: ToolContext) -> UUID:
-        run = self._run_for_context(context)
-        if run is None or run.agent_profile_id is None:
-            raise ToolResourceNotFoundError("Agent run is not bound to an agent profile")
-        agent = self._session.get(AgentProfile, run.agent_profile_id)
-        if agent is None or agent.workspace_id != context.workspace_id:
-            raise ToolResourceNotFoundError("Agent not found in workspace")
-        return run.agent_profile_id
+        self.files = WorkspaceFileProductTools(
+            session,
+            events,
+            content_reader=content_reader,
+            artifact_persistence=artifact_persistence,
+        )
+        self.memory = WorkspaceMemoryProductTools(
+            session,
+            events,
+            memory_embedding_secret_service=memory_embedding_secret_service,
+        )
+        self.mailbox = AgentMailboxProductTools(session, events)

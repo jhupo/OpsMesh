@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.embedding_service import (
     WorkspaceMemoryQueryEmbeddingService,
@@ -16,8 +16,7 @@ from backend.app.domains.agents.memory.semantic import (
     SemanticMemoryUpsert,
 )
 from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
-from backend.app.domains.capabilities.tools.context import ToolContext
-from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
+from backend.app.domains.capabilities.tools.contracts import ToolContext, ToolResourceNotFoundError
 from backend.app.domains.capabilities.tools.events import ProductToolEventRecorder
 from backend.app.domains.capabilities.tools.normalization import normalized_tags
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
@@ -30,9 +29,17 @@ class KnowledgeCitationAccessError(ToolResourceNotFoundError):
     code = "knowledge_citation_access_denied"
 
 
-class WorkspaceMemoryProductTools(ProductToolEventRecorder):
-    _session: Session
-    _memory_embedding_secret_service: SecretEncryptionService | None
+class WorkspaceMemoryProductTools:
+    def __init__(
+        self,
+        session: Session,
+        events: ProductToolEventRecorder,
+        *,
+        memory_embedding_secret_service: SecretEncryptionService | None,
+    ) -> None:
+        self._session = session
+        self._events = events
+        self._memory_embedding_secret_service = memory_embedding_secret_service
 
     def search_workspace_memory(
         self,
@@ -44,7 +51,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         access_scopes: tuple[AuthorizedMemoryScope, ...],
     ) -> list[dict[str, object]]:
         context.require_tool("search_workspace_memory")
-        self._append_tool_event(context, "tool.called", "search_workspace_memory")
+        self._events.append(context, "tool.called", "search_workspace_memory")
         query_embedding, embedding_model, embedding_evidence = self._query_embedding(
             workspace_id=context.workspace_id,
             query=query,
@@ -92,7 +99,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
                     _citation_payload(citation)
                     for citation in citations_by_entry.get(memory_entry_id, [])
                 ]
-        self._append_tool_event(context, "tool.completed", "search_workspace_memory")
+        self._events.append(context, "tool.completed", "search_workspace_memory")
         return results
 
     def get_knowledge_citations(
@@ -103,7 +110,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         access_scopes: tuple[AuthorizedMemoryScope, ...],
     ) -> dict[str, object]:
         context.require_tool("get_knowledge_citations")
-        self._append_tool_event(context, "tool.called", "get_knowledge_citations")
+        self._events.append(context, "tool.called", "get_knowledge_citations")
         try:
             citations = KnowledgeSourceIngestionService(
                 self._session
@@ -120,7 +127,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
             "items": [_citation_payload(citation) for citation in citations],
             "total": len(citations),
         }
-        self._append_tool_event(context, "tool.completed", "get_knowledge_citations")
+        self._events.append(context, "tool.completed", "get_knowledge_citations")
         return result
 
     def _query_embedding(
@@ -153,7 +160,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         access_scopes: tuple[AuthorizedMemoryScope, ...],
     ) -> WorkspaceMemoryEntry:
         context.require_tool("upsert_semantic_memory")
-        self._append_tool_event(context, "tool.called", "upsert_semantic_memory")
+        self._events.append(context, "tool.called", "upsert_semantic_memory")
         run = self._run_for_context(context)
         if run is None:
             raise ValueError("Semantic memory writes require an agent run")
@@ -183,7 +190,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
                 change_reason=change_reason,
             )
         )
-        self._append_tool_event(context, "tool.completed", "upsert_semantic_memory")
+        self._events.append(context, "tool.completed", "upsert_semantic_memory")
         return entry
 
     def archive_semantic_memory(
@@ -196,7 +203,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         access_scopes: tuple[AuthorizedMemoryScope, ...],
     ) -> WorkspaceMemoryEntry:
         context.require_tool("archive_semantic_memory")
-        self._append_tool_event(context, "tool.called", "archive_semantic_memory")
+        self._events.append(context, "tool.called", "archive_semantic_memory")
         run = self._run_for_context(context)
         if run is None:
             raise ValueError("Semantic memory archives require an agent run")
@@ -223,7 +230,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
             changed_by_agent_run_id=run.id,
             change_reason=change_reason,
         )
-        self._append_tool_event(context, "tool.completed", "archive_semantic_memory")
+        self._events.append(context, "tool.completed", "archive_semantic_memory")
         return entry
 
     def promote_working_memory(
@@ -232,7 +239,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
         working_memory_entry_id: UUID,
     ) -> WorkspaceMemoryEntry:
         context.require_tool("promote_working_memory")
-        self._append_tool_event(context, "tool.called", "promote_working_memory")
+        self._events.append(context, "tool.called", "promote_working_memory")
         if context.agent_run_id is None:
             raise ValueError("Working memory promotion requires an agent run")
         entry = AgentWorkingMemoryService(self._session).promote(
@@ -241,7 +248,7 @@ class WorkspaceMemoryProductTools(ProductToolEventRecorder):
             memory_entry_id=working_memory_entry_id,
         )
         self._session.flush([entry])
-        self._append_tool_event(context, "tool.completed", "promote_working_memory")
+        self._events.append(context, "tool.completed", "promote_working_memory")
         return entry
 
     def _run_for_context(self, context: ToolContext) -> AgentRun | None:

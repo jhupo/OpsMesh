@@ -2,8 +2,10 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.runtime.environment.contracts import RuntimeExecutionMode, RuntimeLimits
+from backend.app.core.config import Settings
+from backend.app.runtime.contracts import RuntimeExecutionMode
+from backend.app.runtime.environment.contracts import RuntimeLimits
+from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.service import RuntimeControlService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
@@ -20,7 +22,11 @@ class QueuedRuntimeControl:
         requested_by_user_id: UUID,
     ) -> None:
         self._session = session
-        self._service = RuntimeControlService(session, settings=settings)
+        self._service = RuntimeControlService(
+            session,
+            settings=settings,
+            manager_provider=DockerRuntimeManagerProvider(session, settings, None),
+        )
         self._queue = queue
         self._requested_by_user_id = requested_by_user_id
 

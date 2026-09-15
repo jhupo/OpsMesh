@@ -1,4 +1,4 @@
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 
 
 def agent_allowed_mcp_tool_names(agent: AgentProfile) -> set[str] | None:

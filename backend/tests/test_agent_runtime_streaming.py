@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 import backend.app.domains.agents.runtime.providers.openai.streaming as openai_streaming
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,

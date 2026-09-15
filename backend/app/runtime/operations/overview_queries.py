@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.operations.models import WorkerHeartbeat
+from backend.app.runtime.workers.models import WorkerHeartbeat
 
 
 class OperationsOverviewQueryService:

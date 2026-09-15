@@ -1,137 +1,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
 
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.workspace.data_lifecycle.repository import WorkspaceDataLifecycleRepository
 from backend.app.domains.workspace.data_lifecycle.settings import (
-    _backup_settings,
-    _bool_setting,
     _ensure_utc_datetime,
     _positive_int,
-    _restore_drill_settings,
-    _retention_settings,
 )
 from backend.app.domains.workspace.data_transfer.contracts import (
     WorkspaceArchiveExportRequest,
     WorkspaceArchiveRestoreDrillRequest,
 )
 from backend.app.domains.workspace.data_transfer.models import WorkspaceExportJob
-from backend.app.domains.workspace.data_transfer.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.workers.queue import RedisQueue
 
 
-class ScheduledBackupService:
-    def __init__(self, session: Session) -> None:
-        self._session = session
-        self._repository = WorkspaceDataLifecycleRepository(session)
-
-    def run_if_due(
-        self,
-        workspace: Workspace,
-        queue: RedisQueue,
-    ) -> ScheduledLifecycleSummary:
-        raw_policy = _backup_settings(workspace.settings)
-        latest_job = self._repository.latest_export_job(workspace.id)
-        latest_success = self._repository.latest_successful_archive_export(workspace.id)
-        from backend.app.domains.workspace.data_lifecycle.policy import _backup_policy
-
-        backup_policy = _backup_policy(
-            workspace.settings,
-            latest_job,
-            latest_success,
-            generated_at=datetime.now(UTC),
-        )
-        schedule_status = backup_policy["schedule_status"]
-        due = _scheduled_backup_due(backup_policy)
-        if not due:
-            return ScheduledLifecycleSummary()
-
-        if self._repository.has_active_archive_export_job(workspace.id):
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.backup_skipped",
-                reason="archive_export_already_active",
-                metadata={"schedule_status": schedule_status},
-            )
-            self._session.commit()
-            return ScheduledLifecycleSummary(
-                backup_jobs_skipped=1,
-                details=[
-                    _scheduled_lifecycle_detail(
-                        workspace.id,
-                        "backup",
-                        "skipped",
-                        "archive_export_already_active",
-                    )
-                ],
-            )
-
-        try:
-            request = _scheduled_archive_export_request(raw_policy)
-        except ValidationError as exc:
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.backup_skipped",
-                reason="invalid_archive_request",
-                metadata={"error": str(exc)[:1000], "schedule_status": schedule_status},
-            )
-            self._session.commit()
-            return ScheduledLifecycleSummary(
-                backup_jobs_skipped=1,
-                details=[
-                    _scheduled_lifecycle_detail(
-                        workspace.id,
-                        "backup",
-                        "skipped",
-                        "invalid_archive_request",
-                    )
-                ],
-            )
-
-        export_job = WorkspaceExportService(self._session).create_archive_export_job(
-            workspace=workspace,
-            user_id=workspace.owner_user_id,
-            request=request,
-            queue=queue,
-        )
-        export_job.job_metadata = {
-            **export_job.job_metadata,
-            "scheduled_by": "workspace_data_lifecycle",
-            "schedule_status": schedule_status,
-        }
-        self._repository.record_lifecycle_schedule_event(
-            workspace=workspace,
-            action="workspace.lifecycle.backup_enqueued",
-            reason="backup_schedule_due",
-            metadata={
-                "export_job_id": str(export_job.id),
-                "schedule_status": schedule_status,
-            },
-        )
-        self._session.commit()
-        return ScheduledLifecycleSummary(
-            backup_jobs_enqueued=1,
-            details=[
-                _scheduled_lifecycle_detail(
-                    workspace.id,
-                    "backup",
-                    "enqueued",
-                    "backup_schedule_due",
-                    resource_id=export_job.id,
-                )
-            ],
-        )
-
-def _scheduled_archive_export_request(
+def scheduled_archive_export_request(
     raw_policy: dict[str, object],
 ) -> WorkspaceArchiveExportRequest:
     raw_request = raw_policy.get("archive_request")
@@ -140,7 +31,7 @@ def _scheduled_archive_export_request(
     return WorkspaceArchiveExportRequest()
 
 
-def _scheduled_restore_drill_request(
+def scheduled_restore_drill_request(
     raw_policy: dict[str, object],
 ) -> WorkspaceArchiveRestoreDrillRequest:
     raw_request = raw_policy.get("request")
@@ -151,7 +42,7 @@ def _scheduled_restore_drill_request(
     return WorkspaceArchiveRestoreDrillRequest.model_validate(request)
 
 
-def _scheduled_lifecycle_detail(
+def scheduled_lifecycle_detail(
     workspace_id: UUID,
     stage: str,
     status: str,
@@ -170,7 +61,7 @@ def _scheduled_lifecycle_detail(
     return detail
 
 
-def _restore_drill_skipped_summary(
+def restore_drill_skipped_summary(
     workspace_id: UUID,
     reason: str,
     *,
@@ -179,7 +70,7 @@ def _restore_drill_skipped_summary(
     return ScheduledLifecycleSummary(
         restore_drills_skipped=1,
         details=[
-            _scheduled_lifecycle_detail(
+            scheduled_lifecycle_detail(
                 workspace_id,
                 "restore_drill",
                 "skipped",
@@ -190,7 +81,7 @@ def _restore_drill_skipped_summary(
     )
 
 
-def _scheduled_backup_due(backup_policy: dict[str, object]) -> bool:
+def scheduled_backup_due(backup_policy: dict[str, object]) -> bool:
     schedule_status = backup_policy.get("schedule_status")
     if not isinstance(schedule_status, dict):
         return False
@@ -204,14 +95,14 @@ def _scheduled_backup_due(backup_policy: dict[str, object]) -> bool:
     )
 
 
-def _restore_drill_due(
+def restore_drill_due(
     *,
     raw_policy: dict[str, object],
     latest_success: WorkspaceExportJob | None,
     latest_drill: AuditEvent | None,
     generated_at: datetime,
 ) -> bool:
-    interval_hours = _backup_interval_hours(raw_policy)
+    interval_hours = backup_interval_hours(raw_policy)
     if raw_policy.get("enabled") is not True or interval_hours is None:
         return False
     if latest_success is None:
@@ -229,12 +120,12 @@ def _restore_drill_due(
     return latest_drill_at + timedelta(hours=interval_hours) <= generated_at
 
 
-def _schedule_configured(policy: dict[str, object]) -> bool:
+def schedule_configured(policy: dict[str, object]) -> bool:
     schedule_status = policy.get("schedule_status")
     return bool(isinstance(schedule_status, dict) and schedule_status.get("configured") is True)
 
 
-def _automation_backup_warnings(
+def automation_backup_warnings(
     backup_policy: dict[str, object],
     *,
     active_archive_export_count: int,
@@ -242,12 +133,12 @@ def _automation_backup_warnings(
     warnings = (
         list(backup_policy["warnings"]) if isinstance(backup_policy["warnings"], list) else []
     )
-    if _scheduled_backup_due(backup_policy) and active_archive_export_count > 0:
+    if scheduled_backup_due(backup_policy) and active_archive_export_count > 0:
         warnings.append("scheduled_backup_waiting_for_active_export")
     return warnings
 
 
-def _automation_retention_warnings(
+def automation_retention_warnings(
     *,
     raw_retention: dict[str, object],
     retention_policy: dict[str, object],
@@ -261,7 +152,7 @@ def _automation_retention_warnings(
     return warnings
 
 
-def _automation_restore_drill_warnings(
+def automation_restore_drill_warnings(
     *,
     raw_policy: dict[str, object],
     interval_hours: int | None,
@@ -287,7 +178,7 @@ def _automation_restore_drill_warnings(
     return warnings
 
 
-def _backup_schedule_status(
+def backup_schedule_status(
     *,
     raw_policy: dict[str, object],
     enabled: bool,
@@ -295,7 +186,7 @@ def _backup_schedule_status(
     generated_at: datetime,
 ) -> dict[str, object]:
     schedule = raw_policy.get("schedule")
-    interval_hours = _backup_interval_hours(raw_policy)
+    interval_hours = backup_interval_hours(raw_policy)
     last_success_at = _ensure_utc_datetime(
         latest_success.completed_at
         if latest_success is not None and latest_success.completed_at is not None
@@ -329,7 +220,7 @@ def _backup_schedule_status(
     }
 
 
-def _backup_interval_hours(raw_policy: dict[str, object]) -> int | None:
+def backup_interval_hours(raw_policy: dict[str, object]) -> int | None:
     explicit_interval = _positive_int(raw_policy.get("interval_hours"))
     if explicit_interval is not None:
         return explicit_interval
@@ -342,249 +233,18 @@ def _backup_interval_hours(raw_policy: dict[str, object]) -> int | None:
         "weekly": 168,
     }.get(schedule.strip().lower())
 
-class ScheduledRestoreDrillService:
-    def __init__(self, session: Session) -> None:
-        self._session = session
-        self._repository = WorkspaceDataLifecycleRepository(session)
-
-    def run_if_due(
-        self,
-        workspace: Workspace,
-        *,
-        storage: ObjectStorage | None,
-    ) -> ScheduledLifecycleSummary:
-        raw_policy = _restore_drill_settings(workspace.settings)
-        if raw_policy.get("enabled") is not True:
-            return ScheduledLifecycleSummary()
-
-        interval_hours = _backup_interval_hours(raw_policy)
-        if interval_hours is None:
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.restore_drill_skipped",
-                reason="restore_drill_schedule_unrecognized",
-                metadata={"schedule": raw_policy.get("schedule")},
-            )
-            self._session.commit()
-            return _restore_drill_skipped_summary(
-                workspace.id,
-                "restore_drill_schedule_unrecognized",
-            )
-
-        latest_success = self._repository.latest_successful_archive_export(workspace.id)
-        latest_drill = self._repository.latest_restore_drill_event(workspace.id)
-        now = datetime.now(UTC)
-        if not _restore_drill_due(
-            raw_policy=raw_policy,
-            latest_success=latest_success,
-            latest_drill=latest_drill,
-            generated_at=now,
-        ):
-            return ScheduledLifecycleSummary()
-
-        if latest_success is None:
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.restore_drill_skipped",
-                reason="no_successful_archive_export",
-                metadata={},
-            )
-            self._session.commit()
-            return _restore_drill_skipped_summary(
-                workspace.id,
-                "no_successful_archive_export",
-            )
-
-        if self._repository.has_active_archive_export_job(workspace.id):
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.restore_drill_skipped",
-                reason="archive_export_already_active",
-                metadata={"source_export_job_id": str(latest_success.id)},
-            )
-            self._session.commit()
-            return _restore_drill_skipped_summary(
-                workspace.id,
-                "archive_export_already_active",
-                resource_id=latest_success.id,
-            )
-
-        if storage is None:
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.restore_drill_skipped",
-                reason="storage_unavailable",
-                metadata={"source_export_job_id": str(latest_success.id)},
-            )
-            self._session.commit()
-            return _restore_drill_skipped_summary(
-                workspace.id,
-                "storage_unavailable",
-                resource_id=latest_success.id,
-            )
-
-        try:
-            request = _scheduled_restore_drill_request(raw_policy)
-        except ValidationError as exc:
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.restore_drill_skipped",
-                reason="invalid_restore_drill_request",
-                metadata={
-                    "source_export_job_id": str(latest_success.id),
-                    "error": str(exc)[:1000],
-                },
-            )
-            self._session.commit()
-            return _restore_drill_skipped_summary(
-                workspace.id,
-                "invalid_restore_drill_request",
-                resource_id=latest_success.id,
-            )
-
-        try:
-            result = WorkspaceExportService(self._session).run_archive_restore_drill(
-                workspace=workspace,
-                user_id=workspace.owner_user_id,
-                job_id=latest_success.id,
-                request=request,
-                storage=storage,
-            )
-        except (FileNotFoundError, ValueError) as exc:
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.restore_drill_skipped",
-                reason="restore_drill_failed",
-                metadata={
-                    "source_export_job_id": str(latest_success.id),
-                    "error_type": exc.__class__.__name__,
-                },
-            )
-            self._session.commit()
-            return _restore_drill_skipped_summary(
-                workspace.id,
-                "restore_drill_failed",
-                resource_id=latest_success.id,
-            )
-
-        self._repository.record_lifecycle_schedule_event(
-            workspace=workspace,
-            action="workspace.lifecycle.restore_drill_completed",
-            reason="restore_drill_schedule_due",
-            metadata={
-                "source_export_job_id": str(latest_success.id),
-                "passed": result["passed"],
-                "required_resolution_count": result["required_resolution_count"],
-                "suggested_resolution_count": result["suggested_resolution_count"],
-                "conflict_counts": result["conflict_counts"],
-            },
-        )
-        self._session.commit()
-        return ScheduledLifecycleSummary(
-            restore_drills_completed=1,
-            details=[
-                _scheduled_lifecycle_detail(
-                    workspace.id,
-                    "restore_drill",
-                    "completed",
-                    "restore_drill_schedule_due",
-                    resource_id=latest_success.id,
-                )
-            ],
-        )
-
-class ScheduledRetentionService:
-    def __init__(self, session: Session) -> None:
-        self._session = session
-        self._repository = WorkspaceDataLifecycleRepository(session)
-
-    def run_if_due(
-        self,
-        workspace: Workspace,
-    ) -> ScheduledLifecycleSummary:
-        raw_policy = _retention_settings(workspace.settings)
-        if raw_policy.get("auto_apply") is not True:
-            return ScheduledLifecycleSummary()
-
-        interval_hours = _backup_interval_hours(raw_policy)
-        if interval_hours is None:
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.retention_skipped",
-                reason="retention_schedule_unrecognized",
-                metadata={"schedule": raw_policy.get("schedule")},
-            )
-            self._session.commit()
-            return ScheduledLifecycleSummary(
-                retention_runs_skipped=1,
-                details=[
-                    _scheduled_lifecycle_detail(
-                        workspace.id,
-                        "retention",
-                        "skipped",
-                        "retention_schedule_unrecognized",
-                    )
-                ],
-            )
-
-        latest_run_at = self._repository.latest_lifecycle_retention_run_at(workspace.id)
-        now = datetime.now(UTC)
-        if latest_run_at is not None and latest_run_at + timedelta(hours=interval_hours) > now:
-            return ScheduledLifecycleSummary()
-
-        from backend.app.domains.workspace.data_lifecycle.retention import WorkspaceRetentionService
-
-        response = WorkspaceRetentionService(self._session).apply_retention(
-            workspace_id=workspace.id,
-            user_id=workspace.owner_user_id,
-            include_files=_bool_setting(raw_policy, "include_files", True),
-            include_export_jobs=_bool_setting(raw_policy, "include_export_jobs", True),
-            include_artifacts=_bool_setting(raw_policy, "include_artifacts", True),
-            max_items=_positive_int(raw_policy.get("max_items")) or 100,
-            require_successful_backup=_bool_setting(
-                raw_policy,
-                "require_successful_backup",
-                True,
-            ),
-        )
-        if response is None or response["blocked_reasons"]:
-            blocked_reasons = (
-                response["blocked_reasons"]
-                if response is not None and isinstance(response["blocked_reasons"], list)
-                else ["retention_response_missing"]
-            )
-            self._repository.record_lifecycle_schedule_event(
-                workspace=workspace,
-                action="workspace.lifecycle.retention_skipped",
-                reason="retention_blocked",
-                metadata={"blocked_reasons": blocked_reasons},
-            )
-            self._session.commit()
-            return ScheduledLifecycleSummary(
-                retention_runs_skipped=1,
-                details=[
-                    _scheduled_lifecycle_detail(
-                        workspace.id,
-                        "retention",
-                        "skipped",
-                        "retention_blocked",
-                    )
-                ],
-            )
-        return ScheduledLifecycleSummary(
-            retention_runs_applied=1,
-            details=[
-                _scheduled_lifecycle_detail(
-                    workspace.id,
-                    "retention",
-                    "applied",
-                    "retention_schedule_due",
-                )
-            ],
-        )
-
 class WorkspaceScheduledLifecycleService:
     def __init__(self, session: Session) -> None:
+        from backend.app.domains.workspace.data_lifecycle.scheduled_backup import (
+            ScheduledBackupService,
+        )
+        from backend.app.domains.workspace.data_lifecycle.scheduled_restore import (
+            ScheduledRestoreDrillService,
+        )
+        from backend.app.domains.workspace.data_lifecycle.scheduled_retention import (
+            ScheduledRetentionService,
+        )
+
         self._session = session
         self._backup = ScheduledBackupService(session)
         self._retention = ScheduledRetentionService(session)

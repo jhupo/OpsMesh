@@ -27,8 +27,8 @@ from backend.app.domains.platform.updates.models import (
     PlatformUpdateJob,
 )
 from backend.app.domains.platform.updates.service import UpdateService
-from backend.app.runtime.operations.models import WorkerLease
 from backend.app.runtime.self_hosted.models import SelfHostedJobClaim, SelfHostedMcpJob
+from backend.app.runtime.workers.models import WorkerLease
 
 logger = logging.getLogger(__name__)
 

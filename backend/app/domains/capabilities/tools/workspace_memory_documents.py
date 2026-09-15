@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import stringify_or_none
+from backend.app.core.utils import stringify_or_none
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.memory.retrieval_search import (
     MemorySearchDocument,

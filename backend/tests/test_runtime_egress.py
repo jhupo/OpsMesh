@@ -10,7 +10,7 @@ from backend.app.runtime.environment.backends.docker import (
     _docker_network_environment,
     _docker_network_mode,
 )
-from backend.app.runtime.environment.backends.egress import (
+from backend.app.runtime.environment.policies.egress import (
     RuntimeEgressPolicyError,
     resolve_egress_policy,
 )

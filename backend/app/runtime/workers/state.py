@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from backend.app.runtime.workers.capacity import merge_counts
-from backend.app.runtime.workers.lifecycle.heartbeat import worker_heartbeat_details
-from backend.app.runtime.workers.lifecycle.maintenance import WorkerMaintenanceSummary
+from backend.app.runtime.workers.heartbeat import worker_heartbeat_details
+from backend.app.runtime.workers.maintenance import WorkerMaintenanceSummary
 from backend.app.runtime.workers.models import WorkerRunnerConfig, WorkerRunSummary
 
 
@@ -39,6 +39,9 @@ class WorkerRunState:
     scheduled_job_actions_skipped_by_job_type: dict[str, int] = field(default_factory=dict)
     audit_integrity_workspaces_checked: int = 0
     audit_integrity_workspaces_invalid: int = 0
+    workspace_health_snapshots_created: int = 0
+    workspace_health_snapshots_skipped: int = 0
+    workspace_health_snapshots_disabled: int = 0
     queue_rehydrated_runs: int = 0
     queue_recovery_failures: int = 0
     last_error: str | None = None
@@ -90,6 +93,15 @@ class WorkerRunState:
         self.audit_integrity_workspaces_invalid += (
             maintenance.audit_integrity_workspaces_invalid
         )
+        self.workspace_health_snapshots_created += (
+            maintenance.workspace_health_snapshots_created
+        )
+        self.workspace_health_snapshots_skipped += (
+            maintenance.workspace_health_snapshots_skipped
+        )
+        self.workspace_health_snapshots_disabled += (
+            maintenance.workspace_health_snapshots_disabled
+        )
         self.queue_rehydrated_runs += maintenance.queue_rehydrated_runs
         self.queue_recovery_failures += maintenance.queue_recovery_failures
         if maintenance.last_error is not None:
@@ -127,6 +139,9 @@ class WorkerRunState:
             scheduled_job_actions_skipped_by_job_type=self.scheduled_job_actions_skipped_by_job_type,
             audit_integrity_workspaces_checked=self.audit_integrity_workspaces_checked,
             audit_integrity_workspaces_invalid=self.audit_integrity_workspaces_invalid,
+            workspace_health_snapshots_created=self.workspace_health_snapshots_created,
+            workspace_health_snapshots_skipped=self.workspace_health_snapshots_skipped,
+            workspace_health_snapshots_disabled=self.workspace_health_snapshots_disabled,
             last_error=self.last_error,
             queue_rehydrated_runs=self.queue_rehydrated_runs,
             queue_recovery_failures=self.queue_recovery_failures,
@@ -163,6 +178,9 @@ class WorkerRunState:
             scheduled_job_actions_skipped_by_job_type=self.scheduled_job_actions_skipped_by_job_type,
             audit_integrity_workspaces_checked=self.audit_integrity_workspaces_checked,
             audit_integrity_workspaces_invalid=self.audit_integrity_workspaces_invalid,
+            workspace_health_snapshots_created=self.workspace_health_snapshots_created,
+            workspace_health_snapshots_skipped=self.workspace_health_snapshots_skipped,
+            workspace_health_snapshots_disabled=self.workspace_health_snapshots_disabled,
             queue_rehydrated_runs=self.queue_rehydrated_runs,
             queue_recovery_failures=self.queue_recovery_failures,
             stopped=stopped,

@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from backend.app.core.common.trace_context import TraceContext, trace_context
+from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.costs.models import ModelUsageRecord
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.execution.runner import (
+from backend.app.runtime.workers.runner import (
     WorkerRunner,
     WorkerRunnerConfig,
 )

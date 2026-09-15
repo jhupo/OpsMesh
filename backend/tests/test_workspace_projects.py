@@ -10,10 +10,10 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.core.rate_limits.service import FixedWindowRateLimiter
+from backend.app.core.security.rate_limits import FixedWindowRateLimiter
 from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.projects.policy import validate_project_configuration

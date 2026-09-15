@@ -7,8 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStateService
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStateService, RunStatus
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.contracts import WorkerControlResult

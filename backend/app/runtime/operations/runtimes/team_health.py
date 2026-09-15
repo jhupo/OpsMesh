@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from backend.app.core.common.values import datetime_or_none
+from backend.app.core.utils import datetime_or_none
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.service import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,

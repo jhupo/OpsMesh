@@ -1,5 +1,5 @@
-from backend.app.core.common.values import json_safe_payload
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.utils import json_safe_payload
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import AgentRunTracing
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task

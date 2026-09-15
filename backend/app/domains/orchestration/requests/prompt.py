@@ -14,10 +14,10 @@ from backend.app.domains.orchestration.requests.context_budget import (
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.definitions.data import resolve_workflow_inputs
-from backend.app.domains.orchestration.workflows.planning.agent_plan import is_agent_planning_step
-from backend.app.domains.orchestration.workflows.templates.validation import (
+from backend.app.domains.orchestration.workflows.definitions.graph import (
     is_pm_summary_step,
 )
+from backend.app.domains.orchestration.workflows.planning.agent_plan import is_agent_planning_step
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 

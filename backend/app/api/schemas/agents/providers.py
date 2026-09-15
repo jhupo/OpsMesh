@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, HttpUrl, computed_field, field_serializer
 
 from backend.app.core.contracts import ORMModel
-from backend.app.core.secrets.service import hosted_secret_metadata
+from backend.app.core.security.secrets import hosted_secret_metadata
 from backend.app.domains.agents.providers.capabilities import resolve_model_capability
 from backend.app.domains.agents.providers.metadata import sanitize_budget_metadata
 from backend.app.domains.agents.providers.model_api import model_api_for_provider

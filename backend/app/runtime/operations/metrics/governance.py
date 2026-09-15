@@ -6,11 +6,11 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.metrics import GaugeMetric
-from backend.app.core.common.values import ensure_aware_utc
+from backend.app.core.utils import ensure_aware_utc
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.models import AuditIntegrityCheck
 from backend.app.observability.costs.models import ModelUsageRecord, WorkspaceCostBudget
+from backend.app.observability.telemetry.metrics import GaugeMetric
 
 
 class GovernancePrometheusMetrics:

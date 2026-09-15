@@ -6,21 +6,19 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import positive_int_or_none, string_list
-from backend.app.domains.orchestration.requests.authorization import RunAuthorizationService
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.runtime_authorization import (
+from backend.app.core.utils import positive_int_or_none, string_list
+from backend.app.domains.orchestration.runs.authorization.runtime import (
     RunRuntimeAuthorizationService,
 )
+from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
+from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
+from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
-from backend.app.runtime.environment.spaces.reservation_attachment import (
-    RuntimeSpaceReservationAttachmentService,
-)
-from backend.app.runtime.environment.spaces.reservation_capacity import (
+from backend.app.runtime.environment.spaces.reservations import (
     RuntimeSpaceCapacityReservationService,
+    RuntimeSpaceReservationAttachmentService,
 )
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
@@ -313,4 +311,3 @@ class SelfHostedRunReservationService:
             workspace_quota.attach_reservation_to_run(workspace_reservation, run.id)
         if runtime_space_reservation is not None:
             runtime_space_attachment.attach_reservation_to_run(runtime_space_reservation, run.id)
-

@@ -17,7 +17,7 @@ from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.tasks.models import TaskEventOutbox
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember, WorkspaceQuota
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.runtime.operations.models import WorkerLease
+from backend.app.runtime.workers.models import WorkerLease
 
 
 def test_workspace_membership_round_trip() -> None:

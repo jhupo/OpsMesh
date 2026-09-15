@@ -222,4 +222,4 @@ class WorkspaceMarketplaceInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     listing: Mapped[MarketplaceListing] = relationship()
 
 
-from backend.app.domains.agents.models import AgentProfile  # noqa: E402
+from backend.app.domains.agents.profiles.models import AgentProfile  # noqa: E402

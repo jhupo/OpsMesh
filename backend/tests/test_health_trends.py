@@ -1,6 +1,8 @@
-from backend.app.core.db import models  # noqa: F401 - register ORM relationship targets
+from backend.app.bootstrap.models import register_models
 from backend.app.domains.workspace.tenants.health.trends import risk_changes
 from backend.app.domains.workspace.tenants.models import WorkspaceHealthSnapshot
+
+register_models()
 
 
 def test_health_risk_trends_distinguish_resolved_new_improved_and_worsened() -> None:

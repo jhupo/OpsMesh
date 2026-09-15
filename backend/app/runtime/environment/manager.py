@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -6,20 +8,24 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import Settings
+from backend.app.runtime.contracts import RuntimeExecutionMode, validate_runtime_execution_mode
+from backend.app.runtime.environment.cleanup import (
+    RuntimeResourceCleaner,
+    cleanup_succeeded,
+)
 from backend.app.runtime.environment.commands.executor import RuntimeCommandExecutor
 from backend.app.runtime.environment.commands.output import lease_metadata
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
-    RuntimeExecutionMode,
     RuntimeLimits,
-    validate_runtime_execution_mode,
 )
-from backend.app.runtime.environment.lifecycle.cleanup import (
-    RuntimeResourceCleaner,
-    cleanup_succeeded,
+from backend.app.runtime.environment.events import RuntimeEventLog
+from backend.app.runtime.environment.leases import (
+    RuntimeLeaseStore,
+    RuntimeSpaceReservationStore,
 )
-from backend.app.runtime.environment.lifecycle.events import RuntimeEventLog
 from backend.app.runtime.environment.models import (
     RuntimeCommand,
     RuntimeLease,
@@ -28,12 +34,34 @@ from backend.app.runtime.environment.models import (
 )
 from backend.app.runtime.environment.policies.quotas import RuntimeQuotaPolicy
 from backend.app.runtime.environment.policies.runtime import require_container
-from backend.app.runtime.environment.pool.leases import (
-    RuntimeLeaseStore,
-    RuntimeSpaceReservationStore,
-)
 from backend.app.runtime.environment.provisioning_executor import RuntimeProvisioningExecutor
 from backend.app.runtime.environment.security_events import RuntimeSecurityEventRecorder
+
+
+class DockerRuntimeManagerProvider:
+    """Lazily provides one Docker-backed manager for a request or worker transaction."""
+
+    def __init__(
+        self,
+        session: Session,
+        settings: Settings,
+        docker_client: DockerRuntimeClient | None,
+    ) -> None:
+        self._session = session
+        self._settings = settings
+        self._docker_client = docker_client
+        self._manager: RuntimeManager | None = None
+
+    def require(self) -> RuntimeManager:
+        if self._docker_client is None:
+            raise RuntimeError("Runtime manager execution requires an injected Docker client")
+        if self._manager is None:
+            self._manager = RuntimeManager(
+                self._session,
+                self._docker_client,
+                managed_host_roots=[Path(self._settings.storage_root).resolve() / "runtimes"],
+            )
+        return self._manager
 
 
 class RuntimeManager:

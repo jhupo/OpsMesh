@@ -4,9 +4,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
-from backend.app.domains.agents.service import AgentManagementService
+from backend.app.core.pagination import PageParams
+from backend.app.domains.agents.profiles.service import AgentManagementService
 from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.teams.organization.org_chart import TeamOrgChartBuilder

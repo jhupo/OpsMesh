@@ -2,15 +2,14 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.config import Settings
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutor
 from backend.app.domains.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
-from backend.app.runtime.environment.dependencies import get_docker_runtime_client
 from backend.app.runtime.workers.queue import RedisQueue
 
 
@@ -37,4 +36,6 @@ class WorkerJobHandlerContext:
         )
 
     def docker_client(self) -> DockerRuntimeClient:
-        return self.runtime_docker_client or get_docker_runtime_client()
+        if self.runtime_docker_client is None:
+            raise RuntimeError("Worker runtime Docker client was not composed at startup")
+        return self.runtime_docker_client

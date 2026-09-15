@@ -7,11 +7,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.projects.artifacts.service import ProjectOutputArtifactWriter
+from backend.app.domains.workspace.projects.artifacts import ProjectOutputArtifactWriter
 from backend.app.domains.workspace.projects.file_boundaries import (
     ProjectBoundaryViolation,
     ProjectFileBoundaryService,
@@ -240,11 +240,9 @@ class RunProjectIOService:
             self._session.commit()
             return True
         try:
-            backend = build_runtime_backend_registry(
-                self._session,
-                self._docker_client,
-                None,
-            ).resolve(runtime.runtime_provider)
+            backend = build_runtime_backend_registry(self._docker_client).resolve(
+                runtime.runtime_provider
+            )
             filesystem = backend.project_filesystem(runtime, run.id) if backend else None
             if filesystem is None:
                 raise ProjectRunIOError(
@@ -403,11 +401,9 @@ class RunProjectIOService:
                 stage=stage,
                 retryable=False,
             )
-        backend = build_runtime_backend_registry(
-            self._session,
-            self._docker_client,
-            None,
-        ).resolve(runtime.runtime_provider)
+        backend = build_runtime_backend_registry(self._docker_client).resolve(
+            runtime.runtime_provider
+        )
         if backend is None:
             raise ProjectRunIOError(
                 code="project_runtime_provider_unsupported",

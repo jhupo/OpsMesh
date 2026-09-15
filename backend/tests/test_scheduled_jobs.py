@@ -12,15 +12,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import backend.app.domains.agents.providers.health as model_provider_health_service_module
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,

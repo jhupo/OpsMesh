@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.config import Settings, get_settings
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.governance.agent_policy import agent_mcp_policy_mode
 from backend.app.domains.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from backend.app.domains.capabilities.skills.lifecycle import (

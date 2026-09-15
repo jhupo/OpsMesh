@@ -37,7 +37,7 @@ from backend.app.domains.workspace.teams.runtime.scheduling_blocks import (
 )
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.observability.audit.service import AuditService
-from backend.app.runtime.environment.lifecycle.control import RuntimeLifecycleControl
+from backend.app.runtime.environment.contracts import RuntimeLifecycleControl
 from backend.app.runtime.workers.queue import RedisQueue
 
 

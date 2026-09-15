@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from backend.app.domains.workspace.teams.execution.loop_payloads import (
+from backend.app.domains.workspace.teams.execution.loop_state import (
     _without_finalizable_review_actions,
 )
 

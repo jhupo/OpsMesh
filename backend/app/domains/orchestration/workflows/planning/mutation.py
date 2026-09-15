@@ -20,6 +20,10 @@ from backend.app.domains.orchestration.tasks.steps import TaskStepStateService, 
 from backend.app.domains.orchestration.workflows.definitions.conditions import (
     condition_step_references,
 )
+from backend.app.domains.orchestration.workflows.definitions.graph import (
+    ProjectPlanValidationError,
+    validate_project_plan,
+)
 from backend.app.domains.orchestration.workflows.planning.agent_plan import PlannedWork
 from backend.app.domains.orchestration.workflows.planning.feasibility import PlanFeasibilityService
 from backend.app.domains.orchestration.workflows.planning.mutation_materialization import (
@@ -33,10 +37,6 @@ from backend.app.domains.orchestration.workflows.planning.team_project_plan impo
     after_step_ids_for_package,
 )
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.domains.orchestration.workflows.templates.validation import (
-    ProjectPlanValidationError,
-    validate_project_plan,
-)
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.queue import RedisQueue

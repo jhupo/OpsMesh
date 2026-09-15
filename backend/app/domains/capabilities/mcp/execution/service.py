@@ -7,25 +7,25 @@ from opentelemetry.trace import SpanKind
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.trace_context import current_trace_context, telemetry_span
+from backend.app.core.config import Settings, get_settings
 from backend.app.domains.capabilities.mcp.execution.approvals import McpToolApprovalRequester
 from backend.app.domains.capabilities.mcp.execution.blocking import McpExecutionBlocker
-from backend.app.domains.capabilities.mcp.execution.context import snapshot_audit_metadata
-from backend.app.domains.capabilities.mcp.execution.invocation import McpToolInvoker
-from backend.app.domains.capabilities.mcp.execution.policy import resolve_mcp_execution_policy
-from backend.app.domains.capabilities.mcp.execution.types import (
+from backend.app.domains.capabilities.mcp.execution.contracts import (
     McpExecutionRequest,
     McpExecutionResult,
+    snapshot_audit_metadata,
 )
+from backend.app.domains.capabilities.mcp.execution.invocation import McpToolInvoker
+from backend.app.domains.capabilities.mcp.execution.policy import resolve_mcp_execution_policy
 from backend.app.domains.capabilities.mcp.execution.validation import McpExecutionValidator
+from backend.app.domains.capabilities.mcp.models import McpToolCallLog
 from backend.app.domains.capabilities.mcp.policy import MCP_LIMIT_COUNTED_STATUSES
 from backend.app.domains.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
-from backend.app.domains.capabilities.models import McpToolCallLog
 from backend.app.domains.orchestration.approvals.policy import ApprovalPolicyEngine
+from backend.app.observability.telemetry.trace_context import current_trace_context, telemetry_span
 
 
 class McpToolExecutionService:

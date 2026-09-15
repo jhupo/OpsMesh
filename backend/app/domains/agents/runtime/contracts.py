@@ -5,8 +5,8 @@ from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.sandbox.contracts import SandboxManifest
+from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.runtime.contracts import SandboxManifest
 
 AgentRuntimeSessionItem = dict[str, object]
 

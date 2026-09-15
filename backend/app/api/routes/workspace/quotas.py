@@ -8,12 +8,12 @@ from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceQuotaResponse,
     WorkspaceQuotaUpsertRequest,
 )
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.workspace.tenants.workspace_management import WorkspaceService
-from backend.app.domains.workspace.tenants.workspace_quotas import WorkspaceQuotaService
+from backend.app.domains.workspace.tenants.quota_management import WorkspaceQuotaService
+from backend.app.domains.workspace.tenants.service import WorkspaceService
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 

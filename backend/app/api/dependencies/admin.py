@@ -3,9 +3,10 @@ from hmac import compare_digest
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.api.client_ip import security_request_context
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
-from backend.app.core.security.service import SecurityAuditService
+from backend.app.observability.audit.security_events import SecurityAuditService
 
 SETTINGS_DEPENDENCY = Depends(get_settings)
 DB_SESSION_DEPENDENCY = Depends(get_db_session)
@@ -22,7 +23,7 @@ async def require_platform_admin(
     if configured_token and compare_digest(provided_token, configured_token):
         return
     SecurityAuditService(session).record_request_event(
-        request=request,
+        request_context=security_request_context(request),
         action="auth.platform_admin.rejected",
         outcome="denied",
         severity="critical",

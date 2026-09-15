@@ -1,4 +1,5 @@
 from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoopService
+from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.environment.service import RuntimeControlService
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
@@ -35,5 +36,9 @@ class TeamExecutionLoopJobHandler:
         return RuntimeControlService(
             self._context.session,
             settings=self._context.settings,
-            docker_client=self._context.docker_client(),
+            manager_provider=DockerRuntimeManagerProvider(
+                self._context.session,
+                self._context.settings,
+                self._context.docker_client(),
+            ),
         )

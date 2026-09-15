@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
+from backend.app.core.pagination import PageParams
 from backend.app.runtime.environment.spaces.contracts import RuntimeSpaceDiagnosticsResponse
 from backend.app.runtime.environment.spaces.diagnostics import RuntimeSpaceDiagnosticsService
 from backend.app.runtime.environment.spaces.lifecycle import RuntimeSpaceLifecycleService
@@ -15,15 +15,11 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceEvent,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.environment.spaces.reservation_attachment import (
-    RuntimeSpaceReservationAttachmentService,
-)
-from backend.app.runtime.environment.spaces.reservation_capacity import (
+from backend.app.runtime.environment.spaces.reservations import (
     RuntimeSpaceCapacityReservationService,
-    RuntimeSpaceReservationResult,
-)
-from backend.app.runtime.environment.spaces.reservation_release import (
+    RuntimeSpaceReservationAttachmentService,
     RuntimeSpaceReservationReleaseService,
+    RuntimeSpaceReservationResult,
 )
 from backend.app.runtime.environment.spaces.targets import RuntimeSpaceTargetService
 

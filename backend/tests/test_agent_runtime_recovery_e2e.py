@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.models import SecurityEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.execution import (

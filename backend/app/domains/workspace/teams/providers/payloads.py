@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.capabilities import resolve_model_capability
-from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.agents.providers.model_api import model_api_options_for_provider
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 
 
 def _selected_model(

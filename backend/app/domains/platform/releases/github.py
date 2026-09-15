@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.domains.platform.releases.models import (
     ReleaseAsset,
     ReleaseUpdateCheck,

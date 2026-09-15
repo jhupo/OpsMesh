@@ -7,8 +7,8 @@ from redis.exceptions import RedisError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.metrics import GaugeMetric
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.observability.telemetry.metrics import GaugeMetric
 from backend.app.runtime.operations.metrics.governance import (
     GovernancePrometheusMetrics,
 )

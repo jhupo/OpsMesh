@@ -6,7 +6,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
 from backend.app.api.routes.workspace.teams.common import (
@@ -20,7 +20,7 @@ from backend.app.api.schemas.workspace.team_runtime import (
     AgentTeamRuntimeEnsureRequest,
     AgentTeamRuntimeResponse,
 )
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction

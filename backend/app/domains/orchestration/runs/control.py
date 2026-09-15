@@ -23,10 +23,10 @@ from backend.app.domains.orchestration.workflows.statuses import (
     STALE_RECOVERABLE_RUN_STATUS_VALUES,
 )
 from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
-from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
+from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.reservation_release import (
+from backend.app.runtime.environment.spaces.reservations import (
     RuntimeSpaceReservationReleaseService,
 )
 

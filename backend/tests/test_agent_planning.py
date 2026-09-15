@@ -9,14 +9,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunResult,
     AgentRuntimeStructuredOutput,
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks.delivery.plan_lifecycle import (
+from backend.app.domains.orchestration.workflows.planning.lifecycle import (
     TaskPlanLifecycleService,
     TaskPlanRetryCommand,
 )

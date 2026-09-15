@@ -3,9 +3,9 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.metrics import GaugeMetric
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
+from backend.app.observability.telemetry.metrics import GaugeMetric
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpaceQuota
 from backend.app.runtime.operations.runtimes.provider_capacity import (

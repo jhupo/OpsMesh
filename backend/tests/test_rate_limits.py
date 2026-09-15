@@ -2,9 +2,9 @@ from fastapi.testclient import TestClient
 from limits.storage import MemoryStorage
 from starlette.requests import Request
 
-from backend.app.core.common.client_ip import resolve_client_ip
-from backend.app.core.common.config import Settings
-from backend.app.core.rate_limits.service import FixedWindowRateLimiter
+from backend.app.api.client_ip import resolve_client_ip
+from backend.app.core.config import Settings
+from backend.app.core.security.rate_limits import FixedWindowRateLimiter
 from backend.app.main import create_app_with_dependencies
 
 

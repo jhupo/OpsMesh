@@ -2,7 +2,7 @@
 
 from agents.sandbox import Manifest, SandboxRunConfig
 
-from backend.app.domains.agents.runtime.sandbox.contracts import SandboxManifest
+from backend.app.runtime.contracts import SandboxManifest
 
 
 def sandbox_run_config(manifest: SandboxManifest) -> SandboxRunConfig:

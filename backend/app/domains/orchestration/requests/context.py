@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.security.redaction import redact_sensitive_text
 from backend.app.domains.agents.messages.models import AgentMessage
 from backend.app.domains.agents.messages.service import AgentMailboxService
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember

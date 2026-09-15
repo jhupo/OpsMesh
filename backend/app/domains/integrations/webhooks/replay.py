@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.rate_limits.service import FixedWindowRateLimiter
+from backend.app.core.security.rate_limits import FixedWindowRateLimiter
 from backend.app.domains.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.pagination import PageParams
 from backend.app.domains.platform.admin.base import AdminSessionService
 from backend.app.domains.platform.admin.models import PlatformPolicy, PlatformPolicyEvent
 from backend.app.domains.platform.admin.policy_events import AdminPolicyEventService

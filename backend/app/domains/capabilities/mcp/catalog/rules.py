@@ -2,8 +2,8 @@ from datetime import timedelta
 from urllib.parse import urlparse
 
 from backend.app.domains.capabilities.mcp.catalog.catalog import McpCatalogTool
+from backend.app.domains.capabilities.mcp.models import McpServer
 from backend.app.domains.capabilities.mcp.policy import mcp_health_check_stale
-from backend.app.domains.capabilities.models import McpServer
 
 REMOTE_SERVER_TYPES = {"streamable_http", "sse"}
 

@@ -11,6 +11,10 @@ from backend.app.domains.agents.runtime.contracts import AgentRunResult
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.domains.orchestration.workflows.definitions.graph import (
+    ProjectPlanValidationError,
+    validate_project_plan,
+)
 from backend.app.domains.orchestration.workflows.planning.agent_plan import (
     AgentPlanProposal,
     is_agent_planning_step,
@@ -21,10 +25,6 @@ from backend.app.domains.orchestration.workflows.planning.attempts import TaskPl
 from backend.app.domains.orchestration.workflows.planning.feasibility import PlanFeasibilityService
 from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
     ProjectPlanStepMaterializer,
-)
-from backend.app.domains.orchestration.workflows.templates.validation import (
-    ProjectPlanValidationError,
-    validate_project_plan,
 )
 
 

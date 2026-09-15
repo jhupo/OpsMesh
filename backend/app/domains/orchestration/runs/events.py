@@ -1,8 +1,12 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import dict_or_empty, json_safe_payload
+from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.core.utils import dict_or_empty, json_safe_payload
 from backend.app.domains.agents.messages.models import AgentMessage
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.agents.runtime.errors import (
@@ -12,12 +16,59 @@ from backend.app.domains.agents.runtime.errors import (
 from backend.app.domains.orchestration.requests.request_reviewing import (
     model_provider_request_snapshot,
 )
-from backend.app.domains.orchestration.runs.event_writer import RunEventWriter
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
+from backend.app.observability.telemetry.trace_context import with_current_trace_metadata
 from backend.app.runtime.workers.contracts import JobPayload
+
+
+class RunEventWriter:
+    """Workspace-scoped, sequence-safe writer for durable run evidence."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def append(
+        self,
+        *,
+        workspace_id: UUID,
+        run_id: UUID,
+        event_type: str,
+        message: str,
+        metadata: dict[str, object] | None = None,
+    ) -> RunEvent:
+        with self._session.no_autoflush:
+            run = self._session.scalar(
+                select(AgentRun)
+                .where(AgentRun.id == run_id, AgentRun.workspace_id == workspace_id)
+                .with_for_update()
+            )
+        if run is None:
+            raise ValueError("Run event target not found in workspace")
+        self._session.flush()
+        sequence = (
+            self._session.scalar(
+                select(func.max(RunEvent.sequence)).where(
+                    RunEvent.workspace_id == workspace_id,
+                    RunEvent.agent_run_id == run_id,
+                )
+            )
+            or 0
+        ) + 1
+        event = RunEvent(
+            workspace_id=workspace_id,
+            agent_run_id=run_id,
+            sequence=sequence,
+            event_type=event_type,
+            message=redact_sensitive_text(message),
+            event_metadata=redact_sensitive_payload(with_current_trace_metadata(metadata)),
+            created_at=datetime.now(UTC),
+        )
+        self._session.add(event)
+        self._session.flush([event])
+        return event
 
 
 @dataclass(slots=True)

@@ -7,8 +7,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.redaction import redact_sensitive_text
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.providers.audit import ModelProviderAuditWriter
 from backend.app.domains.agents.providers.contracts import ProviderProbeName
 from backend.app.domains.agents.providers.model_api import model_api_for_provider

@@ -5,15 +5,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.admin.policy_reader import PlatformPolicyService
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
+from backend.app.domains.platform.admin.policy_reader import PlatformPolicyService
+from backend.app.runtime.contracts import RuntimeExecutionMode
 from backend.app.runtime.environment.commands.service import RuntimeCommandService
-from backend.app.runtime.environment.contracts import (
-    DockerRuntimeClient,
-    RuntimeExecutionMode,
-    RuntimeLimits,
-)
-from backend.app.runtime.environment.manager_factory import RuntimeManagerFactory
+from backend.app.runtime.environment.contracts import RuntimeLimits, RuntimeManagerProvider
 from backend.app.runtime.environment.models import (
     RuntimeCommand,
     RuntimeEvent,
@@ -30,11 +26,11 @@ class RuntimeControlService:
         self,
         session: Session,
         settings: Settings,
-        docker_client: DockerRuntimeClient | None = None,
+        manager_provider: RuntimeManagerProvider,
     ) -> None:
         self._session = session
         self._settings = settings
-        self._manager_factory = RuntimeManagerFactory(session, settings, docker_client)
+        self._manager_factory = manager_provider
         self._safety = RuntimeSafetyPolicy(
             tuple(settings.runtime_allowed_images),
             PlatformPolicyService(session).risky_execution_policy(),

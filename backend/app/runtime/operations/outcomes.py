@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import ensure_aware_utc
+from backend.app.core.utils import ensure_aware_utc
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.runtime.operations.contracts.outcomes import (

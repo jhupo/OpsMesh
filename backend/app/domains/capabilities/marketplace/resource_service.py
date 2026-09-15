@@ -5,15 +5,15 @@ from uuid import UUID
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings
 from backend.app.core.db.errors import (
     DatabaseConflictError,
     commit_or_raise_conflict,
     flush_or_raise_conflict,
 )
 from backend.app.core.db.pagination import page_scalars
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.pagination import PageParams
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.marketplace.contracts import (
     MarketplaceInstallRequest,
     MarketplaceListingCreateRequest,
@@ -29,7 +29,8 @@ from backend.app.domains.capabilities.marketplace.models import (
 from backend.app.domains.capabilities.marketplace.resource_installer import (
     MarketplaceResourceInstaller,
 )
-from backend.app.domains.capabilities.models import McpServer, Skill
+from backend.app.domains.capabilities.mcp.models import McpServer
+from backend.app.domains.capabilities.skills.models import Skill
 from backend.app.domains.workspace.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder

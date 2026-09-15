@@ -8,12 +8,13 @@ from threading import Event
 
 from backend.app.bootstrap.models import register_models
 from backend.app.bootstrap.providers import build_agent_runtime_registry
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.logging import configure_logging
+from backend.app.bootstrap.runtime import get_default_docker_runtime_client
+from backend.app.bootstrap.telemetry import configure_worker_telemetry
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import SessionLocal, engine
 from backend.app.core.redis.client import redis_client
 from backend.app.domains.orchestration.runs.service import build_default_queue
-from backend.app.observability.telemetry.tracing import configure_worker_telemetry
+from backend.app.observability.telemetry.logging import configure_logging
 from backend.app.runtime.workers.models import WorkerRunnerConfig
 from backend.app.runtime.workers.runner import WorkerRunner
 
@@ -80,6 +81,7 @@ def _build_runner(settings: Settings, config: WorkerRunnerConfig) -> WorkerRunne
         config=config,
         agent_runner=build_agent_runtime_registry(),
         settings=settings,
+        runtime_docker_client=get_default_docker_runtime_client(),
     )
 
 

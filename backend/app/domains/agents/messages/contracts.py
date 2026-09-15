@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field, field_serializer
 from sqlalchemy import Select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.contracts import TimestampedModel
+from backend.app.core.pagination import PageParams
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 

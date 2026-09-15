@@ -5,11 +5,9 @@ import socket
 from dataclasses import dataclass
 from threading import Lock
 
-from fastapi import FastAPI
 from opentelemetry import _logs, trace
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
@@ -21,8 +19,8 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 from sqlalchemy import Engine
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.logging import RequestContextFilter, json_log_formatter
+from backend.app.core.config import Settings
+from backend.app.observability.telemetry.logging import RequestContextFilter, json_log_formatter
 
 _instrument_lock = Lock()
 _global_provider: TracerProvider | None = None
@@ -50,28 +48,7 @@ class TelemetryRuntime:
             self.provider.shutdown()
 
 
-def configure_api_telemetry(
-    app: FastAPI,
-    settings: Settings,
-    *,
-    engine: Engine,
-) -> TelemetryRuntime:
-    runtime = _configure_provider(settings, engine=engine)
-    if runtime.provider is None:
-        return runtime
-    FastAPIInstrumentor.instrument_app(
-        app,
-        tracer_provider=runtime.provider,
-        excluded_urls=settings.otel_excluded_urls,
-    )
-    return runtime
-
-
-def configure_worker_telemetry(settings: Settings, *, engine: Engine) -> TelemetryRuntime:
-    return _configure_provider(settings, engine=engine)
-
-
-def _configure_provider(settings: Settings, *, engine: Engine) -> TelemetryRuntime:
+def create_telemetry_runtime(settings: Settings, *, engine: Engine) -> TelemetryRuntime:
     global _dependencies_instrumented, _global_log_handler
     global _global_logger_provider, _global_provider
 

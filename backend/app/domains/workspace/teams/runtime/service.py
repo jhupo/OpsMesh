@@ -35,8 +35,7 @@ from backend.app.domains.workspace.teams.runtime.state_builder import (
     TeamRuntimeState,
     TeamRuntimeStateBuilder,
 )
-from backend.app.runtime.environment.contracts import RuntimeLimits
-from backend.app.runtime.environment.lifecycle.control import RuntimeLifecycleControl
+from backend.app.runtime.environment.contracts import RuntimeLifecycleControl, RuntimeLimits
 
 __all__ = [
     "TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS",

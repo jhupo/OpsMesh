@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
+from backend.app.core.pagination import PageParams
 from backend.app.domains.agents.memory.policy import normalized_memory_policy
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.marketplace.listing_payloads import (
     AgentDefinitionSnapshot,
 )

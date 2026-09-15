@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.templates.validation import (
+from backend.app.domains.orchestration.workflows.definitions.graph import (
     ProjectPlanValidationError,
     validate_project_plan,
 )

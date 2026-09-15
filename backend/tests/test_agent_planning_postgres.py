@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService

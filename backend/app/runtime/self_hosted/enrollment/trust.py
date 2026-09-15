@@ -6,8 +6,8 @@ from packaging.version import InvalidVersion, Version
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.values import string_list, uuid_or_none
+from backend.app.core.config import Settings
+from backend.app.core.utils import string_list, uuid_or_none
 from backend.app.domains.capabilities.mcp.transport.payloads import (
     MCP_PYTHON_SDK_PACKAGE,
     MCP_PYTHON_SDK_STDIO_ENTRYPOINT,

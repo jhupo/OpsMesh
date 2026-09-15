@@ -8,11 +8,11 @@ from sqlalchemy.orm import Session
 from backend.app.domains.workspace.teams.execution.loop_finalization import (
     TeamExecutionFinalizationService,
 )
-from backend.app.domains.workspace.teams.execution.loop_payloads import (
+from backend.app.domains.workspace.teams.execution.loop_state import (
+    TeamExecutionLoopStatusService,
     _advanced,
     _iteration_summary,
 )
-from backend.app.domains.workspace.teams.execution.loop_status import TeamExecutionLoopStatusService
 from backend.app.domains.workspace.teams.execution.loop_support import (
     TeamExecutionLoopIterationRecorder,
     TeamExecutionLoopRepository,
@@ -30,7 +30,7 @@ from backend.app.domains.workspace.teams.runtime.service import (
     TEAM_RUNTIME_STOPPED,
     TeamRuntimeService,
 )
-from backend.app.runtime.environment.lifecycle.control import RuntimeLifecycleControl
+from backend.app.runtime.environment.contracts import RuntimeLifecycleControl
 from backend.app.runtime.environment.policies.quotas import RuntimeQuotaExceededError
 from backend.app.runtime.environment.policies.safety import RuntimeSafetyError
 from backend.app.runtime.workers.queue import RedisQueue

@@ -3,16 +3,16 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import uuid_or_none
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.utils import uuid_or_none
+from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.domains.capabilities.catalog.models import Capability
 from backend.app.domains.capabilities.marketplace.models import MarketplaceListing, TalentListing
-from backend.app.domains.capabilities.models import (
-    Capability,
+from backend.app.domains.capabilities.mcp.models import (
     McpCredentialReference,
     McpServer,
     McpToolAllowlist,
-    Skill,
 )
+from backend.app.domains.capabilities.skills.models import Skill
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.workspace.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,

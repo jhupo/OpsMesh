@@ -7,7 +7,7 @@ import pytest
 from agents.handoffs import HandoffInputData
 
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeAgentDefinition,

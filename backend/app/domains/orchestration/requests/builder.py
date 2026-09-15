@@ -5,40 +5,28 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.config import Settings
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.memory.context import AgentMemoryContextService
 from backend.app.domains.agents.memory.policy import context_budget_policy, working_memory_policy
 from backend.app.domains.agents.memory.working import (
     AgentWorkingMemoryService,
     working_memory_context,
 )
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolExecutor,
 )
 from backend.app.domains.agents.runtime.guardrails import runtime_controls_from_snapshot
-from backend.app.domains.agents.runtime.state import AgentRunStateStore
 from backend.app.domains.agents.runtime.providers.claude.sandbox import sandbox_settings_for_claude
-from backend.app.domains.agents.runtime.sandbox.contracts import SandboxManifest
-from backend.app.domains.agents.sessions.models import (
-    PersistentAgentSessionRef,
-    SQLAlchemyAgentSession,
-)
+from backend.app.domains.agents.runtime.state import AgentRunStateStore
 from backend.app.domains.agents.runtime.tools.executor import BackendToolExecutor
+from backend.app.domains.agents.sessions.models import PersistentAgentSessionRef
+from backend.app.domains.agents.sessions.store import SQLAlchemyAgentSession
 from backend.app.domains.capabilities.mcp.transport.resolver import McpAdapterResolver
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
-from backend.app.domains.orchestration.requests.authorization import (
-    RunAuthorizationService,
-    authorized_profile_for_run,
-    authorized_task_for_run,
-    file_scope_ids_for_snapshot,
-    resource_grants_for_snapshot,
-    tool_continuations_for_run,
-    tool_definitions_for_snapshot,
-)
 from backend.app.domains.orchestration.requests.context import RunRequestContextProvider
 from backend.app.domains.orchestration.requests.context_budget import (
     ContextBudgetManager,
@@ -51,16 +39,26 @@ from backend.app.domains.orchestration.requests.prompt import (
 )
 from backend.app.domains.orchestration.requests.sessions import RunRequestSessionService
 from backend.app.domains.orchestration.requests.tracing import agent_run_tracing
+from backend.app.domains.orchestration.runs.authorization.runtime import (
+    RunRuntimeAuthorizationService,
+)
+from backend.app.domains.orchestration.runs.authorization.tools import hydrate_agent_tools
+from backend.app.domains.orchestration.runs.authorization.validation import (
+    RunAuthorizationService,
+    authorized_profile_for_run,
+    authorized_task_for_run,
+    file_scope_ids_for_snapshot,
+    resource_grants_for_snapshot,
+    tool_continuations_for_run,
+    tool_definitions_for_snapshot,
+)
 from backend.app.domains.orchestration.runs.cancellation import DatabaseRunCancellation
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
-from backend.app.domains.orchestration.runs.runtime_authorization import (
-    RunRuntimeAuthorizationService,
-)
 from backend.app.domains.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
-from backend.app.domains.orchestration.runs.tool_authorization import hydrate_agent_tools
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.projects.io.support import project_runtime_context
+from backend.app.runtime.contracts import SandboxManifest
 from backend.app.runtime.environment.backends.registry import build_runtime_backend_registry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.models import WorkspaceRuntime
@@ -179,9 +177,9 @@ class RunRequestBuilder:
                 "persistent": _runtime_execution_mode(run) == "persistent",
             }
             metadata["sandbox_session"] = sandbox_metadata
-            backend = build_runtime_backend_registry(
-                self.session, self.docker_client, self.secret_service()
-            ).resolve(runtime.runtime_provider)
+            backend = build_runtime_backend_registry(self.docker_client).resolve(
+                runtime.runtime_provider
+            )
             if backend is not None and hasattr(backend, "sandbox_session"):
                 session = backend.sandbox_session(
                     SandboxManifest(run_id=run.id, root=str(sandbox_metadata["root"])),
@@ -625,6 +623,6 @@ class RunRequestBuilder:
 def _runtime_execution_mode(run: AgentRun) -> str:
     metadata = run.input.get("runtime_execution") if isinstance(run.input, dict) else None
     if not isinstance(metadata, dict):
-        return "isolated"
+        return "none"
     mode = metadata.get("mode")
-    return mode if isinstance(mode, str) else "isolated"
+    return mode if isinstance(mode, str) else "none"

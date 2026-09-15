@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from backend.app.core.common.values import age_seconds
+from backend.app.core.utils import age_seconds
 from backend.app.runtime.operations.contracts.queue import (
     QueueJobTypeBucketResponse,
     QueuePriorityBucketResponse,

@@ -8,9 +8,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.pagination import PageParams
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.config import Settings, get_settings
+from backend.app.core.pagination import PageParams
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.governance.rules import (
     agent_governance_actions,
     dict_list,
@@ -19,8 +19,8 @@ from backend.app.domains.capabilities.governance.rules import (
     string_list,
 )
 from backend.app.domains.capabilities.mcp.catalog.service import McpCatalogService
-from backend.app.domains.capabilities.models import WorkspaceSkillInstall
 from backend.app.domains.capabilities.skills.diagnostics import SkillToolDiagnosticsService
+from backend.app.domains.capabilities.skills.models import WorkspaceSkillInstall
 
 
 class McpGovernanceSummary(TypedDict):

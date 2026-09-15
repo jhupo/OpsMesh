@@ -12,26 +12,21 @@ from backend.app.api.middleware import (
 )
 from backend.app.api.router import api_router
 from backend.app.bootstrap.models import register_models
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.executors import shutdown_blocking_executor
-from backend.app.core.common.logging import configure_logging
+from backend.app.bootstrap.resources import build_api_resources, shutdown_api_resources
+from backend.app.bootstrap.telemetry import configure_api_telemetry
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import engine
-from backend.app.core.rate_limits.service import FixedWindowRateLimiter
-from backend.app.core.redis.client import close_redis_client, create_redis_client
-from backend.app.observability.telemetry.tracing import configure_api_telemetry
+from backend.app.core.security.rate_limits import FixedWindowRateLimiter
+from backend.app.observability.telemetry.logging import configure_logging
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or get_settings()
-    redis_client = create_redis_client(app_settings)
-    limiter = FixedWindowRateLimiter.from_redis(
-        redis_client,
-        key_prefix=app_settings.redis_key_prefix,
-    )
+    resources = build_api_resources(app_settings)
     return create_app_with_dependencies(
         settings=app_settings,
-        rate_limiter=limiter,
-        redis_client=redis_client,
+        rate_limiter=resources.rate_limiter,
+        redis_client=resources.redis_client,
     )
 
 
@@ -87,13 +82,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        redis_client = getattr(app.state, "redis_client", None)
-        if redis_client is not None:
-            close_redis_client(redis_client)
-        telemetry_runtime = getattr(app.state, "telemetry_runtime", None)
-        if telemetry_runtime is not None:
-            telemetry_runtime.shutdown()
-        shutdown_blocking_executor(wait=False)
+        shutdown_api_resources(app)
 
 
 app = create_app()

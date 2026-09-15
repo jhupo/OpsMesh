@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.approvals.policy import (
@@ -18,11 +18,9 @@ from backend.app.domains.orchestration.requests.request_reviewing import (
 )
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStateService
-from backend.app.domains.orchestration.runs.state import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStateService, RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.state import TaskStateService
-from backend.app.domains.orchestration.tasks.state import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStateService, TaskStatus
 
 
 @dataclass(slots=True)

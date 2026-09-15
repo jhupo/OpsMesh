@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 
+from backend.app.domains.capabilities.mcp.models import McpToolAllowlist
 from backend.app.domains.capabilities.mcp.policy import (
     layered_int_policy,
     layered_optional_int_policy,
 )
-from backend.app.domains.capabilities.models import McpToolAllowlist
 
 
 @dataclass(frozen=True)

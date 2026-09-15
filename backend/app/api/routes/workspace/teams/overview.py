@@ -6,9 +6,10 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
+from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,
     IdempotencyService,
@@ -24,29 +25,30 @@ from backend.app.api.schemas.workspace.team_core import (
 from backend.app.api.schemas.workspace.team_execution import (
     AgentTeamCommandCenterResponse,
     AgentTeamExecutionOverviewResponse,
+    AgentTeamProjectDashboardResponse,
     AgentTeamProjectSpaceResponse,
     WorkspaceTeamCommandCenterResponse,
 )
 from backend.app.api.schemas.workspace.team_operations_console import (
     AgentTeamOperationsConsoleResponse,
 )
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.pagination import PageParams
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.governance.policy import TeamCapabilityPolicyService
-from backend.app.domains.workspace.teams.command_center import TeamCommandCenterService
-from backend.app.domains.workspace.teams.execution_overview import TeamExecutionOverviewService
+from backend.app.domains.workspace.teams.execution.overview import TeamExecutionOverviewService
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.domains.workspace.teams.operations_console import TeamOperationsConsoleService
-from backend.app.domains.workspace.teams.project_service import TeamProjectSpaceService
-from backend.app.domains.workspace.teams.workspace_command_center import (
+from backend.app.domains.workspace.teams.operations.command_center import TeamCommandCenterService
+from backend.app.domains.workspace.teams.operations.console import TeamOperationsConsoleService
+from backend.app.domains.workspace.teams.operations.workspace import (
     WorkspaceCommandCenterService,
 )
-from backend.app.domains.workspace.teams.workspace_service import (
+from backend.app.domains.workspace.teams.projects.dashboard import TeamProjectDashboardService
+from backend.app.domains.workspace.teams.projects.service import TeamProjectSpaceService
+from backend.app.domains.workspace.teams.service import (
     TeamCreateCommand,
     TeamUpdateCommand,
     WorkspaceTeamService,
@@ -260,6 +262,28 @@ async def get_team_operations_console(
     if console is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     return AgentTeamOperationsConsoleResponse.model_validate(console)
+
+
+@router.get(
+    "/teams/{team_id}/project-dashboard",
+    response_model=AgentTeamProjectDashboardResponse,
+)
+async def get_team_project_dashboard(
+    team_id: UUID,
+    include_completed: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=500),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> AgentTeamProjectDashboardResponse:
+    dashboard = TeamProjectDashboardService(session).get_dashboard(
+        workspace_id=context.workspace.id,
+        team_id=team_id,
+        include_completed=include_completed,
+        limit=limit,
+    )
+    if dashboard is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return AgentTeamProjectDashboardResponse.model_validate(dashboard)
 
 
 def _team_create_command(request: AgentTeamCreateRequest) -> TeamCreateCommand:

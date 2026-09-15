@@ -3,8 +3,8 @@ import hmac
 import json
 import time
 
-from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,

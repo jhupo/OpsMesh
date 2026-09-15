@@ -6,8 +6,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import dedupe_strings, string_list
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.utils import dedupe_strings, string_list
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.runs.queries import (
     active_task_ids_by_agent,

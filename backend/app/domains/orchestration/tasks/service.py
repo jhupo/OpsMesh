@@ -1,16 +1,18 @@
+"""Workspace-scoped task creation, admission, and retrieval."""
+
 from dataclasses import dataclass, field
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
+from backend.app.core.pagination import PageParams
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.workflows.definitions.service import (
-    OrchestrationDefinitionService,
+from backend.app.domains.orchestration.workflows.definitions.application import (
+    OrchestrationDefinitionApplicationService,
 )
 from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
 from backend.app.domains.workspace.projects.models import WorkspaceProject
@@ -21,7 +23,7 @@ from backend.app.runtime.environment.spaces.service import RuntimeSpaceService
 from backend.app.runtime.workers.queue import RedisQueue
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TaskCreateCommand:
     title: str
     agent_team_id: UUID | None = None
@@ -151,7 +153,7 @@ class WorkspaceTaskService:
         self._session.flush()
 
         if task.orchestration_definition_id is not None:
-            OrchestrationDefinitionService(self._session).apply_to_task(
+            OrchestrationDefinitionApplicationService(self._session).apply_to_task(
                 task,
                 task.orchestration_definition_id,
                 task.orchestration_version,

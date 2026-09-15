@@ -3,10 +3,14 @@ from __future__ import annotations
 import json
 from uuid import UUID
 
-from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.capabilities.mcp.execution.types import (
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.capabilities.mcp.execution.contracts import (
     McpExecutionError,
     McpExecutionPending,
+)
+from backend.app.domains.capabilities.mcp.models import (
+    McpCredentialReference,
+    McpServer,
 )
 from backend.app.domains.capabilities.mcp.transport.payloads import (
     MCP_PYTHON_SDK_PACKAGE,
@@ -21,7 +25,6 @@ from backend.app.domains.capabilities.mcp.transport.stdio_credentials import (
     hosted_stdio_environment,
     self_hosted_stdio_environment_refs,
 )
-from backend.app.domains.capabilities.models import McpCredentialReference, McpServer
 from backend.app.runtime.environment.contracts import RuntimeCommandInputFile
 from backend.app.runtime.environment.manager import RuntimeManager
 from backend.app.runtime.environment.models import WorkspaceRuntime

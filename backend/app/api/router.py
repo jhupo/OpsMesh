@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from backend.app.api.routes.admin.router import router as admin_router
+from backend.app.api.routes.access.auth import router as auth_router
 from backend.app.api.routes.agents.messages import router as agent_messages_router
 from backend.app.api.routes.agents.profiles import router as workspace_agents_router
 from backend.app.api.routes.agents.provider_capabilities import (
@@ -24,7 +24,7 @@ from backend.app.api.routes.operations.scheduled_jobs import router as scheduled
 from backend.app.api.routes.orchestration.approvals import router as approvals_router
 from backend.app.api.routes.orchestration.definitions import router as orchestrations_router
 from backend.app.api.routes.orchestration.runs import router as workspace_runs_router
-from backend.app.api.routes.platform.auth import router as auth_router
+from backend.app.api.routes.platform.router import router as admin_router
 from backend.app.api.routes.self_hosted.router import router as self_hosted_router
 from backend.app.api.routes.workspace.domains import router as domains_router
 from backend.app.api.routes.workspace.exports.router import router as exports_router

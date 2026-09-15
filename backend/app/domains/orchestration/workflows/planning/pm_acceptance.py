@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import (
+from backend.app.core.utils import (
     dict_list,
     string_list,
     string_list_or_single,
@@ -12,7 +12,7 @@ from backend.app.core.common.values import (
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.result_payloads import json_object_from_text
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.workflows.templates.validation import (
+from backend.app.domains.orchestration.workflows.definitions.graph import (
     is_pm_summary_step,
 )
 

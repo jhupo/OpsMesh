@@ -4,11 +4,12 @@
     "move": 209,
     "keep": 485,
     "remove-forwarder": 24,
-    "split-responsibility": 1,
-    "retain-review-entrypoint": 7,
+    "split-responsibility": 2,
+    "retain-review-entrypoint": 5,
+    "retire-superseded": 2,
     "move-review-entrypoint": 1,
     "edit-boundary": 9,
-    "merge": 126,
+    "merge": 125,
     "consolidate-and-split": 3,
     "split": 20,
     "remove-unused-functions": 1,
@@ -17,7 +18,7 @@
     "retain-package-marker": 100,
     "remove-package-marker": 36
   },
-  "planned_implementation_files": 813,
+  "planned_implementation_files": 810,
   "planned_package_directories": 125,
   "new_files_without_single_source": [],
   "target_sources": {
@@ -379,17 +380,11 @@
       "api/schemas/operations/filters.py",
       "api/schemas/operations/overview.py"
     ],
-    "api/schemas/operations/queue.py": [
-      "api/schemas/operations/overview.py"
-    ],
     "api/schemas/operations/runtimes.py": [
       "api/schemas/operations/runtimes.py"
     ],
     "api/schemas/operations/scheduled_jobs.py": [
       "api/schemas/operations/scheduled_jobs.py"
-    ],
-    "api/schemas/operations/scheduler.py": [
-      "api/schemas/operations/overview.py"
     ],
     "api/schemas/operations/self_hosted.py": [
       "api/schemas/operations/self_hosted.py"
@@ -1012,7 +1007,9 @@
     ],
     "domains/capabilities/tools/contracts.py": [
       "domains/capabilities/tools/context.py",
-      "domains/capabilities/tools/errors.py",
+      "domains/capabilities/tools/errors.py"
+    ],
+    "domains/capabilities/tools/events.py": [
       "domains/capabilities/tools/product_events.py"
     ],
     "domains/capabilities/tools/files.py": [
@@ -1026,9 +1023,6 @@
     ],
     "domains/capabilities/tools/normalization.py": [
       "domains/capabilities/tools/product_normalization.py"
-    ],
-    "domains/capabilities/tools/runtime_tools.py": [
-      "domains/capabilities/tools/runtime_tools.py"
     ],
     "domains/capabilities/tools/service.py": [
       "domains/capabilities/tools/product_service.py"
@@ -1798,9 +1792,6 @@
     "domains/workspace/storage/models.py": [
       "domains/workspace/storage/models.py"
     ],
-    "domains/workspace/storage/runtime_files.py": [
-      "domains/workspace/storage/runtime_files.py"
-    ],
     "domains/workspace/storage/runtime_policy.py": [
       "domains/workspace/storage/runtime_policy.py"
     ],
@@ -2293,10 +2284,12 @@
       "runtime/operations/contracts/providers.py"
     ],
     "runtime/operations/contracts/queue.py": [
+      "api/schemas/operations/overview.py",
       "api/schemas/operations/queue.py",
       "runtime/operations/contracts/queue.py"
     ],
     "runtime/operations/contracts/scheduler.py": [
+      "api/schemas/operations/overview.py",
       "api/schemas/operations/scheduler.py",
       "runtime/operations/contracts/scheduler.py"
     ],

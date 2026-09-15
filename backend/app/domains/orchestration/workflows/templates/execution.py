@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
+from backend.app.domains.orchestration.workflows.definitions.graph import (
+    ProjectPlanValidationError,
+)
 from backend.app.domains.orchestration.workflows.planning.member_matching import (
     MemberMatchingService,
-)
-from backend.app.domains.orchestration.workflows.templates.context import (
-    PlanningContext,
+    requested_member_match,
 )
 from backend.app.domains.orchestration.workflows.templates.members import (
     lead_package_for_member,
     lead_package_for_request,
     member_agent_profile_id,
-    requested_member_match,
 )
 from backend.app.domains.orchestration.workflows.templates.normalization import (
     execution_dependencies,
@@ -27,9 +29,12 @@ from backend.app.domains.orchestration.workflows.templates.packages import (
     member_execution_package,
     requested_package,
 )
-from backend.app.domains.orchestration.workflows.templates.validation import (
-    ProjectPlanValidationError,
-)
+
+
+class ExecutionPlanContext(Protocol):
+    snapshot: dict[str, object]
+    execution_members: list[dict[str, object]]
+    leads: list[dict[str, object]]
 
 
 class ExecutionPackageAppender:
@@ -41,7 +46,7 @@ class ExecutionPackageAppender:
         *,
         work_packages: list[WorkflowNode],
         task: Task,
-        context: PlanningContext,
+        context: ExecutionPlanContext,
         lead_package_ids: dict[str, str],
         manager_package_id: str | None,
         executive_alignment_ids: list[str],
@@ -141,7 +146,7 @@ class ExecutionPackageAppender:
         *,
         work_packages: list[WorkflowNode],
         task: Task,
-        context: PlanningContext,
+        context: ExecutionPlanContext,
         lead_package_ids: dict[str, str],
         requested_packages: list[dict[str, object]],
         manager_package_id: str | None,
@@ -200,7 +205,7 @@ class ExecutionPackageAppender:
     def _match_requested_member(
         self,
         task: Task,
-        context: PlanningContext,
+        context: ExecutionPlanContext,
         role: str,
         required_skills: list[str],
         request: dict[str, object],

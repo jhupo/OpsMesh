@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from backend.app.api.client_ip import security_request_context
 from backend.app.api.dependencies.auth import get_current_user, workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.workspace.workspaces import (
@@ -13,24 +14,24 @@ from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceInviteResponse,
     WorkspaceMemberResponse,
 )
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
-from backend.app.core.security.service import SecurityAuditService
+from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import AuthenticatedUser, WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.workspace.tenants.workspace_invites import (
-    WorkspaceInviteService,
-    fingerprint_invite_token,
-)
-from backend.app.domains.workspace.tenants.workspace_lifecycle_errors import (
+from backend.app.domains.workspace.tenants.errors import (
     WorkspaceInviteConflictError,
     WorkspaceInviteNotFoundError,
     WorkspaceInvitePermissionError,
     WorkspaceMemberPermissionError,
 )
-from backend.app.domains.workspace.tenants.workspace_management import WorkspaceService
+from backend.app.domains.workspace.tenants.invites import (
+    WorkspaceInviteService,
+    fingerprint_invite_token,
+)
+from backend.app.domains.workspace.tenants.service import WorkspaceService
+from backend.app.observability.audit.security_events import SecurityAuditService
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -60,7 +61,7 @@ async def accept_workspace_invite(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
 
     SecurityAuditService(session).record_request_event(
-        request=http_request,
+        request_context=security_request_context(http_request),
         action="workspace.invite.accepted",
         outcome="allowed",
         severity="info",
@@ -143,7 +144,7 @@ def record_invite_rejection(
     exc: WorkspaceInvitePermissionError | WorkspaceInviteConflictError | None = None,
 ) -> None:
     SecurityAuditService(session).record_request_event(
-        request=request,
+        request_context=security_request_context(request),
         action="workspace.invite.accept_rejected",
         outcome="denied",
         severity="warning",

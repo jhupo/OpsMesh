@@ -6,15 +6,17 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.errors import DomainError
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.errors import DomainError
+from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.domains.orchestration.runs.authorization.policy import (
+    RunRuntimeAuthorizationError,
+)
+from backend.app.domains.orchestration.runs.authorization.runtime import (
+    runtime_binding_for_snapshot,
+)
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.resources import RunResourceReservationService
-from backend.app.domains.orchestration.runs.runtime_authorization import (
-    RunRuntimeAuthorizationError,
-    runtime_binding_for_snapshot,
-)
 from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.control.ownership import task_owner_can_execute_step
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep

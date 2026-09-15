@@ -5,7 +5,7 @@ from backend.app.core.security.redaction import (
     redact_sensitive_payload_item,
     redact_text_fragments,
 )
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 

@@ -5,8 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.config import Settings
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.profiles.payloads import (
     AGENT_PROFILE_REVIEW_FIELDS,
     profile_snapshot,

@@ -14,16 +14,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import backend.app.domains.agents.providers.health as model_provider_health_service_module
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.core.security.models import SecurityEvent
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.access.models import User
 from backend.app.domains.access.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
 from backend.app.domains.agents.memory.models import (
@@ -31,7 +31,7 @@ from backend.app.domains.agents.memory.models import (
     memory_content_fingerprint,
 )
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
@@ -80,7 +80,7 @@ from backend.app.domains.workspace.tenants.models import (
     WorkspaceMember,
     WorkspaceQuota,
 )
-from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
+from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.contracts import (
@@ -89,7 +89,7 @@ from backend.app.runtime.environment.contracts import (
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.runtime.environment.dependencies import get_docker_runtime_client
+from backend.app.api.dependencies.runtime import get_docker_runtime_client
 from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
@@ -258,6 +258,78 @@ def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
     assert audit.status_code == 200
     actions = {item["action"] for item in audit.json()["items"]}
     assert {"agent.created", "team.created", "task.created"} <= actions
+
+
+def test_workspace_operator_read_models_are_reachable_through_the_api() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    headers = _headers(owner.id)
+
+    team = client.post(
+        f"/api/v1/workspaces/{workspace.id}/teams",
+        headers=headers,
+        json={"name": "Operations Team", "team_type": "operations"},
+    )
+    task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=headers,
+        json={"title": "Inspect production readiness"},
+    )
+    assert team.status_code == 201
+    assert task.status_code == 201
+
+    health = client.get(f"/api/v1/workspaces/{workspace.id}/health", headers=headers)
+    snapshot = client.post(
+        f"/api/v1/workspaces/{workspace.id}/health/snapshots",
+        headers=headers,
+    )
+    snapshots = client.get(
+        f"/api/v1/workspaces/{workspace.id}/health/snapshots",
+        headers=headers,
+    )
+    trends = client.get(
+        f"/api/v1/workspaces/{workspace.id}/health/trends",
+        headers=headers,
+    )
+    dashboard = client.get(
+        f"/api/v1/workspaces/{workspace.id}/teams/{team.json()['id']}/project-dashboard",
+        headers=headers,
+    )
+    execution_status = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.json()['id']}/execution-status",
+        headers=headers,
+    )
+    transcript = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.json()['id']}/interaction-transcript",
+        headers=headers,
+    )
+    recovery = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.json()['id']}/collaboration-recovery",
+        headers=headers,
+    )
+    recovery_preview = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.json()['id']}/collaboration-recovery",
+        headers=headers,
+        json={"dry_run": True},
+    )
+
+    assert health.status_code == 200
+    assert health.json()["workspace_id"] == str(workspace.id)
+    assert snapshot.status_code == 201
+    assert snapshots.status_code == 200
+    assert snapshots.json()["total"] == 1
+    assert trends.status_code == 200
+    assert trends.json()["snapshot_count"] == 1
+    assert dashboard.status_code == 200
+    assert dashboard.json()["team_id"] == team.json()["id"]
+    assert execution_status.status_code == 200
+    assert execution_status.json()["task_id"] == task.json()["id"]
+    assert transcript.status_code == 200
+    assert transcript.json()["task_id"] == task.json()["id"]
+    assert recovery.status_code == 200
+    assert recovery.json()["task_id"] == task.json()["id"]
+    assert recovery_preview.status_code == 200
+    assert recovery_preview.json()["dry_run"] is True
 
 
 def test_create_task_is_idempotent_within_workspace() -> None:

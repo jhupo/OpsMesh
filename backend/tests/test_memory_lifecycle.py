@@ -13,10 +13,10 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.types import JSON
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.configuration import (

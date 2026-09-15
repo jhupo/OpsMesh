@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from backend.app.domains.workspace.data_lifecycle.scheduling import (
-    _backup_schedule_status,
+    backup_schedule_status,
 )
 from backend.app.domains.workspace.data_lifecycle.settings import (
     _backup_settings,
@@ -47,7 +47,7 @@ def _backup_policy(
         warnings.append("backup_policy_not_enabled")
     if latest_success is None:
         warnings.append("no_successful_archive_export")
-    schedule_status = _backup_schedule_status(
+    schedule_status = backup_schedule_status(
         raw_policy=raw_policy,
         enabled=enabled,
         latest_success=latest_success,

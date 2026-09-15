@@ -3,11 +3,10 @@ from uuid import UUID
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.trace_context import current_trace_context, telemetry_span
-from backend.app.core.common.values import string_list
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.config import Settings
 from backend.app.core.security.redaction import redact_sensitive_text
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.core.utils import string_list
 from backend.app.domains.agents.memory.authorization import (
     memory_read_scopes,
     memory_write_scopes,
@@ -45,8 +44,7 @@ from backend.app.domains.agents.runtime.tools.payloads import (
 from backend.app.domains.capabilities.catalog.product_tools import (
     PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES,
 )
-from backend.app.domains.capabilities.tools.context import ToolContext
-from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
+from backend.app.domains.capabilities.tools.contracts import ToolContext, ToolResourceNotFoundError
 from backend.app.domains.capabilities.tools.service import ProductToolService
 from backend.app.domains.orchestration.approvals.policy import (
     ApprovalPolicyDecision,
@@ -55,6 +53,7 @@ from backend.app.domains.orchestration.approvals.policy import (
 from backend.app.domains.orchestration.approvals.service import ApprovalService
 from backend.app.domains.orchestration.approvals.waiting import ApprovalWaitingService
 from backend.app.domains.workspace.storage.storage import ObjectStorage, create_storage
+from backend.app.observability.telemetry.trace_context import current_trace_context, telemetry_span
 
 __all__ = ["PRODUCT_TOOL_NAMES", "ProductToolExecutor"]
 
@@ -278,7 +277,7 @@ def _execute_product_tool(
     file_scope_ids: tuple[UUID, ...],
 ) -> dict[str, object]:
     if tool_name == "send_agent_message":
-        return service.send_agent_message(
+        return service.mailbox.send_agent_message(
             context,
             recipient_agent_profile_id=uuid_argument(arguments, "recipient_agent_profile_id"),
             body=str_argument(arguments, "body", default=""),
@@ -289,7 +288,7 @@ def _execute_product_tool(
             reply_to_message_id=optional_uuid_argument(arguments, "reply_to_message_id"),
         )
     if tool_name == "list_agent_thread_messages":
-        return service.list_agent_thread_messages(
+        return service.mailbox.list_agent_thread_messages(
             context,
             thread_id=uuid_argument(arguments, "thread_id"),
             limit=int_argument(arguments, "limit", default=50),
@@ -297,20 +296,20 @@ def _execute_product_tool(
             status=optional_str_argument(arguments, "status"),
         )
     if tool_name == "get_agent_inbox":
-        return service.get_agent_inbox(
+        return service.mailbox.get_agent_inbox(
             context,
             latest_limit=int_argument(arguments, "latest_limit", default=20),
             unread_only=bool_argument(arguments, "unread_only", default=False),
         )
     if tool_name == "mark_agent_message_read":
-        return service.mark_agent_message_read(
+        return service.mailbox.mark_agent_message_read(
             context,
             message_id=uuid_argument(arguments, "message_id"),
         )
     if tool_name == "search_workspace_memory":
         source_types = optional_str_set_argument(arguments, "source_types")
         return {
-            "items": service.search_workspace_memory(
+            "items": service.memory.search_workspace_memory(
                 context,
                 query=str_argument(arguments, "query", default=""),
                 limit=int_argument(arguments, "limit", default=10),
@@ -322,14 +321,14 @@ def _execute_product_tool(
             )
         }
     if tool_name == "get_knowledge_citations":
-        return service.get_knowledge_citations(
+        return service.memory.get_knowledge_citations(
             context,
             memory_entry_id=uuid_argument(arguments, "memory_entry_id"),
             access_scopes=memory_read_scopes(resource_grants),
         )
     if tool_name == "upsert_semantic_memory":
         return memory_entry_payload(
-            service.upsert_semantic_memory(
+            service.memory.upsert_semantic_memory(
                 context,
                 scope_type=str_argument(arguments, "scope_type", default="workspace"),
                 scope_id=uuid_argument(arguments, "scope_id"),
@@ -347,7 +346,7 @@ def _execute_product_tool(
         )
     if tool_name == "archive_semantic_memory":
         return memory_entry_payload(
-            service.archive_semantic_memory(
+            service.memory.archive_semantic_memory(
                 context,
                 memory_entry_id=uuid_argument(arguments, "memory_entry_id"),
                 expected_revision=int_argument(arguments, "expected_revision", default=0),
@@ -357,7 +356,7 @@ def _execute_product_tool(
         )
     if tool_name == "promote_working_memory":
         return memory_entry_payload(
-            service.promote_working_memory(
+            service.memory.promote_working_memory(
                 context,
                 working_memory_entry_id=uuid_argument(
                     arguments,
@@ -369,7 +368,7 @@ def _execute_product_tool(
         return {
             "items": [
                 workspace_file_payload(file)
-                for file in service.list_workspace_files(
+                for file in service.files.list_workspace_files(
                     context,
                     allowed_file_ids=_file_ids(resource_grants, file_scope_ids),
                 )
@@ -377,7 +376,7 @@ def _execute_product_tool(
         }
     if tool_name == "read_workspace_file":
         return workspace_file_content_payload(
-            service.read_workspace_file(
+            service.files.read_workspace_file(
                 context,
                 file_id=uuid_argument(arguments, "file_id"),
                 allowed_file_ids=_file_ids(resource_grants, file_scope_ids),
@@ -385,7 +384,7 @@ def _execute_product_tool(
         )
     if tool_name == "write_artifact":
         return artifact_payload(
-            service.write_artifact(
+            service.files.write_artifact(
                 context,
                 filename=str_argument(arguments, "filename", default="artifact.txt"),
                 content=bytes_argument(arguments, "content"),

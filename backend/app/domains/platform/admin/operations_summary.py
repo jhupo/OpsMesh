@@ -7,15 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.platform.admin.base import AdminRedisService
 from backend.app.domains.platform.admin.common import positive_int, top_counts
 from backend.app.domains.platform.admin.queue_operations import AdminQueueOperationsService
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.runtime.operations.models import WorkerLease, WorkerNode
+from backend.app.runtime.workers.models import WorkerLease, WorkerNode
 
 
 class QuotaUsage(TypedDict):

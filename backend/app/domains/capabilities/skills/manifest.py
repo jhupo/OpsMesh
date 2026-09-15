@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 
 
 def manifest_mcp_tools(manifest: dict[str, object]) -> list[str]:

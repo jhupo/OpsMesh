@@ -9,19 +9,22 @@ from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import CallToolResult
 
-from backend.app.core.secrets.service import SecretEncryptionService
 from backend.app.core.security.egress import (
     MCP_EGRESS_URL_POLICY,
     EgressUrlPolicy,
     EgressUrlValidationError,
     validate_egress_url,
 )
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionError
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.capabilities.mcp.execution.contracts import McpExecutionError
+from backend.app.domains.capabilities.mcp.models import (
+    McpCredentialReference,
+    McpServer,
+)
 from backend.app.domains.capabilities.mcp.transport.payloads import (
     string_dict_setting,
     string_setting,
 )
-from backend.app.domains.capabilities.models import McpCredentialReference, McpServer
 
 
 class BaseRemoteMcpToolAdapter(ABC):

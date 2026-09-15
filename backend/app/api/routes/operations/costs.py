@@ -17,11 +17,13 @@ from backend.app.api.schemas.operations.costs import (
     WorkspaceCostBudgetRequest,
     WorkspaceCostBudgetResponse,
 )
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.observability.costs.models import WorkspaceCostBudget
+from backend.app.observability.costs.pricing import CostPricingService
+from backend.app.observability.costs.queries import CostQueryService
 from backend.app.observability.costs.service import CostAccountingService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/costs", tags=["costs"])
@@ -38,7 +40,7 @@ async def list_model_usage(
     session: Session = Depends(get_db_session),
 ) -> PageResponse[ModelUsageRecordResponse]:
     start, end = _time_range(start_at, end_at)
-    rows, total = CostAccountingService(session).list_usage(
+    rows, total = CostQueryService(session).list_usage(
         context.workspace.id,
         start_at=start,
         end_at=end,
@@ -68,7 +70,7 @@ async def cost_summary(
 ) -> CostSummaryResponse:
     start, end = _time_range(start_at, end_at)
     try:
-        payload = CostAccountingService(session).summary(
+        payload = CostQueryService(session).summary(
             context.workspace.id,
             start_at=start,
             end_at=end,
@@ -87,7 +89,7 @@ async def list_pricing_rules(
 ) -> list[ModelPricingRuleResponse]:
     return [
         ModelPricingRuleResponse.model_validate(rule)
-        for rule in CostAccountingService(session).list_pricing_rules(context.workspace.id)
+        for rule in CostPricingService(session).list_pricing_rules(context.workspace.id)
     ]
 
 
@@ -102,7 +104,7 @@ async def create_pricing_rule(
     session: Session = Depends(get_db_session),
 ) -> ModelPricingRuleResponse:
     try:
-        rule = CostAccountingService(session).create_pricing_rule(
+        rule = CostPricingService(session).create_pricing_rule(
             workspace_id=context.workspace.id,
             actor_user_id=context.user.user_id,
             **request.model_dump(),
@@ -131,7 +133,7 @@ async def disable_pricing_rule(
     session: Session = Depends(get_db_session),
 ) -> ModelPricingRuleResponse:
     try:
-        rule = CostAccountingService(session).disable_pricing_rule(
+        rule = CostPricingService(session).disable_pricing_rule(
             workspace_id=context.workspace.id,
             pricing_rule_id=pricing_rule_id,
             actor_user_id=context.user.user_id,

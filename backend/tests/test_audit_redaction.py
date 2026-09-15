@@ -9,17 +9,18 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.requests import Request
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.api.client_ip import security_request_context
+from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.core.security.models import SecurityEvent
+from backend.app.core.pagination import PageParams
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.core.security.service import SecurityAuditService
 from backend.app.domains.access.models import User
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.domains.workspace.tenants.workspace_reads import WorkspaceReadService
+from backend.app.observability.audit.queries import AuditQueryService
 from backend.app.observability.audit.integrity import AuditIntegrityService
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.security_events import SecurityAuditService
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.observability.audit.service import AuditService
 
 
@@ -73,7 +74,7 @@ def test_security_audit_service_redacts_sensitive_metadata_before_db_write() -> 
     session = _session()
 
     SecurityAuditService(session).record_request_event(
-        request=_request(),
+        request_context=security_request_context(_request()),
         action="auth.failed",
         outcome="denied",
         severity="high",
@@ -278,7 +279,7 @@ def test_audit_retention_filters_queries_but_worm_cleanup_retains_rows() -> None
     session.commit()
 
     settings = Settings(audit_event_retention_days=30)
-    items, total = WorkspaceReadService(session, settings).list_audit_events(
+    items, total = AuditQueryService(session, settings).list_events(
         workspace.id,
         PageParams(limit=10, offset=0),
     )

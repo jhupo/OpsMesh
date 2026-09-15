@@ -12,16 +12,16 @@ from backend.app.api.schemas.workspace.team_runtime import (
     AgentTeamRuntimeControlRequest,
     AgentTeamRuntimeEnsureRequest,
 )
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.agents.sessions.management import (
     PersistentAgentSessionManagementService,
 )
-from backend.app.domains.workspace.teams.execution_loop import (
+from backend.app.domains.workspace.teams.execution.loop import (
     enqueue_team_execution_loop_job,
 )
-from backend.app.domains.workspace.teams.workspace_service import (
+from backend.app.domains.workspace.teams.service import (
     WorkspaceTeamService,
 )
 from backend.app.runtime.environment.commands.queued_control import QueuedRuntimeControl

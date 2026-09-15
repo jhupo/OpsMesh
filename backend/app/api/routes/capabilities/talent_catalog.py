@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.domains.capabilities.marketplace.contracts import (
     TalentListingMetricsResponse,
     TalentListingResponse,

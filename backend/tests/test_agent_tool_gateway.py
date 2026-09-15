@@ -10,11 +10,11 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.core.security.models import SecurityEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeResourceGrant,
@@ -23,11 +23,11 @@ from backend.app.domains.agents.runtime.contracts import (
 from backend.app.domains.agents.runtime.tools.executor import BackendToolExecutor
 from backend.app.domains.agents.runtime.tools.gateway import AgentToolGateway, ToolGatewayDenied
 from backend.app.domains.capabilities.catalog.effective import EffectiveCapabilityCatalogService
-from backend.app.domains.capabilities.models import (
-    CapabilityResource,
+from backend.app.domains.capabilities.mcp.models import (
     McpCredentialReference,
     McpServer,
 )
+from backend.app.domains.capabilities.resources.models import CapabilityResource
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder

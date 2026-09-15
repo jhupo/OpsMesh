@@ -8,7 +8,7 @@ from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.bootstrap.providers import build_agent_runtime_registry
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.policy import normalize_openai_compatible_base_url
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
@@ -39,11 +39,9 @@ from backend.app.domains.agents.runtime.providers.openai.tools import (
     runtime_allowed_tools,
 )
 from backend.app.domains.agents.runtime.registry import ProviderAgentRuntimeRegistry
-from backend.app.domains.agents.runtime.sandbox.contracts import SandboxManifest
-from backend.app.domains.agents.sessions.models import (
-    PersistentAgentSessionRef,
-    SQLAlchemyAgentSession,
-)
+from backend.app.runtime.contracts import SandboxManifest
+from backend.app.domains.agents.sessions.models import PersistentAgentSessionRef
+from backend.app.domains.agents.sessions.store import SQLAlchemyAgentSession
 
 
 class DeterministicTestRunner:

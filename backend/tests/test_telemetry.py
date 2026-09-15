@@ -4,7 +4,7 @@ from pathlib import Path
 
 from opentelemetry.trace import SpanKind
 
-from backend.app.core.common.trace_context import (
+from backend.app.observability.telemetry.trace_context import (
     current_trace_context,
     telemetry_span,
     trace_context_from_headers,
@@ -42,14 +42,15 @@ from opentelemetry.sdk._logs.export import InMemoryLogExporter
 from sqlalchemy import create_engine
 
 import backend.app.observability.telemetry.tracing as tracing
-from backend.app.core.common.config import Settings
-from backend.app.core.common.trace_context import TraceContext, telemetry_span
+from backend.app.bootstrap.telemetry import configure_worker_telemetry
+from backend.app.core.config import Settings
+from backend.app.observability.telemetry.trace_context import TraceContext, telemetry_span
 
 exporter = InMemorySpanExporter()
 log_exporter = InMemoryLogExporter()
 tracing.OTLPSpanExporter = lambda **_: exporter
 tracing.OTLPLogExporter = lambda **_: log_exporter
-runtime = tracing.configure_worker_telemetry(
+runtime = configure_worker_telemetry(
     Settings(
         environment="test",
         service_name="opsmesh-test-worker",
@@ -105,7 +106,8 @@ from opentelemetry.trace import SpanKind
 from sqlalchemy import create_engine
 
 import backend.app.observability.telemetry.tracing as tracing
-from backend.app.core.common.config import Settings
+from backend.app.bootstrap.telemetry import configure_api_telemetry
+from backend.app.core.config import Settings
 from backend.app.api.middleware import RequestContextMiddleware
 
 exporter = InMemorySpanExporter()
@@ -127,7 +129,7 @@ app.add_middleware(RequestContextMiddleware, settings=settings)
 async def probe() -> dict[str, str]:
     return {"status": "ok"}
 
-runtime = tracing.configure_api_telemetry(
+runtime = configure_api_telemetry(
     app,
     settings,
     engine=create_engine("sqlite+pysqlite:///:memory:"),

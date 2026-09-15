@@ -2,7 +2,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
+from backend.app.domains.capabilities.mcp.models import (
+    McpServer,
+    McpToolAllowlist,
+    McpToolCallLog,
+)
 
 
 @dataclass(frozen=True)

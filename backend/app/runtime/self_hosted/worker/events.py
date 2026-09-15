@@ -3,10 +3,10 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.models import SecurityEvent
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.orchestration.runs.event_writer import RunEventWriter
+from backend.app.domains.orchestration.runs.events import RunEventWriter
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpaceEvent
 

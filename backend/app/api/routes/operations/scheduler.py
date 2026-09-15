@@ -7,13 +7,18 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
+from backend.app.api.dependencies.redis import get_cache_service
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.core.redis.cache import RedisJsonCache
-from backend.app.core.redis.dependencies import get_cache_service
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.orchestration.workflows.scheduling.control import (
+    SchedulerBlockedStepControlService,
+    SchedulerControlService,
+)
+from backend.app.domains.workspace.tenants.settings import scheduler_settings
 from backend.app.runtime.operations.contracts.scheduler import (
     BlockedStepExplanationResponse,
     BlockedStepUnblockRequest,
@@ -25,7 +30,7 @@ from backend.app.runtime.operations.contracts.scheduler import (
 from backend.app.runtime.operations.scheduler import (
     SchedulerBacklogService,
     SchedulerBlockedStepService,
-    SchedulerControlService,
+    SchedulerPolicyService,
 )
 
 if TYPE_CHECKING:
@@ -83,13 +88,17 @@ async def unblock_blocked_steps(
     session: Session = Depends(get_db_session),
 ) -> BlockedStepUnblockResponse:
     try:
-        return SchedulerBlockedStepService(session).unblock_steps(
+        unblocked = SchedulerBlockedStepControlService(session).unblock_steps(
             workspace_id=context.workspace.id,
             actor_user_id=context.user.user_id,
             code=request.code,
             reason=request.reason,
             runtime_space_id=request.runtime_space_id,
             limit=request.limit,
+        )
+        return BlockedStepUnblockResponse(
+            workspace_id=context.workspace.id,
+            unblocked_steps=unblocked,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -101,14 +110,22 @@ async def pause_scheduler(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> SchedulerControlResponse:
-    response = SchedulerControlService(session).pause_scheduler(
+    result = SchedulerControlService(session).pause_scheduler(
         workspace_id=context.workspace.id,
         actor_user_id=context.user.user_id,
         reason=request.reason,
     )
-    if response is None:
+    if result is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    return response
+    workspace, cleared = result
+    scheduler = scheduler_settings(workspace.settings)
+    return SchedulerControlResponse(
+        workspace_id=workspace.id,
+        paused=True,
+        pause_reason=str(scheduler["pause_reason"]),
+        cleared_blocked_steps=cleared,
+        policy=SchedulerPolicyService(session).scheduler_policy(workspace.id),
+    )
 
 
 @router.post("/scheduler/resume", response_model=SchedulerControlResponse)
@@ -116,10 +133,17 @@ async def resume_scheduler(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> SchedulerControlResponse:
-    response = SchedulerControlService(session).resume_scheduler(
+    result = SchedulerControlService(session).resume_scheduler(
         workspace_id=context.workspace.id,
         actor_user_id=context.user.user_id,
     )
-    if response is None:
+    if result is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    return response
+    workspace, cleared = result
+    return SchedulerControlResponse(
+        workspace_id=workspace.id,
+        paused=False,
+        pause_reason=None,
+        cleared_blocked_steps=cleared,
+        policy=SchedulerPolicyService(session).scheduler_policy(workspace.id),
+    )

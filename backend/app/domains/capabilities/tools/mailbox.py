@@ -3,8 +3,9 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.pagination import PageParams
 from backend.app.domains.agents.messages.contracts import (
     AgentMessageCreateRequest,
     AgentMessageResponse,
@@ -12,19 +13,38 @@ from backend.app.domains.agents.messages.contracts import (
 )
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.messages.service import AgentMailboxService
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.capabilities.tools.context import ToolContext
-from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
+from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.domains.capabilities.tools.contracts import ToolContext, ToolResourceNotFoundError
 from backend.app.domains.capabilities.tools.events import ProductToolEventRecorder
 from backend.app.domains.capabilities.tools.normalization import (
     bounded_optional,
     optional_uuid_from_metadata,
 )
+from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 
 
-class AgentMailboxProductTools(ProductToolEventRecorder):
+class AgentMailboxProductTools:
+    def __init__(self, session: Session, events: ProductToolEventRecorder) -> None:
+        self._session = session
+        self._events = events
+
+    def _sender_agent_profile_id(self, context: ToolContext) -> UUID:
+        if context.agent_run_id is None:
+            raise ToolResourceNotFoundError("Agent run is not available")
+        run = self._session.get(AgentRun, context.agent_run_id)
+        if (
+            run is None
+            or run.workspace_id != context.workspace_id
+            or run.agent_profile_id is None
+        ):
+            raise ToolResourceNotFoundError("Agent run is not bound to an agent profile")
+        agent = self._session.get(AgentProfile, run.agent_profile_id)
+        if agent is None or agent.workspace_id != context.workspace_id:
+            raise ToolResourceNotFoundError("Agent not found in workspace")
+        return run.agent_profile_id
+
     def send_agent_message(
         self,
         context: ToolContext,
@@ -38,7 +58,7 @@ class AgentMailboxProductTools(ProductToolEventRecorder):
         reply_to_message_id: UUID | None = None,
     ) -> dict[str, object]:
         context.require_tool("send_agent_message")
-        self._append_tool_event(context, "tool.called", "send_agent_message")
+        self._events.append(context, "tool.called", "send_agent_message")
         sender_agent_profile_id = self._sender_agent_profile_id(context)
         scope = agent_mailbox_scope(context)
         resolved_thread_id = thread_id or scope["thread_id"]
@@ -71,7 +91,7 @@ class AgentMailboxProductTools(ProductToolEventRecorder):
                 payload=payload or {},
             ),
         )
-        self._append_tool_event(context, "tool.completed", "send_agent_message")
+        self._events.append(context, "tool.completed", "send_agent_message")
         return {
             "thread": agent_message_thread_payload(thread),
             "message": agent_message_payload(message),
@@ -87,7 +107,7 @@ class AgentMailboxProductTools(ProductToolEventRecorder):
         status: str | None = None,
     ) -> dict[str, object]:
         context.require_tool("list_agent_thread_messages")
-        self._append_tool_event(context, "tool.called", "list_agent_thread_messages")
+        self._events.append(context, "tool.called", "list_agent_thread_messages")
         sender_agent_profile_id = self._sender_agent_profile_id(context)
         thread = self._require_agent_message_thread(context, thread_id)
         if not self._agent_participates_in_thread(context, thread.id, sender_agent_profile_id):
@@ -100,7 +120,7 @@ class AgentMailboxProductTools(ProductToolEventRecorder):
             page=PageParams(limit=bounded_limit, offset=bounded_offset),
             status=status,
         )
-        self._append_tool_event(context, "tool.completed", "list_agent_thread_messages")
+        self._events.append(context, "tool.completed", "list_agent_thread_messages")
         return {
             "thread": agent_message_thread_payload(thread),
             "items": [agent_message_payload(message) for message in messages],
@@ -117,7 +137,7 @@ class AgentMailboxProductTools(ProductToolEventRecorder):
         unread_only: bool = False,
     ) -> dict[str, object]:
         context.require_tool("get_agent_inbox")
-        self._append_tool_event(context, "tool.called", "get_agent_inbox")
+        self._events.append(context, "tool.called", "get_agent_inbox")
         agent_profile_id = self._sender_agent_profile_id(context)
         scope = agent_mailbox_scope(context)
         inbox = AgentMailboxService(self._session).get_agent_inbox(
@@ -128,7 +148,7 @@ class AgentMailboxProductTools(ProductToolEventRecorder):
             thread_id=scope["thread_id"],
             task_id=scope["task_id"],
         )
-        self._append_tool_event(context, "tool.completed", "get_agent_inbox")
+        self._events.append(context, "tool.completed", "get_agent_inbox")
         return {
             **inbox,
             "latest_messages": [
@@ -144,7 +164,7 @@ class AgentMailboxProductTools(ProductToolEventRecorder):
         message_id: UUID,
     ) -> dict[str, object]:
         context.require_tool("mark_agent_message_read")
-        self._append_tool_event(context, "tool.called", "mark_agent_message_read")
+        self._events.append(context, "tool.called", "mark_agent_message_read")
         agent_profile_id = self._sender_agent_profile_id(context)
         message = self._session.get(AgentMessage, message_id)
         if (
@@ -160,7 +180,7 @@ class AgentMailboxProductTools(ProductToolEventRecorder):
         )
         if updated is None:
             raise ToolResourceNotFoundError("Agent message not found for agent")
-        self._append_tool_event(context, "tool.completed", "mark_agent_message_read")
+        self._events.append(context, "tool.completed", "mark_agent_message_read")
         return {"message": agent_message_payload(updated)}
 
     def _create_agent_message_thread(

@@ -6,10 +6,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStateService
-from backend.app.domains.orchestration.runs.state import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStateService, RunStatus
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker, JobCompletePayload
 from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
 from backend.app.runtime.self_hosted.models import SelfHostedJobClaim

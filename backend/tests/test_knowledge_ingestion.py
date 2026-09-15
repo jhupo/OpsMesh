@@ -6,11 +6,11 @@ from uuid import UUID, uuid4
 import fakeredis
 from sqlalchemy import select
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.domains.capabilities.tools.context import ToolContext
+from backend.app.domains.capabilities.tools.contracts import ToolContext
 from backend.app.domains.capabilities.tools.memory import KnowledgeCitationAccessError
 from backend.app.domains.capabilities.tools.service import ProductToolService
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
@@ -29,8 +29,8 @@ from backend.app.runtime.environment.contracts import (
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.url_fetch import RuntimeUrlFetcher
 from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.tests.test_workspace_api import _client, _headers, _seed_workspace
 
 
@@ -173,7 +173,7 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
         task_id=None,
         allowed_tools=frozenset({"search_workspace_memory", "get_knowledge_citations"}),
     )
-    product_results = ProductToolService(session).search_workspace_memory(
+    product_results = ProductToolService(session).memory.search_workspace_memory(
         product_context,
         "OpsMesh knowledge",
         source_types={"knowledge_source"},
@@ -189,7 +189,7 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
     )
     assert product_results[0]["citations"]
     memory_entry_id = UUID(str(product_results[0]["metadata"]["memory_entry_id"]))
-    citation_result = ProductToolService(session).get_knowledge_citations(
+    citation_result = ProductToolService(session).memory.get_knowledge_citations(
         product_context,
         memory_entry_id=memory_entry_id,
         access_scopes=(
@@ -205,7 +205,7 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
     assert citation_result["total"] == 1
     assert citation_result["items"][0]["memory_entry_id"] == str(memory_entry_id)
     try:
-        ProductToolService(session).get_knowledge_citations(
+        ProductToolService(session).memory.get_knowledge_citations(
             product_context,
             memory_entry_id=memory_entry_id,
             access_scopes=(

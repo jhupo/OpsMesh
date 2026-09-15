@@ -6,10 +6,10 @@ from uuid import UUID
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings
 from backend.app.core.db.pagination import page_scalars
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.pagination import PageParams
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.governance.agent_policy import agent_allowed_mcp_tool_names
 from backend.app.domains.capabilities.mcp.catalog.catalog import (
     McpCatalogServer,
@@ -25,15 +25,15 @@ from backend.app.domains.capabilities.mcp.catalog.rules import (
     execution_mode,
     mcp_blocked_reasons,
 )
-from backend.app.domains.capabilities.mcp.policy import (
-    MCP_LIMIT_COUNTED_STATUSES,
-    mcp_tool_policy_summary,
-)
-from backend.app.domains.capabilities.models import (
+from backend.app.domains.capabilities.mcp.models import (
     McpCredentialReference,
     McpServer,
     McpToolAllowlist,
     McpToolCallLog,
+)
+from backend.app.domains.capabilities.mcp.policy import (
+    MCP_LIMIT_COUNTED_STATUSES,
+    mcp_tool_policy_summary,
 )
 
 T = TypeVar("T")

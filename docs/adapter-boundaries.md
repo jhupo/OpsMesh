@@ -28,6 +28,7 @@ currently unifies MCP runtime execution selection, not every provisioning or job
 
 ## Validation
 
-Focused adapter, health service, registry, gateway, and runtime authorization tests cover the change.
-Four existing ordinary MCP execution tests in `test_agent_runtime_tools.py` also fail with the HEAD
-resolver restored in memory; they are not counted as passing validation for this refactor.
+Focused adapter, health service, registry, gateway, and runtime authorization tests cover the
+boundary. Registry consumers import it from `runtime.environment.backends`; bootstrap only owns
+process composition and cached infrastructure clients. The ordinary MCP execution scenarios and
+the adapter registry scenarios pass with the current resolver.

@@ -10,12 +10,12 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.core.admin.models import PlatformPolicy
-from backend.app.core.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.models import User
+from backend.app.domains.platform.admin.models import PlatformPolicy
+from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.runtime.environment.contracts import (
@@ -24,11 +24,11 @@ from backend.app.runtime.environment.contracts import (
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.runtime.environment.dependencies import get_docker_runtime_client
+from backend.app.api.dependencies.runtime import get_docker_runtime_client
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue
 
 TOKEN = "test-token"
@@ -497,7 +497,7 @@ def _client(
     app = create_app(settings)
     from fakeredis import FakeRedis
 
-    from backend.app.api.dependencies.workers import (
+    from backend.app.api.dependencies.queue import (
         get_worker_queue,
     )
     from backend.app.core.redis.keys import RedisKeyBuilder

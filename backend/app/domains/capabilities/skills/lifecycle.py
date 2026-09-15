@@ -9,15 +9,18 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars
-from backend.app.domains.capabilities.models import Skill, WorkspaceSkillInstall
+from backend.app.core.pagination import PageParams
 from backend.app.domains.capabilities.skills.contracts import (
     WorkspaceSkillInstallRequest,
     WorkspaceSkillRollbackRequest,
     WorkspaceSkillUpgradeRequest,
+)
+from backend.app.domains.capabilities.skills.models import (
+    Skill,
+    WorkspaceSkillInstall,
 )
 from backend.app.observability.audit.service import AuditService
 

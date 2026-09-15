@@ -8,8 +8,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.values import uuid_or_none
+from backend.app.core.config import Settings
+from backend.app.core.utils import uuid_or_none
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.runtime.self_hosted.contracts import (

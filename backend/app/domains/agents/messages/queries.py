@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import Select, func, select
 
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.pagination import PageParams
 from backend.app.domains.agents.messages.contracts import AgentInbox
 from backend.app.domains.agents.messages.models import (
     PENDING_STATUSES,

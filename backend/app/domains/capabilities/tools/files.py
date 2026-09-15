@@ -5,9 +5,9 @@ from hashlib import sha256
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from backend.app.domains.capabilities.tools.context import ToolContext
-from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
+from backend.app.domains.capabilities.tools.contracts import ToolContext, ToolResourceNotFoundError
 from backend.app.domains.capabilities.tools.events import ProductToolEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import TaskStep
@@ -26,9 +26,19 @@ from backend.app.domains.workspace.storage.runtime_policy import runtime_file_de
 from backend.app.domains.workspace.storage.security import safe_filename
 
 
-class WorkspaceFileProductTools(ProductToolEventRecorder):
-    _workspace_file_content_reader: WorkspaceFileContentReader | None
-    _artifact_persistence: ArtifactPersistenceService | None
+class WorkspaceFileProductTools:
+    def __init__(
+        self,
+        session: Session,
+        events: ProductToolEventRecorder,
+        *,
+        content_reader: WorkspaceFileContentReader | None,
+        artifact_persistence: ArtifactPersistenceService | None,
+    ) -> None:
+        self._session = session
+        self._events = events
+        self._workspace_file_content_reader = content_reader
+        self._artifact_persistence = artifact_persistence
 
     def list_workspace_files(
         self,
@@ -37,7 +47,7 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
         allowed_file_ids: set[UUID] | None = None,
     ) -> list[WorkspaceFile]:
         context.require_tool("list_workspace_files")
-        self._append_tool_event(context, "tool.called", "list_workspace_files")
+        self._events.append(context, "tool.called", "list_workspace_files")
         statement = select(WorkspaceFile).where(
             WorkspaceFile.workspace_id == context.workspace_id,
             WorkspaceFile.status == "active",
@@ -48,7 +58,7 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
             self._session.scalars(statement.order_by(WorkspaceFile.created_at.desc())).all()
         )
         files = [file for file in candidates if _visible_to_agent_runtime(file)]
-        self._append_tool_event(context, "tool.completed", "list_workspace_files")
+        self._events.append(context, "tool.completed", "list_workspace_files")
         return files
 
     def read_workspace_file(
@@ -59,7 +69,7 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
         allowed_file_ids: set[UUID] | None = None,
     ) -> WorkspaceFileContent:
         context.require_tool("read_workspace_file")
-        self._append_tool_event(context, "tool.called", "read_workspace_file")
+        self._events.append(context, "tool.called", "read_workspace_file")
         file = self.resolve_workspace_file(
             context,
             file_id,
@@ -72,7 +82,7 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
                 "Workspace file storage is not configured for agent tools",
             )
         content = reader.read(file, workspace_id=context.workspace_id)
-        self._append_tool_event(context, "tool.completed", "read_workspace_file")
+        self._events.append(context, "tool.completed", "read_workspace_file")
         return content
 
     def resolve_workspace_file(
@@ -110,7 +120,7 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
                 "artifact_storage_unavailable",
                 "Artifact storage is not configured",
             )
-        self._append_tool_event(context, "tool.called", "write_artifact")
+        self._events.append(context, "tool.called", "write_artifact")
         checksum = sha256(content).hexdigest()
         sanitized_filename = safe_filename(filename, default="artifact.bin")
         binding = self._artifact_binding(context)
@@ -137,7 +147,7 @@ class WorkspaceFileProductTools(ProductToolEventRecorder):
             ),
             created_at=datetime.now(UTC),
         )
-        self._append_tool_event(context, "tool.completed", "write_artifact")
+        self._events.append(context, "tool.completed", "write_artifact")
         return persistence.persist_new(artifact, content)
 
     def _artifact_binding(self, context: ToolContext) -> dict[str, object]:

@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 
-from backend.app.core.common.values import dict_or_empty, string_or_default
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.utils import dict_or_empty, string_or_default
 from backend.app.domains.agents.profiles.contracts import AgentProfileCreateRequest
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.marketplace.models import MarketplaceListing, TalentListing
 from backend.app.domains.capabilities.mcp.catalog.contracts import (
     McpServerCreateRequest,

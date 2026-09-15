@@ -5,7 +5,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.runtime.operations.models import WorkerLease
 from backend.app.runtime.operations.timeline.models import (
     TimelineEvent,
     TimelineFilters,
@@ -13,6 +12,7 @@ from backend.app.runtime.operations.timeline.models import (
     within,
 )
 from backend.app.runtime.workers.contracts import JobType
+from backend.app.runtime.workers.models import WorkerLease
 
 
 class TeamRuntimeWorkerTimelineCollector:

@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import dict_or_empty, json_safe_payload
 from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.core.utils import dict_or_empty, json_safe_payload
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 
 

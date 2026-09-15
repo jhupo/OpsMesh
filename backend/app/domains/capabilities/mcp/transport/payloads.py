@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionError
+
+from backend.app.domains.capabilities.mcp.execution.contracts import McpExecutionError
 
 MCP_PYTHON_SDK_PACKAGE = "mcp"
 MCP_PYTHON_SDK_STDIO_ENTRYPOINT = "mcp.client.stdio.stdio_client"

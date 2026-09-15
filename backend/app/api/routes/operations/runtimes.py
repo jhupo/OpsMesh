@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
 from backend.app.api.pagination import PageResponse
@@ -17,11 +17,12 @@ from backend.app.api.schemas.operations.runtimes import (
     RuntimeTemplateResponse,
     WorkspaceRuntimeResponse,
 )
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.runtime.environment.contracts import RuntimeLimits
+from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.environment.policies.quotas import RuntimeQuotaExceededError
 from backend.app.runtime.environment.policies.safety import RuntimeSafetyError
 from backend.app.runtime.environment.service import RuntimeControlService
@@ -37,7 +38,7 @@ async def list_runtime_templates(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> list[RuntimeTemplateResponse]:
-    templates = RuntimeControlService(session, settings=settings).list_templates()
+    templates = _runtime_control_service(session, settings).list_templates()
     return [RuntimeTemplateResponse.model_validate(template) for template in templates]
 
 
@@ -55,7 +56,7 @@ async def create_runtime(
 ) -> WorkspaceRuntimeResponse:
     limits = _to_runtime_limits(request.limits)
     try:
-        runtime = RuntimeControlService(session, settings=settings).queue_runtime_create(
+        runtime = _runtime_control_service(session, settings).queue_runtime_create(
             workspace_id=context.workspace.id,
             template_id=request.template_id,
             name=request.name,
@@ -117,7 +118,7 @@ async def list_runtimes(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[WorkspaceRuntimeResponse]:
-    items, total = RuntimeControlService(session, settings=settings).list_runtimes(
+    items, total = _runtime_control_service(session, settings).list_runtimes(
         context.workspace.id,
         limit=limit,
         offset=offset,
@@ -139,7 +140,7 @@ async def start_runtime(
     settings: Settings = Depends(get_settings),
     queue: RedisQueue = Depends(get_worker_queue),
 ) -> WorkspaceRuntimeResponse:
-    service = RuntimeControlService(session, settings=settings)
+    service = _runtime_control_service(session, settings)
     runtime = _runtime_or_404(service.get_runtime(context.workspace.id, runtime_id))
     _enqueue_runtime_control(
         queue,
@@ -163,7 +164,7 @@ async def stop_runtime(
     settings: Settings = Depends(get_settings),
     queue: RedisQueue = Depends(get_worker_queue),
 ) -> WorkspaceRuntimeResponse:
-    service = RuntimeControlService(session, settings=settings)
+    service = _runtime_control_service(session, settings)
     runtime = _runtime_or_404(service.get_runtime(context.workspace.id, runtime_id))
     _enqueue_runtime_control(
         queue,
@@ -187,7 +188,7 @@ async def delete_runtime(
     settings: Settings = Depends(get_settings),
     queue: RedisQueue = Depends(get_worker_queue),
 ) -> None:
-    runtime = RuntimeControlService(session, settings=settings).get_runtime(
+    runtime = _runtime_control_service(session, settings).get_runtime(
         context.workspace.id,
         runtime_id,
     )
@@ -221,7 +222,7 @@ async def execute_runtime_command(
     queue: RedisQueue = Depends(get_worker_queue),
 ) -> RuntimeCommandResponse:
     try:
-        command = RuntimeControlService(session, settings=settings).queue_command(
+        command = _runtime_control_service(session, settings).queue_command(
             workspace_id=context.workspace.id,
             runtime_id=runtime_id,
             command=request.command,
@@ -262,7 +263,7 @@ async def list_runtime_commands(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[RuntimeCommandResponse]:
-    result = RuntimeControlService(session, settings=settings).list_commands(
+    result = _runtime_control_service(session, settings).list_commands(
         context.workspace.id,
         runtime_id,
         limit=limit,
@@ -288,7 +289,7 @@ async def list_runtime_events(
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
 ) -> PageResponse[RuntimeEventResponse]:
-    result = RuntimeControlService(session, settings=settings).list_events(
+    result = _runtime_control_service(session, settings).list_events(
         context.workspace.id,
         runtime_id,
         limit=limit,
@@ -315,6 +316,14 @@ def _to_runtime_limits(request: RuntimeLimitsRequest | None) -> RuntimeLimits | 
         timeout_seconds=request.timeout_seconds,
         max_output_bytes=request.max_output_bytes,
         max_processes=request.max_processes,
+    )
+
+
+def _runtime_control_service(session: Session, settings: Settings) -> RuntimeControlService:
+    return RuntimeControlService(
+        session,
+        settings=settings,
+        manager_provider=DockerRuntimeManagerProvider(session, settings, None),
     )
 
 

@@ -5,18 +5,18 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.pagination import PageParams
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.capabilities.mcp.catalog.contracts import (
     McpCredentialReferenceCreateRequest,
     McpCredentialReferenceRotateRequest,
     McpCredentialReferenceUpdateRequest,
 )
+from backend.app.domains.capabilities.mcp.models import McpCredentialReference
 from backend.app.domains.capabilities.mcp.policy import require_mcp_server
-from backend.app.domains.capabilities.models import McpCredentialReference
 from backend.app.domains.workspace.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.policy import (

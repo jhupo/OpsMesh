@@ -12,7 +12,7 @@ from backend.app.domains.workspace.storage.security import validate_storage_key
 if TYPE_CHECKING:
     from mypy_boto3_s3.client import S3Client
 
-    from backend.app.core.common.config import Settings
+    from backend.app.core.config import Settings
 
 
 class ObjectStorage(Protocol):

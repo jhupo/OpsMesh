@@ -10,8 +10,8 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.tasks.event_outbox import (
     TaskEventOutboxPublisher,
     TaskEventOutboxService,
@@ -19,7 +19,7 @@ from backend.app.domains.orchestration.tasks.event_outbox import (
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskEventOutbox
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.runtime.workers.execution.runner import WorkerRunner, WorkerRunnerConfig
+from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.runtime.workers.queue import RedisQueue
 
 

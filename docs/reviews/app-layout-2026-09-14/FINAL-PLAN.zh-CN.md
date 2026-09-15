@@ -1,6 +1,6 @@
 # app 全量结构审查与最终重构方案
 
-日期：2026-09-14。状态：方案已形成；R1 的显式模型注册、访问域、平台控制面与外部集成边界已落地，后续批次仍按实施表推进。
+日期：2026-09-14。状态：R0-R8 已实施；当前代码、逐文件处置表与目标布局清单一致，验收依据见第 7-10 节。
 
 ## 1. 审查范围与结论边界
 
@@ -180,8 +180,9 @@ backend/app/
 |   |   |-- messages/
 |   |   |-- memory/
 |   |   `-- runtime/        # SDK 执行合同、注册表、状态；含厂商与工具适配
-|   |       |-- openai/        # OpenAI Agents SDK 适配
-|   |       |-- claude/        # Claude Agent SDK 适配
+|   |       |-- providers/
+|   |       |   |-- openai/    # OpenAI Agents SDK 适配
+|   |       |   `-- claude/    # Claude Agent SDK 适配
 |   |       `-- tools/
 |   |-- capabilities/
 |   |   |-- catalog/
@@ -251,7 +252,7 @@ backend/app/
 - providers 去掉 audit/catalog/credentials/health/resolution 五个微型子包，按凭证、解析、健康探测、快照、审计等文件组织。
 - providers 的审计四文件合并；健康写入/状态/摘要合并；实际 SDK 探针继续独立。
 - runtime/execution 泛化层去掉。厂商注册装配进入 bootstrap；纯合同和执行控制留在 Agent runtime。
-- Agent runtime 的 OpenAI/Claude 适配器直接位于 `runtime/openai`、`runtime/claude`，不再增加没有独立职责的 `runtime/providers` 包壳。
+- Agent runtime 的 OpenAI/Claude 适配器位于 `runtime/providers/openai`、`runtime/providers/claude`；`providers` 是 SDK 厂商适配边界，不能与通用 runtime 合同混在一起。
 - Claude runner 中的会话持久化、SDK 工具/审批钩子与执行生命周期分开；OpenAI 已有 tools/results/guardrails/session/compaction 等真实边界，保留。
 - SDK 自带的运行、续接、压缩和协议处理继续由 SDK 实现。产品记忆授权、持久化、配额和审计不因为“SDK 也有 memory”而删除。
 - memory 的 working/episodic/semantic、检索、嵌入与生命周期有不同状态和策略，不为了减少文件将三层记忆合成一个 service。
@@ -372,8 +373,8 @@ runtime/environment/
 
 ## 7. 实施顺序与相关验证
 
-R0 是已经完成的审查基线。R1 的显式 ORM 注册、访问域/HTTP 依赖、平台控制面与外部集成边界已实施并通过相关验证；R2-R8 尚未实施。
-CSV 中的 R0 保留项表示“结构保留，导入随依赖模块批次更新”，不表示对应功能已验收。
+R0 是审查基线；R1-R8 已按下表实施。CSV 中的 R0 保留项表示“结构保留，导入随依赖模块批次更新”，
+不单独代表功能验收；最终状态以实施记录、目标布局检查和相关功能测试共同确认。
 
 | 批次 | 实施范围 | 必须检查 | 建议的相关测试入口 |
 | --- | --- | --- | --- |
@@ -396,16 +397,17 @@ CSV 中的 R0 保留项表示“结构保留，导入随依赖模块批次更新
 
 ## 8. 无生产调用方的处置
 
-以下项目在静态生产导入图中没有调用方，部分还做了仓库符号搜索复核：
+静态生产导入图中原来没有调用方的项目已经在 R8 逐项处置：
 
-- FeatureFlagService、MaintenanceRunner。
-- RuntimeToolService、RuntimeFileService。
-- TaskCollaborationRecoveryService、TaskExecutionStatusService、TaskInteractionTranscriptService。
-- TeamProjectDashboardService、WorkspaceHealthService。
+- `FeatureFlagService`：接入平台系统配置读模型，输出全局默认、配置覆盖及决策来源；它是发布/部署开关信息，不替代权限判断。
+- `MaintenanceRunner`：接入 Worker 主循环，统一维护任务节拍；原来的 Worker 私有重复计时逻辑已删除。
+- `TaskCollaborationRecoveryService`、`TaskExecutionStatusService`、`TaskInteractionTranscriptService`：接入 Workspace Task API，分别提供恢复预览/执行、执行状态和交互记录。
+- `TeamProjectDashboardService`：接入 Team 项目看板 API。
+- `WorkspaceHealthService`：接入健康读模型、快照、趋势 API，并由 Worker 维护任务周期生成快照。
+- `RuntimeToolService`：退役。它与厂商 SDK 沙箱及已有 Runtime 命令审批/执行链重复，保留会形成第二套授权和审计路径。
+- `RuntimeFileService`：退役。它以宿主机路径直接 staging，与 `RunProjectIOService + RuntimeProjectFilesystem` 的 Run 绑定、快照授权和隔离语义重复且更弱。
 
-决定是**保留并核对接入**，不是默认删除或默认开启。在 R8 验收中逐项记录：
-入口在哪里、是否被动态注册、关联产品能力是否仍承诺、是否需要接线，或经过明确确认后退役。
-如果能力仍应存在，接入与相关测试必须独立完成；不能只留下一个无调用类后标记“功能完成”。
+以上接入均有产品场景验证；两个退役项的测试随重复实现删除，权威执行路径的相关功能测试保留。
 
 `main.py`、Worker CLI、delivery CLI、Host updater daemon 是进程入口，无普通 import 调用方是正常情况，不能按死代码删除。
 孤立 schema 转发和无引用的旧 SSE 解析函数属于另一类，按明确的符号/配置检查后清理。
@@ -425,8 +427,8 @@ CSV 中的 R0 保留项表示“结构保留，导入随依赖模块批次更新
 
 ## 10. 预计收敛结果
 
-当前处置表推导的目标约为 813 个实现文件、125 个包目录（含 app 根目录），
-对比当前 893 个实现文件、136 个包目录。目标一级目录为六个。
+最终处置表对应 810 个实现文件、125 个包目录（含 app 根目录），目标一级目录为六个。
+`scripts/audit_app_layout.py --target-check` 会严格检查实现文件、包目录、处置目标和遗留源路径是否与该目标一致。
 
 这不是验收硬指标，也不是已经完成的统计：合并会减少文件，拆开真实职责和新增装配边界也会增加文件。
 不能为了更漂亮的数字删除能力、把 1,000 行文件拼得更大，或将复杂逻辑转移到无边界的 utils。

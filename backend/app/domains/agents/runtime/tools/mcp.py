@@ -6,21 +6,26 @@ from typing import NoReturn
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.core.security.models import SecurityEvent
+from backend.app.core.config import Settings
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeContext
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionError
+from backend.app.domains.capabilities.mcp.execution.contracts import McpExecutionError
+from backend.app.domains.capabilities.mcp.models import McpServer
 from backend.app.domains.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
-from backend.app.domains.capabilities.models import McpServer
+from backend.app.domains.capabilities.mcp.transport.stdio import (
+    DockerRuntimeStdioMcpToolAdapter,
+    SelfHostedStdioMcpToolAdapter,
+)
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.projects.models import AgentRunProjectIOState
-from backend.app.runtime.environment.backends.registry import build_runtime_backend_registry
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
+from backend.app.runtime.environment.manager import RuntimeManager
 from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.self_hosted.dispatch.mcp import SelfHostedMcpJobService
 
 
 class ContextualMcpAdapterResolver:
@@ -53,16 +58,23 @@ class ContextualMcpAdapterResolver:
         if run is None:
             self._deny_stdio("stdio_run_context_invalid", "MCP stdio run context is invalid")
         runtime = self._authorized_runtime_for_run(run)
-        backend = build_runtime_backend_registry(
-            self._session,
-            self._docker_client,
-            self._secret_service,
-        ).resolve(runtime.runtime_provider)
-        if backend is not None and backend.capabilities.mcp_stdio:
-            return backend.mcp_adapter(
-                runtime,
-                run.id,
+        if runtime.runtime_provider in {"docker", "cloud_docker"}:
+            if self._docker_client is None:
+                self._deny_stdio(
+                    "stdio_runtime_client_missing",
+                    "Docker MCP execution requires a worker-injected runtime client",
+                )
+            return DockerRuntimeStdioMcpToolAdapter(
+                runtime_manager=RuntimeManager(self._session, self._docker_client),
+                runtime=runtime,
+                secret_service=self._secret_service,
                 working_dir=self._project_working_directory(run),
+            )
+        if runtime.runtime_provider == "self_hosted":
+            return SelfHostedStdioMcpToolAdapter(
+                service=SelfHostedMcpJobService(self._session),
+                runtime=runtime,
+                agent_run_id=run.id,
             )
         self._deny_stdio(
             "stdio_runtime_provider_unsupported",

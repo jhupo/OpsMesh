@@ -7,16 +7,17 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
+from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.service import RuntimeControlService
 
@@ -73,10 +74,11 @@ class FakeDockerClient:
 def test_risky_queued_command_is_blocked_and_audited_without_raw_command() -> None:
     session, runtime = _runtime()
     secret = "token-secret-value"
+    settings = Settings(environment="test")
     command = RuntimeControlService(
         session,
-        settings=Settings(environment="test"),
-        docker_client=FakeDockerClient(),
+        settings=settings,
+        manager_provider=DockerRuntimeManagerProvider(session, settings, FakeDockerClient()),
     ).queue_command(
         workspace_id=runtime.workspace_id,
         runtime_id=runtime.id,
@@ -97,10 +99,11 @@ def test_risky_queued_command_is_blocked_and_audited_without_raw_command() -> No
 def test_queued_command_payload_is_immutable_at_execution() -> None:
     session, runtime = _runtime()
     docker = FakeDockerClient()
+    settings = Settings(environment="test")
     service = RuntimeControlService(
         session,
-        settings=Settings(environment="test"),
-        docker_client=docker,
+        settings=settings,
+        manager_provider=DockerRuntimeManagerProvider(session, settings, docker),
     )
     command = service.queue_command(
         workspace_id=runtime.workspace_id,

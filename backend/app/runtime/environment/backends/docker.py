@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from subprocess import TimeoutExpired
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import docker
 from docker.client import DockerClient
@@ -16,12 +16,18 @@ from docker.models.containers import Container
 from docker.types import Mount
 from requests.exceptions import Timeout as RequestsTimeout
 
+from backend.app.runtime.contracts import SandboxManifest, SandboxSession
+from backend.app.runtime.environment.backends.contracts import RuntimeBackendCapabilities
+from backend.app.runtime.environment.backends.sdk_process import RuntimeSdkProcess
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
+    RuntimeProjectFilesystem,
 )
+from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.environment.project_files import DockerRunProjectFilesystem
 
 _DOCKER_CONTROL_TIMEOUT_SECONDS = 30
 _ARCHIVE_OVERHEAD_LIMIT_BYTES = 1_048_576
@@ -29,6 +35,41 @@ _COMMAND_INPUT_LIMIT_BYTES = 1_048_576
 _INPUT_ARGUMENT_NAME = re.compile(r"^--[a-z][a-z0-9-]*$")
 
 DockerClientFactory = Callable[[int], DockerClient]
+
+
+class DockerRuntimeBackend:
+    capabilities = RuntimeBackendCapabilities(True, False, True, True)
+
+    def __init__(self, client: DockerRuntimeClient | None) -> None:
+        self._client = client
+
+    def project_filesystem(
+        self,
+        runtime: WorkspaceRuntime,
+        run_id: UUID,
+    ) -> RuntimeProjectFilesystem:
+        if self._client is None:
+            raise RuntimeError("Docker project files require a worker-injected client")
+        return DockerRunProjectFilesystem(self._client, runtime, run_id)
+
+    def sandbox_session(
+        self,
+        manifest: SandboxManifest,
+        runtime: WorkspaceRuntime,
+    ) -> SandboxSession:
+        if not runtime.docker_container_id:
+            raise RuntimeError("Docker runtime has no active container")
+        return SandboxSession(
+            session_id=runtime.docker_container_id,
+            root=manifest.root,
+            backend="docker",
+            persistent=runtime.execution_mode == "persistent",
+        )
+
+    def sdk_process(self, session: SandboxSession) -> RuntimeSdkProcess:
+        if self._client is None:
+            raise RuntimeError("SDK process execution requires a worker-injected Docker client")
+        return RuntimeSdkProcess(self._client, session.session_id, session.root)
 
 
 class DockerSdkRuntimeClient(DockerRuntimeClient):

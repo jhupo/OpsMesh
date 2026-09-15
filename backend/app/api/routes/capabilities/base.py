@@ -5,10 +5,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.catalog.contracts import (
@@ -22,7 +22,7 @@ from backend.app.domains.capabilities.catalog.contracts import (
     ToolGroupResponse,
     ToolGroupUpdateRequest,
 )
-from backend.app.domains.capabilities.service import CapabilityService
+from backend.app.domains.capabilities.catalog.service import CapabilityService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])
 

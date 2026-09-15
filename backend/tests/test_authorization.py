@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.domains.access.errors import AuthenticationError, PermissionDeniedError
 from backend.app.domains.access.models import User, UserAPIToken

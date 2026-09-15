@@ -11,27 +11,27 @@ from uuid import uuid4
 
 from agents import set_tracing_disabled
 from backend.app.api.services.resources import WorkspaceResourceService
+from backend.app.core.identity.models import User
 from backend.app.domains.agents.providers.service import ModelProviderCredentialService
+from backend.app.runtime.workers.queue.consumer import consume_once
+from backend.app.runtime.workers.queue.redis import RedisQueue
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.schemas.orchestration.tasks.core import TaskCreateRequest
-from backend.app.core.common.config import Settings, get_settings
 from backend.app.bootstrap.models import register_models
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import SessionLocal
-from backend.app.core.identity.models import User
 from backend.app.core.redis.client import redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.secrets.service import SecretEncryptionService
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.domains.agents.runtime.openai.runner import OpenAIAgentsRunner
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
-from backend.app.runtime.workers.queue.consumer import consume_once
-from backend.app.runtime.workers.queue.redis import RedisQueue
+from backend.app.runtime.workers.registry import WorkerJobHandler
 
 
 @dataclass(frozen=True)

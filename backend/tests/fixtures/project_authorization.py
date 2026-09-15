@@ -5,7 +5,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
-from backend.app.domains.capabilities.models import CapabilityResource
+from backend.app.domains.capabilities.resources.models import CapabilityResource
 from backend.app.domains.orchestration.runs.models import (
     AgentRun,
     authorization_snapshot_fingerprint,

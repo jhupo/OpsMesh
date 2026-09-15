@@ -8,8 +8,8 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.config import Settings, get_settings
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.governance.agent_policy import agent_mcp_policy_mode
 from backend.app.domains.capabilities.mcp.catalog.rules import (
     credential_status as _credential_status,
@@ -18,11 +18,10 @@ from backend.app.domains.capabilities.mcp.catalog.rules import (
     execution_mode as _execution_mode,
 )
 from backend.app.domains.capabilities.mcp.catalog.service import McpCatalogService
-from backend.app.domains.capabilities.models import (
+from backend.app.domains.capabilities.mcp.models import (
     McpCredentialReference,
     McpServer,
     McpToolAllowlist,
-    WorkspaceSkillInstall,
 )
 from backend.app.domains.capabilities.skills.availability import (
     WorkspaceSkillToolAvailability,
@@ -37,6 +36,7 @@ from backend.app.domains.capabilities.skills.manifest import (
     agent_installed_skill_ids,
     manifest_mcp_tools,
 )
+from backend.app.domains.capabilities.skills.models import WorkspaceSkillInstall
 
 
 @dataclass(frozen=True)

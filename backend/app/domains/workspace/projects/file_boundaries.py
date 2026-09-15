@@ -6,14 +6,16 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.requests.authorization import RunAuthorizationService
+from backend.app.domains.orchestration.runs.authorization.policy import (
+    RunRuntimeAuthorizationError,
+)
+from backend.app.domains.orchestration.runs.authorization.runtime import (
+    runtime_binding_for_snapshot,
+)
+from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
 from backend.app.domains.orchestration.runs.models import (
     AgentRun,
     authorization_snapshot_fingerprint,
-)
-from backend.app.domains.orchestration.runs.runtime_authorization import (
-    RunRuntimeAuthorizationError,
-    runtime_binding_for_snapshot,
 )
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.projects.io.support import ProjectRunIOError

@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.errors import PolicyDeniedError
+from backend.app.core.errors import PolicyDeniedError
 from backend.app.domains.platform.admin.common import first_exceeded_capacity_cap
 from backend.app.domains.platform.admin.models import PlatformPolicy
 from backend.app.domains.platform.admin.policy_events import AdminPolicyEventService

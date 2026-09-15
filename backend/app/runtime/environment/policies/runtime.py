@@ -8,12 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.runtime.environment.backends.egress import (
+from backend.app.runtime.environment.contracts import RuntimeLimits
+from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.environment.policies.egress import (
     RuntimeEgressPolicy,
     resolve_egress_policy,
 )
-from backend.app.runtime.environment.contracts import RuntimeLimits
-from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceBinding
 
 

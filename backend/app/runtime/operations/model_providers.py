@@ -6,10 +6,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import dict_or_empty, uuid_or_none
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.agents.providers.models import ModelProviderCredential
+from backend.app.core.utils import dict_or_empty, uuid_or_none
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.metadata import (
     budget_metadata_summary,
 )
@@ -18,6 +17,7 @@ from backend.app.domains.agents.providers.model_api import (
     model_api_for_provider,
     model_api_options_for_provider,
 )
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.agents.providers.policy import (
     credential_is_selectable,
     credential_not_selectable_reasons,

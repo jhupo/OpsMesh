@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import int_or_zero
+from backend.app.core.utils import int_or_zero
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.contracts import (
@@ -16,15 +16,9 @@ from backend.app.domains.orchestration.tasks.contracts import (
 from backend.app.domains.orchestration.tasks.control.execution import (
     TaskControlExecutionService,
 )
-from backend.app.domains.orchestration.tasks.control.messages import (
-    TaskControlMessageWriter,
-)
-from backend.app.domains.orchestration.tasks.control.state import (
-    task_control_state,
-    with_task_control_state,
-)
 from backend.app.domains.orchestration.tasks.delivery.corrections import TaskCorrectionService
-from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.domains.orchestration.tasks.models import Task, TaskMessage
 from backend.app.domains.orchestration.tasks.state import (
     TERMINAL_TASK_STATUSES,
     TaskStateService,
@@ -32,6 +26,49 @@ from backend.app.domains.orchestration.tasks.state import (
 )
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.queue import RedisQueue
+
+
+class TaskControlMessageWriter:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def append_control_message(
+        self,
+        task: Task,
+        *,
+        actor_user_id: UUID,
+        action: str,
+        instruction: str | None,
+        reason: str | None,
+        metadata: dict[str, object],
+    ) -> TaskMessage:
+        return TaskMessageAppendService(self._session).append_for_task(
+            task,
+            message_type=f"task.control.{action}",
+            body=instruction or reason or action,
+            payload={
+                "action": action,
+                "instruction": instruction,
+                "reason": reason,
+                "actor_user_id": str(actor_user_id),
+                "metadata": metadata,
+            },
+        )
+
+
+def task_control_state(task: Task) -> dict[str, object]:
+    state = task.generic_state if isinstance(task.generic_state, dict) else {}
+    control = state.get("control")
+    return dict(control) if isinstance(control, dict) else {}
+
+
+def with_task_control_state(
+    generic_state: dict[str, object],
+    control: dict[str, object],
+) -> dict[str, object]:
+    state = dict(generic_state or {})
+    state["control"] = control
+    return state
 
 
 class TaskControlService:

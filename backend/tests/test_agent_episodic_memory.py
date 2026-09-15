@@ -12,7 +12,7 @@ from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.memory.policy import normalized_memory_policy
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import AgentRunResult
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.orchestration.approvals.models import Approval

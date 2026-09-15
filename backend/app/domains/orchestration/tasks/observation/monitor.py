@@ -6,12 +6,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import dedupe_strings, dict_or_empty, int_or_zero, string_list
+from backend.app.core.utils import dedupe_strings, dict_or_empty, int_or_zero, string_list
 from backend.app.domains.orchestration.tasks.collaboration.contracts import ManagerDiagnostics
 from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.control.state import task_control_state
+from backend.app.domains.orchestration.tasks.control.service import task_control_state
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.tasks.observation.execution import (
     TaskExecutionDiagnosticsService,

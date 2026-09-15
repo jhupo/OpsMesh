@@ -17,7 +17,7 @@ from backend.app.domains.orchestration.tasks.state import (
 )
 from backend.app.domains.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
 from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
-from backend.app.runtime.workers.lifecycle.leases import mark_agent_run_worker_cancel_requested
+from backend.app.runtime.workers.leases import mark_agent_run_worker_cancel_requested
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]
 ReleaseRunReservations = Callable[[AgentRun, datetime], None]

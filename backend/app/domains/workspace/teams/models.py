@@ -118,4 +118,4 @@ class AgentTeamMember(UUIDPrimaryKeyMixin, Base):
     )
 
 
-from backend.app.domains.agents.models import AgentProfile  # noqa: E402
+from backend.app.domains.agents.profiles.models import AgentProfile  # noqa: E402

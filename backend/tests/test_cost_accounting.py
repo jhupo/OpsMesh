@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -22,6 +22,8 @@ from backend.app.domains.agents.runtime.usage import runtime_usage
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
+from backend.app.observability.costs.pricing import CostPricingService
+from backend.app.observability.costs.queries import CostQueryService
 from backend.app.observability.costs.usage import normalize_model_usage
 
 
@@ -100,7 +102,9 @@ def test_cost_accounting_prices_usage_idempotently_and_isolates_workspaces() -> 
     _, other_workspace, _, _ = _seed_run(session, slug="cost-b")
     now = datetime.now(UTC)
     service = CostAccountingService(session)
-    service.create_pricing_rule(
+    pricing_service = CostPricingService(session)
+    query_service = CostQueryService(session)
+    pricing_service.create_pricing_rule(
         workspace_id=workspace.id,
         actor_user_id=user.id,
         provider="openai",
@@ -144,7 +148,7 @@ def test_cost_accounting_prices_usage_idempotently_and_isolates_workspaces() -> 
     assert first.request_cost == Decimal("0.010000000000")
     assert first.total_cost == Decimal("0.016800000000")
 
-    own_rows, own_total = service.list_usage(
+    own_rows, own_total = query_service.list_usage(
         workspace.id,
         start_at=now - timedelta(days=1),
         end_at=now + timedelta(days=1),
@@ -153,7 +157,7 @@ def test_cost_accounting_prices_usage_idempotently_and_isolates_workspaces() -> 
         limit=100,
         offset=0,
     )
-    foreign_rows, foreign_total = service.list_usage(
+    foreign_rows, foreign_total = query_service.list_usage(
         other_workspace.id,
         start_at=now - timedelta(days=1),
         end_at=now + timedelta(days=1),
@@ -173,7 +177,9 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
     user, workspace, profile, run = _seed_run(session, slug="budget")
     now = datetime.now(UTC)
     service = CostAccountingService(session)
-    service.create_pricing_rule(
+    pricing_service = CostPricingService(session)
+    query_service = CostQueryService(session)
+    pricing_service.create_pricing_rule(
         workspace_id=workspace.id,
         actor_user_id=user.id,
         provider="openai",
@@ -231,7 +237,7 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         job_attempt=0,
         occurred_at=now,
     )
-    service.create_pricing_rule(
+    pricing_service.create_pricing_rule(
         workspace_id=workspace.id,
         actor_user_id=user.id,
         provider="google",
@@ -313,7 +319,7 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
     assert euro_missing_usage.currency == "EUR"
     assert euro_missing_usage.metering_status == "missing_usage"
 
-    summary = service.summary(
+    summary = query_service.summary(
         workspace.id,
         start_at=now - timedelta(days=1),
         end_at=now + timedelta(days=1),
@@ -332,7 +338,7 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         "total_tokens": 3_000,
         "total_cost": priced.total_cost,
     }
-    budget = service.budget_status(workspace.id, currency="USD", now=now)
+    budget = query_service.budget_status(workspace.id, currency="USD", now=now)
     assert budget.state == "exhausted"
     assert budget.unpriced_records == 2
     with pytest.raises(CostBudgetExceededError, match="budget exhausted"):
@@ -361,6 +367,7 @@ def test_cost_configuration_rejects_invalid_service_inputs() -> None:
     session = _session()
     user, workspace, _, _ = _seed_run(session, slug="cost-validation")
     service = CostAccountingService(session)
+    pricing_service = CostPricingService(session)
     pricing = {
         "workspace_id": workspace.id,
         "actor_user_id": user.id,
@@ -378,13 +385,13 @@ def test_cost_configuration_rejects_invalid_service_inputs() -> None:
     }
 
     with pytest.raises(ValueError, match="provider must not be blank"):
-        service.create_pricing_rule(**{**pricing, "provider": "   "})
+        pricing_service.create_pricing_rule(**{**pricing, "provider": "   "})
     with pytest.raises(ValueError, match="model must not be blank"):
-        service.create_pricing_rule(**{**pricing, "model": "   "})
+        pricing_service.create_pricing_rule(**{**pricing, "model": "   "})
     with pytest.raises(ValueError, match="version must not be blank"):
-        service.create_pricing_rule(**{**pricing, "version": "   "})
+        pricing_service.create_pricing_rule(**{**pricing, "version": "   "})
     with pytest.raises(ValueError, match="three-letter ASCII"):
-        service.create_pricing_rule(**{**pricing, "currency": "US1"})
+        pricing_service.create_pricing_rule(**{**pricing, "currency": "US1"})
     with pytest.raises(ValueError, match="monthly_limit"):
         service.upsert_budget(
             workspace_id=workspace.id,

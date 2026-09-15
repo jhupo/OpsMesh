@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import dict_list
+from backend.app.core.utils import dict_list
 from backend.app.domains.orchestration.tasks.collaboration.recovery_plan import (
     build_recovery_plan,
     dry_run_recovery_result,

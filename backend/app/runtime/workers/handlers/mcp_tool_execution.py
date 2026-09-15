@@ -1,7 +1,7 @@
 import asyncio
 
+from backend.app.domains.capabilities.mcp.execution.contracts import McpExecutionRequest
 from backend.app.domains.capabilities.mcp.execution.service import McpToolExecutionService
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionRequest
 from backend.app.domains.capabilities.mcp.transport.resolver import McpAdapterResolver
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext

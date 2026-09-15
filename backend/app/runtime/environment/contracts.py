@@ -1,22 +1,10 @@
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, cast
+from typing import TYPE_CHECKING, Literal, Protocol
+from uuid import UUID
 
-RuntimeExecutionMode = Literal["none", "isolated", "pooled", "persistent"]
-
-
-def validate_runtime_execution_mode(
-    execution_mode: str,
-    pool_key: str | None,
-) -> RuntimeExecutionMode:
-    if execution_mode not in {"none", "isolated", "pooled", "persistent"}:
-        raise ValueError("Runtime execution mode is unsupported")
-    if execution_mode == "none":
-        raise ValueError("Runtime resources cannot use the none execution mode")
-    if pool_key is not None and execution_mode != "pooled":
-        raise ValueError("Runtime pool key is only valid for pooled execution")
-    if pool_key is not None and (not pool_key.strip() or len(pool_key) > 160):
-        raise ValueError("Runtime pool key must contain between 1 and 160 characters")
-    return cast(RuntimeExecutionMode, execution_mode)
+if TYPE_CHECKING:
+    from backend.app.runtime.environment.manager import RuntimeManager
+    from backend.app.runtime.environment.models import WorkspaceRuntime
 
 
 @dataclass(frozen=True)
@@ -98,6 +86,33 @@ class RuntimeProjectFilesystem(Protocol):
     def read_file(self, relative_path: str, *, max_bytes: int) -> bytes | None: ...
 
     def cleanup(self) -> None: ...
+
+
+class RuntimeLifecycleControl(Protocol):
+    """Lifecycle requests implemented by queued API control or direct worker control."""
+
+    def create_runtime(
+        self,
+        *,
+        workspace_id: UUID,
+        template_id: UUID,
+        name: str,
+        limits: RuntimeLimits | None,
+        network_disabled: bool,
+        runtime_space_id: UUID | None = None,
+    ) -> "WorkspaceRuntime | None": ...
+
+    def start_runtime(
+        self, workspace_id: UUID, runtime_id: UUID
+    ) -> "WorkspaceRuntime | None": ...
+
+    def stop_runtime(
+        self, workspace_id: UUID, runtime_id: UUID
+    ) -> "WorkspaceRuntime | None": ...
+
+
+class RuntimeManagerProvider(Protocol):
+    def require(self) -> "RuntimeManager": ...
 
 
 class DockerRuntimeClient(Protocol):

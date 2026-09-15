@@ -9,8 +9,8 @@ from backend.app.api.schemas.operations.scheduled_jobs import (
     ScheduledJobCreateRequest,
     ScheduledJobResponse,
 )
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.runtime.workers.scheduling.service import WorkspaceScheduledJobService

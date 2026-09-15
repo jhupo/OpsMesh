@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from backend.app.core.common.values import dict_or_empty
+from backend.app.core.utils import dict_or_empty
 
 
 @dataclass(frozen=True)

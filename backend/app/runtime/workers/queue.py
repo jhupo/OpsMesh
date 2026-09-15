@@ -19,8 +19,8 @@ from uuid import UUID, uuid4
 from opentelemetry.trace import SpanKind
 from redis import Redis
 
-from backend.app.core.common.trace_context import current_trace_context, telemetry_span
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.observability.telemetry.trace_context import current_trace_context, telemetry_span
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 
 ENQUEUE_SCRIPT = """
@@ -46,14 +46,45 @@ redis.call("ZADD", KEYS[2], ARGV[2], ARGV[3])
 return 1
 """
 
+RECLAIM_PROCESSING_SCRIPT = """
+if redis.call("ZREM", KEYS[1], ARGV[1]) == 0 then
+    return 0
+end
+redis.call("RPUSH", KEYS[2], ARGV[2])
+return 1
+"""
+
+RECLAIM_RETRY_SCRIPT = """
+if redis.call("ZREM", KEYS[1], ARGV[1]) == 0 then
+    return 0
+end
+redis.call("RPUSH", KEYS[2], ARGV[1])
+return 1
+"""
+
+HEARTBEAT_PROCESSING_SCRIPT = """
+if redis.call("ZSCORE", KEYS[1], ARGV[1]) == false then
+    return 0
+end
+redis.call("ZADD", KEYS[1], ARGV[2], ARGV[1])
+return 1
+"""
+
 
 class ProcessingEntry(TypedDict):
+    lease_id: str
     payload: str
     job: JobPayload
 
 
 class JobHandler(Protocol):
     def __call__(self, job: JobPayload) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class QueueLease:
+    job: JobPayload
+    lease_token: str
 
 
 def matches_job_filters(
@@ -115,6 +146,10 @@ class RedisQueue:
         return bool(queued)
 
     def dequeue(self) -> JobPayload | None:
+        lease = self.dequeue_with_lease()
+        return lease.job if lease is not None else None
+
+    def dequeue_with_lease(self) -> QueueLease | None:
         return self._dequeue_with_optional_wait(lambda _: True)
 
     def dequeue_matching(
@@ -123,10 +158,49 @@ class RedisQueue:
         *,
         scan_limit: int = 50,
     ) -> JobPayload | None:
+        lease = self.dequeue_matching_with_lease(predicate, scan_limit=scan_limit)
+        return lease.job if lease is not None else None
+
+    def dequeue_matching_with_lease(
+        self,
+        predicate: Callable[[JobPayload], bool],
+        *,
+        scan_limit: int = 50,
+    ) -> QueueLease | None:
         return self._dequeue_with_optional_wait(predicate, scan_limit=scan_limit)
 
-    def ack(self, job: JobPayload) -> bool:
-        return self._remove_processing_job(job.job_id) is not None
+    def ack(self, job: JobPayload, *, lease_token: str | None = None) -> bool:
+        return self._remove_processing_job(job.job_id, lease_token=lease_token) is not None
+
+    def heartbeat(
+        self,
+        job: JobPayload,
+        *,
+        lease_token: str,
+        visibility_timeout_seconds: int | None = None,
+        now: float | None = None,
+    ) -> bool:
+        processing_entry = self._processing_entry_for(job.job_id, lease_token=lease_token)
+        if processing_entry is None:
+            return False
+        raw_entry = processing_entry[1]
+        deadline = (time.time() if now is None else now) + (
+            self.visibility_timeout_seconds
+            if visibility_timeout_seconds is None
+            else visibility_timeout_seconds
+        )
+        refreshed = self.redis.eval(  # type: ignore[no-untyped-call]
+            HEARTBEAT_PROCESSING_SCRIPT,
+            1,
+            self._processing_key(),
+            raw_entry,
+            deadline,
+        )
+        return bool(refreshed)
+
+    def processing_lease_token(self, job_id: UUID) -> str | None:
+        entry = self._processing_entry_for(job_id)
+        return entry[0] if entry is not None else None
 
     @contextmanager
     def run_lock(self, workspace_id: str, run_id: str, ttl_seconds: int = 600) -> Iterator[bool]:
@@ -156,10 +230,16 @@ class RedisQueue:
         reclaimed: list[JobPayload] = []
         for raw_entry in raw_entries:
             entry = self._deserialize_processing_entry(raw_entry)
-            removed = self.redis.zrem(processing_key, raw_entry)
-            if int(removed) == 0:
+            moved = self.redis.eval(  # type: ignore[no-untyped-call]
+                RECLAIM_PROCESSING_SCRIPT,
+                2,
+                processing_key,
+                self.keys.queue(self.queue_name),
+                raw_entry,
+                entry["payload"],
+            )
+            if not moved:
                 continue
-            self.redis.rpush(self.keys.queue(self.queue_name), entry["payload"])
             reclaimed.append(entry["job"])
         return reclaimed
 
@@ -170,8 +250,11 @@ class RedisQueue:
         error: BaseException | str | None = None,
         delay_seconds: float | None = None,
         now: float | None = None,
-    ) -> None:
-        self._remove_processing_job(job.job_id)
+        lease_token: str | None = None,
+    ) -> bool:
+        removed = self._remove_processing_job(job.job_id, lease_token=lease_token)
+        if lease_token is not None and removed is None:
+            return False
         next_job = job.next_attempt(error)
         if job.can_retry:
             retry_delay = self._retry_delay(job, delay_seconds=delay_seconds)
@@ -180,12 +263,13 @@ class RedisQueue:
             else:
                 due_at = (time.time() if now is None else now) + retry_delay
                 self.redis.zadd(self._retry_key(), {self._serialize(next_job): due_at})
-            return
+            return True
 
         self.redis.rpush(
             self.keys.dead_letter_queue(self.queue_name),
             self._serialize(next_job),
         )
+        return True
 
     def reclaim_due_retries(
         self, *, limit: int = 100, now: float | None = None
@@ -202,10 +286,15 @@ class RedisQueue:
         )
         reclaimed: list[JobPayload] = []
         for raw_job in raw_jobs:
-            removed = self.redis.zrem(self._retry_key(), raw_job)
-            if int(removed) == 0:
+            moved = self.redis.eval(  # type: ignore[no-untyped-call]
+                RECLAIM_RETRY_SCRIPT,
+                2,
+                self._retry_key(),
+                self.keys.queue(self.queue_name),
+                raw_job,
+            )
+            if not moved:
                 continue
-            self.redis.rpush(self.keys.queue(self.queue_name), raw_job)
             reclaimed.append(self._deserialize(raw_job))
         return reclaimed
 
@@ -286,6 +375,33 @@ class RedisQueue:
             for raw_job in self.redis.lrange(self.keys.queue(self.queue_name), 0, limit - 1)
         ]
 
+    def queued_job_ids(self) -> set[UUID]:
+        return {
+            self._deserialize(raw_job).job_id
+            for raw_job in self.redis.lrange(self.keys.queue(self.queue_name), 0, -1)
+        }
+
+    def queued_job_resource_ids(self, *, job_type: JobType | None = None) -> set[UUID]:
+        return self._resource_ids_from_jobs(
+            self.redis.lrange(self.keys.queue(self.queue_name), 0, -1),
+            job_type=job_type,
+        )
+
+    def processing_job_resource_ids(self, *, job_type: JobType | None = None) -> set[UUID]:
+        return self._resource_ids_from_jobs(
+            [
+                self._deserialize_processing_entry(raw_entry)["payload"]
+                for raw_entry in self.redis.zrange(self._processing_key(), 0, -1)
+            ],
+            job_type=job_type,
+        )
+
+    def scheduled_retry_job_resource_ids(self, *, job_type: JobType | None = None) -> set[UUID]:
+        return self._resource_ids_from_jobs(
+            self.redis.zrange(self._retry_key(), 0, -1),
+            job_type=job_type,
+        )
+
     def list_queued(
         self,
         limit: int = 50,
@@ -350,13 +466,13 @@ class RedisQueue:
         predicate: Callable[[JobPayload], bool],
         *,
         scan_limit: int = 50,
-    ) -> JobPayload | None:
+    ) -> QueueLease | None:
         deadline = time.time() + max(0, self.blocking_timeout_seconds)
         while True:
             self.reclaim_due_retries()
-            job = self._pop_best_matching(predicate, scan_limit=scan_limit)
-            if job is not None or self.blocking_timeout_seconds <= 0 or time.time() >= deadline:
-                return job
+            lease = self._pop_best_matching(predicate, scan_limit=scan_limit)
+            if lease is not None or self.blocking_timeout_seconds <= 0 or time.time() >= deadline:
+                return lease
             time.sleep(min(0.05, max(0, deadline - time.time())))
 
     def _pop_best_matching(
@@ -364,7 +480,7 @@ class RedisQueue:
         predicate: Callable[[JobPayload], bool],
         *,
         scan_limit: int = 50,
-    ) -> JobPayload | None:
+    ) -> QueueLease | None:
         queue_key = self.keys.queue(self.queue_name)
         best: tuple[int, int, bytes | str, JobPayload] | None = None
         raw_payloads = self.redis.lrange(queue_key, 0, max(1, scan_limit) - 1)
@@ -378,9 +494,10 @@ class RedisQueue:
         if best is None:
             return None
         _, _, selected_payload, job = best
-        return job if self._lease_raw_job(queue_key, selected_payload) else None
+        lease_token = self._lease_raw_job(queue_key, selected_payload)
+        return QueueLease(job=job, lease_token=lease_token) if lease_token else None
 
-    def _lease_raw_job(self, queue_key: str, raw_payload: bytes | str) -> bool:
+    def _lease_raw_job(self, queue_key: str, raw_payload: bytes | str) -> str | None:
         processing_entry = self._serialize_processing_entry(raw_payload)
         processing_deadline = time.time() + self.visibility_timeout_seconds
         leased = self.redis.eval(  # type: ignore[no-untyped-call]
@@ -392,16 +509,35 @@ class RedisQueue:
             processing_deadline,
             processing_entry,
         )
-        return bool(leased)
+        if not leased:
+            return None
+        return json.loads(processing_entry)["lease_id"]
 
-    def _remove_processing_job(self, job_id: UUID) -> JobPayload | None:
+    def _remove_processing_job(
+        self,
+        job_id: UUID,
+        *,
+        lease_token: str | None = None,
+    ) -> JobPayload | None:
+        raw_entry = self._processing_entry_for(job_id, lease_token=lease_token)
+        if raw_entry is None:
+            return None
+        removed = self.redis.zrem(self._processing_key(), raw_entry[1])
+        return raw_entry[2]["job"] if int(removed) > 0 else None
+
+    def _processing_entry_for(
+        self,
+        job_id: UUID,
+        *,
+        lease_token: str | None = None,
+    ) -> tuple[str, str, ProcessingEntry] | None:
         for raw_entry in self.redis.zrange(self._processing_key(), 0, -1):
             entry = self._deserialize_processing_entry(raw_entry)
-            job = entry["job"]
-            if job.job_id != job_id:
+            if entry["job"].job_id != job_id:
                 continue
-            removed = self.redis.zrem(self._processing_key(), raw_entry)
-            return job if int(removed) > 0 else None
+            if lease_token is not None and entry["lease_id"] != lease_token:
+                continue
+            return entry["lease_id"], raw_entry, entry
         return None
 
     def _retry_delay(self, job: JobPayload, *, delay_seconds: float | None) -> float:
@@ -442,6 +578,20 @@ class RedisQueue:
                 break
         return jobs
 
+    def _resource_ids_from_jobs(
+        self,
+        raw_jobs: list[bytes | str],
+        *,
+        job_type: JobType | None,
+    ) -> set[UUID]:
+        resource_ids: set[UUID] = set()
+        for raw_job in raw_jobs:
+            job = self._deserialize(raw_job)
+            if job_type is not None and job.job_type != job_type:
+                continue
+            resource_ids.add(job.resource_id)
+        return resource_ids
+
     def _serialize(self, job: JobPayload) -> str:
         return job.model_dump_json()
 
@@ -468,18 +618,22 @@ class RedisQueue:
             raw_entry = raw_entry.decode("utf-8")
         entry = json.loads(raw_entry)
         payload = entry["payload"]
-        return {"payload": payload, "job": self._deserialize(payload)}
+        return {
+            "lease_id": entry["lease_id"],
+            "payload": payload,
+            "job": self._deserialize(payload),
+        }
 
 
 def consume_once(queue: RedisQueue, handler: JobHandler) -> bool:
-    job = queue.dequeue()
-    if job is None:
+    lease = queue.dequeue_with_lease()
+    if lease is None:
         return False
+    job = lease.job
     try:
         handler(job)
     except Exception:
-        queue.retry_or_dead_letter(job)
+        queue.retry_or_dead_letter(job, lease_token=lease.lease_token)
         raise
-    queue.ack(job)
+    queue.ack(job, lease_token=lease.lease_token)
     return True
-

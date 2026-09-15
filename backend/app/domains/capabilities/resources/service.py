@@ -6,20 +6,20 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.errors import DomainError, NotFoundError
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.errors import DomainError, NotFoundError
+from backend.app.core.pagination import PageParams
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityResourceCreatePayload,
     CapabilityResourceUpdatePayload,
 )
-from backend.app.domains.capabilities.models import (
-    CapabilityResource,
+from backend.app.domains.capabilities.mcp.models import (
     McpCredentialReference,
     McpServer,
 )
 from backend.app.domains.capabilities.resources.locator import normalize_resource_locator
+from backend.app.domains.capabilities.resources.models import CapabilityResource
 from backend.app.domains.capabilities.resources.schema import (
     normalize_object_schema,
     reject_embedded_secrets,

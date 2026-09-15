@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import (
+from backend.app.core.utils import (
     dict_list,
     optional_string,
     string_list,
@@ -14,11 +14,11 @@ from backend.app.core.common.values import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.orchestration.workflows.definitions.graph import (
+    is_pm_summary_step,
+)
 from backend.app.domains.orchestration.workflows.planning.member_matching import (
     MemberMatchingService,
-)
-from backend.app.domains.orchestration.workflows.templates.validation import (
-    is_pm_summary_step,
 )
 
 STEP_STATUS_QUEUED = "queued"

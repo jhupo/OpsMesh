@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.runtime.self_hosted.contracts import (
     ArtifactUploadPayload,

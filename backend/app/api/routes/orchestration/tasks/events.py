@@ -27,15 +27,15 @@ from backend.app.api.schemas.orchestration.tasks.core import (
 from backend.app.api.schemas.orchestration.tasks.status import (
     TaskLiveStatusResponse,
 )
-from backend.app.core.common.pagination import PageParams
-from backend.app.core.common.trace_context import current_trace_metadata
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.orchestration.tasks.events import TaskEventBus
 from backend.app.domains.orchestration.tasks.feedback import TaskFeedbackService
 from backend.app.domains.orchestration.tasks.observation.live_status import TaskLiveStatusService
-from backend.app.domains.workspace.tenants.workspace_reads import WorkspaceReadService
+from backend.app.domains.orchestration.tasks.queries import TaskQueryService
+from backend.app.observability.telemetry.trace_context import current_trace_metadata
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]
@@ -78,7 +78,7 @@ async def list_task_messages(
     session: Session = Depends(get_db_session),
 ) -> PageResponse[TaskMessageResponse]:
     try:
-        items, total = WorkspaceReadService(session).list_task_messages(
+        items, total = TaskQueryService(session).list_messages(
             workspace_id=context.workspace.id,
             task_id=task_id,
             page=page,
@@ -218,7 +218,7 @@ async def list_task_planning_attempts(
     session: Session = Depends(get_db_session),
 ) -> PageResponse[TaskPlanningAttemptResponse]:
     try:
-        items, total = WorkspaceReadService(session).list_task_planning_attempts(
+        items, total = TaskQueryService(session).list_planning_attempts(
             workspace_id=context.workspace.id,
             task_id=task_id,
             page=page,

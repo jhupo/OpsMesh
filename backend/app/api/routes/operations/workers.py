@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from redis import Redis
 from sqlalchemy.orm import Session
 
+from backend.app.api.client_ip import security_request_context
 from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.schemas.operations.workers import (
@@ -19,19 +20,23 @@ from backend.app.api.schemas.operations.workers import (
     WorkerNodeResponse,
     WorkerStatusUpdateRequest,
 )
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
-from backend.app.core.security.service import SecurityAuditService
+from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.runtime.operations.runtimes.cleanup import RuntimeCleanupService
+from backend.app.observability.audit.security_events import SecurityAuditService
+from backend.app.runtime.environment.cleanup_jobs import RuntimeCleanupService
 from backend.app.runtime.operations.runtimes.leases import RuntimeLeaseOperationsService
-from backend.app.runtime.operations.workers.heartbeats import WorkerHeartbeatOperationsService
-from backend.app.runtime.operations.workers.lease_maintenance import WorkerLeaseMaintenanceService
-from backend.app.runtime.operations.workers.lease_queries import WorkerLeaseQueryService
-from backend.app.runtime.operations.workers.node_control import WorkerNodeControlService
-from backend.app.runtime.operations.workers.node_repository import WorkerNodeRepository
+from backend.app.runtime.workers.leases import (
+    WorkerLeaseMaintenanceService,
+    WorkerLeaseQueryService,
+)
+from backend.app.runtime.workers.nodes import (
+    WorkerHeartbeatOperationsService,
+    WorkerNodeControlService,
+    WorkerNodeRepository,
+)
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]
@@ -54,7 +59,7 @@ async def record_worker_heartbeat(
     if payload.workspace_id is not None and payload.workspace_id != context.workspace.id:
         raise HTTPException(status_code=400, detail="Heartbeat workspace_id must match path")
     _require_worker_heartbeat_token(
-        request=request,
+        request_context=security_request_context(request),
         context=context,
         settings=settings,
         session=session,
@@ -90,7 +95,7 @@ def _require_worker_heartbeat_token(
         return
 
     SecurityAuditService(session).record_request_event(
-        request=request,
+        request_context=security_request_context(request),
         action="worker.heartbeat_token.rejected",
         outcome="denied",
         severity="warning",

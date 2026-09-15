@@ -6,11 +6,11 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
-from backend.app.core.security.models import SecurityEvent
+from backend.app.core.pagination import PageParams
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.models import RuntimeEvent
 

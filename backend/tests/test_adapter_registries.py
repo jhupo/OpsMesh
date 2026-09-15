@@ -3,17 +3,15 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-from sqlalchemy.orm import Session
-
+from backend.app.domains.agents.providers.model_api import (
+    OPENAI_CHAT_COMPLETIONS_API,
+    OPENAI_RESPONSES_API,
+)
 from backend.app.domains.agents.providers.probes import (
     AnthropicHealthProbe,
     ModelProviderHealthTarget,
     OpenAICompatibleHealthProbe,
     ProviderHealthRegistry,
-)
-from backend.app.domains.agents.providers.model_api import (
-    OPENAI_CHAT_COMPLETIONS_API,
-    OPENAI_RESPONSES_API,
 )
 from backend.app.runtime.environment.backends.registry import build_runtime_backend_registry
 
@@ -78,16 +76,15 @@ def test_health_registry_selects_provider_sdk_adapters() -> None:
 
 
 def test_runtime_registry_declares_only_implemented_backends() -> None:
-    with Session() as session:
-        registry = build_runtime_backend_registry(session, None, None)
-        matrix = registry.capabilities()
-        assert matrix["docker"].managed_container_lifecycle
-        assert not matrix["docker"].asynchronous_jobs
-        assert matrix["self_hosted"].asynchronous_jobs
-        assert matrix["self_hosted"].mcp_stdio
-        assert not matrix["self_hosted"].managed_container_lifecycle
-        assert registry.resolve("hosted_sandbox") is None
-        assert registry.resolve("unknown") is None
+    registry = build_runtime_backend_registry(None)
+    matrix = registry.capabilities()
+    assert matrix["docker"].managed_container_lifecycle
+    assert not matrix["docker"].asynchronous_jobs
+    assert matrix["self_hosted"].asynchronous_jobs
+    assert matrix["self_hosted"].mcp_stdio
+    assert not matrix["self_hosted"].managed_container_lifecycle
+    assert registry.resolve("hosted_sandbox") is None
+    assert registry.resolve("unknown") is None
 
 
 class _RecordingProviderSdkClient:

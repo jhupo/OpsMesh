@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
-from backend.app.domains.orchestration.runs.authorization_snapshot import (
+from backend.app.domains.orchestration.runs.authorization.snapshot import (
     RunAuthorizationSnapshotService,
 )
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
@@ -41,7 +41,7 @@ from backend.app.domains.workspace.tenants.models import (
     WorkspaceQuota,
     WorkspaceReservation,
 )
-from backend.app.domains.workspace.tenants.quotas import WorkspaceQuotaService
+from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
 from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,

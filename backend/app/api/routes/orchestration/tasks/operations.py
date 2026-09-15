@@ -6,7 +6,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
 from backend.app.api.schemas.orchestration.tasks.control import (
@@ -18,12 +18,17 @@ from backend.app.api.schemas.orchestration.tasks.control import (
     TaskOperatorActionResponse,
 )
 from backend.app.api.schemas.orchestration.tasks.management import (
+    TaskCollaborationRecoveryApplyRequest,
+    TaskCollaborationRecoveryApplyResponse,
+    TaskCollaborationRecoveryPlanResponse,
     TaskExecutionDiagnosticsResponse,
     TaskManagerDiagnosticsResponse,
 )
 from backend.app.api.schemas.orchestration.tasks.status import (
     TaskControlDiagnosticsResponse,
     TaskDeliveryReviewResponse,
+    TaskExecutionStatusResponse,
+    TaskInteractionTranscriptResponse,
     TaskObservationResponse,
 )
 from backend.app.api.schemas.orchestration.tasks.timeline import (
@@ -34,6 +39,9 @@ from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
+)
+from backend.app.domains.orchestration.tasks.collaboration.recovery import (
+    TaskCollaborationRecoveryService,
 )
 from backend.app.domains.orchestration.tasks.contracts import (
     TaskControlActionRequest,
@@ -54,8 +62,12 @@ from backend.app.domains.orchestration.tasks.delivery.review import TaskDelivery
 from backend.app.domains.orchestration.tasks.observation.execution import (
     TaskExecutionDiagnosticsService,
 )
+from backend.app.domains.orchestration.tasks.observation.monitor import TaskExecutionStatusService
 from backend.app.domains.orchestration.tasks.observation.service import TaskObservationService
 from backend.app.domains.orchestration.tasks.observation.timeline import TaskTimelineService
+from backend.app.domains.orchestration.tasks.observation.transcript import (
+    TaskInteractionTranscriptService,
+)
 from backend.app.runtime.workers.queue import RedisQueue
 
 if TYPE_CHECKING:
@@ -300,3 +312,98 @@ async def get_task_manager_diagnostics(
     if diagnostics is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskManagerDiagnosticsResponse.model_validate(diagnostics)
+
+
+@router.get(
+    "/tasks/{task_id}/execution-status",
+    response_model=TaskExecutionStatusResponse,
+)
+async def get_task_execution_status(
+    task_id: UUID,
+    message_limit: int = Query(default=20, ge=1, le=100),
+    event_limit: int = Query(default=30, ge=1, le=200),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskExecutionStatusResponse:
+    execution_status = TaskExecutionStatusService(session).get_status(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        message_limit=message_limit,
+        event_limit=event_limit,
+    )
+    if execution_status is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskExecutionStatusResponse.model_validate(execution_status)
+
+
+@router.get(
+    "/tasks/{task_id}/interaction-transcript",
+    response_model=TaskInteractionTranscriptResponse,
+)
+async def get_task_interaction_transcript(
+    task_id: UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    message_type: str | None = Query(default=None, min_length=1, max_length=120),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskInteractionTranscriptResponse:
+    transcript = TaskInteractionTranscriptService(session).get_transcript(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        limit=limit,
+        offset=offset,
+        message_type=message_type,
+    )
+    if transcript is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskInteractionTranscriptResponse.model_validate(transcript)
+
+
+@router.get(
+    "/tasks/{task_id}/collaboration-recovery",
+    response_model=TaskCollaborationRecoveryPlanResponse,
+)
+async def get_task_collaboration_recovery_plan(
+    task_id: UUID,
+    max_actions: int = Query(default=10, ge=1, le=50),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskCollaborationRecoveryPlanResponse:
+    recovery_plan = TaskCollaborationRecoveryService(session).get_plan(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        max_actions=max_actions,
+    )
+    if recovery_plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskCollaborationRecoveryPlanResponse.model_validate(recovery_plan)
+
+
+@router.post(
+    "/tasks/{task_id}/collaboration-recovery",
+    response_model=TaskCollaborationRecoveryApplyResponse,
+)
+async def apply_task_collaboration_recovery_plan(
+    task_id: UUID,
+    request: TaskCollaborationRecoveryApplyRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
+    session: Session = Depends(get_db_session),
+) -> TaskCollaborationRecoveryApplyResponse:
+    try:
+        result = TaskCollaborationRecoveryService(session).apply_plan(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            actor_user_id=context.user.user_id,
+            dry_run=request.dry_run,
+            actions=request.actions or None,
+            sources=request.sources or None,
+            max_actions=request.max_actions,
+            reason=request.reason,
+            metadata=request.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskCollaborationRecoveryApplyResponse.model_validate(result)

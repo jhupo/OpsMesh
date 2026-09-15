@@ -12,25 +12,25 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.core.security.models import SecurityEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.access.models import User
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.domains.capabilities.mcp.execution.service import McpToolExecutionService
-from backend.app.domains.capabilities.mcp.execution.types import (
+from backend.app.domains.capabilities.mcp.execution.contracts import (
     McpExecutionError,
     McpExecutionRequest,
 )
 from backend.app.domains.capabilities.mcp.transport.remote import SseMcpToolAdapter
 from backend.app.domains.capabilities.mcp.transport.resolver import McpAdapterResolver
-from backend.app.domains.capabilities.models import (
+from backend.app.domains.capabilities.mcp.models import (
     McpCredentialReference,
     McpServer,
     McpToolAllowlist,
     McpToolCallLog,
 )
-from backend.app.domains.capabilities.tools.errors import (
+from backend.app.domains.capabilities.tools.contracts import (
     ToolPermissionError,
     ToolResourceNotFoundError,
 )
@@ -40,7 +40,7 @@ from backend.app.domains.orchestration.runs.models import (
     RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.domains.orchestration.runs.status import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.platform.admin.models import PlatformPolicy
 from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY

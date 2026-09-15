@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import positive_int_or_none
+from backend.app.core.utils import positive_int_or_none
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.workflows.statuses import (
     CAPACITY_CONSUMING_RUN_STATUS_VALUES,

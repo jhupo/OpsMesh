@@ -11,13 +11,13 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.capabilities.marketplace.contracts import MarketplaceInstallRequest
 from backend.app.domains.capabilities.marketplace.models import (
@@ -27,9 +27,11 @@ from backend.app.domains.capabilities.marketplace.models import (
     WorkspaceMarketplaceInstall,
 )
 from backend.app.domains.capabilities.marketplace.resource_service import MarketplaceService
-from backend.app.domains.capabilities.models import (
+from backend.app.domains.capabilities.mcp.models import (
     McpServer,
     McpToolAllowlist,
+)
+from backend.app.domains.capabilities.skills.models import (
     Skill,
     WorkspaceSkillInstall,
 )

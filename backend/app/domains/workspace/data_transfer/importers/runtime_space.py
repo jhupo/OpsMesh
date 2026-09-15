@@ -3,12 +3,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.workspace.data_transfer.importers.conflicts import (
-    _missing_dependency_conflict,
-    _missing_runtime_policy_conflict,
-    _quota_violation_conflict,
-    _skip_conflict,
-)
 from backend.app.domains.workspace.data_transfer.importers.context import (
     WorkspaceMetadataImportContext,
     _dict_field,
@@ -19,6 +13,12 @@ from backend.app.domains.workspace.data_transfer.importers.context import (
     _resolved_runtime_policy,
     _string_field,
     resolved_dependency_id,
+)
+from backend.app.domains.workspace.data_transfer.importers.preview import (
+    _missing_dependency_conflict,
+    _missing_runtime_policy_conflict,
+    _quota_violation_conflict,
+    _skip_conflict,
 )
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 

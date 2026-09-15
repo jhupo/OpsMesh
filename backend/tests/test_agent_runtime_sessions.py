@@ -20,8 +20,8 @@ from backend.app.domains.agents.sessions.models import (
     PersistentAgentSession,
     PersistentAgentSessionItem,
     PersistentAgentSessionRef,
-    SQLAlchemyAgentSession,
 )
+from backend.app.domains.agents.sessions.store import SQLAlchemyAgentSession
 from backend.app.domains.workspace.tenants.models import Workspace
 
 

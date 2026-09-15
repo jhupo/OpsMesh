@@ -10,11 +10,11 @@ from uuid import UUID, uuid4
 from sqlalchemy import Select, delete, func, select, text
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.trace_context import with_current_trace_metadata
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.telemetry.trace_context import with_current_trace_metadata
 
 
 @dataclass(frozen=True)

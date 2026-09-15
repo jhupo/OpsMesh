@@ -4,7 +4,7 @@ import os
 import time
 from importlib.metadata import version
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.domains.platform.releases.cache import cached_release_check, store_release_check
 from backend.app.domains.platform.releases.github import GitHubReleaseClient
 from backend.app.domains.platform.releases.models import (

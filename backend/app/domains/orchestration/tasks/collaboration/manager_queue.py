@@ -1,7 +1,7 @@
 from collections import Counter
 from uuid import UUID
 
-from backend.app.core.common.values import string_list
+from backend.app.core.utils import string_list
 from backend.app.domains.orchestration.tasks.collaboration.contracts import (
     ManagerDiagnostics,
     ManagerInfo,

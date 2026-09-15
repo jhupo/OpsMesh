@@ -11,7 +11,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.memory.configuration import (
     EMBEDDING_DIMENSIONS,
     WorkspaceMemoryConfigurationService,
@@ -21,11 +21,11 @@ from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEmbeddingEvent,
     WorkspaceMemoryEntry,
 )
+from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.agents.providers.policy import (
     canonical_model_provider,
     is_openai_compatible_provider,
 )
-from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
 
 

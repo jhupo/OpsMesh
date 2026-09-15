@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
@@ -19,6 +19,9 @@ from backend.app.domains.orchestration.workflows.definitions.commands import (
 from backend.app.domains.orchestration.workflows.definitions.conditions import (
     evaluate_task_step_condition,
     validate_condition,
+)
+from backend.app.domains.orchestration.workflows.definitions.application import (
+    OrchestrationDefinitionApplicationService,
 )
 from backend.app.domains.orchestration.workflows.definitions.contracts import (
     WorkflowCondition,
@@ -108,7 +111,12 @@ def test_user_orchestration_can_publish_and_apply_to_a_team_task() -> None:
     )
     session.add(task)
     session.flush()
-    service.apply_to_task(task, definition.id, orchestration_version=1, actor_user_id=user.id)
+    OrchestrationDefinitionApplicationService(session).apply_to_task(
+        task,
+        definition.id,
+        orchestration_version=1,
+        actor_user_id=user.id,
+    )
     session.commit()
 
     assert task.project_plan is not None
@@ -182,7 +190,7 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
 
 
 def test_authored_plan_cannot_be_replaced_by_automatic_regeneration() -> None:
-    from backend.app.domains.orchestration.tasks.delivery.plan_lifecycle import (
+    from backend.app.domains.orchestration.workflows.planning.lifecycle import (
         TaskPlanLifecycleService,
         TaskPlanRegenerateCommand,
     )

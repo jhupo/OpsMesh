@@ -28,10 +28,24 @@ _IMPORT_LINTER_CONTRACT_IDS = {
 # enforces the indirect rules; this direct-import check keeps the ownership decision visible in
 # the test suite and covers boundaries that intentionally have no vendor dependency.
 _FORBIDDEN_BOUNDARY_IMPORTS = {
-    "backend.app.core": ("backend.app.api",),
-    "backend.app.domains": ("backend.app.api",),
-    "backend.app.runtime": ("backend.app.api",),
-    "backend.app.observability": ("backend.app.api",),
+    "backend.app.core": (
+        "backend.app.api",
+        "backend.app.bootstrap",
+        "backend.app.domains",
+        "backend.app.observability",
+        "backend.app.runtime",
+    ),
+    "backend.app.domains": ("backend.app.api", "backend.app.bootstrap"),
+    "backend.app.runtime": ("backend.app.api", "backend.app.bootstrap"),
+    "backend.app.observability": ("backend.app.api", "backend.app.bootstrap"),
+}
+
+# These modules are process entrypoints and therefore composition roots themselves.  The
+# exception is deliberately exact: ordinary domain/runtime modules may not acquire bootstrap
+# dependencies just because they live below the same package.
+_BOUNDARY_IMPORT_EXCEPTIONS = {
+    "backend.app.domains.platform.updates.daemon": ("backend.app.bootstrap",),
+    "backend.app.runtime.workers.cli": ("backend.app.bootstrap",),
 }
 
 
@@ -80,11 +94,8 @@ def test_consolidated_domains_have_one_source_owner() -> None:
         if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
     } == set()
     for name in (
-        "core/common",
         "core/db",
-        "core/rate_limits",
         "core/redis",
-        "core/secrets",
         "core/security",
         "domains/agents",
         "domains/access",
@@ -126,6 +137,9 @@ def test_boundary_ownership_matrix_has_no_reverse_direct_imports() -> None:
             if not _is_module_in_boundary(module, owner):
                 continue
             for imported, line_number in _absolute_import_targets(path):
+                allowed = _BOUNDARY_IMPORT_EXCEPTIONS.get(module, ())
+                if any(_is_module_in_boundary(imported, prefix) for prefix in allowed):
+                    continue
                 if any(
                     _is_module_in_boundary(imported, forbidden) for forbidden in forbidden_modules
                 ):
@@ -139,7 +153,7 @@ def test_boundary_ownership_matrix_has_no_reverse_direct_imports() -> None:
     "module",
     [
         "backend.app.runtime.operations.workers.lifecycle",
-        "backend.app.runtime.operations.recovery.service",
+        "backend.app.runtime.workers.recovery.service",
         "backend.app.domains.workspace.teams.execution.loop",
     ],
 )
@@ -170,7 +184,7 @@ def test_access_and_transport_dependencies_have_distinct_owners() -> None:
     assert {path.name for path in dependencies.glob("*.py")} >= {
         "auth.py",
         "admin.py",
-        "workers.py",
+        "queue.py",
     }
     assert not (app / "core/auth").exists()
     assert not (app / "core/identity").exists()
@@ -254,6 +268,8 @@ def test_team_features_are_nested_by_function() -> None:
         "actions.py",
         "command_center.py",
         "console.py",
+        "console_mailbox.py",
+        "console_runtime_payloads.py",
         "views.py",
         "workspace.py",
     } <= {path.name for path in operations.glob("*.py")}
@@ -272,8 +288,8 @@ def test_team_features_are_nested_by_function() -> None:
     projects = teams / "projects"
     assert (projects / "dashboard.py").is_file()
     assert (projects / "service.py").is_file()
-    for name in ("dashboard_repository.py", "dashboard_views.py"):
-        assert not (projects / name).exists(), name
+    assert (projects / "dashboard_repository.py").is_file()
+    assert not (projects / "dashboard_views.py").exists()
     assert (teams / "organization/service.py").is_file()
     assert not (teams / "operating_context_service.py").exists()
     assert (teams / "runtime/service.py").is_file()
@@ -298,7 +314,6 @@ def test_runtime_features_are_nested_by_function() -> None:
     expected = {
         "backends",
         "commands",
-        "lifecycle",
         "pool",
         "policies",
         "spaces",
@@ -309,7 +324,10 @@ def test_runtime_features_are_nested_by_function() -> None:
         "contracts",
         "dependencies",
         "manager",
-        "manager_factory",
+        "cleanup",
+        "cleanup_jobs",
+        "events",
+        "leases",
         "metadata",
         "models",
         "project_files",
@@ -328,7 +346,6 @@ def test_runtime_features_are_nested_by_function() -> None:
         "commands.py",
         "docker_client.py",
         "egress.py",
-        "events.py",
         "lifecycle_cleanup.py",
         "lifecycle_control.py",
         "lifecycle_guards.py",
@@ -360,6 +377,7 @@ def test_task_modules_are_nested_by_function() -> None:
         "feedback",
         "message_append",
         "models",
+        "queries",
         "service",
         "state",
         "steps",
@@ -448,16 +466,15 @@ def test_tenant_modules_are_nested_by_function() -> None:
     root_modules = {path.stem for path in tenants.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == {
         "contracts",
+        "errors",
+        "invites",
+        "members",
         "models",
-        "quotas",
-        "workspace_invites",
-        "workspace_lifecycle_errors",
-        "workspace_management",
-        "workspace_members",
-        "workspace_reads",
-        "workspace_settings",
-        "workspace_snapshots",
-        "workspace_quotas",
+        "quota_management",
+        "reservations",
+        "service",
+        "settings",
+        "snapshots",
     }
     assert (ROOT / "backend/app/domains/workspace/data_lifecycle").is_dir()
     for name in (
@@ -480,7 +497,7 @@ def test_tenant_modules_are_nested_by_function() -> None:
 
 def test_worker_modules_are_nested_by_function() -> None:
     workers = ROOT / "backend/app/runtime/workers"
-    expected = {"handlers", "lifecycle", "scheduling"}
+    expected = {"handlers", "recovery", "scheduling"}
     assert {path.name for path in workers.iterdir() if path.is_dir()} >= expected
     assert (workers / "queue.py").is_file()
     assert not (workers / "queue").exists()
@@ -490,8 +507,14 @@ def test_worker_modules_are_nested_by_function() -> None:
         "capacity",
         "cli",
         "contracts",
+        "heartbeat",
+        "leases",
+        "maintenance",
+        "maintenance_runner",
         "models",
+        "nodes",
         "queue",
+        "reporting",
         "registry",
         "revision",
         "routing",
@@ -501,13 +524,11 @@ def test_worker_modules_are_nested_by_function() -> None:
     assert (workers / "handlers/__init__.py").is_file()
     for name in (
         "handlers.py",
-        "heartbeat.py",
         "job_handlers",
         "job_routing.py",
         "jobs.py",
         "lease_lifecycle.py",
         "lease_reporting.py",
-        "maintenance.py",
         "queue_consumer.py",
         "queue_contracts.py",
         "queue_leases.py",
@@ -569,11 +590,12 @@ def test_self_hosted_runtime_modules_are_nested_by_function() -> None:
 
 def test_project_modules_are_nested_by_function() -> None:
     projects = ROOT / "backend/app/domains/workspace/projects"
-    expected = {"artifacts", "io", "snapshots"}
+    expected = {"io", "snapshots"}
     assert {path.name for path in projects.iterdir() if path.is_dir()} >= expected
     root_modules = {path.stem for path in projects.glob("*.py") if path.name != "__init__.py"}
     assert root_modules == {
         "contracts",
+        "artifacts",
         "file_boundaries",
         "models",
         "policy",
@@ -694,9 +716,10 @@ def test_agent_runtime_vendor_modules_follow_target_layout() -> None:
     runtime = ROOT / "backend/app/domains/agents/runtime"
     assert {path.name for path in runtime.iterdir() if path.is_dir()} >= {
         "providers",
-        "sandbox",
         "tools",
     }
+    assert not (runtime / "sandbox").exists()
+    assert (ROOT / "backend/app/runtime/contracts.py").is_file()
     assert not (runtime / "execution").exists()
     assert (runtime / "providers/openai/runner.py").is_file()
     assert (runtime / "providers/claude/runner.py").is_file()
@@ -787,7 +810,7 @@ def test_memory_modules_are_flattened_under_domain_owner() -> None:
 
 def test_operations_features_are_nested_by_function() -> None:
     operations = ROOT / "backend/app/runtime/operations"
-    expected = {"metrics", "queues", "recovery", "runtimes", "timeline", "workers"}
+    expected = {"metrics", "queues", "runtimes", "timeline", "workers"}
     assert {path.name for path in operations.iterdir() if path.is_dir()} >= expected
     root_modules = {path.stem for path in operations.glob("*.py") if path.name != "__init__.py"}
     assert root_modules <= {
@@ -802,6 +825,7 @@ def test_operations_features_are_nested_by_function() -> None:
         "overview_payloads",
         "overview_queries",
         "run_activity",
+        "recovery",
         "scheduler",
         "model_providers",
     }
@@ -822,7 +846,7 @@ def test_operations_features_are_nested_by_function() -> None:
 def test_api_routes_are_nested_by_function() -> None:
     routes = ROOT / "backend/app/api/routes"
     expected = {
-        "admin",
+        "access",
         "agents",
         "capabilities",
         "integrations",
@@ -907,7 +931,7 @@ def test_agent_profile_and_memory_modules_have_stable_owners() -> None:
         for path in agents.iterdir()
         if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
     }
-    assert root_modules == {"models.py", "service.py"}
+    assert root_modules == set()
     assert (agents / "profiles/__init__.py").is_file()
     memory = agents / "memory"
     assert {
@@ -960,12 +984,7 @@ def test_runtime_space_reservations_are_owned_by_spaces_module() -> None:
         path.name
         for path in spaces.iterdir()
         if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
-    } >= {
-        "reservation_attachment.py",
-        "reservation_capacity.py",
-        "reservation_release.py",
-        "reservation_usage.py",
-    }
+    } >= {"reservations.py"}
     assert not (spaces / "reservations").exists()
 
 
@@ -978,7 +997,7 @@ def test_capability_modules_are_nested_by_function() -> None:
         for path in capabilities.iterdir()
         if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
     }
-    assert root_modules == {"models.py", "service.py"}
+    assert root_modules == set()
     for name in (
         "capability_governance.py",
         "capability_governance_actions.py",
@@ -1004,7 +1023,7 @@ def test_mcp_modules_are_nested_by_function() -> None:
         path.name
         for path in mcp.iterdir()
         if path.is_file() and path.suffix == ".py" and path.name != "__init__.py"
-    } == {"policy.py"}
+    } == {"models.py", "policy.py"}
     for name in (
         "adapters.py",
         "adapter_payloads.py",
@@ -1022,7 +1041,8 @@ def test_workflow_templates_are_not_nested_under_planning() -> None:
     assert (workflows / "templates").is_dir()
     assert not (workflows / "planning/project_plan").exists()
     assert (workflows / "templates/builder.py").is_file()
-    assert (workflows / "templates/validation.py").is_file()
+    assert not (workflows / "templates/validation.py").exists()
+    assert (workflows / "definitions/graph.py").is_file()
 
 
 def test_plan_mutation_is_split_by_responsibility() -> None:
@@ -1069,10 +1089,10 @@ def test_all_application_modules_are_discoverable_packages() -> None:
 
 def test_generic_utils_modules_are_not_used_as_dumping_grounds() -> None:
     app = ROOT / "backend/app"
-    assert not list(app.rglob("utils.py"))
-    assert not list(app.rglob("*utils.py"))
+    core_utils = app / "core/utils.py"
+    assert core_utils.is_file()
+    assert [path for path in app.rglob("*utils.py") if path != core_utils] == []
     assert not list(app.rglob("*helpers.py"))
-    assert (app / "core/common/values.py").is_file()
     assert (app / "domains/integrations/webhooks/policy.py").is_file()
     assert not (app / "domains/integrations/webhooks/constants.py").exists()
     assert not (app / "domains/orchestration/requests/utils.py").exists()
@@ -1089,7 +1109,7 @@ def test_generic_utils_modules_are_not_used_as_dumping_grounds() -> None:
 
 def test_shared_normalization_and_run_queries_have_single_owners() -> None:
     app = ROOT / "backend/app"
-    values = (app / "core/common/values.py").read_text(encoding="utf-8")
+    values = (app / "core/utils.py").read_text(encoding="utf-8")
     assert "def stringify_or_none(" in values
     assert "def iso_datetime_or_none(" in values
     assert "def coerce_int_or_zero(" in values
@@ -1101,7 +1121,7 @@ def test_shared_normalization_and_run_queries_have_single_owners() -> None:
     assert "def latest_events_by_run(" in query_source
     assert "def run_events_for_runs(" in query_source
     assert "def authorization_snapshot_for_run(" in query_source
-    authorization = app / "domains/orchestration/requests/authorization.py"
+    authorization = app / "domains/orchestration/runs/authorization/validation.py"
     authorization_source = authorization.read_text(encoding="utf-8")
     assert "def authorized_task_for_run(" in authorization_source
     assert "def authorized_profile_for_run(" in authorization_source
@@ -1213,7 +1233,7 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
             "Shared infrastructure cannot depend on the API even indirectly",
         ),
         (
-            "core/common/pagination.py",
+            "core/pagination.py",
             "from backend.app.api.schemas.agents.profiles import AgentProfileCreateRequest",
             "Shared infrastructure cannot depend on the API even indirectly",
         ),
@@ -1223,12 +1243,12 @@ def test_architecture_contracts_hold_without_exemptions(architecture_tree: Path)
             "HTTP transport is only composed by the API entry point",
         ),
         (
-            "core/common/pagination.py",
+            "core/pagination.py",
             "from fastapi import Query",
             "Pagination inputs have no HTTP or database dependency",
         ),
         (
-            "core/common/pagination.py",
+            "core/pagination.py",
             "import pytest",
             "Production code cannot depend on the test framework",
         ),

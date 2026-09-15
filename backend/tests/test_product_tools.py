@@ -18,9 +18,9 @@ from backend.app.domains.agents.memory.indexing import WorkspaceMemoryIndexingSe
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.memory.retrieval_search import MemorySearchHit, MemorySearchRequest
 from backend.app.domains.agents.messages.models import AgentMessage
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.capabilities.tools.context import ToolContext
-from backend.app.domains.capabilities.tools.errors import (
+from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.domains.capabilities.tools.contracts import (
+    ToolContext,
     ToolPermissionError,
     ToolResourceNotFoundError,
 )
@@ -89,25 +89,27 @@ def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -
     storage.write(file.storage_key, b"brief")
     service = ProductToolService(session, storage=storage)
 
-    assert [item.filename for item in service.list_workspace_files(context)] == ["brief.txt"]
-    read = service.read_workspace_file(context, file.id)
+    assert [item.filename for item in service.files.list_workspace_files(context)] == [
+        "brief.txt"
+    ]
+    read = service.files.read_workspace_file(context, file.id)
     assert read.file.filename == "brief.txt"
     assert read.content == "brief"
 
     try:
-        service.read_workspace_file(context, other_file.id)
+        service.files.read_workspace_file(context, other_file.id)
     except ToolResourceNotFoundError:
         pass
     else:
         raise AssertionError("Expected cross-workspace read to fail")
 
-    artifact = service.write_artifact(
+    artifact = service.files.write_artifact(
         context,
         filename="../report\r\n.txt",
         content=b"hello",
         content_type="text/plain",
     )
-    assert service.search_workspace_memory(
+    assert service.memory.search_workspace_memory(
         context,
         "customer notes",
         access_scopes=_memory_access_scopes(workspace.id),
@@ -199,7 +201,7 @@ def test_workspace_memory_search_returns_workspace_scoped_matches() -> None:
         allowed_tools=frozenset({"search_workspace_memory"}),
     )
 
-    results = ProductToolService(session).search_workspace_memory(
+    results = ProductToolService(session).memory.search_workspace_memory(
         context,
         "customer notes",
         access_scopes=_memory_access_scopes(workspace.id),
@@ -329,7 +331,7 @@ def test_semantic_memory_can_be_versioned_searched_and_archived() -> None:
     )
     service = ProductToolService(session)
 
-    entry = service.upsert_semantic_memory(
+    entry = service.memory.upsert_semantic_memory(
         context,
         scope_type="workspace",
         scope_id=workspace.id,
@@ -344,24 +346,24 @@ def test_semantic_memory_can_be_versioned_searched_and_archived() -> None:
     )
     session.commit()
 
-    results = service.search_workspace_memory(
+    results = service.memory.search_workspace_memory(
         context,
         "renewal blockers",
         access_scopes=_memory_access_scopes(workspace.id),
     )
-    other_results = service.search_workspace_memory(
+    other_results = service.memory.search_workspace_memory(
         other_context,
         "renewal blockers",
         access_scopes=_memory_access_scopes(other_workspace.id),
     )
-    archived = service.archive_semantic_memory(
+    archived = service.memory.archive_semantic_memory(
         context,
         entry.id,
         expected_revision=1,
         access_scopes=_memory_access_scopes(workspace.id),
     )
     session.commit()
-    archived_results = service.search_workspace_memory(
+    archived_results = service.memory.search_workspace_memory(
         context,
         "renewal blockers",
         access_scopes=_memory_access_scopes(workspace.id),
@@ -426,19 +428,19 @@ def test_workspace_memory_search_respects_limit_and_source_filters() -> None:
     )
     service = ProductToolService(session)
 
-    limited = service.search_workspace_memory(
+    limited = service.memory.search_workspace_memory(
         context,
         "renewal customer",
         limit=1,
         access_scopes=_memory_access_scopes(workspace.id),
     )
-    files_only = service.search_workspace_memory(
+    files_only = service.memory.search_workspace_memory(
         context,
         "renewal customer",
         source_types={"workspace_file"},
         access_scopes=_memory_access_scopes(workspace.id),
     )
-    none = service.search_workspace_memory(
+    none = service.memory.search_workspace_memory(
         context,
         "renewal customer",
         source_types={"workspace_memory"},
@@ -485,13 +487,13 @@ def test_workspace_memory_indexing_refreshes_deterministic_chunks() -> None:
     service.refresh_task(workspace_id=other_workspace.id, task_id=other_task.id)
     session.commit()
 
-    results = ProductToolService(session).search_workspace_memory(
+    results = ProductToolService(session).memory.search_workspace_memory(
         context,
         "beta renewal",
         source_types={"task"},
         access_scopes=_memory_access_scopes(workspace.id),
     )
-    stale_results = ProductToolService(session).search_workspace_memory(
+    stale_results = ProductToolService(session).memory.search_workspace_memory(
         context,
         "alpha",
         source_types={"task"},
@@ -529,7 +531,7 @@ def test_workspace_memory_write_requires_tool_permission() -> None:
     )
 
     try:
-        ProductToolService(session).upsert_semantic_memory(
+        ProductToolService(session).memory.upsert_semantic_memory(
             context,
             scope_type="workspace",
             scope_id=workspace.id,
@@ -566,14 +568,14 @@ def test_agent_mailbox_tools_send_and_list_workspace_scoped_messages() -> None:
     )
     service = ProductToolService(session)
 
-    sent = service.send_agent_message(
+    sent = service.mailbox.send_agent_message(
         context,
         recipient_agent_profile_id=recipient.id,
         subject="Implementation handoff",
         body="Please implement the persistence layer.",
         payload={"api_key": "sk-hidden", "scope": "backend"},
     )
-    listed = service.list_agent_thread_messages(
+    listed = service.mailbox.list_agent_thread_messages(
         context,
         thread_id=UUID(str(sent["thread"]["id"])),
     )
@@ -587,7 +589,7 @@ def test_agent_mailbox_tools_send_and_list_workspace_scoped_messages() -> None:
     assert stored.payload == {"api_key": "sk-hidden", "scope": "backend"}
 
     try:
-        service.send_agent_message(
+        service.mailbox.send_agent_message(
             context,
             recipient_agent_profile_id=other_agent.id,
             body="Cross workspace should fail.",
@@ -642,13 +644,13 @@ def test_agent_mailbox_tools_require_task_team_membership() -> None:
     )
     service = ProductToolService(session)
 
-    sent = service.send_agent_message(
+    sent = service.mailbox.send_agent_message(
         context,
         recipient_agent_profile_id=recipient.id,
         body="Team handoff.",
     )
     try:
-        service.send_agent_message(
+        service.mailbox.send_agent_message(
             context,
             recipient_agent_profile_id=outsider.id,
             body="Outsider handoff.",
@@ -691,13 +693,13 @@ def test_write_artifact_versions_are_bound_to_work_package(tmp_path: Path) -> No
     storage = LocalStorage(str(tmp_path / "storage"))
     service = ProductToolService(session, storage=storage)
 
-    first = service.write_artifact(
+    first = service.files.write_artifact(
         context,
         filename="report-v1.pdf",
         content=b"v1",
         content_type="application/pdf",
     )
-    second = service.write_artifact(
+    second = service.files.write_artifact(
         context,
         filename="report-v2.pdf",
         content=b"v2",
@@ -739,7 +741,7 @@ def test_write_artifact_compensates_storage_when_database_commit_fails(
     monkeypatch.setattr(session, "commit", fail_commit)
 
     with pytest.raises(ValueError) as error:
-        service.write_artifact(
+        service.files.write_artifact(
             context,
             filename="report.txt",
             content=b"not committed",
@@ -767,7 +769,7 @@ def test_write_artifact_rolls_back_partial_storage_write(tmp_path: Path) -> None
     )
 
     with pytest.raises(ValueError) as error:
-        service.write_artifact(
+        service.files.write_artifact(
             context,
             filename="report.txt",
             content=b"partial",
@@ -790,7 +792,7 @@ def test_product_tool_permission_denied() -> None:
     )
 
     try:
-        ProductToolService(session).list_workspace_files(context)
+        ProductToolService(session).files.list_workspace_files(context)
     except ToolPermissionError as exc:
         assert "not allowed" in str(exc)
     else:

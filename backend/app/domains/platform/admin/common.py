@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.runtime.operations.models import WorkerNode
+from backend.app.runtime.workers.models import WorkerNode
 
 
 def normalized_worker_capacity(capacity: dict[str, object], worker_type: str) -> dict[str, object]:

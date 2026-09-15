@@ -9,33 +9,34 @@ from threading import Event, Thread
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.request_context import log_context
-from backend.app.core.common.trace_context import (
-    current_trace_context,
-    new_trace_context,
-    telemetry_span,
-)
+from backend.app.core.config import Settings
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutor
 from backend.app.domains.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
 from backend.app.domains.platform.updates.service import maintenance_enabled
-from backend.app.runtime.operations.workers.capacity import WorkerCapacitySnapshotService
-from backend.app.runtime.operations.workers.heartbeats import WorkerHeartbeatOperationsService
-from backend.app.runtime.workers.capacity import worker_can_run_job
+from backend.app.observability.telemetry.request_context import log_context
+from backend.app.observability.telemetry.trace_context import (
+    current_trace_context,
+    new_trace_context,
+    telemetry_span,
+)
+from backend.app.runtime.environment.contracts import DockerRuntimeClient
+from backend.app.runtime.workers.capacity import WorkerCapacitySnapshotService, worker_can_run_job
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.lifecycle.heartbeat import worker_status_for_failures
-from backend.app.runtime.workers.lifecycle.maintenance import (
+from backend.app.runtime.workers.heartbeat import worker_status_for_failures
+from backend.app.runtime.workers.maintenance import (
     WorkerMaintenanceConfig,
     WorkerMaintenanceService,
     WorkerMaintenanceSummary,
 )
-from backend.app.runtime.workers.lifecycle.reporting import WorkerLeaseReporter
+from backend.app.runtime.workers.maintenance_runner import MaintenanceJob, MaintenanceRunner
 from backend.app.runtime.workers.models import WorkerRunnerConfig, WorkerRunSummary
+from backend.app.runtime.workers.nodes import WorkerHeartbeatOperationsService
 from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.runtime.workers.reporting import WorkerLeaseReporter
 from backend.app.runtime.workers.state import WorkerRunState
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ class WorkerRunner:
         agent_runner: AgentRuntimeExecutor | None = None,
         mcp_adapter: McpToolAdapter | McpToolAdapterResolver | None = None,
         settings: Settings | None = None,
+        runtime_docker_client: DockerRuntimeClient | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -60,11 +62,22 @@ class WorkerRunner:
         self._agent_runner = agent_runner
         self._mcp_adapter = mcp_adapter
         self._settings = settings
+        self._runtime_docker_client = runtime_docker_client
         self._monotonic = monotonic
         self._sleep = sleep
         self._lease_reporter = WorkerLeaseReporter(
             config=config,
             session_scope=self._session_scope,
+        )
+        self._maintenance_runner = MaintenanceRunner(
+            [
+                MaintenanceJob(
+                    name="worker",
+                    run=lambda: self.run_maintenance(),
+                    interval_seconds=max(config.maintenance_interval_seconds, 1e-9),
+                )
+            ],
+            monotonic=monotonic,
         )
 
     def run_once(self) -> bool:
@@ -187,6 +200,7 @@ class WorkerRunner:
                 agent_runner=self._agent_runner,
                 settings=self._settings,
                 mcp_adapter=self._mcp_adapter,
+                runtime_docker_client=self._runtime_docker_client,
             )
             handler.handle(job)
 
@@ -235,7 +249,6 @@ class WorkerRunner:
     ) -> WorkerRunSummary:
         state = WorkerRunState()
         next_heartbeat_at = 0.0
-        next_maintenance_at = 0.0
 
         while not self._is_stopped(stop_event):
             now = self._monotonic()
@@ -245,9 +258,11 @@ class WorkerRunner:
                     state.heartbeat_details(self._config),
                 )
                 next_heartbeat_at = now + self._config.heartbeat_interval_seconds
-            if now >= next_maintenance_at:
-                state.record_maintenance(self.run_maintenance())
-                next_maintenance_at = now + self._config.maintenance_interval_seconds
+            for result in self._maintenance_runner.tick().ran:
+                if isinstance(result.result, WorkerMaintenanceSummary):
+                    state.record_maintenance(result.result)
+                elif result.error is not None:
+                    state.last_error = result.error
 
             try:
                 handled = self.run_once()
@@ -324,6 +339,7 @@ class WorkerRunner:
                 recovery_batch_size=self._config.recovery_batch_size,
             ),
             settings=self._settings,
+            runtime_docker_client=self._runtime_docker_client,
         ).run()
 
     def _retry_delay(self, job: JobPayload) -> float:

@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import string_list, uuid_or_none
+from backend.app.core.utils import string_list, uuid_or_none
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import TaskStep
 from backend.app.domains.orchestration.workflows.planning.org_structure import (
@@ -12,10 +12,11 @@ from backend.app.domains.orchestration.workflows.planning.org_structure import (
     normalize_role,
 )
 from backend.app.domains.orchestration.workflows.statuses import WORKLOAD_RUN_STATUS_VALUES
-from backend.app.domains.orchestration.workflows.templates.member_roles import (
+from backend.app.domains.orchestration.workflows.templates.members import (
     member_agent_profile_id,
     member_department,
     member_role,
+    request_department,
 )
 from backend.app.domains.orchestration.workflows.templates.normalization import same_label
 
@@ -219,14 +220,6 @@ def requested_member_match(
         role=role,
         required_skills=required_skills,
     )
-
-
-def request_department(request: dict[str, object]) -> str | None:
-    for key in ("department", "required_department", "team", "area"):
-        value = request.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return None
 
 
 def _requested_agent_id(request: dict[str, object]) -> UUID | None:

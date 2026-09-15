@@ -9,7 +9,7 @@ from backend.app.domains.agents.memory.policy import (
     AgentMemoryPolicy,
     normalized_memory_policy,
 )
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 
 AGENT_PROFILE_FIELDS = (
     "name",

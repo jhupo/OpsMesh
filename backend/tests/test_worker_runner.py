@@ -14,24 +14,32 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.common.config import Settings
-from backend.app.core.common.request_context import current_log_context
-from backend.app.core.common.trace_context import TraceContext, trace_context
+from backend.app.core.config import Settings
+from backend.app.observability.telemetry.request_context import current_log_context
+from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.messages.models import AgentMessage
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
-from backend.app.domains.agents.runtime.sessions.models import PersistentAgentSession
-from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist, McpToolCallLog
+from backend.app.domains.agents.runtime.contracts import (
+    AgentRunRequest,
+    AgentRunResult,
+    AgentRuntimeStructuredOutput,
+)
+from backend.app.domains.agents.sessions.models import PersistentAgentSession
+from backend.app.domains.capabilities.mcp.models import (
+    McpServer,
+    McpToolAllowlist,
+    McpToolCallLog,
+)
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
-from backend.app.domains.orchestration.runs.authorization_snapshot import (
+from backend.app.domains.orchestration.runs.authorization.snapshot import (
     RunAuthorizationSnapshotService,
 )
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
@@ -71,8 +79,8 @@ from backend.app.runtime.environment.contracts import (
 )
 from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceEvent
-from backend.app.runtime.operations.models import WorkerHeartbeat, WorkerLease, WorkerNode
-from backend.app.runtime.operations.workers.heartbeats import WorkerHeartbeatOperationsService
+from backend.app.runtime.workers.models import WorkerHeartbeat, WorkerLease, WorkerNode
+from backend.app.runtime.workers.nodes import WorkerHeartbeatOperationsService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.runner import (
@@ -117,8 +125,34 @@ class DeterministicAgentRunner:
 
 
 class ApprovingTeamAgentRunner:
+    def __init__(self, specialist_agent_profile_id: UUID) -> None:
+        self._specialist_agent_profile_id = specialist_agent_profile_id
+
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         review_policy = request.context.metadata.get("review_policy")
+        if isinstance(review_policy, dict) and review_policy.get("mode") == "agent_planning":
+            proposal = {
+                "objective": "Build restart-safe delivery",
+                "work_packages": [
+                    {
+                        "package_id": "implementation",
+                        "title": "Implement restart-safe delivery",
+                        "description": "Complete the specialist work package.",
+                        "required_role": "developer",
+                        "assigned_agent_profile_id": str(self._specialist_agent_profile_id),
+                        "acceptance_criteria": ["The delivery survives a worker restart."],
+                    }
+                ],
+            }
+            return AgentRunResult(
+                final_output=json.dumps(proposal),
+                structured_output=AgentRuntimeStructuredOutput(
+                    value=proposal,
+                    schema_name="task_plan",
+                    schema_version="3",
+                    validated=True,
+                ),
+            )
         if isinstance(review_policy, dict) and review_policy.get("mode") == "final_acceptance":
             return AgentRunResult(
                 final_output=json.dumps(
@@ -449,10 +483,10 @@ def test_worker_runner_maintenance_reclaims_job_after_crash_before_lease() -> No
     assert reclaimed.span_id is not None
 
 
-def test_multi_agent_handoff_survives_worker_restart_and_manager_approval() -> None:
+def test_multi_agent_plan_survives_worker_restart_and_manager_approval() -> None:
     session_factory = _session_factory()
     queue = _queue()
-    workspace_id, task_id, user_id = _seed_multi_agent_task(session_factory)
+    workspace_id, task_id, user_id, specialist_id = _seed_multi_agent_task(session_factory)
 
     with session_factory() as session:
         task = session.get(Task, task_id)
@@ -467,7 +501,7 @@ def test_multi_agent_handoff_survives_worker_restart_and_manager_approval() -> N
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-before-restart", queue_name="agent_runs"),
-        agent_runner=ApprovingTeamAgentRunner(),
+        agent_runner=ApprovingTeamAgentRunner(specialist_id),
     )
     assert first_worker.run_once() is True
 
@@ -480,14 +514,14 @@ def test_multi_agent_handoff_survives_worker_restart_and_manager_approval() -> N
         phases = {phase["phase"]: phase for phase in state["phases"]}
         assert phases["manager_planning"]["status"] == "completed"
         assert phases["specialist_execution"]["status"] == "in_progress"
-        assert phases["handoff"]["status"] == "running"
-        assert any(item["status"] == "handoff_in_progress" for item in state["handoffs"])
+        assert phases["handoff"]["status"] == "not_required"
+        assert [item["status"] for item in state["handoffs"]] == ["source_incomplete"]
 
     restarted_worker = WorkerRunner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-after-restart", queue_name="agent_runs"),
-        agent_runner=ApprovingTeamAgentRunner(),
+        agent_runner=ApprovingTeamAgentRunner(specialist_id),
     )
     recovered_jobs = 0
     while restarted_worker.run_once():
@@ -1106,16 +1140,10 @@ def test_worker_maintenance_skips_team_runtime_when_provider_inactive() -> None:
     assert "inactive-provider.example.test/v1" not in str(scan)
 
 
-def test_team_runtime_maintenance_consume_then_reschedules_on_next_cadence(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_team_runtime_maintenance_consume_then_reschedules_on_next_cadence() -> None:
     session_factory = _session_factory()
     queue = _queue()
     docker = FakeDockerClient()
-    monkeypatch.setattr(
-        "backend.app.runtime.workers.handlers.context.get_docker_runtime_client",
-        lambda: docker,
-    )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(
         session_factory,
         with_runtime_template=True,
@@ -1152,6 +1180,7 @@ def test_team_runtime_maintenance_consume_then_reschedules_on_next_cadence(
             environment="test",
             runtime_allowed_images=["python:3.12-slim"],
         ),
+        runtime_docker_client=docker,
     )
 
     first_job = queue.dequeue()
@@ -1370,16 +1399,10 @@ def test_worker_runner_records_team_execution_loop_missing_actor_failure() -> No
         assert queue.count_scheduled_retries(workspace_id=workspace_id) == 1
 
 
-def test_worker_runner_team_execution_loop_ensures_workspace_runtime(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_worker_runner_team_execution_loop_ensures_workspace_runtime() -> None:
     session_factory = _session_factory()
     queue = _queue()
     docker = FakeDockerClient()
-    monkeypatch.setattr(
-        "backend.app.runtime.workers.handlers.context.get_docker_runtime_client",
-        lambda: docker,
-    )
     workspace_id, team_id, user_id, _ = _seed_team_loop_task(
         session_factory,
         with_runtime_template=True,
@@ -1401,6 +1424,7 @@ def test_worker_runner_team_execution_loop_ensures_workspace_runtime(
             environment="test",
             runtime_allowed_images=["python:3.12-slim"],
         ),
+        runtime_docker_client=docker,
     )
 
     assert runner.run_once() is True
@@ -1423,16 +1447,10 @@ def test_worker_runner_team_execution_loop_ensures_workspace_runtime(
     assert docker.started == ["container-1"]
 
 
-def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime() -> None:
     session_factory = _session_factory()
     queue = _queue()
     docker = FakeDockerClient()
-    monkeypatch.setattr(
-        "backend.app.runtime.workers.handlers.context.get_docker_runtime_client",
-        lambda: docker,
-    )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(
         session_factory,
         with_runtime_template=True,
@@ -1484,6 +1502,7 @@ def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime(
             environment="test",
             runtime_allowed_images=["python:3.12-slim"],
         ),
+        runtime_docker_client=docker,
     )
 
     assert runner.run_once() is True
@@ -1503,16 +1522,10 @@ def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime(
     assert docker.started == ["offline-container"]
 
 
-def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterations(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterations() -> None:
     session_factory = _session_factory()
     queue = _queue()
     docker = FakeDockerClient()
-    monkeypatch.setattr(
-        "backend.app.runtime.workers.handlers.context.get_docker_runtime_client",
-        lambda: docker,
-    )
     workspace_id, team_id, user_id, _task_id = _seed_team_loop_task(
         session_factory,
         with_runtime_template=True,
@@ -1536,6 +1549,7 @@ def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterat
             environment="test",
             runtime_allowed_images=["python:3.12-slim"],
         ),
+        runtime_docker_client=docker,
     )
 
     assert runner.run_once() is True
@@ -1578,16 +1592,10 @@ def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterat
 
 
 @pytest.mark.team_soak
-def test_team_runtime_scheduled_soak_across_thirty_minutes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_team_runtime_scheduled_soak_across_thirty_minutes() -> None:
     session_factory = _session_factory()
     queue = _queue()
     docker = FakeDockerClient()
-    monkeypatch.setattr(
-        "backend.app.runtime.workers.handlers.context.get_docker_runtime_client",
-        lambda: docker,
-    )
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(
         session_factory,
         with_runtime_template=True,
@@ -1621,6 +1629,7 @@ def test_team_runtime_scheduled_soak_across_thirty_minutes(
             environment="test",
             runtime_allowed_images=["python:3.12-slim"],
         ),
+        runtime_docker_client=docker,
     )
     for tick in range(1, 7):
         next_due_at = start_at + timedelta(seconds=121 * tick)
@@ -3041,7 +3050,7 @@ def _session_factory() -> sessionmaker[Session]:
 
 def _seed_multi_agent_task(
     session_factory: sessionmaker[Session],
-) -> tuple[UUID, UUID, UUID]:
+) -> tuple[UUID, UUID, UUID, UUID]:
     with session_factory() as session:
         user = User(email="restart-team@example.com", display_name="Team Owner")
         session.add(user)
@@ -3115,7 +3124,7 @@ def _seed_multi_agent_task(
         )
         session.add(task)
         session.commit()
-        return workspace.id, task.id, user.id
+        return workspace.id, task.id, user.id, specialist.id
 
 
 def _seed_archive_export_job(

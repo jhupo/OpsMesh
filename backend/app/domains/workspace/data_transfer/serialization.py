@@ -1,8 +1,8 @@
 from datetime import datetime
 
-from backend.app.core.common.values import stringify_or_none
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.capabilities.models import WorkspaceSkillInstall
+from backend.app.core.utils import stringify_or_none
+from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.domains.capabilities.skills.models import WorkspaceSkillInstall
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.storage.artifact_models import Artifact

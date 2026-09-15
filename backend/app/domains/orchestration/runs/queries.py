@@ -8,6 +8,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.db.pagination import page_scalars
+from backend.app.core.pagination import PageParams
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
@@ -91,3 +93,39 @@ def run_events_for_runs(
             .order_by(RunEvent.created_at.asc(), RunEvent.sequence.asc())
         )
     )
+
+
+class RunQueryService:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def list_runs(
+        self,
+        workspace_id: UUID,
+        page: PageParams,
+        status: str | None = None,
+    ) -> tuple[list[AgentRun], int]:
+        statement = select(AgentRun).where(AgentRun.workspace_id == workspace_id)
+        if status is not None:
+            statement = statement.where(AgentRun.status == status)
+        return page_scalars(
+            self._session,
+            statement.order_by(AgentRun.created_at.desc()),
+            page,
+        )
+
+    def list_events(
+        self,
+        workspace_id: UUID,
+        agent_run_id: UUID,
+        page: PageParams,
+    ) -> tuple[list[RunEvent], int]:
+        statement = (
+            select(RunEvent)
+            .where(
+                RunEvent.workspace_id == workspace_id,
+                RunEvent.agent_run_id == agent_run_id,
+            )
+            .order_by(RunEvent.sequence.asc())
+        )
+        return page_scalars(self._session, statement, page)

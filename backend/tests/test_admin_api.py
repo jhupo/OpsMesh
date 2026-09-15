@@ -11,15 +11,14 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.api.dependencies.redis import get_redis_client
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.dependencies import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun
@@ -27,14 +26,15 @@ from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.platform.admin.models import PlatformPolicy, PlatformPolicyEvent
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
 )
-from backend.app.runtime.operations.models import WorkerLease, WorkerNode
 from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.models import WorkerLease, WorkerNode
 from backend.app.runtime.workers.queue import RedisQueue
 
 TOKEN = "test-token"
@@ -760,6 +760,12 @@ def test_admin_system_configuration_exposes_redacted_resource_summary() -> None:
     }
     assert body["settings"]["release_update_enabled"] is False
     assert body["settings"]["release_update_repository"] == "jhupo/OpsMesh"
+    assert body["settings"]["resolved_feature_flags"]["docker_runtimes"] == {
+        "key": "docker_runtimes",
+        "enabled": True,
+        "source": "default",
+        "reason": "known default",
+    }
 
 
 def test_admin_system_version_reports_current_package_version() -> None:

@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.pagination import page_scalars
+from backend.app.core.pagination import PageParams
 from backend.app.domains.agents.messages.contracts import (
     AgentMessageCreatePayload,
     AgentMessageThreadCreatePayload,
@@ -17,7 +17,7 @@ from backend.app.domains.agents.messages.models import (
     AgentMessageThread,
 )
 from backend.app.domains.agents.messages.queries import AgentMailboxQueries
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam
 

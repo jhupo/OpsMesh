@@ -6,7 +6,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
 from backend.app.api.routes.workspace.teams.common import _queued_runtime_control
@@ -22,22 +22,22 @@ from backend.app.api.schemas.workspace.team_runtime import (
     AgentTeamOperatorActionRequest,
     AgentTeamOperatorActionResponse,
 )
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.errors import PermissionDeniedError
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.access.service import AuthorizationService
-from backend.app.domains.workspace.teams.command_center import TeamCommandCenterService
-from backend.app.domains.workspace.teams.execution_loop import (
+from backend.app.domains.workspace.teams.execution.loop import (
     TeamExecutionLoopService,
     enqueue_team_execution_loop_job,
 )
+from backend.app.domains.workspace.teams.operations.command_center import TeamCommandCenterService
 from backend.app.domains.workspace.teams.operations.operator_actions import (
     TeamOperatorActionService,
 )
-from backend.app.domains.workspace.teams.workspace_service import (
+from backend.app.domains.workspace.teams.service import (
     WorkspaceTeamService,
 )
 from backend.app.runtime.workers.contracts import JobType

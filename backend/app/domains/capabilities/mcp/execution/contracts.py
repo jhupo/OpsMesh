@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
@@ -52,3 +53,78 @@ class McpToolCallLogResponse(ORMModel):
     @field_serializer("error")
     def _serialize_error(self, error: dict[str, object] | None) -> dict[str, object] | None:
         return redact_sensitive_payload(error) if error is not None else None
+
+
+class McpExecutionError(Exception):
+    def __init__(self, message: str, *, code: str = "mcp_execution_failed") -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class McpExecutionPending(Exception):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+        response: dict[str, object],
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.response = response
+
+
+@dataclass(frozen=True)
+class McpExecutionRequest:
+    workspace_id: UUID
+    agent_run_id: UUID
+    tool_name: str
+    arguments: dict[str, object]
+    mcp_server_id: UUID | None = None
+    runtime_allowed_tools: tuple[str, ...] | None = None
+    approval_granted: bool = False
+
+
+@dataclass(frozen=True)
+class McpExecutionResult:
+    status: str
+    response: dict[str, object] | None
+    error: dict[str, object] | None
+    log_id: UUID
+    latency_ms: int
+
+
+def snapshot_audit_metadata(snapshot: dict[str, object]) -> dict[str, object]:
+    metadata: dict[str, object] = {}
+    version = snapshot.get("version")
+    if isinstance(version, int):
+        metadata["authorization_snapshot_version"] = version
+    for key in (
+        "workspace_id",
+        "task_id",
+        "task_step_id",
+        "agent_profile_id",
+        "runtime_space_id",
+    ):
+        value = snapshot.get(key)
+        if value is None or isinstance(value, str):
+            metadata[f"snapshot_{key}"] = value
+    installed_skills = snapshot.get("installed_skills")
+    if isinstance(installed_skills, list):
+        metadata["snapshot_installed_skills"] = [
+            {
+                "install_id": item.get("install_id"),
+                "installed_key": item.get("installed_key"),
+                "installed_version": item.get("installed_version"),
+                "source_checksum": item.get("source_checksum"),
+                "source_visibility": item.get("source_visibility"),
+            }
+            for item in installed_skills
+            if isinstance(item, dict)
+        ]
+    raw_tools = snapshot.get("allowed_tools")
+    if isinstance(raw_tools, list):
+        metadata["snapshot_allowed_tools"] = [
+            tool for tool in raw_tools if isinstance(tool, str)
+        ]
+    return metadata

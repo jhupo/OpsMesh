@@ -21,5 +21,5 @@ class AgentRunJobHandler:
             dependencies=RunExecutionDependencies(
                 lifecycle=orchestration._run_lifecycle(),
             ),
-            docker_client=self._context.docker_client(),
+            docker_client=self._context.runtime_docker_client,
         ).run_agent_sync(job)

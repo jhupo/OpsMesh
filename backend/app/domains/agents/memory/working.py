@@ -7,19 +7,19 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import ensure_aware_utc
 from backend.app.core.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_text,
     redact_text_fragments,
 )
+from backend.app.core.utils import ensure_aware_utc
 from backend.app.domains.agents.memory.configuration import initial_embedding_status
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     memory_content_fingerprint,
 )
 from backend.app.domains.agents.memory.policy import WorkingMemoryPolicy
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeToolResult
 from backend.app.domains.agents.runtime.tokens import truncate_to_token_bound
 from backend.app.domains.orchestration.runs.models import AgentRun

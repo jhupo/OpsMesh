@@ -6,10 +6,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.errors import DomainError
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.core.errors import DomainError
+from backend.app.core.pagination import PageParams
 from backend.app.domains.capabilities.mcp.catalog.catalog import McpCatalogServer
 from backend.app.domains.capabilities.mcp.catalog.contracts import (
     McpServerCreateRequest,
@@ -20,11 +20,14 @@ from backend.app.domains.capabilities.mcp.catalog.contracts import (
 )
 from backend.app.domains.capabilities.mcp.catalog.rules import connection_summary
 from backend.app.domains.capabilities.mcp.catalog.service import McpCatalogService
+from backend.app.domains.capabilities.mcp.models import (
+    McpServer,
+    McpToolAllowlist,
+)
 from backend.app.domains.capabilities.mcp.policy import (
     mcp_health_error,
     require_mcp_server,
 )
-from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.domains.capabilities.resources.schema import (
     normalize_object_schema,
     reject_embedded_secrets,

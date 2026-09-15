@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.domains.capabilities.marketplace.contracts import TalentListingCreateRequest
 from backend.app.domains.capabilities.marketplace.listing_payloads import (

@@ -126,14 +126,14 @@ allowed_importers = ["backend.app.api", "backend.app.main"]
 id = "infrastructure-no-api"
 name = "Shared infrastructure cannot depend on the API even indirectly"
 type = "forbidden"
-source_modules = ["backend.app.core.common", "backend.app.core.db", "backend.app.core.redis"]
+source_modules = ["backend.app.core"]
 forbidden_modules = ["backend.app.api"]
 
 [[tool.importlinter.contracts]]
 id = "pagination-no-transport"
 name = "Pagination inputs have no HTTP or database dependency"
 type = "forbidden"
-source_modules = ["backend.app.core.common.pagination"]
+source_modules = ["backend.app.core.pagination"]
 forbidden_modules = ["backend.app.api", "fastapi", "starlette", "sqlalchemy"]
 
 [[tool.importlinter.contracts]]
@@ -161,7 +161,7 @@ allowed_importers = ["backend.app.domains.workspace.storage.storage"]
 id = "provider-neutral-contracts"
 name = "Agent runtime contracts do not depend on vendor SDKs or HTTP transport"
 type = "forbidden"
-source_modules = ["backend.app.domains.agents.runtime.contracts", "backend.app.domains.agents.runtime.sandbox"]
+source_modules = ["backend.app.domains.agents.runtime.contracts", "backend.app.runtime.contracts"]
 forbidden_modules = ["agents", "openai", "anthropic", "claude_agent_sdk", "backend.app.api"]
 
 [[tool.importlinter.contracts]]

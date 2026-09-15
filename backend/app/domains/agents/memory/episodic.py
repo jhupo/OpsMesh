@@ -13,7 +13,7 @@ from backend.app.domains.agents.memory.models import (
     memory_content_fingerprint,
 )
 from backend.app.domains.agents.memory.policy import EpisodicMemoryPolicy, episodic_memory_policy
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import AgentRunResult
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun

@@ -3,7 +3,7 @@ from typing import Annotated, Generic, TypeVar
 from fastapi import Query
 from pydantic import BaseModel, Field
 
-from backend.app.core.common import pagination
+from backend.app.core import pagination
 
 LimitQuery = Annotated[int, Query(ge=1, le=100)]
 OffsetQuery = Annotated[int, Query(ge=0)]

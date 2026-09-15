@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import ensure_aware_utc
+from backend.app.core.utils import ensure_aware_utc
 from backend.app.domains.orchestration.runs.activity import run_activity
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task

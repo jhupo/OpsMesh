@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import ensure_aware_utc
+from backend.app.core.utils import ensure_aware_utc
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEntry,
@@ -18,7 +18,7 @@ from backend.app.domains.agents.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryUpsert,
 )
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.observability.audit.service import AuditService
 

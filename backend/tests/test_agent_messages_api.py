@@ -11,13 +11,13 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.messages.contracts import (
@@ -26,7 +26,7 @@ from backend.app.domains.agents.messages.contracts import (
 )
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.messages.service import AgentMailboxService
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember

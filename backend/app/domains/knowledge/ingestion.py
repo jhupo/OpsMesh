@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select
@@ -13,37 +12,25 @@ from backend.app.core.db.errors import flush_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars_by_offset
 from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.configuration import initial_embedding_status
-from backend.app.domains.agents.memory.indexing import chunk_text_with_offsets
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     memory_content_fingerprint,
+)
+from backend.app.domains.knowledge.content import (
+    KnowledgeContentError,
+    KnowledgeUrlFetcher,
+    fetch_runtime_id,
+    prepare_knowledge_content,
 )
 from backend.app.domains.knowledge.models import (
     KnowledgeCitation,
     KnowledgeSource,
     KnowledgeSourceIngestion,
 )
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.storage.storage import (
-    ObjectStorage,
-    StorageObjectReadError,
-    StorageObjectTooLargeError,
-)
+from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.observability.audit.service import AuditService
-from backend.app.runtime.environment.url_fetch import RuntimeUrlFetchError
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
-
-MAX_SOURCE_BYTES = 10 * 1024 * 1024
-SUPPORTED_TEXT_TYPES = frozenset(
-    {
-        "text/plain",
-        "text/markdown",
-        "text/csv",
-        "application/json",
-        "application/xml",
-    }
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,17 +42,6 @@ class KnowledgeIngestionResult:
     byte_count: int
     chunk_count: int
     error_code: str | None
-
-
-class KnowledgeUrlFetcher(Protocol):
-    def fetch(
-        self,
-        *,
-        workspace_id: UUID,
-        runtime_id: UUID,
-        url: str,
-        max_bytes: int,
-    ) -> bytes: ...
 
 
 class KnowledgeSourceIngestionService:
@@ -85,7 +61,7 @@ class KnowledgeSourceIngestionService:
         if source.status != "active":
             raise ValueError("Only active knowledge sources can be ingested")
         if source.source_type == "url":
-            _fetch_runtime_id(source.source_config)
+            fetch_runtime_id(source.source_config)
         existing = self._session.scalar(
             select(KnowledgeSourceIngestion).where(
                 KnowledgeSourceIngestion.workspace_id == workspace_id,
@@ -373,65 +349,16 @@ class KnowledgeSourceIngestionService:
         )
         if source is None:
             return self._fail_result(ingestion, "source_version_stale")
-        locator: str
-        filename: str
-        expected_checksum: str | None
-        if source.source_type == "url":
-            if source.uri is None or url_fetcher is None:
-                return self._fail_result(ingestion, "fetch_runtime_unavailable")
-            try:
-                runtime_id = _fetch_runtime_id(source.source_config)
-                raw = url_fetcher.fetch(
-                    workspace_id=ingestion.workspace_id,
-                    runtime_id=runtime_id,
-                    url=source.uri,
-                    max_bytes=MAX_SOURCE_BYTES,
-                )
-            except RuntimeUrlFetchError as exc:
-                return self._fail_result(ingestion, exc.code)
-            except ValueError:
-                return self._fail_result(ingestion, "fetch_runtime_invalid")
-            locator = source.uri
-            filename = source.name
-            expected_checksum = None
-        else:
-            if source.workspace_file_id is None:
-                return self._fail_result(ingestion, "workspace_file_not_found")
-            workspace_file = self._session.scalar(
-                select(WorkspaceFile).where(
-                    WorkspaceFile.workspace_id == ingestion.workspace_id,
-                    WorkspaceFile.id == source.workspace_file_id,
-                    WorkspaceFile.status == "active",
-                )
-            )
-            if workspace_file is None:
-                return self._fail_result(ingestion, "workspace_file_not_found")
-            content_type = workspace_file.content_type.split(";", 1)[0].strip().lower()
-            if content_type not in SUPPORTED_TEXT_TYPES:
-                return self._fail_result(ingestion, "unsupported_content_type")
-            if storage is None:
-                return self._fail_result(ingestion, "storage_unavailable")
-            try:
-                raw = storage.read_limited(workspace_file.storage_key, MAX_SOURCE_BYTES)
-            except StorageObjectTooLargeError:
-                return self._fail_result(ingestion, "source_too_large")
-            except FileNotFoundError:
-                return self._fail_result(ingestion, "source_object_not_found")
-            except (OSError, StorageObjectReadError, ValueError):
-                return self._fail_result(ingestion, "source_object_unreadable")
-            locator = f"workspace-file://{workspace_file.id}"
-            filename = workspace_file.filename
-            expected_checksum = workspace_file.checksum_sha256
         try:
-            text = raw.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            return self._fail_result(ingestion, "source_not_utf8")
-        content_sha256 = hashlib.sha256(raw).hexdigest()
-        if expected_checksum is not None and content_sha256 != expected_checksum:
-            return self._fail_result(ingestion, "source_checksum_mismatch")
-        chunks = chunk_text_with_offsets(text)
-        if not chunks:
-            return self._fail_result(ingestion, "source_empty")
+            content = prepare_knowledge_content(
+                self._session,
+                source=source,
+                storage=storage,
+                url_fetcher=url_fetcher,
+            )
+        except KnowledgeContentError as exc:
+            return self._fail_result(ingestion, exc.code)
+        chunks = content.chunks
         self._archive_chunks(ingestion.workspace_id, ingestion.source_id)
         entries: list[WorkspaceMemoryEntry] = []
         for index, chunk in enumerate(chunks):
@@ -462,7 +389,7 @@ class KnowledgeSourceIngestionService:
                     ),
                     "chunk_index": index,
                     "chunk_count": len(chunks),
-                    "filename": filename,
+                    "filename": content.filename,
                     "start_offset": chunk.start_offset,
                     "end_offset": chunk.end_offset,
                 },
@@ -483,7 +410,7 @@ class KnowledgeSourceIngestionService:
                     memory_entry_id=entry.id,
                     source_version=source.version,
                     chunk_index=index,
-                    locator=locator,
+                    locator=content.locator,
                     start_offset=chunk.start_offset,
                     end_offset=chunk.end_offset,
                     quote=chunk.text,
@@ -491,8 +418,8 @@ class KnowledgeSourceIngestionService:
                 )
             )
         ingestion.status = "succeeded"
-        ingestion.content_sha256 = content_sha256
-        ingestion.byte_count = len(raw)
+        ingestion.content_sha256 = content.content_sha256
+        ingestion.byte_count = len(content.raw)
         ingestion.chunk_count = len(chunks)
         ingestion.completed_at = datetime.now(UTC)
         ingestion.error_code = None
@@ -599,13 +526,3 @@ def enqueue_knowledge_source_ingestion_job(
             max_attempts=1,
         )
     )
-
-
-def _fetch_runtime_id(config: dict[str, object]) -> UUID:
-    value = config.get("fetch_runtime_id")
-    if not isinstance(value, str):
-        raise ValueError("URL ingestion requires config.fetch_runtime_id")
-    try:
-        return UUID(value)
-    except ValueError as exc:
-        raise ValueError("URL ingestion config.fetch_runtime_id must be a UUID") from exc

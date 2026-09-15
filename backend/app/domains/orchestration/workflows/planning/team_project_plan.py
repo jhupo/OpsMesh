@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import (
+from backend.app.core.utils import (
     dict_or_empty,
     optional_string,
     string_list,
@@ -11,10 +11,10 @@ from backend.app.core.common.values import (
 )
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.planning.agent_plan import is_agent_planning_step
-from backend.app.domains.orchestration.workflows.templates.validation import (
+from backend.app.domains.orchestration.workflows.definitions.graph import (
     validate_project_plan,
 )
+from backend.app.domains.orchestration.workflows.planning.agent_plan import is_agent_planning_step
 
 STEP_STATUS_QUEUED = "queued"
 

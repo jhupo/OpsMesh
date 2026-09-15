@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.integrations.webhooks.service import WebhookDeliveryService
+from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
 from backend.app.domains.orchestration.tasks.events import TaskEventBus
 from backend.app.domains.orchestration.tasks.models import TaskEventOutbox
 

@@ -4,8 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.domains.agents.memory.policy import normalized_memory_policy
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.workspace.data_transfer.importers.conflicts import _skip_conflict
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.workspace.data_transfer.importers.context import (
     WorkspaceMetadataImportContext,
     _dict_field,
@@ -14,6 +13,7 @@ from backend.app.domains.workspace.data_transfer.importers.context import (
     _resolved_import_name,
     _string_field,
 )
+from backend.app.domains.workspace.data_transfer.importers.preview import _skip_conflict
 
 
 class AgentMetadataImporter:

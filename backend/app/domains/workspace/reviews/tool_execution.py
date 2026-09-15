@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.workspace.reviews.policy import _max_risk, _normalize_risk
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder

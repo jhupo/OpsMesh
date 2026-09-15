@@ -14,8 +14,11 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.models import OrchestrationDefinition, OrchestrationRevision
+from backend.app.domains.orchestration.workflows.definitions.application import (
+    OrchestrationDefinitionApplicationService,
+)
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
@@ -103,7 +106,10 @@ def test_concurrent_publish_and_apply_keep_one_revision_and_one_plan() -> None:
                 assert task is not None
                 barrier.wait(timeout=10)
                 try:
-                    OrchestrationDefinitionService(session).apply_to_task(task, definition_id)
+                    OrchestrationDefinitionApplicationService(session).apply_to_task(
+                        task,
+                        definition_id,
+                    )
                     session.commit()
                     return "applied"
                 except OrchestrationDefinitionError as exc:

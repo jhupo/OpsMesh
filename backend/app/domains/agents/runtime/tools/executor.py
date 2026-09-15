@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
-from backend.app.core.secrets.service import SecretEncryptionService
+from backend.app.core.config import Settings
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.memory.policy import working_memory_policy
 from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
 from backend.app.domains.agents.runtime.contracts import (
@@ -25,13 +25,13 @@ from backend.app.domains.agents.runtime.tools.product import (
     PRODUCT_TOOL_NAMES,
     ProductToolExecutor,
 )
+from backend.app.domains.capabilities.mcp.execution.contracts import McpExecutionRequest
 from backend.app.domains.capabilities.mcp.execution.service import McpToolExecutionService
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionRequest
+from backend.app.domains.capabilities.mcp.models import McpToolAllowlist
 from backend.app.domains.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
-from backend.app.domains.capabilities.models import McpToolAllowlist
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.domains.orchestration.approvals.policy import ApprovalPolicyEngine
 from backend.app.domains.workspace.storage.storage import ObjectStorage

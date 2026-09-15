@@ -12,7 +12,7 @@ from backend.app.domains.orchestration.runs.state import RunStateService, RunSta
 from backend.app.domains.orchestration.tasks.contracts import TaskControlActionRequest
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
-from backend.app.runtime.workers.lifecycle.leases import mark_agent_run_worker_cancel_requested
+from backend.app.runtime.workers.leases import mark_agent_run_worker_cancel_requested
 from backend.app.runtime.workers.queue import RedisQueue
 
 PAUSABLE_RUN_STATUSES = {

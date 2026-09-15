@@ -11,9 +11,9 @@ from backend.app.api.schemas.capabilities.catalog import (
     TeamCapabilityPolicyResponse,
     TeamCapabilityPolicyUpdateRequest,
 )
-from backend.app.core.common.pagination import PageParams
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.catalog.contracts import (
@@ -22,7 +22,7 @@ from backend.app.domains.capabilities.catalog.contracts import (
     WorkspaceCapabilityCatalogResponse,
 )
 from backend.app.domains.capabilities.catalog.effective import EffectiveCapabilityCatalogService
-from backend.app.domains.capabilities.catalog.service import WorkspaceCapabilityCatalogService
+from backend.app.domains.capabilities.catalog.queries import WorkspaceCapabilityCatalogService
 from backend.app.domains.capabilities.governance.policy import TeamCapabilityPolicyService
 from backend.app.domains.capabilities.resources.service import CapabilityResourceService
 

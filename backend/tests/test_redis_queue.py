@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 import fakeredis
 import pytest
 
-from backend.app.core.common.trace_context import TraceContext, trace_context
+from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
@@ -74,6 +74,30 @@ def test_dequeue_leases_job_until_processing_reclaim() -> None:
     assert queue.count_processing() == 0
     assert queue.count_queued() == 1
     assert queue.dequeue() == job
+
+
+def test_queue_lease_token_owns_heartbeat_and_ack_after_reclaim() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = _queue(redis, visibility_timeout_seconds=10)
+    job = _job()
+    queue.enqueue(job)
+
+    first_lease = queue.dequeue_with_lease()
+
+    assert first_lease is not None
+    assert queue.processing_lease_token(job.job_id) == first_lease.lease_token
+    assert queue.heartbeat(job, lease_token=first_lease.lease_token, now=100) is True
+    assert queue.reclaim_expired(now=105) == []
+    assert queue.ack(job, lease_token="stale-claim") is False
+
+    reclaimed = queue.reclaim_expired(now=111)
+    second_lease = queue.dequeue_with_lease()
+
+    assert reclaimed == [job]
+    assert second_lease is not None
+    assert second_lease.lease_token != first_lease.lease_token
+    assert queue.ack(job, lease_token=first_lease.lease_token) is False
+    assert queue.ack(job, lease_token=second_lease.lease_token) is True
 
 
 def test_force_enqueue_preserves_retry_override_behavior() -> None:

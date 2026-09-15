@@ -1,7 +1,7 @@
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.dispatch.completion import SelfHostedRunCompletionService

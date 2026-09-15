@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.models import SecurityEvent
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
@@ -20,6 +19,7 @@ from backend.app.domains.workspace.projects.snapshots.manifest import (
 )
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.models import WorkspaceRuntime
 

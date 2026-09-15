@@ -8,14 +8,17 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.domains.capabilities.mcp.execution.blocking import McpExecutionBlocker
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionRequest
+from backend.app.domains.capabilities.mcp.execution.contracts import McpExecutionRequest
+from backend.app.domains.capabilities.mcp.models import (
+    McpServer,
+    McpToolAllowlist,
+)
 from backend.app.domains.capabilities.mcp.policy import mcp_health_check_stale
-from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist
 from backend.app.domains.capabilities.resources.schema import validate_parameters
-from backend.app.domains.capabilities.tools.errors import ToolResourceNotFoundError
+from backend.app.domains.capabilities.tools.contracts import ToolResourceNotFoundError
 from backend.app.domains.orchestration.runs.models import (
     AgentRun,
     authorization_snapshot_fingerprint,

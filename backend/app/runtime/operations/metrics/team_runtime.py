@@ -5,9 +5,9 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.metrics import GaugeMetric
-from backend.app.core.common.values import non_negative_int
+from backend.app.core.utils import non_negative_int
 from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.observability.telemetry.metrics import GaugeMetric
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.operations.runtimes.team_health import (
     team_runtime_health_for_metrics,

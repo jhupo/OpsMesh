@@ -6,9 +6,10 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
-from backend.app.api.dependencies.workers import (
+from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
+from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,
     IdempotencyService,
@@ -23,10 +24,9 @@ from backend.app.api.schemas.orchestration.tasks.management import (
     TaskHandoffQueueResponse,
     TaskManagerQueueResponse,
 )
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.common.pagination import PageParams
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.core.pagination import PageParams
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction

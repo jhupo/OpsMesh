@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.app.core.common.trace_context import (
+from backend.app.observability.telemetry.trace_context import (
     TraceContext,
     child_trace_context,
     trace_context_from_metadata,

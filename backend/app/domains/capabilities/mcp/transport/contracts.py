@@ -1,7 +1,10 @@
 from typing import Protocol, runtime_checkable
 
-from backend.app.domains.capabilities.mcp.execution.types import McpExecutionError
-from backend.app.domains.capabilities.models import McpCredentialReference, McpServer
+from backend.app.domains.capabilities.mcp.execution.contracts import McpExecutionError
+from backend.app.domains.capabilities.mcp.models import (
+    McpCredentialReference,
+    McpServer,
+)
 
 
 class McpToolAdapter(Protocol):

@@ -1,47 +1,33 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import String, and_, case, cast, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.trace_context import current_trace_context
-from backend.app.core.common.values import ensure_aware_utc
+from backend.app.core.utils import ensure_aware_utc
 from backend.app.domains.agents.providers.policy import canonical_model_provider
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.observability.audit.service import AuditService
 from backend.app.observability.costs.models import (
-    ModelPricingRule,
     ModelUsageRecord,
     WorkspaceCostBudget,
 )
-from backend.app.observability.costs.usage import NormalizedModelUsage, normalize_model_usage
-
-_MILLION = Decimal(1_000_000)
-_COST_QUANTUM = Decimal("0.000000000001")
+from backend.app.observability.costs.pricing import (
+    CostPricingService,
+    calculate_costs,
+    normalize_currency,
+)
+from backend.app.observability.costs.queries import CostQueryService
+from backend.app.observability.costs.usage import normalize_model_usage
+from backend.app.observability.telemetry.trace_context import current_trace_context
 
 
 class CostBudgetExceededError(RuntimeError):
     pass
-
-
-@dataclass(frozen=True)
-class CostBudgetStatus:
-    state: str
-    currency: str
-    spent: Decimal
-    monthly_limit: Decimal | None
-    warning_ratio: Decimal | None
-    utilization_ratio: Decimal | None
-    enforcement: str | None
-    unpriced_records: int
-    period_start: datetime
-    period_end: datetime
 
 
 class CostAccountingService:
@@ -71,14 +57,14 @@ class CostAccountingService:
         provider = canonical_model_provider(request.provider or "openai")
         model = request.model or request.agent_profile.model
         usage = normalize_model_usage(result)
-        pricing = self._pricing_rule(
+        pricing = CostPricingService(self._session).resolve_rule(
             workspace_id=run.workspace_id,
             provider=provider,
             model=model,
             occurred_at=occurred_at,
         )
         costs = (
-            _calculate_costs(usage, pricing) if pricing is not None and usage.available else None
+            calculate_costs(usage, pricing) if pricing is not None and usage.available else None
         )
         trace = current_trace_context()
         record = ModelUsageRecord(
@@ -129,7 +115,7 @@ class CostAccountingService:
         now: datetime | None = None,
     ) -> None:
         now = ensure_aware_utc(now or datetime.now(UTC))
-        pricing = self._pricing_rule(
+        pricing = CostPricingService(self._session).resolve_rule(
             workspace_id=workspace_id,
             provider=canonical_model_provider(provider),
             model=model,
@@ -160,7 +146,11 @@ class CostAccountingService:
         )
         if budget is None:
             return
-        status = self.budget_status(workspace_id, currency=budget.currency, now=now)
+        status = CostQueryService(self._session).budget_status(
+            workspace_id,
+            currency=budget.currency,
+            now=now,
+        )
         if status.state == "exhausted":
             raise CostBudgetExceededError(
                 f"workspace model cost budget exhausted for {budget.currency}"
@@ -177,7 +167,7 @@ class CostAccountingService:
         """Reject a project whose admitted model estimate would exceed a blocking budget."""
         if estimated_cost < 0:
             raise ValueError("estimated_cost must not be negative")
-        normalized_currency = _currency(currency)
+        normalized_currency = normalize_currency(currency)
         budget = self._session.scalar(
             select(WorkspaceCostBudget).where(
                 WorkspaceCostBudget.workspace_id == workspace_id,
@@ -188,7 +178,7 @@ class CostAccountingService:
         )
         if budget is None:
             return
-        status = self.budget_status(
+        status = CostQueryService(self._session).budget_status(
             workspace_id,
             currency=normalized_currency,
             now=now,
@@ -201,97 +191,6 @@ class CostAccountingService:
                 f"workspace projected model cost exceeds {normalized_currency} budget"
             )
 
-    def create_pricing_rule(
-        self,
-        *,
-        workspace_id: UUID,
-        actor_user_id: UUID,
-        provider: str,
-        model: str,
-        version: str,
-        currency: str,
-        input_rate_per_million: Decimal,
-        output_rate_per_million: Decimal,
-        cached_input_rate_per_million: Decimal | None,
-        request_rate: Decimal,
-        effective_from: datetime,
-        effective_to: datetime | None,
-        source: str,
-    ) -> ModelPricingRule:
-        normalized_provider = canonical_model_provider(provider)
-        normalized_model = model.strip()
-        normalized_version = version.strip()
-        if not normalized_provider:
-            raise ValueError("provider must not be blank")
-        if not normalized_model:
-            raise ValueError("model must not be blank")
-        if not normalized_version:
-            raise ValueError("version must not be blank")
-        effective_from = ensure_aware_utc(effective_from)
-        effective_to = ensure_aware_utc(effective_to) if effective_to is not None else None
-        if effective_to is not None and effective_to <= effective_from:
-            raise ValueError("effective_to must be later than effective_from")
-        rule = ModelPricingRule(
-            workspace_id=workspace_id,
-            created_by_user_id=actor_user_id,
-            provider=normalized_provider,
-            model=normalized_model,
-            version=normalized_version,
-            currency=_currency(currency),
-            input_rate_per_million=input_rate_per_million,
-            output_rate_per_million=output_rate_per_million,
-            cached_input_rate_per_million=cached_input_rate_per_million,
-            request_rate=request_rate,
-            effective_from=effective_from,
-            effective_to=effective_to,
-            status="active",
-            source=source.strip() or "operator",
-        )
-        self._session.add(rule)
-        self._session.flush([rule])
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace_id,
-            user_id=actor_user_id,
-            action="cost.pricing_rule_created",
-            target_type="model_pricing_rule",
-            target_id=rule.id,
-            metadata={
-                "provider": rule.provider,
-                "model": rule.model,
-                "version": rule.version,
-                "currency": rule.currency,
-                "source": rule.source,
-            },
-        )
-        return rule
-
-    def disable_pricing_rule(
-        self,
-        *,
-        workspace_id: UUID,
-        pricing_rule_id: UUID,
-        actor_user_id: UUID,
-    ) -> ModelPricingRule:
-        rule = self._session.scalar(
-            select(ModelPricingRule).where(
-                ModelPricingRule.workspace_id == workspace_id,
-                ModelPricingRule.id == pricing_rule_id,
-            )
-        )
-        if rule is None:
-            raise ValueError("Model pricing rule not found")
-        rule.status = "disabled"
-        self._session.flush([rule])
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace_id,
-            user_id=actor_user_id,
-            action="cost.pricing_rule_disabled",
-            target_type="model_pricing_rule",
-            target_id=rule.id,
-            metadata={"provider": rule.provider, "model": rule.model, "version": rule.version},
-        )
-        return rule
-
     def upsert_budget(
         self,
         *,
@@ -303,7 +202,7 @@ class CostAccountingService:
         enforcement: str,
         enabled: bool,
     ) -> WorkspaceCostBudget:
-        normalized_currency = _currency(currency)
+        normalized_currency = normalize_currency(currency)
         if monthly_limit <= 0:
             raise ValueError("monthly_limit must be greater than zero")
         if warning_ratio <= 0 or warning_ratio > 1:
@@ -343,283 +242,3 @@ class CostAccountingService:
             },
         )
         return budget
-
-    def list_pricing_rules(self, workspace_id: UUID) -> list[ModelPricingRule]:
-        return list(
-            self._session.scalars(
-                select(ModelPricingRule)
-                .where(ModelPricingRule.workspace_id == workspace_id)
-                .order_by(
-                    ModelPricingRule.effective_from.desc(), ModelPricingRule.created_at.desc()
-                )
-            ).all()
-        )
-
-    def list_usage(
-        self,
-        workspace_id: UUID,
-        *,
-        start_at: datetime,
-        end_at: datetime,
-        provider: str | None,
-        model: str | None,
-        limit: int,
-        offset: int,
-    ) -> tuple[list[ModelUsageRecord], int]:
-        filters = [
-            ModelUsageRecord.workspace_id == workspace_id,
-            ModelUsageRecord.occurred_at >= start_at,
-            ModelUsageRecord.occurred_at < end_at,
-        ]
-        if provider is not None:
-            filters.append(ModelUsageRecord.provider == canonical_model_provider(provider))
-        if model is not None:
-            filters.append(ModelUsageRecord.model == model)
-        total = int(
-            self._session.scalar(select(func.count()).select_from(ModelUsageRecord).where(*filters))
-            or 0
-        )
-        rows = self._session.scalars(
-            select(ModelUsageRecord)
-            .where(*filters)
-            .order_by(ModelUsageRecord.occurred_at.desc(), ModelUsageRecord.id.desc())
-            .limit(limit)
-            .offset(offset)
-        ).all()
-        return list(rows), total
-
-    def summary(
-        self,
-        workspace_id: UUID,
-        *,
-        start_at: datetime,
-        end_at: datetime,
-        currency: str,
-        group_by: str,
-    ) -> dict[str, object]:
-        normalized_currency = _currency(currency)
-        filters = (
-            ModelUsageRecord.workspace_id == workspace_id,
-            ModelUsageRecord.occurred_at >= start_at,
-            ModelUsageRecord.occurred_at < end_at,
-            or_(
-                ModelUsageRecord.currency == normalized_currency,
-                ModelUsageRecord.currency.is_(None),
-            ),
-        )
-        aggregate_columns = _aggregate_columns(normalized_currency)
-        totals_row = (
-            self._session.execute(select(*aggregate_columns).where(*filters)).mappings().one()
-        )
-        group_expression = _group_expression(group_by)
-        group_rows = self._session.execute(
-            select(group_expression.label("key"), *aggregate_columns)
-            .where(*filters)
-            .group_by(group_expression)
-            .order_by(group_expression)
-        ).mappings()
-        return {
-            "start_at": start_at,
-            "end_at": end_at,
-            "currency": normalized_currency,
-            "group_by": group_by,
-            "totals": _totals_from_row(totals_row),
-            "groups": [{"key": str(row["key"]), **_totals_from_row(row)} for row in group_rows],
-            "budget": asdict(
-                self.budget_status(
-                    workspace_id,
-                    currency=normalized_currency,
-                    now=end_at,
-                )
-            ),
-        }
-
-    def budget_status(
-        self,
-        workspace_id: UUID,
-        *,
-        currency: str = "USD",
-        now: datetime | None = None,
-    ) -> CostBudgetStatus:
-        now = now or datetime.now(UTC)
-        period_start, period_end = _month_window(now)
-        normalized_currency = _currency(currency)
-        budget = self._session.scalar(
-            select(WorkspaceCostBudget).where(
-                WorkspaceCostBudget.workspace_id == workspace_id,
-                WorkspaceCostBudget.currency == normalized_currency,
-            )
-        )
-        spent = self._session.scalar(
-            select(func.coalesce(func.sum(ModelUsageRecord.total_cost), 0)).where(
-                ModelUsageRecord.workspace_id == workspace_id,
-                ModelUsageRecord.currency == normalized_currency,
-                ModelUsageRecord.occurred_at >= period_start,
-                ModelUsageRecord.occurred_at < period_end,
-            )
-        )
-        spent = Decimal(str(spent or 0))
-        unpriced = int(
-            self._session.scalar(
-                select(func.count())
-                .select_from(ModelUsageRecord)
-                .where(
-                    ModelUsageRecord.workspace_id == workspace_id,
-                    ModelUsageRecord.metering_status != "priced",
-                    or_(
-                        ModelUsageRecord.currency == normalized_currency,
-                        ModelUsageRecord.currency.is_(None),
-                    ),
-                    ModelUsageRecord.occurred_at >= period_start,
-                    ModelUsageRecord.occurred_at < period_end,
-                )
-            )
-            or 0
-        )
-        if budget is None or not budget.enabled:
-            return CostBudgetStatus(
-                state="unconfigured" if budget is None else "disabled",
-                currency=normalized_currency,
-                spent=spent,
-                monthly_limit=None if budget is None else budget.monthly_limit,
-                warning_ratio=None if budget is None else budget.warning_ratio,
-                utilization_ratio=None,
-                enforcement=None if budget is None else budget.enforcement,
-                unpriced_records=unpriced,
-                period_start=period_start,
-                period_end=period_end,
-            )
-        ratio = spent / budget.monthly_limit
-        state = "exhausted" if ratio >= 1 else "warning" if ratio >= budget.warning_ratio else "ok"
-        return CostBudgetStatus(
-            state=state,
-            currency=normalized_currency,
-            spent=spent,
-            monthly_limit=budget.monthly_limit,
-            warning_ratio=budget.warning_ratio,
-            utilization_ratio=ratio,
-            enforcement=budget.enforcement,
-            unpriced_records=unpriced,
-            period_start=period_start,
-            period_end=period_end,
-        )
-
-    def _pricing_rule(
-        self,
-        *,
-        workspace_id: UUID,
-        provider: str,
-        model: str,
-        occurred_at: datetime,
-    ) -> ModelPricingRule | None:
-        exact_first = case((ModelPricingRule.model == model, 0), else_=1)
-        return self._session.scalar(
-            select(ModelPricingRule)
-            .where(
-                ModelPricingRule.workspace_id == workspace_id,
-                ModelPricingRule.provider == provider,
-                ModelPricingRule.model.in_([model, "*"]),
-                ModelPricingRule.status == "active",
-                ModelPricingRule.effective_from <= occurred_at,
-                or_(
-                    ModelPricingRule.effective_to.is_(None),
-                    ModelPricingRule.effective_to > occurred_at,
-                ),
-            )
-            .order_by(
-                exact_first,
-                ModelPricingRule.effective_from.desc(),
-                ModelPricingRule.created_at.desc(),
-                ModelPricingRule.id.desc(),
-            )
-            .limit(1)
-        )
-
-
-def _calculate_costs(
-    usage: NormalizedModelUsage,
-    pricing: ModelPricingRule,
-) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
-    cached_tokens = min(usage.cached_input_tokens, usage.input_tokens)
-    regular_input_tokens = usage.input_tokens - cached_tokens
-    cached_rate = pricing.cached_input_rate_per_million or pricing.input_rate_per_million
-    input_cost = _cost(regular_input_tokens, pricing.input_rate_per_million)
-    cached_cost = _cost(cached_tokens, cached_rate)
-    output_cost = _cost(usage.output_tokens, pricing.output_rate_per_million)
-    request_cost = (Decimal(usage.request_count) * pricing.request_rate).quantize(_COST_QUANTUM)
-    total = (input_cost + cached_cost + output_cost + request_cost).quantize(_COST_QUANTUM)
-    return input_cost, output_cost, cached_cost, request_cost, total
-
-
-def _cost(tokens: int, rate_per_million: Decimal) -> Decimal:
-    return (Decimal(tokens) * rate_per_million / _MILLION).quantize(_COST_QUANTUM)
-
-
-def _currency(value: str) -> str:
-    normalized = value.strip().upper()
-    if len(normalized) != 3 or not normalized.isascii() or not normalized.isalpha():
-        raise ValueError("currency must be a three-letter ASCII code")
-    return normalized
-
-
-def _month_window(value: datetime) -> tuple[datetime, datetime]:
-    current = ensure_aware_utc(value)
-    start = current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1)
-    else:
-        end = start.replace(month=start.month + 1)
-    return start, end
-
-
-def _aggregate_columns(currency: str) -> tuple[Any, ...]:
-    priced = and_(
-        ModelUsageRecord.metering_status == "priced",
-        ModelUsageRecord.currency == currency,
-    )
-    return (
-        func.count().label("records"),
-        func.coalesce(func.sum(case((priced, 1), else_=0)), 0).label("priced_records"),
-        func.coalesce(func.sum(case((priced, 0), else_=1)), 0).label("unpriced_records"),
-        func.coalesce(func.sum(ModelUsageRecord.request_count), 0).label("request_count"),
-        func.coalesce(func.sum(ModelUsageRecord.input_tokens), 0).label("input_tokens"),
-        func.coalesce(func.sum(ModelUsageRecord.output_tokens), 0).label("output_tokens"),
-        func.coalesce(func.sum(ModelUsageRecord.cached_input_tokens), 0).label(
-            "cached_input_tokens"
-        ),
-        func.coalesce(func.sum(ModelUsageRecord.reasoning_tokens), 0).label("reasoning_tokens"),
-        func.coalesce(func.sum(ModelUsageRecord.total_tokens), 0).label("total_tokens"),
-        func.coalesce(
-            func.sum(case((priced, ModelUsageRecord.total_cost), else_=Decimal("0"))),
-            Decimal("0"),
-        ).label("total_cost"),
-    )
-
-
-def _totals_from_row(row: Any) -> dict[str, int | Decimal]:
-    return {
-        "records": int(row["records"] or 0),
-        "priced_records": int(row["priced_records"] or 0),
-        "unpriced_records": int(row["unpriced_records"] or 0),
-        "request_count": int(row["request_count"] or 0),
-        "input_tokens": int(row["input_tokens"] or 0),
-        "output_tokens": int(row["output_tokens"] or 0),
-        "cached_input_tokens": int(row["cached_input_tokens"] or 0),
-        "reasoning_tokens": int(row["reasoning_tokens"] or 0),
-        "total_tokens": int(row["total_tokens"] or 0),
-        "total_cost": Decimal(str(row["total_cost"] or 0)),
-    }
-
-
-def _group_expression(group_by: str) -> Any:
-    if group_by == "provider":
-        return ModelUsageRecord.provider
-    if group_by == "model":
-        return ModelUsageRecord.provider + "/" + ModelUsageRecord.model
-    if group_by == "agent":
-        return func.coalesce(cast(ModelUsageRecord.agent_profile_id, String), "unassigned")
-    if group_by == "run":
-        return cast(ModelUsageRecord.agent_run_id, String)
-    if group_by == "day":
-        return cast(func.date(ModelUsageRecord.occurred_at), String)
-    raise ValueError("group_by must be provider, model, agent, run, or day")

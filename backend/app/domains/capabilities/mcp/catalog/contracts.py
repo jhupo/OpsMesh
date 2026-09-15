@@ -5,12 +5,12 @@ from uuid import UUID
 from pydantic import BaseModel, Field, computed_field, field_serializer, model_validator
 
 from backend.app.core.contracts import TimestampedModel
-from backend.app.core.secrets.service import (
+from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.core.security.secrets import (
     external_vault_reference_metadata,
     hosted_secret_metadata,
     vault_reference_kind,
 )
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.domains.capabilities.mcp.catalog.redaction import redacted_connection
 
 

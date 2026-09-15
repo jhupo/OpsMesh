@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from redis import Redis
 
-from backend.app.core.common.config import Settings, get_settings
+from backend.app.core.config import Settings, get_settings
 
 
 @dataclass(frozen=True)

@@ -3,13 +3,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import non_empty_string_or_none
+from backend.app.core.utils import non_empty_string_or_none
 from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.blockers import RuntimeSpaceBlockerService
-from backend.app.runtime.environment.spaces.events import RuntimeSpaceEventLog
+from backend.app.runtime.environment.spaces.lifecycle_support import (
+    RuntimeSpaceBlockerService,
+    RuntimeSpaceEventLog,
+)
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.runtime.environment.spaces.quotas import RuntimeSpaceQuotaService
-from backend.app.runtime.environment.spaces.reservation_release import (
+from backend.app.runtime.environment.spaces.reservations import (
     RuntimeSpaceReservationReleaseService,
 )
 from backend.app.runtime.environment.spaces.targets import RuntimeSpaceTargetService

@@ -8,8 +8,8 @@ import pytest
 from agents.tool_context import ToolContext
 
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
-from backend.app.core.common.config import Settings
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.core.config import Settings
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRuntimeAgentDefinition,
@@ -21,7 +21,7 @@ from backend.app.domains.agents.runtime.contracts import (
 )
 from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
-from backend.app.domains.orchestration.runs.authorization_snapshot import (
+from backend.app.domains.orchestration.runs.authorization.snapshot import (
     RunAuthorizationSnapshotService,
 )
 from backend.app.domains.orchestration.runs.models import AgentRun

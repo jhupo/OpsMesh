@@ -10,8 +10,11 @@ from backend.app.domains.capabilities.mcp.catalog.rules import (
 from backend.app.domains.capabilities.mcp.catalog.rules import (
     execution_mode as _execution_mode,
 )
+from backend.app.domains.capabilities.mcp.models import (
+    McpServer,
+    McpToolAllowlist,
+)
 from backend.app.domains.capabilities.mcp.policy import mcp_health_check_stale
-from backend.app.domains.capabilities.models import McpServer, McpToolAllowlist
 
 
 @dataclass(frozen=True)

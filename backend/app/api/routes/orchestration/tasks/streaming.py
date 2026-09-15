@@ -8,8 +8,8 @@ from fastapi.encoders import jsonable_encoder
 from redis import Redis
 from redis.exceptions import RedisError
 
-from backend.app.core.common.config import Settings, get_settings
-from backend.app.core.redis.dependencies import get_redis_client
+from backend.app.api.dependencies.redis import get_redis_client
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.orchestration.tasks.events import (
     RedisTaskEventBus,

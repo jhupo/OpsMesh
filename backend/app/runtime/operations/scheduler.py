@@ -7,8 +7,8 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.pagination import PageParams
-from backend.app.core.common.values import (
+from backend.app.core.pagination import PageParams
+from backend.app.core.utils import (
     ensure_aware_utc,
     non_empty_string_or_none,
     positive_int_or_none,
@@ -21,14 +21,12 @@ from backend.app.domains.orchestration.workflows.definitions.blocked_reasons imp
 )
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
 from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.observability.audit.service import AuditService
+from backend.app.domains.workspace.tenants.settings import scheduler_settings
 from backend.app.runtime.operations.contracts.scheduler import (
     BlockedStepExplanationResponse,
-    BlockedStepUnblockResponse,
     OperationsSchedulerResponse,
     SchedulerBacklogResponse,
     SchedulerBlockedReasonResponse,
-    SchedulerControlResponse,
     SchedulerPolicyResponse,
     SchedulerPriorityBucketResponse,
 )
@@ -40,9 +38,7 @@ class SchedulerPolicyService:
 
     def scheduler_policy(self, workspace_id: UUID) -> SchedulerPolicyResponse:
         workspace = self._session.get(Workspace, workspace_id)
-        settings = workspace.settings if workspace is not None else {}
-        raw_scheduler = settings.get("scheduler") if isinstance(settings, dict) else None
-        scheduler = raw_scheduler if isinstance(raw_scheduler, dict) else {}
+        scheduler = scheduler_settings(workspace.settings if workspace is not None else {})
         return SchedulerPolicyResponse(
             paused=scheduler.get("paused") is True,
             pause_reason=non_empty_string_or_none(scheduler.get("pause_reason")),
@@ -61,26 +57,14 @@ class SchedulerPolicyService:
         )
 
 
-def scheduler_settings(settings: dict[str, object]) -> dict[str, object]:
-    raw_scheduler = settings.get("scheduler")
-    if not isinstance(raw_scheduler, dict):
-        return {}
-    return dict(raw_scheduler)
-
-
 def positive_number_dict(value: object) -> dict[str, float]:
     if not isinstance(value, dict):
         return {}
-    normalized: dict[str, float] = {}
-    for key, item in value.items():
-        if isinstance(item, int | float) and not isinstance(item, bool) and item > 0:
-            normalized[str(key)] = float(item)
-    return normalized
-
-
-
-
-
+    return {
+        str(key): float(item)
+        for key, item in value.items()
+        if isinstance(item, int | float) and not isinstance(item, bool) and item > 0
+    }
 
 
 class SchedulerBacklogService:
@@ -101,9 +85,7 @@ class SchedulerBacklogService:
         priority_buckets: dict[int, dict[str, int]] = {}
         blocked_reasons: dict[str, int] = {}
         queued_ages: list[int] = []
-        queued_steps = 0
-        running_steps = 0
-        blocked_steps = 0
+        queued_steps = running_steps = blocked_steps = 0
         highest_priority: int | None = None
         for step, task in task_steps:
             priority = int(task.priority or 0)
@@ -127,10 +109,8 @@ class SchedulerBacklogService:
             if dependencies.get("scheduling_status") == "blocked":
                 blocked_steps += 1
                 bucket["blocked_steps"] += 1
-                reason = dependencies.get("blocked_reason")
-                blocked_reasons[str(reason or "unknown")] = (
-                    blocked_reasons.get(str(reason or "unknown"), 0) + 1
-                )
+                reason = str(dependencies.get("blocked_reason") or "unknown")
+                blocked_reasons[reason] = blocked_reasons.get(reason, 0) + 1
         return OperationsSchedulerResponse(
             generated_at=now,
             backlog=SchedulerBacklogResponse(
@@ -178,18 +158,10 @@ class SchedulerBacklogService:
             self._session.scalar(
                 select(func.count())
                 .select_from(Task)
-                .where(
-                    Task.workspace_id == workspace_id,
-                    Task.status == "waiting_approval",
-                )
+                .where(Task.workspace_id == workspace_id, Task.status == "waiting_approval")
             )
             or 0
         )
-
-
-
-
-
 
 
 class SchedulerBlockedStepService:
@@ -231,62 +203,6 @@ class SchedulerBlockedStepService:
             )
         return blocked[page.offset : page.offset + page.limit], len(blocked)
 
-    def unblock_steps(
-        self,
-        *,
-        workspace_id: UUID,
-        actor_user_id: UUID,
-        code: str | None,
-        reason: str | None,
-        runtime_space_id: UUID | None,
-        limit: int,
-    ) -> BlockedStepUnblockResponse:
-        normalized_code = non_empty_string_or_none(code)
-        normalized_reason = non_empty_string_or_none(reason)
-        if normalized_code is None and normalized_reason is None and runtime_space_id is None:
-            raise ValueError("At least one unblock filter is required")
-        unblocked = 0
-        for step, task in self._blocked_step_rows(workspace_id):
-            if unblocked >= limit:
-                break
-            dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
-            if dependencies.get("scheduling_status") != "blocked":
-                continue
-            explanation = explain_blocked_reason(dependencies.get("blocked_reason"))
-            effective_runtime_space_id = step.runtime_space_id or task.runtime_space_id
-            if normalized_code is not None and explanation.code != normalized_code:
-                continue
-            if normalized_reason is not None and explanation.reason != normalized_reason:
-                continue
-            if runtime_space_id is not None and effective_runtime_space_id != runtime_space_id:
-                continue
-            updated = dict(dependencies)
-            updated.pop("scheduling_status", None)
-            updated.pop("blocked_reason", None)
-            updated.pop("blocked_resource_keys", None)
-            updated.pop("priority_score", None)
-            step.dependencies = updated
-            unblocked += 1
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace_id,
-            user_id=actor_user_id,
-            action="scheduler.blocked_steps_unblocked",
-            target_type="workspace",
-            target_id=workspace_id,
-            metadata={
-                "code": normalized_code,
-                "reason": normalized_reason,
-                "runtime_space_id": str(runtime_space_id) if runtime_space_id else None,
-                "limit": limit,
-                "unblocked_steps": unblocked,
-            },
-        )
-        self._session.commit()
-        return BlockedStepUnblockResponse(
-            workspace_id=workspace_id,
-            unblocked_steps=unblocked,
-        )
-
     def _blocked_step_rows(self, workspace_id: UUID) -> Sequence[tuple[TaskStep, Task]]:
         return (
             self._session.execute(
@@ -302,108 +218,3 @@ class SchedulerBlockedStepService:
             .tuples()
             .all()
         )
-
-
-
-
-
-
-
-class SchedulerControlService:
-    def __init__(self, session: Session) -> None:
-        self._session = session
-
-    def pause_scheduler(
-        self,
-        *,
-        workspace_id: UUID,
-        actor_user_id: UUID,
-        reason: str | None,
-    ) -> SchedulerControlResponse | None:
-        workspace = self._session.get(Workspace, workspace_id)
-        if workspace is None:
-            return None
-        settings = dict(workspace.settings or {})
-        scheduler = scheduler_settings(settings)
-        scheduler["paused"] = True
-        scheduler["pause_reason"] = non_empty_string_or_none(reason) or "operator_paused"
-        settings["scheduler"] = scheduler
-        workspace.settings = settings
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace.id,
-            user_id=actor_user_id,
-            action="workspace.scheduler_paused",
-            target_type="workspace",
-            target_id=workspace.id,
-            metadata={"pause_reason": scheduler["pause_reason"]},
-        )
-        self._session.commit()
-        return SchedulerControlResponse(
-            workspace_id=workspace.id,
-            paused=True,
-            pause_reason=str(scheduler["pause_reason"]),
-            cleared_blocked_steps=0,
-            policy=SchedulerPolicyService(self._session).scheduler_policy(workspace.id),
-        )
-
-    def resume_scheduler(
-        self,
-        *,
-        workspace_id: UUID,
-        actor_user_id: UUID,
-    ) -> SchedulerControlResponse | None:
-        workspace = self._session.get(Workspace, workspace_id)
-        if workspace is None:
-            return None
-        settings = dict(workspace.settings or {})
-        scheduler = scheduler_settings(settings)
-        previous_reason = non_empty_string_or_none(scheduler.get("pause_reason"))
-        scheduler["paused"] = False
-        scheduler.pop("pause_reason", None)
-        settings["scheduler"] = scheduler
-        workspace.settings = settings
-        cleared = self.clear_workspace_pause_blocks(
-            workspace.id,
-            reason=previous_reason or "workspace_scheduler_paused",
-        )
-        AuditService(self._session).record_user_action(
-            workspace_id=workspace.id,
-            user_id=actor_user_id,
-            action="workspace.scheduler_resumed",
-            target_type="workspace",
-            target_id=workspace.id,
-            metadata={
-                "previous_pause_reason": previous_reason,
-                "cleared_blocked_steps": cleared,
-            },
-        )
-        self._session.commit()
-        return SchedulerControlResponse(
-            workspace_id=workspace.id,
-            paused=False,
-            pause_reason=None,
-            cleared_blocked_steps=cleared,
-            policy=SchedulerPolicyService(self._session).scheduler_policy(workspace.id),
-        )
-
-    def clear_workspace_pause_blocks(self, workspace_id: UUID, *, reason: str) -> int:
-        steps = self._session.scalars(
-            select(TaskStep).where(
-                TaskStep.workspace_id == workspace_id,
-                TaskStep.status == "queued",
-            )
-        ).all()
-        cleared = 0
-        for step in steps:
-            dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
-            if dependencies.get("scheduling_status") != "blocked":
-                continue
-            if dependencies.get("blocked_reason") != reason:
-                continue
-            updated = dict(dependencies)
-            updated.pop("scheduling_status", None)
-            updated.pop("blocked_reason", None)
-            updated.pop("priority_score", None)
-            step.dependencies = updated
-            cleared += 1
-        return cleared

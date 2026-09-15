@@ -12,7 +12,7 @@ from sqlalchemy import and_, false, func, literal_column, or_, select, true
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
-from backend.app.core.common.values import datetime_or_none, ensure_aware_utc
+from backend.app.core.utils import datetime_or_none, ensure_aware_utc
 from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.memory.policy import (

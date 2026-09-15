@@ -7,11 +7,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.config import Settings
+from backend.app.core.config import Settings
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.projects.artifacts.service import ProjectOutputArtifactWriter
+from backend.app.domains.workspace.projects.artifacts import ProjectOutputArtifactWriter
 from backend.app.domains.workspace.projects.file_boundaries import (
     ProjectBoundaryViolation,
     ProjectFileBoundaryService,

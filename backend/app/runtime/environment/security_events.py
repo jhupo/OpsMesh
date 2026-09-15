@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.models import SecurityEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.models import WorkspaceRuntime
 
 

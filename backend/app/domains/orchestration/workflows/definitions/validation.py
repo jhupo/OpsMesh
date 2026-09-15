@@ -2,21 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.capabilities.models import CapabilityResource, McpServer, McpToolAllowlist
+from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.domains.capabilities.mcp.models import (
+    McpServer,
+    McpToolAllowlist,
+)
+from backend.app.domains.capabilities.resources.models import CapabilityResource
+from backend.app.domains.orchestration.models import OrchestrationDefinition, OrchestrationRevision
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
 from backend.app.domains.orchestration.workflows.definitions.graph import (
+    ProjectPlanValidationError,
     WorkflowGraphError,
     validate_workflow_graph,
-)
-from backend.app.domains.orchestration.workflows.templates.validation import (
-    ProjectPlanValidationError,
 )
 
 
@@ -39,7 +42,7 @@ class DefinitionValidationService:
         workspace_id: UUID,
         nodes: list[WorkflowNode],
         *,
-        validate_subworkflow: Callable[[UUID, WorkflowNode], None],
+        parent_definition_id: UUID | None = None,
     ) -> list[dict[str, object]]:
         self._validate_graph(nodes)
         self._validate_agent_profiles(workspace_id, nodes)
@@ -47,8 +50,56 @@ class DefinitionValidationService:
         self._validate_mcp(workspace_id, nodes)
         for node in nodes:
             if node.node_type == "subworkflow":
-                validate_subworkflow(workspace_id, node)
+                self.require_subworkflow_reference(
+                    workspace_id,
+                    node,
+                    parent_definition_id=parent_definition_id,
+                )
         return [node.model_dump(mode="json", by_alias=True, exclude_none=True) for node in nodes]
+
+    def require_subworkflow_reference(
+        self,
+        workspace_id: UUID,
+        node: WorkflowNode,
+        *,
+        parent_definition_id: UUID | None = None,
+    ) -> None:
+        definition_id = node.subworkflow_definition_id
+        if definition_id is None:
+            raise DefinitionValidationError(
+                "Subworkflow node requires a definition",
+                code="orchestration_subworkflow_definition_invalid",
+            )
+        if parent_definition_id is not None and definition_id == parent_definition_id:
+            raise DefinitionValidationError(
+                "A subworkflow cannot reference its own definition",
+                code="orchestration_recursive_subworkflow",
+            )
+        definition = self._session.scalar(
+            select(OrchestrationDefinition).where(
+                OrchestrationDefinition.workspace_id == workspace_id,
+                OrchestrationDefinition.id == definition_id,
+                OrchestrationDefinition.status != "archived",
+            )
+        )
+        if definition is None:
+            raise DefinitionValidationError(
+                "Subworkflow definition is unavailable",
+                code="orchestration_subworkflow_definition_invalid",
+            )
+        revision_query = select(OrchestrationRevision.id).where(
+            OrchestrationRevision.workspace_id == workspace_id,
+            OrchestrationRevision.definition_id == definition.id,
+        )
+        if node.subworkflow_version is not None:
+            revision_query = revision_query.where(
+                OrchestrationRevision.version == node.subworkflow_version
+            )
+        if self._session.scalar(revision_query.limit(1)) is None:
+            raise DefinitionValidationError(
+                "Subworkflow definition has no published revision",
+                code="orchestration_subworkflow_revision_invalid",
+            )
 
     def _validate_graph(self, nodes: list[WorkflowNode]) -> None:
         if not nodes or len(nodes) > 128:
@@ -145,3 +196,22 @@ class DefinitionValidationService:
                         f"MCP tool {item.tool_name} is not allowlisted",
                         code="orchestration_mcp_tool_reference_invalid",
                     )
+
+
+def nodes_from_definition(
+    definition: OrchestrationDefinition | OrchestrationRevision,
+) -> list[WorkflowNode]:
+    raw_definition = definition.definition
+    raw_nodes = raw_definition.get("nodes") if isinstance(raw_definition, dict) else None
+    if not isinstance(raw_nodes, list):
+        raise DefinitionValidationError(
+            "Stored orchestration has no nodes",
+            code="orchestration_definition_invalid",
+        )
+    try:
+        return [WorkflowNode.model_validate(item) for item in raw_nodes]
+    except ValidationError as exc:
+        raise DefinitionValidationError(
+            "Stored orchestration node is invalid",
+            code="orchestration_definition_invalid",
+        ) from exc

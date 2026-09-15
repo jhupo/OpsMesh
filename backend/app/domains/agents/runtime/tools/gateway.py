@@ -7,9 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.trace_context import with_current_trace_metadata
-from backend.app.core.common.values import string_list
-from backend.app.core.security.models import SecurityEvent
+from backend.app.core.utils import string_list
 from backend.app.domains.agents.memory.authorization import (
     memory_read_scopes,
     memory_write_scopes,
@@ -20,10 +18,12 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeResourceGrant,
     AgentRuntimeToolDefinition,
 )
-from backend.app.domains.capabilities.models import CapabilityResource
+from backend.app.domains.capabilities.resources.models import CapabilityResource
 from backend.app.domains.capabilities.resources.schema import validate_parameters
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.observability.telemetry.trace_context import with_current_trace_metadata
 
 
 @dataclass(frozen=True, slots=True)

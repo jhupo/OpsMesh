@@ -7,11 +7,9 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStateService
-from backend.app.domains.orchestration.runs.state import RunStatus
+from backend.app.domains.orchestration.runs.state import RunStateService, RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.state import TaskStateService
-from backend.app.domains.orchestration.tasks.state import TaskStatus
+from backend.app.domains.orchestration.tasks.state import TaskStateService, TaskStatus
 from backend.app.domains.platform.updates.service import maintenance_enabled
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.dispatch.eligibility import (

@@ -7,7 +7,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
-from backend.app.domains.orchestration.runs.authorization_snapshot import (
+from backend.app.domains.orchestration.runs.authorization.runtime import (
+    runtime_binding_for_snapshot,
+)
+from backend.app.domains.orchestration.runs.authorization.snapshot import (
     RunAuthorizationSnapshotService,
 )
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
@@ -19,9 +22,6 @@ from backend.app.domains.orchestration.runs.lifecycle import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.resources import RunResourceReservationService
-from backend.app.domains.orchestration.runs.runtime_authorization import (
-    runtime_binding_for_snapshot,
-)
 from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.state import TaskStateService, TaskStatus
@@ -67,6 +67,7 @@ class RunOrchestrationService:
                     workspace_id=task.workspace_id,
                     team_id=task.agent_team_id,
                 )
+                self._session.flush([task])
             TaskPlanningAttemptService(self._session).ensure_initial_plan(task)
             if task.project_plan is None:
                 self._session.flush()

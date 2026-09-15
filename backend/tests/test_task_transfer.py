@@ -9,7 +9,7 @@ from backend.app.api.schemas.orchestration.tasks.management import (
 )
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.collaboration.transfers import (
     TaskTransferCommand,

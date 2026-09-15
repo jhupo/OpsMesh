@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.common.values import datetime_or_none
+from backend.app.core.utils import datetime_or_none
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.contracts import WorkerTrustCleanupResult
 from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer

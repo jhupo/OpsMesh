@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from backend.app.domains.workspace.data_lifecycle.diagnostics import _archive_integrity_payload
+from backend.app.domains.workspace.data_lifecycle.queries import archive_integrity_payload
 from backend.app.domains.workspace.data_lifecycle.recovery import (
     RECOVERY_READINESS_APPLY_ACTIONS,
     _recovery_action_result,
@@ -15,8 +15,8 @@ from backend.app.domains.workspace.data_lifecycle.recovery import (
 )
 from backend.app.domains.workspace.data_lifecycle.repository import WorkspaceDataLifecycleRepository
 from backend.app.domains.workspace.data_lifecycle.scheduling import (
-    _scheduled_archive_export_request,
-    _scheduled_restore_drill_request,
+    scheduled_archive_export_request,
+    scheduled_restore_drill_request,
 )
 from backend.app.domains.workspace.data_lifecycle.settings import (
     _backup_settings,
@@ -58,7 +58,7 @@ class RecoveryArchiveExportAction:
                 blocked_reasons=blocked_reasons,
             )
         try:
-            request = _scheduled_archive_export_request(raw_backup_policy)
+            request = scheduled_archive_export_request(raw_backup_policy)
         except ValidationError:
             return None, _recovery_action_skipped(
                 action=action,
@@ -144,7 +144,7 @@ class RecoveryArchiveIntegrityAction:
             )
 
         latest_integrity = self._repository.latest_archive_integrity_event(workspace.id)
-        integrity_payload = _archive_integrity_payload(
+        integrity_payload = archive_integrity_payload(
             latest_integrity,
             latest_success=latest_success,
         )
@@ -272,7 +272,7 @@ class RecoveryRestoreDrillAction:
                 blocked_reasons=blocked_reasons,
             )
         try:
-            request = _scheduled_restore_drill_request(raw_restore_drill_policy)
+            request = scheduled_restore_drill_request(raw_restore_drill_policy)
         except ValidationError:
             return None, _recovery_action_skipped(
                 action=action,

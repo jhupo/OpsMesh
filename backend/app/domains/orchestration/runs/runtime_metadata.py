@@ -1,11 +1,11 @@
 from typing import Any
 
-from backend.app.core.common.trace_context import current_trace_metadata
-from backend.app.domains.agents.models import AgentProfile
-from backend.app.domains.orchestration.requests.authorization import RunAuthorizationService
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.requests.context import RunRequestContextProvider
+from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.observability.telemetry.trace_context import current_trace_metadata
 
 
 class RunRuntimeMetadataBuilder:

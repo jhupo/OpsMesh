@@ -13,7 +13,7 @@ from backend.app.domains.agents.memory.working import (
     AgentWorkingMemoryService,
     working_memory_context,
 )
-from backend.app.domains.agents.models import AgentProfile
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeToolResult
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
