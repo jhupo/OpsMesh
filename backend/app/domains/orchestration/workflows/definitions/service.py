@@ -29,6 +29,10 @@ from backend.app.domains.orchestration.workflows.definitions.conditions import (
     condition_step_references,
 )
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
+from backend.app.domains.orchestration.workflows.definitions.graph import (
+    WorkflowGraphError,
+    validate_workflow_graph,
+)
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.orchestration.workflows.planning.feasibility import PlanFeasibilityService
 from backend.app.domains.orchestration.workflows.planning.member_matching import (
@@ -41,7 +45,6 @@ from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STAT
 from backend.app.domains.orchestration.workflows.templates.validation import (
     ProjectPlanValidationError,
     validate_project_plan,
-    validate_workflow_graph,
 )
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
@@ -449,7 +452,7 @@ class OrchestrationDefinitionService:
         try:
             validate_project_plan(plan, task.team_snapshot)
             PlanFeasibilityService(self._session).validate(task=task, plan=plan)
-        except ProjectPlanValidationError as exc:
+        except (ProjectPlanValidationError, WorkflowGraphError) as exc:
             raise OrchestrationDefinitionError(str(exc), code=exc.code) from exc
 
         ProjectPlanStepMaterializer(self._session).materialize(task, plan)
