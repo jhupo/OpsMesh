@@ -244,20 +244,36 @@ def test_team_features_are_nested_by_function() -> None:
     root_modules = {path.stem for path in teams.glob("*.py") if path.name != "__init__.py"}
     assert root_modules <= {
         "models",
-        "command_center",
-        "execution_loop",
-        "execution_overview",
         "operating_context_service",
-        "operations_console",
         "project_service",
         "provider_readiness_service",
         "runtime",
-        "workspace_command_center",
         "workspace_service",
     }
+    operations = teams / "operations"
+    assert {
+        "action_plan.py",
+        "actions.py",
+        "command_center.py",
+        "console.py",
+        "views.py",
+        "workspace.py",
+    } <= {path.name for path in operations.glob("*.py")}
+    for name in (
+        "command_center_action_plan.py",
+        "command_center_apply.py",
+        "command_center_grouping.py",
+        "command_center_payloads.py",
+        "console_controls.py",
+        "console_normalization.py",
+        "console_payloads.py",
+        "operations_console.py",
+        "workspace_actions.py",
+    ):
+        assert not (operations / name).exists(), name
     assert (teams / "runtime/service.py").is_file()
     assert (teams / "runtime/binding.py").is_file()
-    assert (teams / "operations/console_normalization.py").is_file()
+    assert (teams / "operations/views.py").is_file()
     for name in (
         "runtime/service_binding.py",
         "runtime/service_heartbeat.py",

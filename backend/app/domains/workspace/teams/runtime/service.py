@@ -22,6 +22,9 @@ from backend.app.domains.workspace.teams.models import (
 from backend.app.domains.workspace.teams.operating_context_service import (
     TeamOperatingContextService,
 )
+from backend.app.domains.workspace.teams.runtime.binding import (
+    TeamWorkspaceRuntimeBindingService,
+)
 from backend.app.domains.workspace.teams.runtime.heartbeat import TeamRuntimeHeartbeatRecorder
 from backend.app.domains.workspace.teams.runtime.lifecycle import TeamRuntimeLifecycleService
 from backend.app.domains.workspace.teams.runtime.mailbox import TeamRuntimeMailboxStore
@@ -31,9 +34,6 @@ from backend.app.domains.workspace.teams.runtime.sessions import TeamRuntimeSess
 from backend.app.domains.workspace.teams.runtime.state_builder import (
     TeamRuntimeState,
     TeamRuntimeStateBuilder,
-)
-from backend.app.domains.workspace.teams.runtime.binding import (
-    TeamWorkspaceRuntimeBindingService,
 )
 from backend.app.runtime.environment.contracts import RuntimeLimits
 from backend.app.runtime.environment.lifecycle.control import RuntimeLifecycleControl

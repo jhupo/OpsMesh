@@ -1,14 +1,19 @@
-from __future__ import annotations
-
+from collections.abc import Iterable
+from datetime import datetime
 from uuid import UUID
 
 from backend.app.core.common.values import (
+    datetime_or_none,
     dict_or_empty,
     int_or_zero,
     json_safe_payload,
+    positive_int_or_default,
     string_list,
+    uuid_or_none,
 )
+from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.workspace.teams.organization.policy_payloads import visible_task_policy
 from backend.app.domains.workspace.teams.runtime.service import TEAM_RUNTIME_RUNNING
 
 
@@ -58,7 +63,6 @@ def _summary(
         source = item.get("source")
         if isinstance(source, str):
             source_counts[source] = source_counts.get(source, 0) + 1
-
     return {
         "team_status": _dict(overview.get("team")).get("status"),
         "delivery_health": overview_summary.get("delivery_health"),
@@ -80,19 +84,15 @@ def _summary(
             _dict(getattr(runtime_state, "memory_summary", {})).get("team_entry_count")
         ),
         "queue_limit": queue_limit,
-        "queue_truncated": (
-            _int(handoff_queue.get("total")) > queue_limit
-            or _int(manager_queue.get("total")) > queue_limit
-        ),
+        "queue_truncated": _int(handoff_queue.get("total")) > queue_limit
+        or _int(manager_queue.get("total")) > queue_limit,
         "action_plan_count": len(action_plan),
         "action_plan_source_counts": dict(sorted(source_counts.items())),
     }
 
 
 def _runtime_payload(
-    runtime_state: object,
-    *,
-    provider_readiness: dict[str, object] | None = None,
+    runtime_state: object, *, provider_readiness: dict[str, object] | None = None
 ) -> dict[str, object]:
     return {
         "status": getattr(runtime_state, "status", None),
@@ -124,10 +124,7 @@ def _provider_readiness_summary(provider_readiness: dict[str, object]) -> dict[s
         "runtime_blocked_member_count": _int(
             provider_readiness.get("runtime_blocked_member_count")
         ),
-        "requires_operator_attention": provider_readiness.get(
-            "requires_operator_attention",
-            False,
-        )
+        "requires_operator_attention": provider_readiness.get("requires_operator_attention", False)
         is True,
         "blocking_reasons": _dict(provider_readiness.get("blocking_reasons")),
         "warning_reasons": _dict(provider_readiness.get("warning_reasons")),
@@ -140,7 +137,7 @@ def _runtime_ready(runtime_state: object) -> bool:
     return (
         getattr(runtime_state, "status", None) == TEAM_RUNTIME_RUNNING
         and getattr(runtime_state, "workspace_runtime_id", None) is not None
-        and getattr(runtime_state, "runtime_status", None) == "running"
+        and (getattr(runtime_state, "runtime_status", None) == "running")
     )
 
 
@@ -157,3 +154,52 @@ def _scheduled_run_payload(run: AgentRun) -> dict[str, object]:
         "runtime_space_id": run.runtime_space_id,
         "status": run.status,
     }
+
+
+def _dict(value: object) -> dict[str, object]:
+    return dict_or_empty(value)
+
+
+def _string_list(value: object) -> list[str]:
+    return string_list(value)
+
+
+def _unique_strings(values: Iterable[object]) -> list[str]:
+    unique: list[str] = []
+    for value in values:
+        if not isinstance(value, str) or value in unique:
+            continue
+        unique.append(value)
+    return unique
+
+
+def _uuid_or_none(value: object) -> UUID | None:
+    return uuid_or_none(value)
+
+
+def _redacted_dict_or_none(value: dict[str, object] | None) -> dict[str, object] | None:
+    return redact_sensitive_payload(dict(value)) if isinstance(value, dict) else None
+
+
+def _positive_int(value: object, default: int) -> int:
+    return positive_int_or_default(value, default)
+
+
+def _int_value(value: object) -> int:
+    return int_or_zero(value)
+
+
+def _datetime_or_none(value: object) -> datetime | None:
+    return datetime_or_none(value)
+
+
+def _visible_task_policy(value: object) -> dict[str, object]:
+    return visible_task_policy(value)
+
+
+def _preview(value: str, *, max_chars: int = 240) -> str:
+    text = " ".join(value.split())
+    text = redact_sensitive_text(text)
+    if len(text) <= max_chars:
+        return text
+    return f"{text[: max_chars - 3]}..."

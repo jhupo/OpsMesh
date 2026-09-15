@@ -1,14 +1,111 @@
-from __future__ import annotations
-
 from typing import TypedDict
 from uuid import UUID
 
-from backend.app.domains.workspace.teams.operations.command_center_payloads import (
+from backend.app.domains.workspace.teams.operations.operator_actions import TEAM_OPERATOR_ACTIONS
+from backend.app.domains.workspace.teams.operations.views import (
+    _dict,
     _int,
+    _list,
     _uuid_list,
     _uuid_value,
 )
-from backend.app.domains.workspace.teams.operations.operator_actions import TEAM_OPERATOR_ACTIONS
+from backend.app.domains.workspace.teams.runtime.service import (
+    TEAM_RUNTIME_RUNNING,
+    TEAM_RUNTIME_STALL_THRESHOLD,
+)
+
+
+def _provider_action_plan(provider_readiness: dict[str, object]) -> list[dict[str, object]]:
+    return _source_action_plan(
+        source="provider_readiness", items=_list(provider_readiness.get("action_plan"))
+    )
+
+
+def _merged_action_plan(
+    *,
+    overview: dict[str, object],
+    handoff_queue: dict[str, object],
+    manager_queue: dict[str, object],
+) -> list[dict[str, object]]:
+    return [
+        *_source_action_plan(
+            source="execution_overview",
+            items=_list(_dict(overview.get("summary")).get("intervention_plan")),
+        ),
+        *_source_action_plan(
+            source="handoff_queue",
+            items=_list(_dict(handoff_queue.get("summary")).get("team_operator_action_plan")),
+        ),
+        *_source_action_plan(
+            source="manager_queue",
+            items=_list(_dict(manager_queue.get("summary")).get("team_operator_action_plan")),
+        ),
+    ]
+
+
+def _runtime_action_plan(runtime_state: object) -> list[dict[str, object]]:
+    status = getattr(runtime_state, "status", None)
+    workspace_runtime_id = getattr(runtime_state, "workspace_runtime_id", None)
+    runtime_status = getattr(runtime_state, "runtime_status", None)
+    metadata = _dict(getattr(runtime_state, "metadata", {}))
+    stall_count = _int(metadata.get("stall_count"))
+    stalled_at = metadata.get("stalled_at")
+    if stalled_at or stall_count >= TEAM_RUNTIME_STALL_THRESHOLD:
+        return [
+            {
+                "source": "team_runtime",
+                "source_index": 0,
+                "automation": "team_runtime_control",
+                "action": "review_team_runtime_stall",
+                "priority": 120,
+                "reason": metadata.get("stall_reason") or "team_runtime_stalled",
+                "stall_count": stall_count,
+                "stall_threshold": _int(metadata.get("stall_threshold"))
+                or TEAM_RUNTIME_STALL_THRESHOLD,
+                "stalled_at": stalled_at,
+                "task_ids": [],
+                "task_step_ids": [],
+            }
+        ]
+    if status != TEAM_RUNTIME_RUNNING:
+        return [
+            {
+                "source": "team_runtime",
+                "source_index": 0,
+                "automation": "team_runtime_control",
+                "action": "start_team_runtime",
+                "priority": 90,
+                "reason": "team_runtime_not_running",
+                "task_ids": [],
+                "task_step_ids": [],
+            }
+        ]
+    if workspace_runtime_id is None or runtime_status != "running":
+        return [
+            {
+                "source": "team_runtime",
+                "source_index": 0,
+                "automation": "team_runtime_control",
+                "action": "ensure_team_runtime",
+                "priority": 95,
+                "reason": "workspace_runtime_not_running",
+                "workspace_runtime_id": workspace_runtime_id,
+                "runtime_status": runtime_status,
+                "task_ids": [],
+                "task_step_ids": [],
+            }
+        ]
+    return []
+
+
+def _source_action_plan(*, source: str, items: list[object]) -> list[dict[str, object]]:
+    action_plan: list[dict[str, object]] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        action_plan.append({**item, "source": source, "source_index": index})
+    return action_plan
+
 
 COMMAND_CENTER_ACTION_SOURCES = {
     "execution_overview",
@@ -48,7 +145,6 @@ def _group_applicable_actions(
     allowed_actions = set(actions or TEAM_OPERATOR_ACTIONS | RUNTIME_OPERATOR_ACTIONS)
     grouped: dict[str, ActionGroup] = {}
     skipped: list[dict[str, object]] = []
-
     for index, item in enumerate(action_plan):
         if not isinstance(item, dict):
             skipped.append(_skip(index, "invalid_action_plan_item", item))
@@ -63,8 +159,9 @@ def _group_applicable_actions(
         if action in NON_APPLICABLE_RUNTIME_ACTIONS:
             skipped.append(_skip(index, "manual_operator_review_required", item))
             continue
-        if not isinstance(action, str) or action not in (
-            TEAM_OPERATOR_ACTIONS | RUNTIME_OPERATOR_ACTIONS
+        if (
+            not isinstance(action, str)
+            or action not in TEAM_OPERATOR_ACTIONS | RUNTIME_OPERATOR_ACTIONS
         ):
             skipped.append(_skip(index, "unsupported_action", item))
             continue
@@ -80,7 +177,6 @@ def _group_applicable_actions(
         if automation == "team_operator_action" and action not in TEAM_OPERATOR_ACTIONS:
             skipped.append(_skip(index, "unsupported_operator_action", item))
             continue
-
         task_step_ids = _uuid_list(item.get("task_step_ids"))
         agent_profile_id = _uuid_value(item.get("agent_profile_id"))
         if automation == "team_operator_action" and action == "reassign_step":
@@ -90,7 +186,6 @@ def _group_applicable_actions(
             if len(task_step_ids) != 1:
                 skipped.append(_skip(index, "invalid_reassign_step_count", item))
                 continue
-
         group_key = (
             f"{action}:{agent_profile_id}:{task_step_ids[0]}"
             if action == "reassign_step"
@@ -117,11 +212,7 @@ def _group_applicable_actions(
         group["task_step_ids"] = list(dict.fromkeys([*group["task_step_ids"], *task_step_ids]))
         group["candidate_count"] += 1
         group["max_priority"] = max(group["max_priority"], _int(item.get("priority")))
-
-    ordered = sorted(
-        grouped.values(),
-        key=lambda item: (-item["max_priority"], item["action"]),
-    )
+    ordered = sorted(grouped.values(), key=lambda item: (-item["max_priority"], item["action"]))
     selected = ordered[:max_actions]
     for item in ordered[max_actions:]:
         skipped.append(
@@ -132,7 +223,7 @@ def _group_applicable_actions(
                 "reason": "max_actions_exceeded",
             }
         )
-    return [dict(item) for item in selected], skipped
+    return ([dict(item) for item in selected], skipped)
 
 
 def _skip(index: int, reason: str, item: dict[str, object] | object) -> dict[str, object]:
@@ -145,11 +236,7 @@ def _skip(index: int, reason: str, item: dict[str, object] | object) -> dict[str
     }
 
 
-def _runtime_action_result(
-    item: dict[str, object],
-    status: str,
-    reason: str,
-) -> dict[str, object]:
+def _runtime_action_result(item: dict[str, object], status: str, reason: str) -> dict[str, object]:
     return {
         "action": item["action"],
         "automation": item["automation"],

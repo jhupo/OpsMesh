@@ -15,7 +15,7 @@ from backend.app.domains.workspace.teams.execution.queue_repository import (
     TeamExecutionLoopQueueRepository,
 )
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.domains.workspace.teams.provider_readiness_service import (
+from backend.app.domains.workspace.teams.providers.service import (
     TeamProviderReadinessService,
 )
 from backend.app.domains.workspace.teams.runtime.service import (

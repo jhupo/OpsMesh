@@ -5,7 +5,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.workspace.teams.command_center import TeamCommandCenterService
 from backend.app.domains.workspace.teams.execution.loop_finalization import (
     TeamExecutionFinalizationService,
 )
@@ -24,6 +23,7 @@ from backend.app.domains.workspace.teams.execution.queue import (
     TeamExecutionLoopQueueService,
 )
 from backend.app.domains.workspace.teams.execution.runtime_candidates import _runtime_status
+from backend.app.domains.workspace.teams.operations.command_center import TeamCommandCenterService
 from backend.app.domains.workspace.teams.runtime.service import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,

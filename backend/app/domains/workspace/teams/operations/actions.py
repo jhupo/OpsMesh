@@ -4,17 +4,17 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.workspace.teams.operations.command_center_grouping import (
+from backend.app.domains.workspace.teams.operations.action_plan import (
     NON_APPLICABLE_RUNTIME_ACTIONS,
     _runtime_action_result,
 )
-from backend.app.domains.workspace.teams.operations.command_center_payloads import (
+from backend.app.domains.workspace.teams.operations.operator_actions import (
+    TeamOperatorActionService,
+)
+from backend.app.domains.workspace.teams.operations.views import (
     _runtime_payload,
     _uuid_list,
     _uuid_value,
-)
-from backend.app.domains.workspace.teams.operations.operator_actions import (
-    TeamOperatorActionService,
 )
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.runtime.environment.lifecycle.control import RuntimeLifecycleControl

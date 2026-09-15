@@ -7,7 +7,6 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.core.common.values import dict_or_empty, dict_or_none, optional_string
-from backend.app.domains.workspace.teams.command_center import TeamCommandCenterService
 from backend.app.domains.workspace.teams.execution.loop_finalization import (
     TeamExecutionFinalizationService,
 )
@@ -17,6 +16,7 @@ from backend.app.domains.workspace.teams.execution.loop_payloads import (
     _without_finalizable_review_actions,
 )
 from backend.app.domains.workspace.teams.execution.loop_support import TeamExecutionLoopRepository
+from backend.app.domains.workspace.teams.operations.command_center import TeamCommandCenterService
 
 
 class ExecutionLoopStatusSummary(TypedDict):

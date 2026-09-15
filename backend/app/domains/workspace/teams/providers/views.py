@@ -30,7 +30,7 @@ from backend.app.domains.agents.providers.policy import (
     model_provider_base_url_host,
 )
 from backend.app.domains.agents.providers.views import agent_model_provider_summary
-from backend.app.domains.workspace.teams.operations.console_normalization import _uuid_or_none
+from backend.app.domains.workspace.teams.operations.views import _uuid_or_none
 
 
 def _provider_management_suggested_actions(

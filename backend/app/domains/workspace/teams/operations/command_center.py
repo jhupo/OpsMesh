@@ -10,19 +10,17 @@ from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics i
 from backend.app.domains.orchestration.tasks.observation.execution import (
     TaskExecutionDiagnosticsService,
 )
-from backend.app.domains.workspace.teams.execution_overview import TeamExecutionOverviewService
-from backend.app.domains.workspace.teams.operations.command_center_action_plan import (
+from backend.app.domains.workspace.teams.execution.overview import TeamExecutionOverviewService
+from backend.app.domains.workspace.teams.operations.action_plan import (
+    _group_applicable_actions,
     _merged_action_plan,
     _provider_action_plan,
     _runtime_action_plan,
 )
-from backend.app.domains.workspace.teams.operations.command_center_apply import (
+from backend.app.domains.workspace.teams.operations.actions import (
     TeamCommandCenterActionApplier,
 )
-from backend.app.domains.workspace.teams.operations.command_center_grouping import (
-    _group_applicable_actions,
-)
-from backend.app.domains.workspace.teams.operations.command_center_payloads import (
+from backend.app.domains.workspace.teams.operations.views import (
     _dict,
     _list,
     _provider_readiness_blocked,
@@ -31,7 +29,7 @@ from backend.app.domains.workspace.teams.operations.command_center_payloads impo
     _string_list,
     _summary,
 )
-from backend.app.domains.workspace.teams.provider_readiness_service import (
+from backend.app.domains.workspace.teams.providers.service import (
     TeamProviderReadinessService,
 )
 from backend.app.domains.workspace.teams.runtime.scheduling_blocks import (
@@ -225,9 +223,7 @@ class TeamCommandCenterService:
                     "skipped_action_count": len(skipped),
                     "scheduled_run_count": len(scheduled_runs),
                     "scheduled_run_skip_reason": scheduled_run_skip_reason,
-                    "scheduled_run_blocked_reasons": scheduled_run_blocking[
-                        "blocked_reasons"
-                    ],
+                    "scheduled_run_blocked_reasons": scheduled_run_blocking["blocked_reasons"],
                     "scheduled_run_blocked_steps": scheduled_run_blocking["blocked_steps"],
                     "actions": [str(item["action"]) for item in results],
                     "sources": sorted(
