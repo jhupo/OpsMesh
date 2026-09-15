@@ -4,7 +4,7 @@ from backend.app.domains.orchestration.runs.execution import (
 )
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
 
 
 class AgentRunJobHandler:

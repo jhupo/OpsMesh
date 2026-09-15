@@ -3,8 +3,8 @@ from backend.app.domains.knowledge.models import KnowledgeSource
 from backend.app.domains.workspace.storage.storage import create_storage
 from backend.app.runtime.environment.url_fetch import RuntimeUrlFetcher
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
-from backend.app.runtime.workers.execution.routing import required_int
+from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.routing import required_int
 
 
 class KnowledgeIngestJobHandler:

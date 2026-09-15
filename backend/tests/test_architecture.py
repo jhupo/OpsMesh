@@ -480,15 +480,26 @@ def test_tenant_modules_are_nested_by_function() -> None:
 
 def test_worker_modules_are_nested_by_function() -> None:
     workers = ROOT / "backend/app/runtime/workers"
-    expected = {"execution", "lifecycle", "scheduling"}
+    expected = {"handlers", "lifecycle", "scheduling"}
     assert {path.name for path in workers.iterdir() if path.is_dir()} >= expected
     assert (workers / "queue.py").is_file()
     assert not (workers / "queue").exists()
+    assert not (workers / "execution").exists()
     root_modules = {path.stem for path in workers.glob("*.py") if path.name != "__init__.py"}
-    assert root_modules == {"cli", "contracts", "queue"}
-    assert (workers / "execution/handlers/__init__.py").is_file()
+    assert root_modules == {
+        "capacity",
+        "cli",
+        "contracts",
+        "models",
+        "queue",
+        "registry",
+        "revision",
+        "routing",
+        "runner",
+        "state",
+    }
+    assert (workers / "handlers/__init__.py").is_file()
     for name in (
-        "capacity.py",
         "handlers.py",
         "heartbeat.py",
         "job_handlers",
@@ -508,7 +519,6 @@ def test_worker_modules_are_nested_by_function() -> None:
         "revision_planner.py",
         "routing_payloads.py",
         "run_state.py",
-        "runner.py",
         "runner_models.py",
         "scheduled_jobs.py",
         "scheduled_models.py",

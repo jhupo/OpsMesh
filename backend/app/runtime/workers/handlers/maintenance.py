@@ -5,8 +5,8 @@ from backend.app.domains.agents.providers.contracts import provider_health_probe
 from backend.app.domains.agents.providers.health.service import ModelProviderHealthService
 from backend.app.observability.audit.integrity import AuditIntegrityService
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
-from backend.app.runtime.workers.execution.routing import positive_float
+from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.routing import positive_float
 
 
 class SecretReencryptJobHandler:

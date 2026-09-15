@@ -7,8 +7,8 @@ from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
 from backend.app.domains.workspace.extensions.models import RevisionRequest
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
-from backend.app.runtime.workers.execution.revision import RevisionRequestPlanner
+from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.revision import RevisionRequestPlanner
 
 
 class TaskPlanJobHandler:

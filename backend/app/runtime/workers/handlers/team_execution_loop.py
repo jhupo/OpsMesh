@@ -1,7 +1,7 @@
-from backend.app.domains.workspace.teams.execution_loop import TeamExecutionLoopService
+from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoopService
 from backend.app.runtime.environment.service import RuntimeControlService
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
 
 
 class TeamExecutionLoopJobHandler:

@@ -4,7 +4,7 @@ import logging
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from threading import Event
+from threading import Event, Thread
 
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
@@ -24,11 +24,8 @@ from backend.app.domains.capabilities.mcp.transport.contracts import (
 from backend.app.domains.platform.updates.service import maintenance_enabled
 from backend.app.runtime.operations.workers.capacity import WorkerCapacitySnapshotService
 from backend.app.runtime.operations.workers.heartbeats import WorkerHeartbeatOperationsService
+from backend.app.runtime.workers.capacity import worker_can_run_job
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.execution.capacity import worker_can_run_job
-from backend.app.runtime.workers.execution.models import WorkerRunnerConfig, WorkerRunSummary
-from backend.app.runtime.workers.execution.registry import WorkerJobHandler
-from backend.app.runtime.workers.execution.state import WorkerRunState
 from backend.app.runtime.workers.lifecycle.heartbeat import worker_status_for_failures
 from backend.app.runtime.workers.lifecycle.maintenance import (
     WorkerMaintenanceConfig,
@@ -36,7 +33,10 @@ from backend.app.runtime.workers.lifecycle.maintenance import (
     WorkerMaintenanceSummary,
 )
 from backend.app.runtime.workers.lifecycle.reporting import WorkerLeaseReporter
+from backend.app.runtime.workers.models import WorkerRunnerConfig, WorkerRunSummary
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.runtime.workers.state import WorkerRunState
 
 logger = logging.getLogger(__name__)
 
@@ -80,38 +80,104 @@ class WorkerRunner:
             if not capacity.accepting:
                 return False
             worker_capacity = capacity.capacity or {}
-            job = self._queue.dequeue_matching(
+            queue_lease = self._queue.dequeue_matching_with_lease(
                 lambda candidate: worker_can_run_job(candidate, worker_capacity),
                 scan_limit=self._config.job_scan_limit,
             )
-            if job is None:
+            if queue_lease is None:
                 return False
+            job = queue_lease.job
+            claim_token = queue_lease.lease_token
             with self._job_log_context(job):
-                self._lease_reporter.start_lease(job)
-                session.commit()  # release the admission lock before long-running execution
                 try:
-                    self._handle_job(job)
+                    self._lease_reporter.start_lease(
+                        job,
+                        claim_token=claim_token,
+                        session=session,
+                    )
                 except Exception as exc:
-                    failure_status = "retrying" if job.can_retry else "failed"
-                    self._lease_reporter.finish_lease(
-                        job,
-                        status=failure_status,
-                        metadata={"error": str(exc)},
-                    )
-                    self._lease_reporter.record_team_execution_loop_failure(
-                        job,
-                        status=failure_status,
-                        error=exc,
-                    )
+                    session.rollback()
                     self._queue.retry_or_dead_letter(
                         job,
                         error=exc,
                         delay_seconds=self._retry_delay(job),
+                        lease_token=claim_token,
                     )
                     raise
-                self._lease_reporter.finish_lease(job, status="completed")
-                self._queue.ack(job)
+                session.commit()  # release the admission lock before long-running execution
+                with self._lease_heartbeat(job, claim_token):
+                    try:
+                        self._handle_job(job)
+                    except Exception as exc:
+                        failure_status = "retrying" if job.can_retry else "failed"
+                        self._lease_reporter.finish_lease(
+                            job,
+                            claim_token=claim_token,
+                            status=failure_status,
+                            metadata={"error": str(exc)},
+                        )
+                        self._lease_reporter.record_team_execution_loop_failure(
+                            job,
+                            status=failure_status,
+                            error=exc,
+                        )
+                        self._queue.retry_or_dead_letter(
+                            job,
+                            error=exc,
+                            delay_seconds=self._retry_delay(job),
+                            lease_token=claim_token,
+                        )
+                        raise
+                    if not self._lease_reporter.finish_lease(
+                        job,
+                        claim_token=claim_token,
+                        status="completed",
+                    ):
+                        raise RuntimeError("Worker lease was lost before job completion")
+                    if not self._queue.ack(job, lease_token=claim_token):
+                        raise RuntimeError("Queue lease was lost before job acknowledgement")
         return True
+
+    @contextmanager
+    def _lease_heartbeat(self, job: JobPayload, claim_token: str) -> Iterator[None]:
+        interval = self._config.heartbeat_interval_seconds
+        if interval <= 0:
+            yield
+            return
+
+        stopped = Event()
+        lost = Event()
+
+        def pulse() -> None:
+            while not stopped.wait(interval):
+                try:
+                    if not self._queue.heartbeat(job, lease_token=claim_token):
+                        lost.set()
+                        return
+                    if not self._lease_reporter.heartbeat_lease(
+                        job,
+                        claim_token=claim_token,
+                    ):
+                        lost.set()
+                        return
+                except Exception:
+                    lost.set()
+                    logger.exception("Worker lease heartbeat failed")
+                    return
+
+        thread = Thread(
+            target=pulse,
+            name=f"opsmesh-lease-{job.job_id}",
+            daemon=True,
+        )
+        thread.start()
+        try:
+            yield
+        finally:
+            stopped.set()
+            thread.join(timeout=max(1.0, interval))
+        if lost.is_set():
+            raise RuntimeError("Worker lease heartbeat was lost")
 
     def _handle_job(self, job: JobPayload) -> None:
         with self._session_scope() as session:

@@ -3,8 +3,8 @@ from backend.app.runtime.environment.service import RuntimeControlService
 from backend.app.runtime.operations.runtimes.cleanup import RuntimeCleanupService
 from backend.app.runtime.operations.workers.lease_maintenance import WorkerLeaseMaintenanceService
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
-from backend.app.runtime.workers.execution.routing import (
+from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.routing import (
     bool_value,
     optional_uuid,
     positive_float,

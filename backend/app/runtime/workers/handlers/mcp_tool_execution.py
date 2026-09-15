@@ -4,8 +4,8 @@ from backend.app.domains.capabilities.mcp.execution.service import McpToolExecut
 from backend.app.domains.capabilities.mcp.execution.types import McpExecutionRequest
 from backend.app.domains.capabilities.mcp.transport.resolver import McpAdapterResolver
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
-from backend.app.runtime.workers.execution.routing import (
+from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.routing import (
     dict_payload,
     optional_uuid,
     required_string,

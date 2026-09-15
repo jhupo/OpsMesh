@@ -9,7 +9,7 @@ from backend.app.domains.agents.memory.embedding_service import (
 from backend.app.domains.agents.memory.models import WorkspaceMemoryConfiguration
 from backend.app.observability.costs.service import CostBudgetExceededError
 from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
 
 
 class MemoryEmbeddingJobHandler:

@@ -10,7 +10,7 @@ from backend.app.domains.capabilities.mcp.transport.contracts import (
 )
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.execution.handlers import (
+from backend.app.runtime.workers.handlers import (
     AgentRunJobHandler,
     AuditIntegrityJobHandler,
     KnowledgeIngestJobHandler,
@@ -26,7 +26,7 @@ from backend.app.runtime.workers.execution.handlers import (
     WebhookDeliveryJobHandler,
     WorkspaceArchiveExportJobHandler,
 )
-from backend.app.runtime.workers.execution.handlers.context import WorkerJobHandlerContext
+from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
 from backend.app.runtime.workers.queue import RedisQueue
 
 
