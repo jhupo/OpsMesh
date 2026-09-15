@@ -32,7 +32,7 @@ from backend.app.domains.workspace.teams.runtime.state_builder import (
     TeamRuntimeState,
     TeamRuntimeStateBuilder,
 )
-from backend.app.domains.workspace.teams.runtime.workspace_binding import (
+from backend.app.domains.workspace.teams.runtime.binding import (
     TeamWorkspaceRuntimeBindingService,
 )
 from backend.app.runtime.environment.contracts import RuntimeLimits

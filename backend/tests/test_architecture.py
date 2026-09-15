@@ -256,11 +256,15 @@ def test_team_features_are_nested_by_function() -> None:
         "workspace_service",
     }
     assert (teams / "runtime/service.py").is_file()
+    assert (teams / "runtime/binding.py").is_file()
     assert (teams / "operations/console_normalization.py").is_file()
     for name in (
         "runtime/service_binding.py",
         "runtime/service_heartbeat.py",
         "runtime/service_lifecycle.py",
+        "runtime/workspace_binding.py",
+        "runtime/workspace_binding_commit.py",
+        "runtime/workspace_binding_payloads.py",
         "operations/command_center_utils.py",
         "organization/policy_visibility.py",
         "operations/console_utils.py",
@@ -819,7 +823,7 @@ def test_api_schemas_are_nested_by_function() -> None:
 def test_api_services_are_nested_by_function() -> None:
     services = ROOT / "backend/app/api/services"
     assert not any(path.suffix == ".py" for path in services.rglob("*.py"))
-    assert (ROOT / "backend/app/domains/workspace/projects/imports/__init__.py").is_file()
+    assert (ROOT / "backend/app/domains/workspace/data_transfer/importers/__init__.py").is_file()
     assert (ROOT / "backend/app/domains/workspace/storage/service.py").is_file()
 
 
