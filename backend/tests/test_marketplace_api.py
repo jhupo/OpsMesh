@@ -11,11 +11,11 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
-from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.models import ModelProviderCredential
@@ -55,8 +55,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm."
-        "LlmResourceReviewer.review",
+        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -93,6 +92,8 @@ def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
     listing_id = created.json()["id"]
     assert created.json()["listing_type"] == "plugin"
     assert created.json()["status"] == "pending_approval"
+    assert created.json()["executable"] is False
+    assert created.json()["execution_mode"] == "metadata_only"
     assert created.json()["manifest"]["api_key"] == "[redacted]"
 
     approvals = client.get(
@@ -113,6 +114,8 @@ def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
     assert market.status_code == 200
     assert market.json()["total"] == 1
     assert market.json()["items"][0]["id"] == listing_id
+    assert market.json()["items"][0]["executable"] is False
+    assert market.json()["items"][0]["execution_mode"] == "metadata_only"
     assert "plugin-secret" not in str(market.json())
 
     installed = client.post(
@@ -125,6 +128,9 @@ def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
     installed_body = installed.json()
     assert installed_body["workspace_id"] == str(buyer_workspace.id)
     assert installed_body["listing_type"] == "plugin"
+    assert installed_body["installed_resource_id"] is None
+    assert installed_body["executable"] is False
+    assert installed_body["execution_mode"] == "metadata_only"
     assert installed_body["installed_name"] == "Linear Sync"
     assert installed_body["installed_manifest"]["api_key"] == "[redacted]"
     assert installed_body["config"]["token"] == "[redacted]"
@@ -137,6 +143,7 @@ def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
     assert installs.status_code == 200
     assert installs.json()["total"] == 1
     assert installs.json()["items"][0]["id"] == installed_body["id"]
+    assert installs.json()["items"][0]["executable"] is False
     assert session.query(MarketplaceListing).count() == 1
     assert session.query(WorkspaceMarketplaceInstall).count() == 1
 

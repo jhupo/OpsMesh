@@ -183,7 +183,21 @@ class CapabilityResourceResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
+class CapabilityMcpCredentialBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    credential_reference_id: UUID
+    mcp_server_id: UUID | None
+    configuration_version: int = Field(ge=1)
+    provider: str
+    scopes: list[str] = Field(default_factory=list)
+    secret_fingerprint: str | None = None
+    encryption_key_id: str | None = None
+
+
 class CapabilityToolDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     source: Literal["product", "mcp"]
     description: str
@@ -195,6 +209,11 @@ class CapabilityToolDescriptor(BaseModel):
     mcp_tool_allowlist_id: UUID | None = None
     mcp_server_name: str | None = None
     mcp_server_type: str | None = None
+    mcp_server_configuration_version: int | None = Field(default=None, ge=1)
+    mcp_tool_configuration_version: int | None = Field(default=None, ge=1)
+    mcp_requires_credentials: bool = False
+    mcp_credential_references: list[CapabilityMcpCredentialBinding] = Field(default_factory=list)
+    mcp_blocked_reasons: list[str] = Field(default_factory=list)
     policy: dict[str, object] = Field(default_factory=dict)
     required_resource_type: ResourceType | None = None
     required_access_modes: list[ResourceAccessMode] = Field(default_factory=list)

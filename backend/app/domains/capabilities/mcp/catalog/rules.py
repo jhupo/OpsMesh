@@ -53,17 +53,35 @@ def mcp_blocked_reasons(
     credential_status: str,
     stale_after: timedelta,
 ) -> list[str]:
+    reasons = mcp_server_execution_blockers(
+        server,
+        credentials_ready=credential_status != "missing_required",
+        stale_after=stale_after,
+    )
+    if not tools:
+        reasons.append("no_allowed_tools")
+    return reasons
+
+
+def mcp_server_execution_blockers(
+    server: McpServer,
+    *,
+    credentials_ready: bool,
+    stale_after: timedelta,
+) -> list[str]:
     reasons: list[str] = []
     server_type = normalized_server_type(server)
     if server.status != "active":
         reasons.append("server_inactive")
-    if server.health_status == "unhealthy":
-        reasons.append("server_unhealthy")
-    if mcp_health_check_stale(server, stale_after=stale_after):
+    if server.health_status != "healthy":
+        reasons.append(
+            "server_unhealthy" if server.health_status == "unhealthy" else "server_health_unready"
+        )
+    if server.last_health_check_at is None:
+        reasons.append("health_check_missing")
+    elif mcp_health_check_stale(server, stale_after=stale_after):
         reasons.append("health_check_stale")
-    if not tools:
-        reasons.append("no_allowed_tools")
-    if credential_status == "missing_required":
+    if not credentials_ready:
         reasons.append("missing_required_credentials")
     if execution_mode(server) == "unsupported":
         reasons.append("unsupported_server_type")

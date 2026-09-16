@@ -237,6 +237,14 @@ class MarketplaceService:
                 "installed_resource_id": str(installed_resource_id)
                 if installed_resource_id is not None
                 else None,
+                "executable": (
+                    listing.listing_type != "plugin" and installed_resource_id is not None
+                ),
+                "execution_mode": (
+                    "provisioned_resource"
+                    if listing.listing_type != "plugin" and installed_resource_id is not None
+                    else "metadata_only"
+                ),
             },
         )
         commit_or_raise_conflict(
@@ -288,4 +296,3 @@ class MarketplaceService:
         page: PageParams,
     ) -> tuple[list[MarketplaceListing], int]:
         return page_scalars(self._session, statement, page)
-

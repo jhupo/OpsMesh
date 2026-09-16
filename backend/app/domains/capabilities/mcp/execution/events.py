@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
+from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.governance.agent_policy import agent_allowed_mcp_tool_names
 from backend.app.domains.capabilities.mcp.execution.contracts import (
@@ -36,6 +37,11 @@ from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import TaskMessage
+from backend.app.observability.audit.service import AuditService
+from backend.app.observability.telemetry.trace_context import (
+    current_trace_context,
+    with_current_trace_metadata,
+)
 
 
 class McpToolCallLogQueryService:
@@ -60,15 +66,22 @@ class McpToolCallLogQueryService:
             if run is not None and run.agent_profile_id is not None
             else None
         )
-        agent_allowed_tools = (
-            agent_allowed_mcp_tool_names(agent) if agent is not None else None
-        )
+        agent_allowed_tools = agent_allowed_mcp_tool_names(agent) if agent is not None else None
         if agent_allowed_tools is not None and data.tool_name not in agent_allowed_tools:
             raise ValueError("MCP tool is not allowed for this agent")
-        request_payload = data.request
-        response_payload = data.response
-        error_payload = data.error
-        payload = data.model_dump()
+        request_payload = redact_sensitive_payload(data.request)
+        response_payload = (
+            redact_sensitive_payload(data.response) if data.response is not None else None
+        )
+        error_payload = redact_sensitive_payload(data.error) if data.error is not None else None
+        payload = data.model_dump(exclude={"request", "response", "error"})
+        payload.update(
+            {
+                "request": with_current_trace_metadata(request_payload),
+                "response": response_payload,
+                "error": error_payload,
+            }
+        )
         if run is not None:
             payload.update(
                 {
@@ -77,12 +90,15 @@ class McpToolCallLogQueryService:
                     "agent_profile_id": run.agent_profile_id,
                 }
             )
+        trace = current_trace_context()
         log = McpToolCallLog(
             workspace_id=workspace_id,
             latency_ms=_latency_ms_from_payload(response_payload, error_payload),
             argument_sha256=hash_from_payload(request_payload, "arguments_sha256"),
             response_sha256=response_hash_from_payload(response_payload),
             error_code=error_code(error_payload),
+            trace_id=trace.trace_id if trace is not None else None,
+            span_id=trace.span_id if trace is not None else None,
             created_at=datetime.now(UTC),
             **payload,
         )
@@ -174,6 +190,11 @@ class McpToolCallLogService:
     ) -> McpToolCallLog:
         argument_sha256 = payload_hash(request.arguments)
         response_sha256 = mcp_response_hash(response)
+        redacted_response = (
+            redact_sensitive_payload(response) if response is not None else None
+        )
+        redacted_error = redact_sensitive_payload(error) if error is not None else None
+        trace = current_trace_context()
         log = McpToolCallLog(
             workspace_id=request.workspace_id,
             mcp_server_id=server_id,
@@ -187,13 +208,18 @@ class McpToolCallLogService:
             argument_sha256=argument_sha256,
             response_sha256=response_sha256,
             error_code=error_code(error),
-            request={
-                "arguments_sha256": argument_sha256,
-                "argument_bytes": len(canonical_payload(request.arguments).encode("utf-8")),
-                **snapshot_audit_metadata(snapshot or {}),
-            },
-            response=response,
-            error=error,
+            trace_id=trace.trace_id if trace is not None else None,
+            span_id=trace.span_id if trace is not None else None,
+            request=with_current_trace_metadata(
+                {
+                    "arguments_sha256": argument_sha256,
+                    "argument_bytes": len(canonical_payload(request.arguments).encode("utf-8")),
+                    "cost_correlation_agent_run_id": str(request.agent_run_id),
+                    **snapshot_audit_metadata(snapshot or {}),
+                }
+            ),
+            response=redacted_response,
+            error=redacted_error,
             created_at=datetime.now(UTC),
         )
         self.session.add(log)
@@ -239,4 +265,34 @@ class McpExecutionNotifier:
             message_type=message_type,
             body=body,
             payload=payload,
+        )
+
+    def append_execution_audit(
+        self,
+        *,
+        run: AgentRun,
+        request: McpExecutionRequest,
+        server_id: UUID | None,
+        log: McpToolCallLog,
+        action: str,
+        snapshot: dict[str, object],
+    ) -> None:
+        AuditService(self.session).record_system_action(
+            workspace_id=run.workspace_id,
+            action=action,
+            target_type="agent_run",
+            target_id=run.id,
+            metadata={
+                "mcp_tool_call_log_id": str(log.id),
+                "mcp_server_id": str(server_id) if server_id is not None else None,
+                "tool_name": request.tool_name,
+                "status": log.status,
+                "latency_ms": log.latency_ms,
+                "argument_sha256": log.argument_sha256,
+                "response_sha256": log.response_sha256,
+                "error_code": log.error_code,
+                "approval_id": str(log.approval_id) if log.approval_id is not None else None,
+                "cost_correlation_agent_run_id": str(run.id),
+                **snapshot_audit_metadata(snapshot),
+            },
         )

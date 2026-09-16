@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -46,6 +46,7 @@ from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTI
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.security_models import SecurityEvent
 
 
@@ -83,6 +84,7 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     )
     session.add(credential)
     session.commit()
+    _bind_credential_to_run_snapshot(session, run, credential)
     adapter = RecordingAdapter({"asset_id": "img_123", "status": "created"})
 
     result = asyncio.run(
@@ -109,6 +111,7 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     messages = session.scalars(
         select(TaskMessage).where(TaskMessage.agent_run_id == run.id).order_by(TaskMessage.sequence)
     ).all()
+    audits = session.scalars(select(AuditEvent).where(AuditEvent.agent_run_id == run.id)).all()
 
     assert len(logs) == 1
     assert logs[0].status == "completed"
@@ -119,6 +122,8 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     assert logs[0].argument_sha256 == logs[0].request["arguments_sha256"]
     assert logs[0].response_sha256 is not None
     assert logs[0].error_code is None
+    assert logs[0].trace_id is not None
+    assert logs[0].span_id is not None
     assert logs[0].request["arguments_sha256"]
     assert logs[0].request["authorization_snapshot_version"] == 3
     assert logs[0].request["snapshot_workspace_id"] == str(workspace.id)
@@ -133,9 +138,12 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     assert "mountain" not in str(events[0].event_metadata)
     assert [message.message_type for message in messages] == ["tool.completed"]
     assert messages[0].payload["response_sha256"]
+    assert [audit.action for audit in audits] == ["mcp_tool.completed"]
+    assert audits[0].audit_metadata["mcp_tool_call_log_id"] == str(logs[0].id)
+    assert audits[0].audit_metadata["trace_id"] == logs[0].trace_id
 
 
-def test_mcp_execution_ignores_disabled_credentials() -> None:
+def test_mcp_execution_uses_only_frozen_credentials_and_blocks_changes() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
     run, server = _seed_run_with_mcp_tool(session, workspace)
@@ -159,6 +167,7 @@ def test_mcp_execution_ignores_disabled_credentials() -> None:
     )
     session.add_all([disabled, active_workspace])
     session.commit()
+    _bind_credential_to_run_snapshot(session, run, active_workspace)
     adapter = RecordingAdapter({"ok": True})
 
     result = asyncio.run(
@@ -176,6 +185,21 @@ def test_mcp_execution_ignores_disabled_credentials() -> None:
     assert result.status == "completed"
     assert adapter.calls[0]["credential_names"] == ["active-workspace-secret"]
     assert adapter.calls[0]["credential_secret_payloads"] == ["active-secret"]
+
+    active_workspace.configuration_version += 1
+    session.commit()
+    with pytest.raises(ToolPermissionError, match="mcp_credential_binding_stale"):
+        asyncio.run(
+            McpToolExecutionService(session, adapter).execute(
+                McpExecutionRequest(
+                    workspace_id=workspace.id,
+                    agent_run_id=run.id,
+                    mcp_server_id=server.id,
+                    tool_name="generate_image",
+                    arguments={"prompt": "mountain"},
+                )
+            )
+        )
 
 
 def test_mcp_execution_enforces_frozen_schema_defaults_and_locked_parameters() -> None:
@@ -402,6 +426,7 @@ def test_mcp_execution_blocks_unhealthy_server_before_adapter_call() -> None:
 
     log = session.scalar(select(McpToolCallLog))
     security_event = session.scalar(select(SecurityEvent))
+    audit = session.scalar(select(AuditEvent).where(AuditEvent.agent_run_id == run.id))
 
     assert adapter.calls == []
     assert log is not None
@@ -411,6 +436,9 @@ def test_mcp_execution_blocks_unhealthy_server_before_adapter_call() -> None:
     assert log.request["authorization_snapshot_version"] == 3
     assert security_event is not None
     assert security_event.reason == "mcp_server_unhealthy"
+    assert audit is not None
+    assert audit.action == "mcp_tool.blocked"
+    assert audit.audit_metadata["mcp_tool_call_log_id"] == str(log.id)
 
 
 def test_mcp_execution_blocks_stale_health_check_before_adapter_call() -> None:
@@ -818,6 +846,7 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
     )
     session.add(credential)
     session.commit()
+    _bind_credential_to_run_snapshot(session, run, credential)
     sdk = _FakeSseSdk(_FakeSdkCallToolResult(structured_content={"status": "created"}))
     monkeypatch.setattr(
         "backend.app.domains.capabilities.mcp.transport.remote.sse_client",
@@ -1027,6 +1056,8 @@ def _seed_run_with_mcp_tool(
         name="image-tools",
         server_type="stdio",
         connection={"command": "mcp-image"},
+        health_status="healthy",
+        last_health_check_at=datetime.now(UTC),
     )
     session.add(server)
     session.flush()
@@ -1069,6 +1100,12 @@ def _seed_run_with_mcp_tool(
                     "mcp_server_id": str(server.id),
                     "mcp_tool_allowlist_id": str(allow.id),
                     "mcp_server_name": server.name,
+                    "mcp_server_type": server.server_type,
+                    "mcp_server_configuration_version": server.configuration_version,
+                    "mcp_tool_configuration_version": allow.configuration_version,
+                    "mcp_requires_credentials": False,
+                    "mcp_credential_references": [],
+                    "mcp_blocked_reasons": [],
                     "policy": allow.policy,
                     "required_resource_type": None,
                     "required_access_modes": [],
@@ -1103,6 +1140,39 @@ def _seed_run_with_mcp_tool(
     session.add(run)
     session.commit()
     return run, server
+
+
+def _bind_credential_to_run_snapshot(
+    session: Session,
+    run: AgentRun,
+    credential: McpCredentialReference,
+) -> None:
+    snapshot = deepcopy(run.input["authorization_snapshot"])
+    catalog = snapshot["capability_catalog"]
+    descriptor = catalog["tools"][0]["descriptor"]
+    server = session.get(McpServer, UUID(str(descriptor["mcp_server_id"])))
+    assert server is not None
+    descriptor["mcp_server_type"] = server.server_type
+    descriptor["mcp_server_configuration_version"] = server.configuration_version
+    descriptor["mcp_credential_references"] = [
+        {
+            "credential_reference_id": str(credential.id),
+            "mcp_server_id": (
+                str(credential.mcp_server_id)
+                if credential.mcp_server_id is not None
+                else None
+            ),
+            "configuration_version": credential.configuration_version,
+            "provider": credential.provider,
+            "scopes": list(credential.scopes),
+            "secret_fingerprint": credential.secret_fingerprint,
+            "encryption_key_id": credential.encryption_key_id,
+        }
+    ]
+    catalog["fingerprint"] = effective_catalog_fingerprint(catalog)
+    snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
+    run.input = {"authorization_snapshot": snapshot}
+    session.commit()
 
 
 def _session() -> Session:

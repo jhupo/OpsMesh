@@ -98,6 +98,7 @@ class McpCredentialService:
                     "secret_fingerprint": credential.secret_fingerprint,
                     "scopes": list(credential.scopes),
                     "status": credential.status,
+                    "configuration_version": credential.configuration_version,
                 },
             )
         if actor_user_id is not None:
@@ -121,6 +122,7 @@ class McpCredentialService:
                     "review_required": review.required,
                     "review_risk_level": review.risk_level,
                     "review_reasons": review.reasons,
+                    "configuration_version": credential.configuration_version,
                 },
             )
         commit_or_raise_conflict(self._session, "MCP credential name already exists")
@@ -157,6 +159,7 @@ class McpCredentialService:
             credential.name = data.name
         if data.scopes is not None:
             credential.scopes = next_scopes
+        credential.configuration_version += 1
         if review.required:
             credential.status = RESOURCE_STATUS_PENDING_APPROVAL
             self._request_review(credential, workspace_id, actor_user_id, review)
@@ -216,6 +219,7 @@ class McpCredentialService:
         credential.encrypted_secret_payload = encrypted.ciphertext if encrypted else None
         credential.secret_fingerprint = encrypted.fingerprint if encrypted else None
         credential.encryption_key_id = encrypted.key_id if encrypted else None
+        credential.configuration_version += 1
         if review.required:
             credential.status = RESOURCE_STATUS_PENDING_APPROVAL
             self._request_review(credential, workspace_id, actor_user_id, review)
@@ -266,10 +270,9 @@ class McpCredentialService:
         credential_id: UUID,
         actor_user_id: UUID | None = None,
     ) -> McpCredentialReference:
-        credential = self._session.get(McpCredentialReference, credential_id)
-        if credential is None or credential.workspace_id != workspace_id:
-            raise ValueError("MCP credential reference not found")
+        credential = self._require_credential(workspace_id, credential_id)
         credential.status = "disabled"
+        credential.configuration_version += 1
         if actor_user_id is not None:
             AuditService(self._session).record_user_action(
                 workspace_id=workspace_id,
@@ -282,6 +285,7 @@ class McpCredentialService:
                     "mcp_server_id": str(credential.mcp_server_id)
                     if credential.mcp_server_id is not None
                     else None,
+                    "configuration_version": credential.configuration_version,
                 },
             )
         self._session.commit()
@@ -293,8 +297,15 @@ class McpCredentialService:
         workspace_id: UUID,
         credential_id: UUID,
     ) -> McpCredentialReference:
-        credential = self._session.get(McpCredentialReference, credential_id)
-        if credential is None or credential.workspace_id != workspace_id:
+        credential = self._session.scalar(
+            select(McpCredentialReference)
+            .where(
+                McpCredentialReference.id == credential_id,
+                McpCredentialReference.workspace_id == workspace_id,
+            )
+            .with_for_update()
+        )
+        if credential is None:
             raise ValueError("MCP credential reference not found")
         return credential
 
@@ -334,6 +345,7 @@ class McpCredentialService:
                 "secret_fingerprint": credential.secret_fingerprint,
                 "scopes": list(credential.scopes),
                 "status": credential.status,
+                "configuration_version": credential.configuration_version,
             },
         )
 
@@ -364,6 +376,7 @@ class McpCredentialService:
                 "review_required": review.required,
                 "review_risk_level": review.risk_level,
                 "review_reasons": review.reasons,
+                "configuration_version": credential.configuration_version,
             },
         )
 

@@ -24,6 +24,7 @@ class McpServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     connection: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="private")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    configuration_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     health_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     last_health_check_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -52,6 +53,7 @@ class McpToolAllowlist(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     risk_level: Mapped[str] = mapped_column(String(32), nullable=False, default="low")
     policy: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    configuration_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class McpCredentialReference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -77,6 +79,7 @@ class McpCredentialReference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     encryption_key_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     scopes: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    configuration_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class McpToolCallLog(UUIDPrimaryKeyMixin, Base):
@@ -86,6 +89,7 @@ class McpToolCallLog(UUIDPrimaryKeyMixin, Base):
         Index("ix_mcp_tool_call_logs_workspace_tool", "workspace_id", "tool_name"),
         Index("ix_mcp_tool_call_logs_workspace_status", "workspace_id", "status"),
         Index("ix_mcp_tool_call_logs_workspace_agent", "workspace_id", "agent_profile_id"),
+        Index("ix_mcp_tool_call_logs_workspace_trace", "workspace_id", "trace_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -122,6 +126,8 @@ class McpToolCallLog(UUIDPrimaryKeyMixin, Base):
     argument_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     response_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    span_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
     request: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     response: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)

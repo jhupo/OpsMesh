@@ -60,7 +60,7 @@ and acceptance gates; source code and focused tests remain the implementation au
 | API/Agent Gateway | Implemented at the application boundary: authentication, workspace roles, routing, rate limiting, security headers, and audit |
 | Session, configuration, and tool resolution | Implemented, including persistent sessions, effective Agent/team catalogs, fingerprinted authorization snapshot v3 with frozen runtime Profile and provider fallback policy, dynamic SDK tool schemas, and a fail-closed execution gateway |
 | Multi-Agent runtime | Implemented with the OpenAI Agents SDK, manager/specialist handoffs, approval waits, durable recovery, and worker restart E2E evidence |
-| Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, call audit, runtime-resource placement, live revocation, explicit MCP connection reconfiguration, and credential rotation |
+| Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, runtime-resource placement, live revocation, and versioned server/tool/credential bindings frozen into each Run |
 | MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
 | Run isolation and workspace | Official Docker SDK and self-hosted control-plane contracts, frozen runtime bindings, runtime-space reservations, exact project snapshot staging, declared-output harvesting, and fail-closed stdio routing are implemented; a dedicated `opsmesh-runtime` image provides the isolated MCP SDK helper and connector CLI |
 | Knowledge service | Workspace-scoped source registration, immutable source revisions, idempotent workspace-file/isolated-URL ingestion, citation spans, permission-aware citation retrieval, three-layer memory, Postgres full-text, pgvector/HNSW similarity, weighted hybrid ranking, grant-scoped context injection, lifecycle policy, and evidence are implemented |
@@ -82,7 +82,7 @@ flowchart LR
         Services["Product services<br/>workspaces / teams / tasks / files<br/>memory / approvals / operations"]
         Orchestration["Durable orchestration<br/>plans / runs / events / recovery"]
         Capabilities["Capability governance<br/>skills / MCP / tools / resources<br/>effective catalogs"]
-        RuntimeAuth["Run authorization<br/>snapshot v2 / runtime binding<br/>network / file scope"]
+        RuntimeAuth["Run authorization<br/>snapshot v3 / runtime binding<br/>network / file scope"]
         Access --> Services
         Services --> Orchestration
         Services --> Capabilities
@@ -233,9 +233,11 @@ sequenceDiagram
 ### Capabilities and tools
 
 - Capability, skill, tool-group, MCP server, credential, and allowlist management.
-- MCP execution over isolated stdio plus SDK-backed Streamable HTTP and SSE, with workspace policy
-  and call logging.
-- Public and private marketplace resources with review, installation, version, and provenance data.
+- MCP execution over isolated stdio plus SDK-backed Streamable HTTP and SSE, with frozen
+  server/tool/credential versions, health and quota enforcement, and correlated Run/audit/trace
+  evidence.
+- Public and private marketplace resources with review, installation, version, and provenance data;
+  plugin listings remain explicitly metadata-only and non-executable until a later Plugin Center.
 - Run authorization snapshots that freeze the capabilities allowed for a concrete execution.
 
 ### Isolated execution

@@ -44,11 +44,12 @@
 
 ### 1.4 当前执行证据
 
-`P0-1` 已在当前 checkout 完成，`P0-2` 与 `P0-3` 也已完成定向实现和流程验收；其余功能点仍未完成。此次收口建立了领域合同的唯一
+`P0-1` 至 `P0-6` 已在当前 checkout 完成代码合同收口和对应的定向验证；`P1-7` 至
+`P1-11` 仍未完成。此次收口建立了领域合同的唯一
 所有者、API 到领域/运行时的单向映射和可执行的反向依赖门禁；迁移 head 复核为
-`0089_track_consumed_tool_decisions`。当前证据命令及结果为：
+`0090_mcp_execution_freshness`。当前证据命令及结果为：
 
-- `pytest backend/tests/test_architecture.py`：40 passed；
+- `pytest backend/tests/test_architecture.py`：51 passed；
 - P0-1 影响的能力、MCP、Marketplace、Agent 消息、Workspace 导入导出、Runtime space、
   Operations、Task 定向回归：全部通过；
 - `ruff check backend/app backend/tests/test_architecture.py`：通过；
@@ -58,8 +59,8 @@
 P0-4 的代码合同已经收口；Docker/池/隔离的真实环境验收仍需在带 Docker daemon 的 release
 门禁中执行。本地本轮只执行静态、编译和导入检查，不把缺少 Docker daemon 的工作站结果冒充
 运行时环境验收。P0-5 已完成代码收口，真实双 SDK、审批恢复和取消演练仍需 release 门禁；
-P0-6 至 P1-11 仍保持未完成状态。当前迁移 head 已推进到
-`0089_track_consumed_tool_decisions`。
+P1-7 至 P1-11 仍保持未完成状态。当前迁移 head 已推进到
+`0090_mcp_execution_freshness`。
 
 `P0-2` 已在当前 checkout 完成配置、身份与租户安全收口。运行时 egress、模型 provider
 和 secret redaction 现在共享统一的 URL 形状校验与 host 提取规则：带 userinfo、fragment
@@ -72,7 +73,7 @@ authenticated context、workspace membership、role/capability grant 和 webhook
 - `pytest -q backend/tests/test_model_provider_service.py backend/tests/test_auth_api.py backend/tests/test_authorization.py backend/tests/test_webhooks.py`：通过；
 - `ruff check backend/app backend/tests/test_architecture.py`：通过；
 - `lint-imports --no-cache`：8 kept, 0 broken；
-- `alembic heads`：`0089_track_consumed_tool_decisions`（单 head）；
+- `alembic heads`：`0090_mcp_execution_freshness`（单 head）；
 - `git diff --check`：通过。
 
 `P0-3` 已在当前 checkout 完成 durable queue/worker recovery 收口。Redis 只作为队列投影；
@@ -296,6 +297,20 @@ SDK/模型错误保留可诊断事件但不泄露 secret；恢复不会修改已
 建议提交：`platform-agent-sdk-lifecycle-closure`
 
 ### P0-6 Capability、工具和 MCP 生产闭环（不含插件中心）
+
+状态（2026-09-17）：代码合同已完成。MCP server、tool allowlist 和 credential reference
+使用单调配置版本；有效 catalog 冻结精确 server/tool 版本、credential binding、参数和策略，
+未健康、健康过期、缺少凭据或 transport 配置不完整的工具不会进入 Run 的有效执行清单。
+执行前再次校验实时 active 状态、版本、workspace、health 和凭据绑定，配置重连、凭据轮换或
+禁用后，旧 Run 均 fail closed。调用的完成、失败、等待审批、自托管等待和策略拒绝同时写入
+Run event、调用日志和 WORM audit，并以 `agent_run_id + trace_id + span_id` 关联模型成本与链路。
+Marketplace 的 plugin listing/install 明确返回 `executable=false` 和
+`execution_mode=metadata_only`，不会被当作已安装的运行时资源。
+
+本地定向证据：MCP 授权到执行/证据输出、MCP 健康拒绝、官方 SSE 调用和 Marketplace
+plugin 安装四条既有产品流程通过；受影响模块 Ruff、mypy、compile、架构/导入边界、单
+Alembic head 和 `git diff --check` 通过。
+真实远程 MCP、隔离 stdio 与 PostgreSQL upgrade/downgrade 仍由 release tag 门禁验收。
 
 目标：动态工具清单、资源、参数、部门/团队授权和 MCP 执行都使用现有 capability plane，
 不再增加平行的插件系统。

@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from time import monotonic
-from uuid import UUID
 
-from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.core.security.redaction import redact_sensitive_text
 from backend.app.domains.capabilities.mcp.execution.contracts import (
     McpExecutionError,
     McpExecutionPending,
@@ -45,6 +44,7 @@ class McpToolInvoker:
         server: McpServer,
         snapshot: dict[str, object],
         policy: McpExecutionPolicy,
+        credentials: tuple[McpCredentialReference, ...],
     ) -> McpExecutionResult:
         self._notify_called(request=request, run=run, server=server, snapshot=snapshot)
         started = monotonic()
@@ -54,7 +54,7 @@ class McpToolInvoker:
                 server=server,
                 tool_name=request.tool_name,
                 arguments=request.arguments,
-                credential_refs=self._credential_refs(request.workspace_id, server.id),
+                credential_refs=list(credentials),
                 timeout_seconds=policy.timeout_seconds,
             )
             self._enforce_payload_size(response, policy.max_output_bytes)
@@ -165,6 +165,14 @@ class McpToolInvoker:
                 **pending.response,
             },
         )
+        notifier.append_execution_audit(
+            run=run,
+            request=request,
+            server_id=server.id,
+            log=log,
+            action="mcp_tool.waiting_self_hosted",
+            snapshot=snapshot,
+        )
         self.session.flush()
         return McpExecutionResult(
             status="waiting_self_hosted",
@@ -212,6 +220,14 @@ class McpToolInvoker:
                 "latency_ms": latency_ms,
             },
         )
+        notifier.append_execution_audit(
+            run=run,
+            request=request,
+            server_id=server.id,
+            log=log,
+            action="mcp_tool.failed",
+            snapshot=snapshot,
+        )
         self.session.flush()
         return McpExecutionResult(
             status="failed",
@@ -231,7 +247,7 @@ class McpToolInvoker:
         error: dict[str, object],
         latency_ms: int,
     ) -> None:
-        self._logs().record(
+        log = self._logs().record(
             request=request,
             server_id=server.id,
             status="failed",
@@ -241,11 +257,20 @@ class McpToolInvoker:
             run=run,
             latency_ms=latency_ms,
         )
-        McpExecutionNotifier(self.session).append_run_event(
+        notifier = McpExecutionNotifier(self.session)
+        notifier.append_run_event(
             run=run,
             event_type="tool.failed",
             message=request.tool_name,
             metadata={"tool_kind": "mcp", "error": error, "latency_ms": latency_ms},
+        )
+        notifier.append_execution_audit(
+            run=run,
+            request=request,
+            server_id=server.id,
+            log=log,
+            action="mcp_tool.failed",
+            snapshot=snapshot,
         )
         self.session.flush()
 
@@ -294,6 +319,14 @@ class McpToolInvoker:
                 "response_sha256": payload_hash(response),
             },
         )
+        notifier.append_execution_audit(
+            run=run,
+            request=request,
+            server_id=server.id,
+            log=log,
+            action="mcp_tool.completed",
+            snapshot=snapshot,
+        )
         self.session.flush()
         return McpExecutionResult(
             status="completed",
@@ -310,26 +343,6 @@ class McpToolInvoker:
                 "MCP payload exceeds configured size limit",
                 code="mcp_payload_too_large",
             )
-
-    def _credential_refs(
-        self,
-        workspace_id: UUID,
-        server_id: UUID,
-    ) -> list[McpCredentialReference]:
-        return list(
-            self.session.scalars(
-                select(McpCredentialReference)
-                .where(
-                    McpCredentialReference.workspace_id == workspace_id,
-                    McpCredentialReference.status == "active",
-                    or_(
-                        McpCredentialReference.mcp_server_id == server_id,
-                        McpCredentialReference.mcp_server_id.is_(None),
-                    ),
-                )
-                .order_by(McpCredentialReference.created_at.asc())
-            )
-        )
 
     def _adapter_for(self, server: McpServer) -> McpToolAdapter:
         if isinstance(self.adapter_or_resolver, McpToolAdapterResolver):
@@ -348,7 +361,7 @@ class McpToolInvoker:
 
 def _normalized_error(exc: Exception) -> dict[str, object]:
     if isinstance(exc, McpExecutionError):
-        return {"code": exc.code, "message": str(exc)}
+        return {"code": exc.code, "message": redact_sensitive_text(str(exc))}
     return {"code": "mcp_adapter_failed", "message": exc.__class__.__name__}
 
 

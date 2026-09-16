@@ -38,6 +38,7 @@ class McpServerResponse(TimestampedModel):
     connection: dict[str, object]
     visibility: str
     status: str
+    configuration_version: int
     health_status: str
     last_health_check_at: datetime | None
     last_error: str | None
@@ -95,6 +96,7 @@ class McpToolAllowResponse(TimestampedModel):
     risk_level: str
     policy: dict[str, object]
     status: str
+    configuration_version: int
 
     @field_serializer("policy")
     def _serialize_policy(self, value: dict[str, object]) -> dict[str, object]:
@@ -143,6 +145,7 @@ class McpCredentialReferenceResponse(TimestampedModel):
     encryption_key_id: str | None
     scopes: list[str]
     status: str
+    configuration_version: int
 
     @computed_field  # type: ignore[prop-decorator]
     @property

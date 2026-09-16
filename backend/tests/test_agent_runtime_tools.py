@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -1249,6 +1250,9 @@ def _set_mcp_snapshot(
     server: McpServer,
     allow: McpToolAllowlist,
 ) -> None:
+    server.health_status = "healthy"
+    server.last_health_check_at = datetime.now(UTC)
+    server.connection = {**server.connection, "requires_credentials": False}
     catalog: dict[str, object] = {
         "catalog_version": 1,
         "workspace_id": str(workspace.id),
@@ -1272,6 +1276,11 @@ def _set_mcp_snapshot(
                     "mcp_tool_allowlist_id": str(allow.id),
                     "mcp_server_name": server.name,
                     "mcp_server_type": server.server_type,
+                    "mcp_server_configuration_version": server.configuration_version,
+                    "mcp_tool_configuration_version": allow.configuration_version,
+                    "mcp_requires_credentials": False,
+                    "mcp_credential_references": [],
+                    "mcp_blocked_reasons": [],
                     "policy": allow.policy,
                     "required_resource_type": None,
                     "required_access_modes": [],

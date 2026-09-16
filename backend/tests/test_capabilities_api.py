@@ -204,11 +204,14 @@ def test_capability_skill_and_mcp_control_plane() -> None:
             "mcp_server_id": server.json()["id"],
             "tool_name": "generate_image",
             "status": "waiting_approval",
-            "request": {"prompt": "mountain"},
+            "request": {"prompt": "mountain", "api_key": "secret-value"},
         },
     )
     assert logged.status_code == 201
     assert session.query(McpToolCallLog).count() == 1
+    stored_log = session.query(McpToolCallLog).one()
+    assert stored_log.request["api_key"] == "[redacted]"
+    assert "secret-value" not in str(stored_log.request)
 
     audit = client.get(
         f"/api/v1/workspaces/{workspace.id}/operations/audit-events",
@@ -814,6 +817,7 @@ def test_mcp_server_connection_update_resets_health_and_records_redacted_audit()
     )
     assert server.status_code == 201
     server_id = server.json()["id"]
+    assert server.json()["configuration_version"] == 1
     healthy = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server_id}/health-check",
         headers=_headers(owner.id),
@@ -830,11 +834,13 @@ def test_mcp_server_connection_update_resets_health_and_records_redacted_audit()
     assert updated.status_code == 200
     body = updated.json()
     assert body["health_status"] == "unknown"
+    assert body["configuration_version"] == 2
     assert body["last_health_check_at"] is None
     assert body["connection"]["url_host"] == "new.example.test"
     assert "secret" not in str(body)
     audit = session.query(AuditEvent).filter_by(action="mcp_server.updated").one()
     assert audit.audit_metadata["health_reset"] is True
+    assert audit.audit_metadata["configuration_version"] == 2
     assert audit.audit_metadata["connection"]["remote_host"] == "new.example.test"
     assert "token" not in str(audit.audit_metadata)
 
@@ -861,6 +867,7 @@ def test_mcp_credential_rotation_encrypts_and_supports_external_reference() -> N
     assert credential.status_code == 201
     credential_id = credential.json()["id"]
     old_fingerprint = credential.json()["secret_fingerprint"]
+    assert credential.json()["configuration_version"] == 1
 
     rotated = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials/{credential_id}/rotate",
@@ -870,6 +877,7 @@ def test_mcp_credential_rotation_encrypts_and_supports_external_reference() -> N
     assert rotated.status_code == 200
     rotated_body = rotated.json()
     assert rotated_body["provider"] == "hosted"
+    assert rotated_body["configuration_version"] == 2
     assert rotated_body["secret_fingerprint"] != old_fingerprint
     assert "new-secret" not in str(rotated_body)
 
@@ -881,6 +889,7 @@ def test_mcp_credential_rotation_encrypts_and_supports_external_reference() -> N
     assert external.status_code == 200
     external_body = external.json()
     assert external_body["provider"] == "vault"
+    assert external_body["configuration_version"] == 3
     assert external_body["external_ref_configured"] is True
     assert external_body["external_ref_kind"] == "secret"
     assert external_body["secret_fingerprint"] is None

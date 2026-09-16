@@ -88,6 +88,7 @@ class McpServerService:
                     "server_type": server.server_type,
                     "visibility": server.visibility,
                     "status": server.status,
+                    "configuration_version": server.configuration_version,
                     "connection": dict(server.connection),
                 },
             )
@@ -106,6 +107,7 @@ class McpServerService:
                     "review_required": review.required,
                     "review_risk_level": review.risk_level,
                     "review_reasons": review.reasons,
+                    "configuration_version": server.configuration_version,
                 },
             )
         if commit:
@@ -120,7 +122,12 @@ class McpServerService:
         data: McpServerUpdateRequest,
         actor_user_id: UUID | None = None,
     ) -> McpServer:
-        server = require_mcp_server(self._session, workspace_id, mcp_server_id)
+        server = require_mcp_server(
+            self._session,
+            workspace_id,
+            mcp_server_id,
+            for_update=True,
+        )
         if data.connection is None and data.visibility is None:
             raise ValueError("Provide connection or visibility to update MCP server")
 
@@ -139,6 +146,7 @@ class McpServerService:
             server.connection = dict(data.connection)
         if data.visibility is not None:
             server.visibility = data.visibility
+        server.configuration_version += 1
         if connection_changed:
             server.health_status = "unknown"
             server.last_health_check_at = None
@@ -159,6 +167,7 @@ class McpServerService:
                     "server_type": server.server_type,
                     "visibility": server.visibility,
                     "status": server.status,
+                    "configuration_version": server.configuration_version,
                     "connection": dict(server.connection),
                 },
             )
@@ -180,6 +189,7 @@ class McpServerService:
                     "review_required": review.required,
                     "review_risk_level": review.risk_level,
                     "review_reasons": review.reasons,
+                    "configuration_version": server.configuration_version,
                 },
             )
         self._session.commit()
@@ -249,6 +259,7 @@ class McpServerService:
                     "risk_level": allow.risk_level,
                     "policy": dict(allow.policy),
                     "status": allow.status,
+                    "configuration_version": allow.configuration_version,
                 },
             )
         if actor_user_id is not None:
@@ -265,6 +276,7 @@ class McpServerService:
                     "review_required": review.required,
                     "review_risk_level": review.risk_level,
                     "review_reasons": review.reasons,
+                    "configuration_version": allow.configuration_version,
                 },
             )
         if commit:
@@ -282,11 +294,13 @@ class McpServerService:
     ) -> McpToolAllowlist:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
         allow = self._session.scalar(
-            select(McpToolAllowlist).where(
+            select(McpToolAllowlist)
+            .where(
                 McpToolAllowlist.workspace_id == workspace_id,
                 McpToolAllowlist.mcp_server_id == mcp_server_id,
                 McpToolAllowlist.id == allowlist_id,
             )
+            .with_for_update()
         )
         if allow is None:
             raise ValueError("MCP tool allowlist entry not found")
@@ -332,6 +346,7 @@ class McpServerService:
             setattr(allow, field_name, value)
         allow.input_schema = normalized_schema
         allow.policy = dict(next_policy)
+        allow.configuration_version += 1
         if review.required:
             allow.status = RESOURCE_STATUS_PENDING_APPROVAL
             ResourceReviewApprovalService(self._session).request_resource_review(
@@ -353,6 +368,7 @@ class McpServerService:
                     "risk_level": allow.risk_level,
                     "policy": dict(allow.policy),
                     "status": allow.status,
+                    "configuration_version": allow.configuration_version,
                 },
             )
         if actor_user_id is not None:
@@ -375,6 +391,7 @@ class McpServerService:
                         "status": allow.status,
                     },
                     "review_required": review.required,
+                    "configuration_version": allow.configuration_version,
                 },
             )
         commit_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
@@ -387,8 +404,14 @@ class McpServerService:
         mcp_server_id: UUID,
         actor_user_id: UUID | None = None,
     ) -> McpServer:
-        server = require_mcp_server(self._session, workspace_id, mcp_server_id)
+        server = require_mcp_server(
+            self._session,
+            workspace_id,
+            mcp_server_id,
+            for_update=True,
+        )
         server.status = "disabled"
+        server.configuration_version += 1
         if actor_user_id is not None:
             AuditService(self._session).record_user_action(
                 workspace_id=workspace_id,
@@ -396,7 +419,10 @@ class McpServerService:
                 action="mcp_server.disabled",
                 target_type="mcp_server",
                 target_id=server.id,
-                metadata={"name": server.name},
+                metadata={
+                    "name": server.name,
+                    "configuration_version": server.configuration_version,
+                },
             )
         self._session.commit()
         self._session.refresh(server)
@@ -447,7 +473,9 @@ class McpServerService:
         actor_user_id: UUID | None = None,
     ) -> McpToolAllowlist:
         require_mcp_server(self._session, workspace_id, mcp_server_id)
-        allow = self._session.get(McpToolAllowlist, allowlist_id)
+        allow = self._session.scalar(
+            select(McpToolAllowlist).where(McpToolAllowlist.id == allowlist_id).with_for_update()
+        )
         if (
             allow is None
             or allow.workspace_id != workspace_id
@@ -455,6 +483,7 @@ class McpServerService:
         ):
             raise ValueError("MCP tool allowlist entry not found")
         allow.status = "disabled"
+        allow.configuration_version += 1
         if actor_user_id is not None:
             AuditService(self._session).record_user_action(
                 workspace_id=workspace_id,
@@ -465,6 +494,7 @@ class McpServerService:
                 metadata={
                     "mcp_server_id": str(mcp_server_id),
                     "tool_name": allow.tool_name,
+                    "configuration_version": allow.configuration_version,
                 },
             )
         self._session.commit()

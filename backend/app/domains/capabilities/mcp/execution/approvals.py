@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.capabilities.catalog.contracts import CapabilityToolDescriptor
 from backend.app.domains.capabilities.mcp.execution.contracts import (
     McpExecutionRequest,
     McpExecutionResult,
@@ -13,10 +14,7 @@ from backend.app.domains.capabilities.mcp.execution.events import (
     McpToolCallLogService,
 )
 from backend.app.domains.capabilities.mcp.execution.payloads import payload_hash
-from backend.app.domains.capabilities.mcp.models import (
-    McpServer,
-    McpToolAllowlist,
-)
+from backend.app.domains.capabilities.mcp.models import McpServer
 from backend.app.domains.orchestration.approvals.policy import ApprovalPolicyDecision
 from backend.app.domains.orchestration.approvals.service import ApprovalService
 from backend.app.domains.orchestration.approvals.waiting import ApprovalWaitingService
@@ -32,9 +30,9 @@ class McpToolApprovalRequester:
         self,
         request: McpExecutionRequest,
         run: AgentRun,
-        allow: McpToolAllowlist,
         server: McpServer,
         *,
+        descriptor: CapabilityToolDescriptor,
         reason: str,
         execution_review: ApprovalPolicyDecision | None = None,
     ) -> McpExecutionResult:
@@ -58,7 +56,7 @@ class McpToolApprovalRequester:
             risk_level=(
                 execution_review.risk_level
                 if execution_review is not None
-                else allow.risk_level
+                else descriptor.risk_level
             ),
             payload={
                 "tool_name": request.tool_name,
@@ -66,7 +64,7 @@ class McpToolApprovalRequester:
                 "arguments_sha256": payload_hash(request.arguments),
                 "arguments_preview": redact_sensitive_payload(request.arguments),
                 "reason": reason,
-                "requires_approval": allow.requires_approval,
+                "requires_approval": descriptor.requires_approval,
                 "execution_review": execution_review.approval_payload()
                 if execution_review is not None
                 else None,
@@ -75,15 +73,25 @@ class McpToolApprovalRequester:
         )
         log.approval_id = approval.id
         ApprovalWaitingService(self.session).mark_waiting(
-            workspace_id=request.workspace_id, run_id=run.id, task_id=run.task_id,
+            workspace_id=request.workspace_id,
+            run_id=run.id,
+            task_id=run.task_id,
         )
         self._notify_approval_requested(
             request=request,
             run=run,
-            allow=allow,
             server=server,
+            descriptor=descriptor,
             reason=reason,
             execution_review=execution_review,
+            snapshot=snapshot,
+        )
+        McpExecutionNotifier(self.session).append_execution_audit(
+            run=run,
+            request=request,
+            server_id=server.id,
+            log=log,
+            action="mcp_tool.approval_requested",
             snapshot=snapshot,
         )
         self.session.flush()
@@ -100,15 +108,15 @@ class McpToolApprovalRequester:
         *,
         request: McpExecutionRequest,
         run: AgentRun,
-        allow: McpToolAllowlist,
         server: McpServer,
+        descriptor: CapabilityToolDescriptor,
         reason: str,
         execution_review: ApprovalPolicyDecision | None,
         snapshot: dict[str, object],
     ) -> None:
         notifier = McpExecutionNotifier(self.session)
         review_risk_level = (
-            execution_review.risk_level if execution_review is not None else allow.risk_level
+            execution_review.risk_level if execution_review is not None else descriptor.risk_level
         )
         review_reasons = execution_review.reasons if execution_review is not None else []
         notifier.append_run_event(
@@ -119,11 +127,11 @@ class McpToolApprovalRequester:
                 "tool_kind": "mcp",
                 "mcp_server_id": str(server.id),
                 "tool_name": request.tool_name,
-                "risk_level": allow.risk_level,
+                "risk_level": descriptor.risk_level,
                 "review_risk_level": review_risk_level,
                 "review_reasons": review_reasons,
                 "reason": reason,
-                "requires_approval": allow.requires_approval,
+                "requires_approval": descriptor.requires_approval,
                 **snapshot_audit_metadata(snapshot),
             },
         )
@@ -134,10 +142,10 @@ class McpToolApprovalRequester:
             payload={
                 "tool_name": request.tool_name,
                 "mcp_server_id": str(server.id),
-                "risk_level": allow.risk_level,
+                "risk_level": descriptor.risk_level,
                 "review_risk_level": review_risk_level,
                 "review_reasons": review_reasons,
                 "reason": reason,
-                "requires_approval": allow.requires_approval,
+                "requires_approval": descriptor.requires_approval,
             },
         )

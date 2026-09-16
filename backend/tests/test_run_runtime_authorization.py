@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -174,6 +175,8 @@ def test_stdio_tool_requires_concrete_authorized_runtime() -> None:
         name="Local MCP",
         server_type="stdio",
         connection={"command": ["local-mcp"]},
+        health_status="healthy",
+        last_health_check_at=datetime.now(UTC),
     )
     session.add_all([profile, server])
     session.flush()

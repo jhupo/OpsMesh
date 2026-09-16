@@ -1,7 +1,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, computed_field, field_serializer
 
 from backend.app.core.contracts import TimestampedModel
 from backend.app.core.security.redaction import redact_sensitive_payload
@@ -192,6 +192,16 @@ class MarketplaceListingResponse(TimestampedModel):
     listing_metadata: dict[str, object]
     install_count: int
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def executable(self) -> bool:
+        return self.listing_type != "plugin"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def execution_mode(self) -> Literal["provisioned_resource", "metadata_only"]:
+        return "provisioned_resource" if self.executable else "metadata_only"
+
     @field_serializer("manifest")
     def _serialize_manifest(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
@@ -217,6 +227,16 @@ class WorkspaceMarketplaceInstallResponse(TimestampedModel):
     config: dict[str, object]
     status: str
     listing: MarketplaceListingResponse
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def executable(self) -> bool:
+        return self.listing_type != "plugin" and self.installed_resource_id is not None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def execution_mode(self) -> Literal["provisioned_resource", "metadata_only"]:
+        return "provisioned_resource" if self.executable else "metadata_only"
 
     @field_serializer("installed_manifest")
     def _serialize_installed_manifest(self, value: dict[str, object]) -> dict[str, object]:

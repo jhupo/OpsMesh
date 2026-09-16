@@ -263,7 +263,23 @@ Skill visibility:
 
 ## MCP Registry
 
-The product should maintain a workspace-scoped MCP registry.
+OpsMesh maintains a workspace-scoped MCP registry. The current execution contract is:
+
+- server connections, tool allowlists, and credential references each have a monotonic
+  `configuration_version`;
+- an effective capability catalog freezes the exact server/tool versions, parameter defaults,
+  locked fields, policy, and credential-reference bindings used by a Run;
+- health must be `healthy` and within the configured freshness window before a tool is included in
+  the effective execution catalog and again before invocation;
+- required credentials must be active, workspace-scoped, bound to that server or the workspace,
+  and unchanged from the Run snapshot; later credentials are never injected into an older Run;
+- connection changes and credential rotations invalidate old snapshots instead of silently changing
+  an in-flight Run's authority;
+- Streamable HTTP and SSE use the official MCP Python SDK; stdio is routed only through a bound
+  managed or self-hosted isolated runtime;
+- every terminal execution decision writes a call log, Run event, and durable audit record with
+  `agent_run_id`, `trace_id`, and `span_id` correlation. Raw arguments and credentials are not
+  persisted in those records.
 
 MCP metadata:
 
@@ -276,6 +292,10 @@ MCP metadata:
 - approval policy
 - installed workspace
 - health status
+
+Marketplace plugin listings remain metadata-only in this phase. Their API representation is
+explicitly `executable=false` with `execution_mode=metadata_only`; Marketplace does not dynamically
+import or activate plugin code in the API or Worker process.
 
 MCP access is granted to agents by workspace policy.
 

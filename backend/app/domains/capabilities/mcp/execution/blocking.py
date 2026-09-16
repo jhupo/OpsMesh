@@ -41,7 +41,8 @@ class McpExecutionBlocker:
         resolved_server_id = mcp_server_id or request.mcp_server_id
         snapshot = authorization_snapshot_for_run(run) if run is not None else {}
         error: dict[str, object] = {
-            "code": reason, "message": "MCP tool invocation was blocked by policy",
+            "code": reason,
+            "message": "MCP tool invocation was blocked by policy",
         }
         if run is not None:
             self._notify_blocked(
@@ -51,7 +52,7 @@ class McpExecutionBlocker:
                 resolved_server_id=resolved_server_id,
                 snapshot=snapshot,
             )
-        McpToolCallLogService(self.session).record(
+        log = McpToolCallLogService(self.session).record(
             request=request,
             server_id=resolved_server_id,
             status="blocked",
@@ -61,6 +62,15 @@ class McpExecutionBlocker:
             run=run,
             latency_ms=0,
         )
+        if run is not None:
+            McpExecutionNotifier(self.session).append_execution_audit(
+                run=run,
+                request=request,
+                server_id=resolved_server_id,
+                log=log,
+                action="mcp_tool.blocked",
+                snapshot=snapshot,
+            )
         self._record_security_event(
             request=request,
             reason=reason,

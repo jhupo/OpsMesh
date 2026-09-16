@@ -57,15 +57,9 @@ class SecretReencryptSummary:
             "skipped_current": self.skipped_current,
             "failed": self.failed,
             "resources": {
-                "model_provider_credentials": _resource_metadata(
-                    self.model_provider_credentials
-                ),
-                "mcp_credential_references": _resource_metadata(
-                    self.mcp_credential_references
-                ),
-                "webhook_subscriptions": _resource_metadata(
-                    self.webhook_subscriptions
-                ),
+                "model_provider_credentials": _resource_metadata(self.model_provider_credentials),
+                "mcp_credential_references": _resource_metadata(self.mcp_credential_references),
+                "webhook_subscriptions": _resource_metadata(self.webhook_subscriptions),
             },
         }
 
@@ -186,6 +180,7 @@ class HostedSecretReencryptService:
             credential.encrypted_secret_payload = encrypted.ciphertext
             credential.secret_fingerprint = encrypted.fingerprint
             credential.encryption_key_id = encrypted.key_id
+            credential.configuration_version += 1
             summary.reencrypted += 1
         return summary.freeze()
 

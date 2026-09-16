@@ -34,6 +34,8 @@ class McpToolCallLogResponse(ORMModel):
     argument_sha256: str | None
     response_sha256: str | None
     error_code: str | None
+    trace_id: str | None
+    span_id: str | None
     request: dict[str, object]
     response: dict[str, object] | None
     error: dict[str, object] | None
@@ -124,7 +126,5 @@ def snapshot_audit_metadata(snapshot: dict[str, object]) -> dict[str, object]:
         ]
     raw_tools = snapshot.get("allowed_tools")
     if isinstance(raw_tools, list):
-        metadata["snapshot_allowed_tools"] = [
-            tool for tool in raw_tools if isinstance(tool, str)
-        ]
+        metadata["snapshot_allowed_tools"] = [tool for tool in raw_tools if isinstance(tool, str)]
     return metadata

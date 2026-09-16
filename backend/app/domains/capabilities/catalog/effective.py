@@ -164,6 +164,18 @@ class EffectiveCapabilityCatalogService:
                 denied.append(EffectiveCapabilityDenial(kind="tool", key=tool_name, reason=reason))
                 continue
             descriptor = matches[0]
+            if descriptor.mcp_blocked_reasons:
+                denied.append(
+                    EffectiveCapabilityDenial(
+                        kind="tool",
+                        key=tool_name,
+                        reason=(
+                            "MCP tool is not execution-ready: "
+                            + ", ".join(descriptor.mcp_blocked_reasons)
+                        ),
+                    )
+                )
+                continue
             try:
                 parameters, locked, provenance = _merge_parameters(
                     base={},

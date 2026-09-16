@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from backend.app.domains.capabilities.mcp.models import McpToolAllowlist
+from backend.app.domains.capabilities.catalog.contracts import CapabilityToolDescriptor
 from backend.app.domains.capabilities.mcp.policy import (
     layered_int_policy,
     layered_optional_int_policy,
@@ -18,11 +18,11 @@ class McpExecutionPolicy:
 
 def resolve_mcp_execution_policy(
     snapshot: dict[str, object],
-    allow: McpToolAllowlist,
+    descriptor: CapabilityToolDescriptor,
 ) -> McpExecutionPolicy:
     runtime_policy = snapshot.get("runtime_policy")
     snapshot_mcp_policy = runtime_policy.get("mcp") if isinstance(runtime_policy, dict) else None
-    allow_policy = allow.policy if isinstance(allow.policy, dict) else {}
+    allow_policy = descriptor.policy
     return McpExecutionPolicy(
         timeout_seconds=layered_int_policy(
             allow_policy,

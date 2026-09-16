@@ -57,9 +57,9 @@ class McpToolExecutionService:
         request = validated.request
         run = validated.run
         snapshot = validated.snapshot
-        allow = validated.allow
         server = validated.server
-        policy = resolve_mcp_execution_policy(snapshot, allow)
+        descriptor = validated.descriptor
+        policy = resolve_mcp_execution_policy(snapshot, descriptor)
         self._enforce_call_limit(
             request,
             server_id=server.id,
@@ -73,9 +73,9 @@ class McpToolExecutionService:
             workspace_id=request.workspace_id,
             tool_name=request.tool_name,
             arguments=request.arguments,
-            allowlist_policy=allow.policy,
-            allowlist_risk_level=allow.risk_level,
-            requires_approval=allow.requires_approval,
+            allowlist_policy=descriptor.policy,
+            allowlist_risk_level=descriptor.risk_level,
+            requires_approval=descriptor.requires_approval,
             context={
                 "agent_run_id": str(run.id),
                 "task_id": str(run.task_id) if run.task_id is not None else None,
@@ -101,14 +101,14 @@ class McpToolExecutionService:
         if execution_review.required and not request.approval_granted:
             review_reason = (
                 "mcp_tool_requires_approval"
-                if allow.requires_approval
+                if descriptor.requires_approval
                 else "mcp_tool_execution_review_requires_approval"
             )
             return self._approval_requester().request(
                 request,
                 run,
-                allow,
                 server,
+                descriptor=descriptor,
                 reason=review_reason,
                 execution_review=execution_review,
             )
@@ -119,6 +119,7 @@ class McpToolExecutionService:
             server=server,
             snapshot=snapshot,
             policy=policy,
+            credentials=validated.credentials,
         )
 
     def _enforce_call_limit(

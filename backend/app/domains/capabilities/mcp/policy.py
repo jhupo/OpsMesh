@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_text
@@ -14,10 +15,22 @@ MCP_LIMIT_COUNTED_STATUSES = (
 )
 
 
-def require_mcp_server(session: Session, workspace_id: UUID, server_id: UUID) -> McpServer:
+def require_mcp_server(
+    session: Session,
+    workspace_id: UUID,
+    server_id: UUID,
+    *,
+    for_update: bool = False,
+) -> McpServer:
     """Load an MCP server only inside its workspace boundary."""
-    server = session.get(McpServer, server_id)
-    if server is None or server.workspace_id != workspace_id:
+    statement = select(McpServer).where(
+        McpServer.id == server_id,
+        McpServer.workspace_id == workspace_id,
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    server = session.scalar(statement)
+    if server is None:
         raise ValueError("MCP server not found")
     return server
 

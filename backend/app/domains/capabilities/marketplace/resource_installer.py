@@ -66,7 +66,9 @@ class MarketplaceResourceInstaller:
                     commit=False,
                 )
             return server.id
-        return None
+        if listing.listing_type == "plugin":
+            return None
+        raise ValueError(f"Unsupported marketplace listing type: {listing.listing_type}")
 
     def _install_skill_listing(
         self,

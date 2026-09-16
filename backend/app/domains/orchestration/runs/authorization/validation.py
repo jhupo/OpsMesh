@@ -178,6 +178,7 @@ class RunAuthorizationService:
             resource_grants_for_snapshot(snapshot),
             lock=lock_resources,
         )
+
     def record_runtime_denial(
         self,
         run: AgentRun,
@@ -379,7 +380,9 @@ class RunAuthorizationService:
                     "mcp_server_id": str(server.id),
                     "mcp_server_name": server.name,
                     "server_type": server.server_type,
+                    "mcp_server_configuration_version": server.configuration_version,
                     "tool_name": allow.tool_name,
+                    "mcp_tool_configuration_version": allow.configuration_version,
                     "capability_key": allow.capability_key,
                     "requires_approval": allow.requires_approval,
                     "risk_level": allow.risk_level,
@@ -410,6 +413,7 @@ class RunAuthorizationService:
                 "mcp_server_id": str(ref.mcp_server_id) if ref.mcp_server_id is not None else None,
                 "name": ref.name,
                 "provider": ref.provider,
+                "configuration_version": ref.configuration_version,
                 "secret_fingerprint": ref.secret_fingerprint,
                 "encryption_key_id": ref.encryption_key_id,
                 "scopes": list(ref.scopes),
