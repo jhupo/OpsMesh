@@ -58,7 +58,7 @@ class RunAuthorizationSnapshotService:
         agent_snapshot: dict[str, object] | None = None,
     ) -> dict[str, object]:
         effective_catalog = (
-            EffectiveCapabilityCatalogService(self.session).build(
+            EffectiveCapabilityCatalogService(self.session).resolve(
                 workspace_id=task.workspace_id,
                 agent_profile_id=profile.id,
                 team_id=task.agent_team_id,

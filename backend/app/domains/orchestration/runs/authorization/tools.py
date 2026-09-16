@@ -137,7 +137,7 @@ class AgentToolAuthorizationSnapshotService:
             _require_same_provider_family(source_model_provider, target_provider)
             target_catalog = (
                 EffectiveCapabilityCatalogService(self.session)
-                .build(
+                .resolve(
                     workspace_id=task.workspace_id,
                     agent_profile_id=target.id,
                     team_id=team.id,

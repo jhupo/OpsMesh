@@ -249,7 +249,7 @@ class PlanFeasibilityService:
 
     def _catalog(self, task: Task, profile: AgentProfile) -> EffectiveCapabilityCatalogResponse:
         try:
-            return EffectiveCapabilityCatalogService(self._session).build(
+            return EffectiveCapabilityCatalogService(self._session).resolve(
                 workspace_id=task.workspace_id,
                 agent_profile_id=profile.id,
                 team_id=task.agent_team_id,

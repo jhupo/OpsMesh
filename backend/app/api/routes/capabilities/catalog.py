@@ -71,7 +71,7 @@ async def get_effective_agent_capability_catalog(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> EffectiveCapabilityCatalogResponse:
-    return EffectiveCapabilityCatalogService(session).build(
+    return EffectiveCapabilityCatalogService(session).resolve(
         workspace_id=context.workspace.id,
         agent_profile_id=agent_profile_id,
         team_id=team_id,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from hashlib import sha256
 from uuid import UUID
 
@@ -12,12 +13,14 @@ from backend.app.core.errors import DomainError, NotFoundError
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityPolicyScope,
+    CapabilityResourceResponse,
     CapabilityTeamPolicy,
     CapabilityToolDescriptor,
     EffectiveCapabilityCatalogResponse,
     EffectiveCapabilityDenial,
     EffectiveCapabilityResource,
     EffectiveCapabilityTool,
+    WorkspaceCapabilityCatalogResponse,
 )
 from backend.app.domains.capabilities.catalog.queries import WorkspaceCapabilityCatalogService
 from backend.app.domains.capabilities.resources.schema import (
@@ -27,17 +30,63 @@ from backend.app.domains.capabilities.resources.schema import (
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 
 
+@dataclass(slots=True)
+class _CapabilityRequests:
+    tools: set[str]
+    resources: set[UUID]
+    tool_parameters: dict[str, dict[str, object]]
+    resource_parameters: dict[str, dict[str, object]]
+
+
 class EffectiveCapabilityCatalogService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def build(
+    def resolve(
         self,
         *,
         workspace_id: UUID,
         agent_profile_id: UUID,
         team_id: UUID | None = None,
     ) -> EffectiveCapabilityCatalogResponse:
+        profile = self._active_profile(workspace_id, agent_profile_id)
+        team, member, _policy, scopes = self._team_context(
+            workspace_id=workspace_id,
+            agent_profile_id=agent_profile_id,
+            team_id=team_id,
+        )
+        denied: list[EffectiveCapabilityDenial] = []
+        requests = self._parse_requests(profile, denied)
+        catalog = WorkspaceCapabilityCatalogService(self._session).build(workspace_id)
+        tools_by_name, resources_by_id = self._catalog_indexes(catalog)
+        effective_tools = self._build_tools(
+            requests=requests,
+            tools_by_name=tools_by_name,
+            scopes=scopes,
+            denied=denied,
+        )
+        effective_resources = self._build_resources(
+            requests=requests,
+            resources_by_id=resources_by_id,
+            scopes=scopes,
+            denied=denied,
+        )
+        executable_tools = self._filter_tools_by_resources(
+            effective_tools,
+            effective_resources,
+            denied,
+        )
+        return self._response(
+            workspace_id=workspace_id,
+            profile=profile,
+            team=team,
+            member=member,
+            tools=executable_tools,
+            resources=effective_resources,
+            denied=denied,
+        )
+
+    def _active_profile(self, workspace_id: UUID, agent_profile_id: UUID) -> AgentProfile:
         profile = self._session.scalar(
             select(AgentProfile).where(
                 AgentProfile.workspace_id == workspace_id,
@@ -47,41 +96,62 @@ class EffectiveCapabilityCatalogService:
         )
         if profile is None:
             raise NotFoundError("Active agent profile not found", code="agent_profile_not_found")
-        team, member, _policy, scopes = self._team_context(
-            workspace_id=workspace_id,
-            agent_profile_id=agent_profile_id,
-            team_id=team_id,
-        )
-        raw_catalog = WorkspaceCapabilityCatalogService(self._session).build(workspace_id)
-        denied: list[EffectiveCapabilityDenial] = []
-        requested_tools = _string_set(
-            profile.tool_policy.get("allowed_tools", profile.tool_policy.get("mcp_tools", [])),
-            kind="tool",
-            key="agent.tool_policy.allowed_tools",
-            denied=denied,
-        )
-        requested_resources = _uuid_set(
-            profile.capabilities.get("resource_ids", []),
-            key="agent.capabilities.resource_ids",
-            denied=denied,
-        )
-        tool_parameters = _parameter_map(
-            profile.tool_policy.get("tool_parameters", {}),
-            kind="tool",
-            denied=denied,
-        )
-        resource_parameters = _parameter_map(
-            profile.capabilities.get("resource_parameters", {}),
-            kind="resource",
-            denied=denied,
-        )
-        tools_by_name: dict[str, list[CapabilityToolDescriptor]] = {}
-        for descriptor in raw_catalog.tools:
-            tools_by_name.setdefault(descriptor.name, []).append(descriptor)
-        resources_by_id = {resource.id: resource for resource in raw_catalog.resources}
+        return profile
 
+    def _parse_requests(
+        self,
+        profile: AgentProfile,
+        denied: list[EffectiveCapabilityDenial],
+    ) -> _CapabilityRequests:
+        return _CapabilityRequests(
+            tools=_string_set(
+                profile.tool_policy.get(
+                    "allowed_tools",
+                    profile.tool_policy.get("mcp_tools", []),
+                ),
+                kind="tool",
+                key="agent.tool_policy.allowed_tools",
+                denied=denied,
+            ),
+            resources=_uuid_set(
+                profile.capabilities.get("resource_ids", []),
+                key="agent.capabilities.resource_ids",
+                denied=denied,
+            ),
+            tool_parameters=_parameter_map(
+                profile.tool_policy.get("tool_parameters", {}),
+                kind="tool",
+                denied=denied,
+            ),
+            resource_parameters=_parameter_map(
+                profile.capabilities.get("resource_parameters", {}),
+                kind="resource",
+                denied=denied,
+            ),
+        )
+
+    @staticmethod
+    def _catalog_indexes(
+        catalog: WorkspaceCapabilityCatalogResponse,
+    ) -> tuple[
+        dict[str, list[CapabilityToolDescriptor]],
+        dict[UUID, CapabilityResourceResponse],
+    ]:
+        tools_by_name: dict[str, list[CapabilityToolDescriptor]] = {}
+        for descriptor in catalog.tools:
+            tools_by_name.setdefault(descriptor.name, []).append(descriptor)
+        return tools_by_name, {resource.id: resource for resource in catalog.resources}
+
+    @staticmethod
+    def _build_tools(
+        *,
+        requests: _CapabilityRequests,
+        tools_by_name: dict[str, list[CapabilityToolDescriptor]],
+        scopes: list[tuple[str, CapabilityPolicyScope]],
+        denied: list[EffectiveCapabilityDenial],
+    ) -> list[EffectiveCapabilityTool]:
         effective_tools: list[EffectiveCapabilityTool] = []
-        for tool_name in sorted(requested_tools):
+        for tool_name in sorted(requests.tools):
             blocked_by = _blocked_scope(tool_name, scopes, resource=False)
             if blocked_by is not None:
                 denied.append(
@@ -99,7 +169,7 @@ class EffectiveCapabilityCatalogService:
                     base={},
                     key=tool_name,
                     scopes=scopes,
-                    agent_parameters=tool_parameters.get(tool_name, {}),
+                    agent_parameters=requests.tool_parameters.get(tool_name, {}),
                     schema=descriptor.input_schema,
                     label=f"tool {tool_name}",
                 )
@@ -116,9 +186,18 @@ class EffectiveCapabilityCatalogService:
                     provenance=provenance,
                 )
             )
+        return effective_tools
 
+    @staticmethod
+    def _build_resources(
+        *,
+        requests: _CapabilityRequests,
+        resources_by_id: dict[UUID, CapabilityResourceResponse],
+        scopes: list[tuple[str, CapabilityPolicyScope]],
+        denied: list[EffectiveCapabilityDenial],
+    ) -> list[EffectiveCapabilityResource]:
         effective_resources: list[EffectiveCapabilityResource] = []
-        for resource_id in sorted(requested_resources, key=str):
+        for resource_id in sorted(requests.resources, key=str):
             blocked_by = _blocked_scope(resource_id, scopes, resource=True)
             if blocked_by is not None:
                 denied.append(
@@ -144,7 +223,7 @@ class EffectiveCapabilityCatalogService:
                     base=resource.default_parameters,
                     key=resource_id,
                     scopes=scopes,
-                    agent_parameters=resource_parameters.get(str(resource_id), {}),
+                    agent_parameters=requests.resource_parameters.get(str(resource_id), {}),
                     schema=resource.parameter_schema,
                     label=f"resource {resource_id}",
                 )
@@ -165,13 +244,19 @@ class EffectiveCapabilityCatalogService:
                     provenance=provenance,
                 )
             )
+        return effective_resources
 
+    @staticmethod
+    def _filter_tools_by_resources(
+        tools: list[EffectiveCapabilityTool],
+        resources: list[EffectiveCapabilityResource],
+        denied: list[EffectiveCapabilityDenial],
+    ) -> list[EffectiveCapabilityTool]:
         available_resource_access = {
-            (item.resource.resource_type, item.resource.access_mode)
-            for item in effective_resources
+            (item.resource.resource_type, item.resource.access_mode) for item in resources
         }
         executable_tools: list[EffectiveCapabilityTool] = []
-        for item in effective_tools:
+        for item in tools:
             required_type = item.descriptor.required_resource_type
             required_modes = set(item.descriptor.required_access_modes)
             if required_type is not None and not any(
@@ -190,7 +275,19 @@ class EffectiveCapabilityCatalogService:
                 )
                 continue
             executable_tools.append(item)
+        return executable_tools
 
+    @staticmethod
+    def _response(
+        *,
+        workspace_id: UUID,
+        profile: AgentProfile,
+        team: AgentTeam | None,
+        member: AgentTeamMember | None,
+        tools: list[EffectiveCapabilityTool],
+        resources: list[EffectiveCapabilityResource],
+        denied: list[EffectiveCapabilityDenial],
+    ) -> EffectiveCapabilityCatalogResponse:
         response = EffectiveCapabilityCatalogResponse(
             workspace_id=workspace_id,
             agent_profile_id=profile.id,
@@ -199,8 +296,8 @@ class EffectiveCapabilityCatalogService:
             team_policy_version=team.capability_policy_version if team is not None else None,
             team_member_id=member.id if member is not None else None,
             department=member.department if member is not None else None,
-            tools=executable_tools,
-            resources=effective_resources,
+            tools=tools,
+            resources=resources,
             denied=denied,
             fingerprint="",
         )
