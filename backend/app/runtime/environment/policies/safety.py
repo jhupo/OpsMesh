@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 
 from backend.app.domains.platform.admin.risky_policy_values import RiskyExecutionPolicy
@@ -28,6 +29,11 @@ class RuntimeSafetyPolicy:
                 "runtime_image_not_allowed",
                 "Runtime image is not allowed by personal safety settings",
             )
+        if not is_digest_pinned_image(template.image):
+            raise RuntimeSafetyError(
+                "runtime_image_digest_required",
+                "Runtime images must be pinned by an immutable sha256 digest",
+            )
 
     def assert_network_allowed(
         self,
@@ -56,3 +62,10 @@ class RuntimeSafetyPolicy:
                 )
             return
         return
+
+
+_DIGEST_PINNED_IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
+
+
+def is_digest_pinned_image(image: str) -> bool:
+    return _DIGEST_PINNED_IMAGE.fullmatch(image) is not None

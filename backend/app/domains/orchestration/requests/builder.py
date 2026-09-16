@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.memory.context import AgentMemoryContextService
+from backend.app.domains.agents.memory.context import AgentMemoryContext, AgentMemoryContextService
+from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.memory.policy import context_budget_policy, working_memory_policy
 from backend.app.domains.agents.memory.working import (
     AgentWorkingMemoryService,
@@ -16,11 +17,16 @@ from backend.app.domains.agents.memory.working import (
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
+    AgentRuntimeAgentTool,
     AgentRuntimeContext,
+    AgentRuntimeProfile,
+    AgentRuntimeResourceGrant,
+    AgentRuntimeToolContinuation,
+    AgentRuntimeToolDefinition,
     AgentRuntimeToolExecutor,
+    AgentRunTracing,
 )
 from backend.app.domains.agents.runtime.guardrails import runtime_controls_from_snapshot
-from backend.app.domains.agents.runtime.providers.claude.sandbox import sandbox_settings_for_claude
 from backend.app.domains.agents.runtime.state import AgentRunStateStore
 from backend.app.domains.agents.runtime.tools.executor import BackendToolExecutor
 from backend.app.domains.agents.sessions.models import PersistentAgentSessionRef
@@ -30,6 +36,7 @@ from backend.app.domains.orchestration.approvals.pending_tools import PendingToo
 from backend.app.domains.orchestration.requests.context import RunRequestContextProvider
 from backend.app.domains.orchestration.requests.context_budget import (
     ContextBudgetManager,
+    ContextBudgetResult,
     ContextFragment,
     ContextPriority,
 )
@@ -40,11 +47,13 @@ from backend.app.domains.orchestration.requests.prompt import (
 from backend.app.domains.orchestration.requests.sessions import RunRequestSessionService
 from backend.app.domains.orchestration.requests.tracing import agent_run_tracing
 from backend.app.domains.orchestration.runs.authorization.runtime import (
+    ResolvedRunRuntimeBinding,
     RunRuntimeAuthorizationService,
 )
 from backend.app.domains.orchestration.runs.authorization.tools import hydrate_agent_tools
 from backend.app.domains.orchestration.runs.authorization.validation import (
     RunAuthorizationService,
+    agent_runtime_profile_for_snapshot,
     authorized_profile_for_run,
     authorized_task_for_run,
     file_scope_ids_for_snapshot,
@@ -58,11 +67,52 @@ from backend.app.domains.orchestration.runs.queries import authorization_snapsho
 from backend.app.domains.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.projects.io.support import project_runtime_context
-from backend.app.runtime.contracts import SandboxManifest
-from backend.app.runtime.environment.backends.registry import build_runtime_backend_registry
+from backend.app.runtime.contracts import SandboxBinding, SandboxManifest
+from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.workers.contracts import JobPayload, JobType
+
+
+@dataclass(frozen=True, slots=True)
+class _AuthorizedRequestInputs:
+    task: Task | None
+    profile: AgentProfile
+    runtime_profile: AgentRuntimeProfile
+    snapshot: dict[str, object]
+    allowed_tools: tuple[str, ...]
+    tool_definitions: tuple[AgentRuntimeToolDefinition, ...]
+    resource_grants: tuple[AgentRuntimeResourceGrant, ...]
+    file_scope_ids: tuple[UUID, ...]
+    runtime_binding: ResolvedRunRuntimeBinding
+    model_provider: dict[str, Any]
+
+
+@dataclass(slots=True)
+class _RuntimeRequestState:
+    metadata: dict[str, object]
+    project_workspace: dict[str, object] | None
+    sandbox: SandboxBinding | None
+
+
+@dataclass(slots=True)
+class _MemoryRequestState:
+    persistent_session_ref: PersistentAgentSessionRef
+    working_entries: list[WorkspaceMemoryEntry]
+    retrieved_memory: AgentMemoryContext
+    persistent_session: SQLAlchemyAgentSession | None
+    provider_continuation: dict[str, str | None]
+    continuations: tuple[AgentRuntimeToolContinuation, ...]
+
+
+@dataclass(slots=True)
+class _ContextRequestState:
+    runtime_context: AgentRuntimeContext
+    agent_tools: tuple[AgentRuntimeAgentTool, ...]
+    output_schema: Any
+    guardrails: Any
+    budget: ContextBudgetResult
+    tracing: AgentRunTracing
 
 
 @dataclass(slots=True)
@@ -70,6 +120,7 @@ class RunRequestBuilder:
     session: Session
     settings: Settings | None
     docker_client: DockerRuntimeClient | None = None
+    runtime_backends: RuntimeBackendRegistry | None = None
 
     @property
     def authorization(self) -> RunAuthorizationService:
@@ -102,106 +153,144 @@ class RunRequestBuilder:
         model_provider_override: dict[str, Any] | None = None,
     ) -> AgentRunRequest:
         self.validate_job_scope(run, job)
+        inputs = self._load_authorized_inputs(run, model_provider_override)
+        runtime = self._build_runtime_state(run, inputs)
+        memory = self._build_memory_state(run, inputs, runtime.metadata)
+        context = self._build_context_state(run, job, inputs, runtime, memory)
+        return self._assemble_agent_request(run, inputs, runtime, memory, context)
+
+    def _load_authorized_inputs(
+        self,
+        run: AgentRun,
+        model_provider_override: dict[str, Any] | None,
+    ) -> _AuthorizedRequestInputs:
         task = authorized_task_for_run(self.session, run)
-        profile = authorized_profile_for_run(self.session, run)
+        live_profile = authorized_profile_for_run(self.session, run)
+        snapshot = authorization_snapshot_for_run(run)
+        self.validate_authorization_snapshot(run, task, live_profile, snapshot)
+        runtime_profile = agent_runtime_profile_for_snapshot(
+            snapshot,
+            workspace_id=run.workspace_id,
+            profile_id=run.agent_profile_id,
+        )
+        profile = live_profile
         if profile is None:
             profile = AgentProfile(
                 workspace_id=run.workspace_id,
-                name="Default Agent",
-                role="worker",
-                instructions="Complete the assigned task.",
-                model=run.model or "gpt-4.1",
+                name=runtime_profile.name,
+                role=runtime_profile.role,
+                instructions=runtime_profile.instructions,
+                model=runtime_profile.model,
+                model_settings=dict(runtime_profile.model_settings),
             )
-
-        authorization_snapshot = authorization_snapshot_for_run(run)
-        self.validate_authorization_snapshot(run, task, profile, authorization_snapshot)
-        allowed_tools = self.allowed_tools_for_run(run, profile)
-        tool_definitions = tool_definitions_for_snapshot(authorization_snapshot)
-        resource_grants = resource_grants_for_snapshot(authorization_snapshot)
-        file_scope_ids = file_scope_ids_for_snapshot(authorization_snapshot)
         runtime_binding = RunRuntimeAuthorizationService(self.session).validate_for_run(
             run=run,
             task=task,
-            snapshot=authorization_snapshot,
+            snapshot=snapshot,
         )
-        model_provider = self.model_provider_for_run(
-            run,
-            profile,
-            override=model_provider_override,
-        )
-        metadata = self.runtime_metadata(
-            run=run,
+        return _AuthorizedRequestInputs(
             task=task,
             profile=profile,
-            model_provider=model_provider,
-            authorization_snapshot=authorization_snapshot,
+            runtime_profile=runtime_profile,
+            snapshot=snapshot,
+            allowed_tools=self.allowed_tools_for_run(run),
+            tool_definitions=tool_definitions_for_snapshot(snapshot),
+            resource_grants=resource_grants_for_snapshot(snapshot),
+            file_scope_ids=file_scope_ids_for_snapshot(snapshot),
+            runtime_binding=runtime_binding,
+            model_provider=self.model_provider_for_run(
+                run,
+                override=model_provider_override,
+            ),
         )
-        if (
-            runtime_binding.execution_runtime_id is not None
-            or _runtime_execution_mode(run) == "persistent"
-        ):
+
+    def _build_runtime_state(
+        self,
+        run: AgentRun,
+        inputs: _AuthorizedRequestInputs,
+    ) -> _RuntimeRequestState:
+        mode = _runtime_execution_mode(run)
+        metadata = self.runtime_metadata(
+            run=run,
+            task=inputs.task,
+            profile=inputs.profile,
+            runtime_profile=inputs.runtime_profile,
+            model_provider=inputs.model_provider,
+            authorization_snapshot=inputs.snapshot,
+        )
+        binding = inputs.runtime_binding
+        if binding.execution_runtime_id is not None or mode == "persistent":
             metadata["runtime_execution"] = {
-                "mode": _runtime_execution_mode(run),
-                "execution_runtime_id": str(runtime_binding.execution_runtime_id),
+                "mode": mode,
+                "execution_runtime_id": str(binding.execution_runtime_id),
                 "parent_runtime_id": (
-                    str(runtime_binding.workspace_runtime_id)
-                    if runtime_binding.workspace_runtime_id is not None
+                    str(binding.workspace_runtime_id)
+                    if binding.workspace_runtime_id is not None
                     else None
                 ),
             }
-        metadata["sandbox_settings"] = (
-            sandbox_settings_for_claude(network_disabled=runtime_binding.network_disabled)
-            if _runtime_execution_mode(run) != "none"
-            else {"enabled": False}
-        )
         project_workspace = project_runtime_context(self.session, run)
         if project_workspace is not None:
             metadata["project_workspace"] = project_workspace
-        if runtime_binding.execution_runtime_id is not None:
+        sandbox = None
+        if binding.execution_runtime_id is not None and inputs.model_provider["provider"] in {
+            "openai",
+            "openai-compatible",
+        }:
             runtime = self.session.scalar(
                 select(WorkspaceRuntime).where(
-                    WorkspaceRuntime.id == runtime_binding.execution_runtime_id,
+                    WorkspaceRuntime.id == binding.execution_runtime_id,
                     WorkspaceRuntime.workspace_id == run.workspace_id,
                 )
             )
             if runtime is None:
                 raise ValueError("Authorized execution runtime is missing")
+            root = (
+                project_workspace.get("working_directory")
+                if isinstance(project_workspace, dict)
+                else "/workspace"
+            )
+            manifest = SandboxManifest(run_id=run.id, root=str(root))
+            backend = self._runtime_backends().require(runtime.runtime_provider)
+            sandbox_session = backend.sandbox_session(
+                manifest,
+                runtime,
+            )
             sandbox_metadata: dict[str, object] = {
-                "session_id": str(runtime_binding.execution_runtime_id),
-                "root": (
-                    project_workspace.get("working_directory")
-                    if isinstance(project_workspace, dict)
-                    else "/workspace"
-                ),
-                "backend": "runtime",
-                "persistent": _runtime_execution_mode(run) == "persistent",
+                "session_id": sandbox_session.session_id,
+                "root": sandbox_session.root,
+                "backend": sandbox_session.backend,
+                "persistent": sandbox_session.persistent,
             }
             metadata["sandbox_session"] = sandbox_metadata
-            backend = build_runtime_backend_registry(self.docker_client).resolve(
-                runtime.runtime_provider
-            )
-            if backend is not None and hasattr(backend, "sandbox_session"):
-                session = backend.sandbox_session(
-                    SandboxManifest(run_id=run.id, root=str(sandbox_metadata["root"])),
-                    runtime,
-                )
-                sandbox_metadata = {
-                    "session_id": session.session_id,
-                    "root": session.root,
-                    "backend": session.backend,
-                    "persistent": session.persistent,
-                }
-                metadata["sandbox_session"] = sandbox_metadata
-                if model_provider["provider"] == "anthropic" and hasattr(backend, "sdk_process"):
-                    process = backend.sdk_process(session)
-                    sandbox_metadata["cli_path"] = process.install_claude_cli_wrapper()
-        persistent_session_ref = self.persistent_session_ref_for_run(run, task, profile)
-        working_policy = working_memory_policy(authorization_snapshot.get("memory_policy"))
+            sandbox = SandboxBinding(manifest=manifest, session=sandbox_session)
+        if mode == "none":
+            metadata["sandbox_mode"] = "none"
+        elif binding.execution_runtime_id is None:
+            raise ValueError("Sandbox execution requires an authorized runtime session")
+        return _RuntimeRequestState(
+            metadata=metadata,
+            project_workspace=project_workspace,
+            sandbox=sandbox,
+        )
+
+    def _build_memory_state(
+        self,
+        run: AgentRun,
+        inputs: _AuthorizedRequestInputs,
+        metadata: dict[str, object],
+    ) -> _MemoryRequestState:
+        session_ref = self.persistent_session_ref_for_run(
+            run,
+            inputs.task,
+            inputs.profile,
+        )
+        working_policy = working_memory_policy(inputs.snapshot.get("memory_policy"))
         working_entries = AgentWorkingMemoryService(self.session).prepare_run(
             run=run,
-            profile=profile,
-            task=task,
-            session_key=persistent_session_ref.session_key,
+            profile=inputs.profile,
+            task=inputs.task,
+            session_key=session_ref.session_key,
             policy=working_policy,
         )
         metadata["working_memory"] = {
@@ -215,31 +304,29 @@ class RunRequestBuilder:
             self.mcp_secret_service(),
         ).build(
             run=run,
-            task=task,
-            profile=profile,
-            resource_grants=resource_grants,
-            memory_policy=authorization_snapshot.get("memory_policy"),
+            task=inputs.task,
+            profile=inputs.profile,
+            resource_grants=inputs.resource_grants,
+            memory_policy=inputs.snapshot.get("memory_policy"),
         )
         metadata["memory_retrieval"] = retrieved_memory.evidence
         persistent_session = self.persistent_session_for_run(
             run,
-            task,
-            profile,
-            ref=persistent_session_ref,
+            inputs.task,
+            inputs.profile,
+            ref=session_ref,
         )
         if persistent_session is not None:
             metadata["persistent_session_key"] = persistent_session.session_id
             metadata["persistent_session_mode"] = "sdk_session"
-
         provider_continuation = self.provider_continuation_for_run(
             run=run,
-            session_ref=persistent_session_ref,
+            session_ref=session_ref,
         )
         if provider_continuation["previous_response_id"] is not None:
             metadata["previous_response_id"] = provider_continuation["previous_response_id"]
         if provider_continuation["conversation_id"] is not None:
             metadata["conversation_id"] = provider_continuation["conversation_id"]
-
         continuations = tool_continuations_for_run(run.input)
         if continuations:
             metadata["tool_continuations"] = [
@@ -250,67 +337,80 @@ class RunRequestBuilder:
                 }
                 for item in continuations
             ]
+        return _MemoryRequestState(
+            persistent_session_ref=session_ref,
+            working_entries=working_entries,
+            retrieved_memory=retrieved_memory,
+            persistent_session=persistent_session,
+            provider_continuation=provider_continuation,
+            continuations=continuations,
+        )
 
+    def _build_context_state(
+        self,
+        run: AgentRun,
+        job: JobPayload,
+        inputs: _AuthorizedRequestInputs,
+        runtime: _RuntimeRequestState,
+        memory: _MemoryRequestState,
+    ) -> _ContextRequestState:
         runtime_context = AgentRuntimeContext(
             workspace_id=run.workspace_id,
             task_id=run.task_id,
             run_id=run.id,
             user_id=job.requested_by_user_id,
-            allowed_tools=allowed_tools,
-            tool_definitions=tool_definitions,
-            resource_grants=resource_grants,
-            file_scope_ids=file_scope_ids,
-            runtime_binding=runtime_binding.as_runtime_context(),
-            metadata=metadata,
+            allowed_tools=inputs.allowed_tools,
+            tool_definitions=inputs.tool_definitions,
+            resource_grants=inputs.resource_grants,
+            file_scope_ids=inputs.file_scope_ids,
+            runtime_binding=inputs.runtime_binding.as_runtime_context(),
+            metadata=runtime.metadata,
         )
-        execution_mode = _runtime_execution_mode(run)
-        if execution_mode == "none":
-            metadata["sandbox_mode"] = "none"
         agent_tools = hydrate_agent_tools(
             session=self.session,
-            snapshot=authorization_snapshot,
+            snapshot=inputs.snapshot,
             root_context=runtime_context,
             resolve_model_provider=self.resolve_model_provider,
         )
-        output_schema, guardrails = runtime_controls_from_snapshot(authorization_snapshot)
-        context_fragments = self.prompt_renderer.context_fragments_for_run(
+        output_schema, guardrails = runtime_controls_from_snapshot(inputs.snapshot)
+        fragments = self.prompt_renderer.context_fragments_for_run(
             run,
-            allowed_tools=allowed_tools,
-            runtime_metadata=metadata,
+            allowed_tools=inputs.allowed_tools,
+            runtime_metadata=runtime.metadata,
         )
-        rendered_working_memory = working_memory_context(working_entries)
+        rendered_working_memory = working_memory_context(memory.working_entries)
         if rendered_working_memory:
-            context_fragments += (
+            fragments += (
                 ContextFragment(
                     key="memory.working",
                     text=rendered_working_memory,
                     priority=ContextPriority.HIGH,
                 ),
             )
-        if retrieved_memory.text:
-            context_fragments += (
+        if memory.retrieved_memory.text:
+            fragments += (
                 ContextFragment(
                     key="memory.retrieved",
-                    text=retrieved_memory.text,
+                    text=memory.retrieved_memory.text,
                     priority=ContextPriority.NORMAL,
                 ),
             )
-        context_budget = ContextBudgetManager().build(
-            fragments=context_fragments,
-            provider=model_provider["provider"],
-            model=model_provider["model"],
-            policy=context_budget_policy(authorization_snapshot.get("memory_policy")),
-            instructions=profile.instructions,
-            tool_definitions=tool_definitions,
-            continuations=continuations,
+        budget = ContextBudgetManager().build(
+            fragments=fragments,
+            provider=inputs.model_provider["provider"],
+            model=inputs.model_provider["model"],
+            policy=context_budget_policy(inputs.snapshot.get("memory_policy")),
+            instructions=inputs.runtime_profile.instructions,
+            tool_definitions=inputs.tool_definitions,
+            continuations=memory.continuations,
             agent_tools=agent_tools,
             output_schema=output_schema,
         )
-        metadata["context_budget"] = context_budget.evidence()
-        retrieval_evidence = metadata["memory_retrieval"]
+        runtime.metadata["context_budget"] = budget.evidence()
+        retrieval_evidence = runtime.metadata["memory_retrieval"]
         if isinstance(retrieval_evidence, dict):
             retrieval_decision = next(
-                (item for item in context_budget.decisions if item.key == "memory.retrieved"),
+                (item for item in budget.decisions if item.key == "memory.retrieved"),
                 None,
             )
             retrieval_evidence.update(
@@ -328,55 +428,60 @@ class RunRequestBuilder:
             )
         tracing = agent_run_tracing(
             run=run,
-            task=task,
-            profile=profile,
-            allowed_tools=allowed_tools,
-            metadata=metadata,
+            task=inputs.task,
+            profile=inputs.runtime_profile,
+            allowed_tools=inputs.allowed_tools,
+            metadata=runtime.metadata,
         )
-        sandbox = None
-        if _runtime_execution_mode(run) != "none" and model_provider["provider"] in {
-            "openai",
-            "openai-compatible",
-        }:
-            workspace = metadata.get("project_workspace")
-            root = (
-                workspace.get("working_directory") if isinstance(workspace, dict) else "/workspace"
-            )
-            sandbox = SandboxManifest(run_id=run.id, root=str(root))
-        return AgentRunRequest(
-            agent_profile=profile,
-            input_text=context_budget.text,
-            context=runtime_context,
-            model=model_provider["model"],
-            provider=model_provider["provider"],
-            base_url=model_provider["base_url"],
-            api_key=model_provider["api_key"],
-            model_api=model_provider["model_api"],
-            model_provider_credential_id=model_provider["model_provider_credential_id"],
-            tool_executor=self.build_tool_executor() if allowed_tools else None,
-            continuations=continuations,
-            session=persistent_session,
-            previous_response_id=provider_continuation["previous_response_id"],
-            conversation_id=provider_continuation["conversation_id"],
+        return _ContextRequestState(
+            runtime_context=runtime_context,
+            agent_tools=agent_tools,
+            output_schema=output_schema,
+            guardrails=guardrails,
+            budget=budget,
             tracing=tracing,
-            sandbox=sandbox,
-            resume_state=AgentRunStateStore(
-                self.session,
-                self.secret_service(),
-            ).load(
+        )
+
+    def _assemble_agent_request(
+        self,
+        run: AgentRun,
+        inputs: _AuthorizedRequestInputs,
+        runtime: _RuntimeRequestState,
+        memory: _MemoryRequestState,
+        context: _ContextRequestState,
+    ) -> AgentRunRequest:
+        secret_service = self.secret_service()
+        return AgentRunRequest(
+            agent_profile=inputs.runtime_profile,
+            input_text=context.budget.text,
+            context=context.runtime_context,
+            model=inputs.model_provider["model"],
+            provider=inputs.model_provider["provider"],
+            base_url=inputs.model_provider["base_url"],
+            api_key=inputs.model_provider["api_key"],
+            model_api=inputs.model_provider["model_api"],
+            model_provider_credential_id=inputs.model_provider["model_provider_credential_id"],
+            tool_executor=self.build_tool_executor() if inputs.allowed_tools else None,
+            continuations=memory.continuations,
+            session=memory.persistent_session,
+            previous_response_id=memory.provider_continuation["previous_response_id"],
+            conversation_id=memory.provider_continuation["conversation_id"],
+            tracing=context.tracing,
+            sandbox=runtime.sandbox,
+            resume_state=AgentRunStateStore(self.session, secret_service).load(
                 workspace_id=run.workspace_id,
                 run_id=run.id,
             ),
             approval_decisions=PendingToolInvocationService(
                 self.session,
-                self.secret_service(),
+                secret_service,
             ).decisions_for_run(
                 workspace_id=run.workspace_id,
                 run_id=run.id,
             ),
-            agent_tools=agent_tools,
-            output_schema=output_schema,
-            guardrails=guardrails,
+            agent_tools=context.agent_tools,
+            output_schema=context.output_schema,
+            guardrails=context.guardrails,
             stream=True,
             cancellation=DatabaseRunCancellation.for_session(
                 self.session,
@@ -427,7 +532,7 @@ class RunRequestBuilder:
             task_id=run.task_id,
             run_id=run.id,
             user_id=job.requested_by_user_id,
-            allowed_tools=self.allowed_tools_for_run(run, profile),
+            allowed_tools=self.allowed_tools_for_run(run),
             tool_definitions=tool_definitions_for_snapshot(snapshot),
             resource_grants=resource_grants_for_snapshot(snapshot),
             file_scope_ids=file_scope_ids_for_snapshot(snapshot),
@@ -445,12 +550,18 @@ class RunRequestBuilder:
             secret_service=self.mcp_secret_service(),
         )
 
+    def _runtime_backends(self) -> RuntimeBackendRegistry:
+        if self.runtime_backends is None:
+            raise RuntimeError("Runtime backend registry was not composed for run execution")
+        return self.runtime_backends
+
     def runtime_metadata(
         self,
         *,
         run: AgentRun,
         task: Task | None,
         profile: AgentProfile,
+        runtime_profile: AgentRuntimeProfile,
         model_provider: dict[str, Any],
         authorization_snapshot: dict[str, object],
     ) -> dict[str, object]:
@@ -458,6 +569,7 @@ class RunRequestBuilder:
             run=run,
             task=task,
             profile=profile,
+            runtime_profile=runtime_profile,
             model_provider=model_provider,
             authorization_snapshot=authorization_snapshot,
         )
@@ -535,11 +647,10 @@ class RunRequestBuilder:
     def model_provider_for_run(
         self,
         run: AgentRun,
-        profile: AgentProfile,
         *,
         override: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return self.model_providers.provider_for_run(run, profile, override=override)
+        return self.model_providers.provider_for_run(run, override=override)
 
     def resolve_model_provider(
         self,
@@ -587,15 +698,14 @@ class RunRequestBuilder:
     def allowed_tools_for_run(
         self,
         run: AgentRun,
-        profile: AgentProfile,
     ) -> tuple[str, ...]:
-        return self.authorization.allowed_tools_for_run(run, profile)
+        return self.authorization.allowed_tools_for_run(run)
 
     def validate_authorization_snapshot(
         self,
         run: AgentRun,
         task: Task | None,
-        profile: AgentProfile,
+        profile: AgentProfile | None,
         snapshot: dict[str, object],
     ) -> None:
         self.authorization.validate_authorization_snapshot(run, task, profile, snapshot)

@@ -162,6 +162,7 @@ class PendingToolInvocationService:
                         "outcome_unknown",
                     )
                 ),
+                PendingToolInvocation.decision_consumed_at.is_(None),
             )
             .order_by(PendingToolInvocation.created_at, PendingToolInvocation.id)
         ).all()
@@ -222,7 +223,7 @@ class PendingToolInvocationService:
         self._session.commit()
         return invocation, None
 
-    def mark_rejections_consumed(
+    def mark_decisions_consumed(
         self,
         *,
         workspace_id: UUID,
@@ -232,13 +233,18 @@ class PendingToolInvocationService:
             select(PendingToolInvocation).where(
                 PendingToolInvocation.workspace_id == workspace_id,
                 PendingToolInvocation.agent_run_id == run_id,
-                PendingToolInvocation.status == "rejected",
+                PendingToolInvocation.status.in_(
+                    ("approved", "rejected", "completed", "failed", "outcome_unknown")
+                ),
+                PendingToolInvocation.decision_consumed_at.is_(None),
             )
         ).all()
-        completed_at = datetime.now(UTC)
+        consumed_at = datetime.now(UTC)
         for invocation in invocations:
-            invocation.status = "rejection_consumed"
-            invocation.completed_at = completed_at
+            invocation.decision_consumed_at = consumed_at
+            if invocation.status == "rejected":
+                invocation.status = "rejection_consumed"
+                invocation.completed_at = consumed_at
         self._session.flush(invocations)
 
     def mark_stale_execution_outcome_unknown(

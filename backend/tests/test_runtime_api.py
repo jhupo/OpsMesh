@@ -10,6 +10,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.api.dependencies.runtime import get_docker_runtime_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
@@ -24,14 +25,14 @@ from backend.app.runtime.environment.contracts import (
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.api.dependencies.runtime import get_docker_runtime_client
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.workers.registry import WorkerJobHandler
 
 TOKEN = "test-token"
+PINNED_IMAGE = "python@sha256:" + "0" * 64
 
 
 class FakeDockerClient(DockerRuntimeClient):
@@ -138,7 +139,7 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
         runtime_docker_client=docker,
     ).handle(create_job)
     queue.ack(create_job)
-    assert docker.created_requests[0].image == "python:3.12-slim"
+    assert docker.created_requests[0].image == PINNED_IMAGE
     assert docker.created_requests[0].network_disabled is True
     assert docker.created_requests[0].hardening.cap_drop == ("ALL",)
     assert docker.created_requests[0].hardening.security_opt == ("no-new-privileges:true",)
@@ -234,7 +235,7 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
 
 
 def test_runtime_api_rejects_disallowed_image_and_network() -> None:
-    client, session, docker, _ = _client(allowed_images=["python:3.12-slim"])
+    client, session, docker, _ = _client(allowed_images=[PINNED_IMAGE])
     owner, workspace = _seed_workspace(session, role="owner")
     allowed_template = _seed_template(session)
     blocked_template = _seed_template(
@@ -269,7 +270,7 @@ def test_runtime_api_rejects_disallowed_image_and_network() -> None:
 
 
 def test_runtime_api_rejects_cross_workspace_runtime_space() -> None:
-    client, session, docker, _ = _client(allowed_images=["python:3.12-slim"])
+    client, session, docker, _ = _client(allowed_images=[PINNED_IMAGE])
     owner, workspace = _seed_workspace(session, role="owner")
     _, other_workspace = _seed_workspace(
         session,
@@ -399,7 +400,7 @@ def test_runtime_responses_redact_sensitive_policy_fields() -> None:
 
 
 def test_runtime_api_allows_network_when_template_allows_it() -> None:
-    client, session, docker, queue = _client(allowed_images=["python:3.12-slim"])
+    client, session, docker, queue = _client(allowed_images=[PINNED_IMAGE])
     owner, workspace = _seed_workspace(session, role="owner")
     template = _seed_template(session, network_policy={"allow_network": True})
     session.add(
@@ -440,7 +441,7 @@ def test_runtime_api_allows_network_when_template_allows_it() -> None:
 
 
 def test_runtime_api_rejects_network_when_platform_policy_disables_egress() -> None:
-    client, session, docker, _ = _client(allowed_images=["python:3.12-slim"])
+    client, session, docker, _ = _client(allowed_images=[PINNED_IMAGE])
     owner, workspace = _seed_workspace(session, role="owner")
     template = _seed_template(session, network_policy={"allow_network": True})
     session.add(
@@ -492,7 +493,7 @@ def _client(
         log_format="text",
         internal_api_token=TOKEN,
         database_url="sqlite+pysqlite:///:memory:",
-        runtime_allowed_images=allowed_images or ["python:3.12-slim"],
+        runtime_allowed_images=allowed_images or [PINNED_IMAGE],
     )
     app = create_app(settings)
     from fakeredis import FakeRedis
@@ -541,7 +542,7 @@ def _seed_template(
     session: Session,
     *,
     name: str = "python",
-    image: str = "python:3.12-slim",
+    image: str = PINNED_IMAGE,
     network_policy: dict[str, object] | None = None,
 ) -> RuntimeTemplate:
     template = RuntimeTemplate(

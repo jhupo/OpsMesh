@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.core.utils import uuid_or_none
-from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
 from backend.app.domains.agents.providers.model_api import (
     canonical_model_api,
     model_api_options_for_provider,
@@ -25,35 +25,35 @@ class RunRequestModelProviderService:
     def provider_for_run(
         self,
         run: AgentRun,
-        profile: AgentProfile,
         *,
         override: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if override is not None:
             return override
         snapshot = authorization_snapshot_for_run(run).get("model_provider")
-        credential_id = profile.model_provider_credential_id
-        agent_model = profile.model
-        prefer_model_api = False
-        if isinstance(snapshot, dict):
-            source = snapshot.get("source")
-            if source == "agent_override":
-                credential_id = uuid_or_none(snapshot.get("credential_id"))
-                selected_model = snapshot.get("selected_model")
-                if isinstance(selected_model, str) and selected_model:
-                    agent_model = selected_model
-            model_api = canonical_model_api(snapshot.get("model_api"))
-            prefer_model_api = "model_api" in snapshot
-        else:
-            model_api = model_api_from_settings(profile.model_settings)
-            prefer_model_api = model_api is not None
-        return self.resolve(
+        if not isinstance(snapshot, dict):
+            raise ValueError("Authorization snapshot model provider is invalid")
+        credential_id = uuid_or_none(snapshot.get("credential_id"))
+        selected_model = snapshot.get("selected_model")
+        expected_provider = snapshot.get("provider")
+        if credential_id is None:
+            raise ModelProviderUnavailableError(
+                "Authorization snapshot has no model provider credential"
+            )
+        if not isinstance(selected_model, str) or not selected_model:
+            raise ValueError("Authorization snapshot selected model is invalid")
+        if not isinstance(expected_provider, str) or not expected_provider:
+            raise ValueError("Authorization snapshot model provider is invalid")
+        resolved = self.resolve(
             workspace_id=run.workspace_id,
             credential_id=credential_id,
-            agent_model=agent_model,
-            model_api=model_api,
-            prefer_model_api=prefer_model_api,
+            agent_model=selected_model,
+            model_api=canonical_model_api(snapshot.get("model_api")),
+            prefer_model_api="model_api" in snapshot,
         )
+        if resolved["provider"] != expected_provider:
+            raise ValueError("Authorized model provider binding has changed")
+        return resolved
 
     def resolve(
         self,
@@ -95,13 +95,6 @@ class RunRequestModelProviderService:
             key_id=self.settings.credential_encryption_key_id,
             previous_secrets=self.settings.credential_encryption_previous_secrets,
         )
-
-
-def model_api_from_settings(settings: dict[str, object] | None) -> str | None:
-    """Return the canonical model API requested by an agent's settings."""
-    if settings is None:
-        return None
-    return canonical_model_api(settings.get("model_api"))
 
 
 def effective_resolved_model_api(

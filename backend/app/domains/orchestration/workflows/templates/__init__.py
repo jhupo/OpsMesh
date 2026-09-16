@@ -4,6 +4,8 @@ The public service exports are loaded lazily so leaf template helpers can be
 imported by the planning domain without creating a package-level cycle.
 """
 
+from typing import Any
+
 __all__ = [
     "ProjectPlan",
     "ProjectPlanValidationError",
@@ -12,7 +14,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name == "ProjectPlan":
         from backend.app.domains.orchestration.workflows.templates.builder import ProjectPlan
 

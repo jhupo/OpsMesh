@@ -93,5 +93,5 @@ def runtime_security_metadata(runtime: WorkspaceRuntime) -> dict[str, object]:
     return {
         "runtime_id": str(runtime.id),
         "runtime_space_id": str(runtime.runtime_space_id) if runtime.runtime_space_id else None,
-        "docker_container_id": runtime.docker_container_id,
+        "container_attached": runtime.docker_container_id is not None,
     }

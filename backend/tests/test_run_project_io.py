@@ -18,7 +18,6 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.access.models import User
 from backend.app.domains.capabilities.resources.models import CapabilityResource
 from backend.app.domains.orchestration.runs.models import (
@@ -43,6 +42,9 @@ from backend.app.domains.workspace.storage.models import FileAccessEvent, Worksp
 from backend.app.domains.workspace.storage.storage import LocalStorage
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.runtime.environment.backends.docker import DockerRuntimeBackend
+from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.environment.contracts import RuntimeCommandResult
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.tests.fixtures.project_authorization import authorize_project_run
@@ -108,6 +110,7 @@ class ProjectIOFixture:
     session: Session
     storage: LocalStorage
     docker: FakeDockerClient
+    runtime_backends: RuntimeBackendRegistry
     settings: Settings
     owner: User
     workspace: Workspace
@@ -122,7 +125,7 @@ def test_managed_runtime_stages_snapshot_and_versions_declared_outputs(tmp_path:
     service = RunProjectIOService(
         fixture.session,
         fixture.storage,
-        fixture.docker,
+        fixture.runtime_backends,
         fixture.settings,
     )
 
@@ -158,7 +161,7 @@ def test_managed_runtime_stages_snapshot_and_versions_declared_outputs(tmp_path:
     second_service = RunProjectIOService(
         fixture.session,
         fixture.storage,
-        fixture.docker,
+        fixture.runtime_backends,
         fixture.settings,
     )
     second_service.stage_inputs(second_run, actor_user_id=fixture.owner.id)
@@ -187,7 +190,7 @@ def test_terminal_run_cleanup_is_scoped_idempotent_and_audited(tmp_path: Path) -
     service = RunProjectIOService(
         fixture.session,
         fixture.storage,
-        fixture.docker,
+        fixture.runtime_backends,
         fixture.settings,
     )
     service.stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
@@ -232,7 +235,7 @@ def test_managed_runtime_fails_closed_when_required_output_is_missing(tmp_path: 
     service = RunProjectIOService(
         fixture.session,
         fixture.storage,
-        fixture.docker,
+        fixture.runtime_backends,
         fixture.settings,
     )
     service.stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
@@ -269,7 +272,7 @@ def test_managed_runtime_rejects_corrupt_snapshotted_input(tmp_path: Path) -> No
     service = RunProjectIOService(
         fixture.session,
         fixture.storage,
-        fixture.docker,
+        fixture.runtime_backends,
         fixture.settings,
     )
 
@@ -296,7 +299,7 @@ def test_project_snapshot_without_runtime_fails_instead_of_skipping_io(tmp_path:
         RunProjectIOService(
             fixture.session,
             fixture.storage,
-            fixture.docker,
+            fixture.runtime_backends,
             fixture.settings,
         ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
 
@@ -327,7 +330,7 @@ def test_project_scope_denial_is_fail_closed_and_audited_without_file_details(
         RunProjectIOService(
             fixture.session,
             fixture.storage,
-            fixture.docker,
+            fixture.runtime_backends,
             fixture.settings,
         ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
 
@@ -381,7 +384,7 @@ def test_sensitive_project_files_are_denied_before_storage_read(
         RunProjectIOService(
             fixture.session,
             fixture.storage,
-            fixture.docker,
+            fixture.runtime_backends,
             fixture.settings,
         ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
 
@@ -394,7 +397,7 @@ def test_file_policy_revocation_blocks_output_harvest(tmp_path: Path) -> None:
     service = RunProjectIOService(
         fixture.session,
         fixture.storage,
-        fixture.docker,
+        fixture.runtime_backends,
         fixture.settings,
     )
     service.stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
@@ -445,7 +448,7 @@ def test_project_runtime_capacity_is_enforced_before_storage_read(tmp_path: Path
         RunProjectIOService(
             fixture.session,
             fixture.storage,
-            fixture.docker,
+            fixture.runtime_backends,
             fixture.settings,
         ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
 
@@ -469,7 +472,7 @@ def test_changed_file_resource_grant_is_denied_and_audited(tmp_path: Path) -> No
         RunProjectIOService(
             fixture.session,
             fixture.storage,
-            fixture.docker,
+            fixture.runtime_backends,
             fixture.settings,
         ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
 
@@ -514,7 +517,7 @@ def test_tampered_project_path_is_rejected_with_redacted_security_evidence(
         RunProjectIOService(
             fixture.session,
             fixture.storage,
-            fixture.docker,
+            fixture.runtime_backends,
             fixture.settings,
         ).stage_inputs(fixture.run, actor_user_id=fixture.owner.id)
 
@@ -603,7 +606,7 @@ def _fixture(tmp_path: Path) -> ProjectIOFixture:
     )
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
-        runtime_provider="docker",
+        runtime_provider="cloud_docker",
         runtime_type="docker",
         name="managed-runtime",
         status="running",
@@ -643,10 +646,14 @@ def _fixture(tmp_path: Path) -> ProjectIOFixture:
     session.commit()
     storage = LocalStorage(str(tmp_path / "storage"))
     storage.write(storage_key, content)
+    docker = FakeDockerClient()
     return ProjectIOFixture(
         session=session,
         storage=storage,
-        docker=FakeDockerClient(),
+        docker=docker,
+        runtime_backends=RuntimeBackendRegistry(
+            {"cloud_docker": DockerRuntimeBackend(docker)}
+        ),
         settings=Settings(
             environment="test",
             log_format="text",

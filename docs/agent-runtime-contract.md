@@ -11,7 +11,7 @@ The product layer owns users, workspaces, tasks, permissions, runtimes, approval
 
 ## Product-Owned Runtime Contracts
 
-The adapter boundary is defined by `backend.app.domains.agents.runtime.execution.contracts`; orchestration code does not
+The adapter boundary is defined by `backend.app.domains.agents.runtime.contracts`; orchestration code does not
 accept SDK result, state, session, or stream-event objects. The contract includes:
 
 - `AgentRuntimeSession` for durable conversation history
@@ -277,9 +277,15 @@ Rules:
 
 ## Authorization Snapshot Contract
 
-Authorization snapshot version 2 is immutable for the lifetime of a run. It stores the effective
-capability catalog and a canonical fingerprint. The catalog has its own fingerprint so callers can
-verify the nested manifest independently.
+Authorization snapshot version 3 is immutable for the lifetime of a run. It stores the effective
+capability catalog, the root Agent runtime Profile, the resolved model-provider binding, the
+provider fallback candidates, and a canonical fingerprint. The catalog has its own fingerprint so
+callers can verify the nested manifest independently.
+
+The worker still checks that a referenced live Agent Profile remains active for revocation, but the
+SDK request never reads its mutable name, role, instructions, model, or model settings. A run with
+an inactive or archived Profile fails closed. Model-provider fallback candidates are resolved and
+frozen when the run is created; later workspace settings cannot change a queued run's routing.
 
 The snapshot also freezes `runtime_binding`: workspace runtime, runtime space, authorizing runtime
 resource IDs, effective network restriction, and gateway-only file IDs. The typed

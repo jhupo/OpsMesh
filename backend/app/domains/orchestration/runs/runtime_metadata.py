@@ -1,6 +1,7 @@
 from typing import Any
 
 from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.domains.agents.runtime.contracts import AgentRuntimeProfile
 from backend.app.domains.orchestration.requests.context import RunRequestContextProvider
 from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
 from backend.app.domains.orchestration.runs.models import AgentRun
@@ -23,12 +24,16 @@ class RunRuntimeMetadataBuilder:
         run: AgentRun,
         task: Task | None,
         profile: AgentProfile,
+        runtime_profile: AgentRuntimeProfile,
         model_provider: dict[str, Any],
         authorization_snapshot: dict[str, object],
     ) -> dict[str, object]:
         metadata: dict[str, object] = {
-            "agent_profile_id": str(profile.id) if profile.id is not None else None,
-            "agent_role": profile.role,
+            "agent_profile_id": str(runtime_profile.id)
+            if runtime_profile.id is not None
+            else None,
+            "agent_profile_version": runtime_profile.version,
+            "agent_role": runtime_profile.role,
             "run_model": model_provider["model"],
             "model_provider_provider": model_provider["provider"],
             "model_provider_credential_id": str(model_provider["model_provider_credential_id"])

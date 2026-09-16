@@ -52,48 +52,22 @@ class TeamProviderReadinessMemberBuilder:
         if unsupported_model_api is not None:
             reasons.append("model_api_override_unsupported")
         effective_model_api = self._effective_model_api(agent, credential)
-        runtime_participant = member.status == "active" and member.accepts_tasks is True
-
         return {
-            "team_member_id": member.id,
-            "agent_profile_id": member.agent_profile_id,
-            "agent_name": agent.name if agent is not None else None,
-            "team_role": member.team_role,
-            "accepts_tasks": member.accepts_tasks,
-            "member_status": member.status,
-            "runtime_participant": runtime_participant,
-            "runtime_blocking": runtime_participant and bool(reasons),
-            "runtime_degraded": runtime_participant and not reasons and bool(warnings),
-            "readiness_status": _readiness_status(reasons, warnings),
-            "reasons": reasons,
-            "warnings": warnings,
-            "provider": credential.provider if credential is not None else None,
-            "model": selected_model,
-            "model_api": effective_model_api,
-            "requested_model_api": unsupported_model_api,
-            "model_apis": _credential_model_apis(credential),
-            "default_model_api": _credential_default_model_api(credential),
-            "model_capability": _model_capability_payload(
-                _capability_provider(agent, credential),
-                selected_model,
+            **_member_readiness_payload(
+                member=member,
+                agent=agent,
+                reasons=reasons,
+                warnings=warnings,
             ),
-            "credential_id": _credential_id(agent, credential),
-            "credential_reference": _credential_reference(agent, credential),
-            "credential_status": credential.status if credential is not None else None,
-            "credential_health_status": (
-                credential.health_status if credential is not None else None
+            **_model_readiness_payload(
+                agent=agent,
+                credential=credential,
+                selected_model=selected_model,
+                effective_model_api=effective_model_api,
+                unsupported_model_api=unsupported_model_api,
             ),
-            "failure_count": credential.failure_count if credential is not None else 0,
-            "last_failure_at": (credential.last_failure_at if credential is not None else None),
-            "last_failure_code": (credential.last_failure_code if credential is not None else None),
-            "last_failure_message": _last_failure_message(credential),
-            "budget_exhausted": (
-                budget_is_exhausted(credential.budget_metadata) if credential is not None else False
-            ),
-            "last_health_check_at": (
-                model_provider_last_health_check_at(credential) if credential is not None else None
-            ),
-            "scheduled_health_check": schedule,
+            **_credential_readiness_payload(agent=agent, credential=credential),
+            **_health_readiness_payload(credential=credential, schedule=schedule),
         }
 
     def _diagnostics(
@@ -173,6 +147,85 @@ def _append_missing_credential_reason(
         reasons.append("workspace_default_model_provider_missing")
     else:
         warnings.append("model_provider_credential_not_configured")
+
+
+def _member_readiness_payload(
+    *,
+    member: AgentTeamMember,
+    agent: AgentProfile | None,
+    reasons: list[str],
+    warnings: list[str],
+) -> dict[str, object]:
+    runtime_participant = member.status == "active" and member.accepts_tasks is True
+    return {
+        "team_member_id": member.id,
+        "agent_profile_id": member.agent_profile_id,
+        "agent_name": agent.name if agent is not None else None,
+        "team_role": member.team_role,
+        "accepts_tasks": member.accepts_tasks,
+        "member_status": member.status,
+        "runtime_participant": runtime_participant,
+        "runtime_blocking": runtime_participant and bool(reasons),
+        "runtime_degraded": runtime_participant and not reasons and bool(warnings),
+        "readiness_status": _readiness_status(reasons, warnings),
+        "reasons": reasons,
+        "warnings": warnings,
+    }
+
+
+def _model_readiness_payload(
+    *,
+    agent: AgentProfile | None,
+    credential: ModelProviderCredential | None,
+    selected_model: str | None,
+    effective_model_api: str | None,
+    unsupported_model_api: str | None,
+) -> dict[str, object]:
+    return {
+        "provider": credential.provider if credential is not None else None,
+        "model": selected_model,
+        "model_api": effective_model_api,
+        "requested_model_api": unsupported_model_api,
+        "model_apis": _credential_model_apis(credential),
+        "default_model_api": _credential_default_model_api(credential),
+        "model_capability": _model_capability_payload(
+            _capability_provider(agent, credential),
+            selected_model,
+        ),
+    }
+
+
+def _credential_readiness_payload(
+    *,
+    agent: AgentProfile | None,
+    credential: ModelProviderCredential | None,
+) -> dict[str, object]:
+    return {
+        "credential_id": _credential_id(agent, credential),
+        "credential_reference": _credential_reference(agent, credential),
+        "credential_status": credential.status if credential is not None else None,
+        "credential_health_status": credential.health_status if credential is not None else None,
+        "failure_count": credential.failure_count if credential is not None else 0,
+        "last_failure_at": credential.last_failure_at if credential is not None else None,
+        "last_failure_code": credential.last_failure_code if credential is not None else None,
+        "last_failure_message": _last_failure_message(credential),
+        "budget_exhausted": (
+            budget_is_exhausted(credential.budget_metadata) if credential is not None else False
+        ),
+    }
+
+
+def _health_readiness_payload(
+    *,
+    credential: ModelProviderCredential | None,
+    schedule: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "last_health_check_at": (
+            model_provider_last_health_check_at(credential) if credential is not None else None
+        ),
+        "scheduled_health_check": schedule,
+    }
 
 
 def _readiness_status(reasons: list[str], warnings: list[str]) -> str:

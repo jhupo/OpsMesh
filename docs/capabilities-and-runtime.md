@@ -354,11 +354,11 @@ workspace and must be explicitly rebound in the target workspace.
 
 ### Frozen Run Manifest And Execution Gateway
 
-Creating a run freezes the effective catalog into authorization snapshot version 2. The snapshot
+Creating a run freezes the effective catalog into authorization snapshot version 3. The snapshot
 contains the exact product/MCP tool descriptors, input schemas, merged defaults, locked parameters,
 resource grants, gateway-only file scope, MCP server and allowlist provenance, runtime placement,
-network requirements, and canonical fingerprints. Later Agent or team configuration changes affect
-new runs only.
+network requirements, the immutable root Agent runtime Profile, resolved provider/fallback bindings,
+and canonical fingerprints. Later Agent or team configuration changes affect new runs only.
 
 Both OpenAI Agents SDK function tools and Claude Agent SDK MCP tools are generated from the
 frozen descriptors. Every backend tool call then crosses the Agent tool gateway, which:

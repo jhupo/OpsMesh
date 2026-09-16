@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.utils import dict_or_empty, string_list, uuid_or_none
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
+    AgentRuntimeProfile,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
@@ -28,6 +29,7 @@ from backend.app.domains.orchestration.runs.authorization.runtime import (
 )
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import (
+    AUTHORIZATION_SNAPSHOT_VERSION,
     AgentRun,
     RunEvent,
     authorization_snapshot_fingerprint,
@@ -46,9 +48,11 @@ def expect_optional_uuid(
     """Validate an optional UUID in an authorization snapshot."""
     raw_value = snapshot.get(key)
     if raw_value is None:
+        if expected is not None:
+            raise ValueError(f"Authorization snapshot {key} mismatch")
         return
     parsed = uuid_or_none(raw_value)
-    if parsed != expected:
+    if parsed is None or parsed != expected:
         raise ValueError(f"Authorization snapshot {key} mismatch")
 
 
@@ -81,10 +85,8 @@ class RunAuthorizationService:
     def allowed_tools_for_run(
         self,
         run: AgentRun,
-        profile: AgentProfile,
     ) -> tuple[str, ...]:
         snapshot = authorization_snapshot_for_run(run)
-        _ = profile
         raw_tools = snapshot.get("allowed_tools")
         if not isinstance(raw_tools, list) or not all(isinstance(tool, str) for tool in raw_tools):
             raise ValueError("Authorization snapshot allowed tools are invalid")
@@ -99,10 +101,9 @@ class RunAuthorizationService:
         *,
         lock_resources: bool = False,
     ) -> None:
-        _ = profile
         if not snapshot:
             raise ValueError("Authorization snapshot is required")
-        if snapshot.get("version") != 2:
+        if snapshot.get("version") != AUTHORIZATION_SNAPSHOT_VERSION:
             raise ValueError("Authorization snapshot version is unsupported")
         fingerprint = snapshot.get("fingerprint")
         if not isinstance(fingerprint, str) or fingerprint != authorization_snapshot_fingerprint(
@@ -114,6 +115,22 @@ class RunAuthorizationService:
         expect_optional_uuid(snapshot, "task_step_id", run.task_step_id)
         expect_optional_uuid(snapshot, "agent_profile_id", run.agent_profile_id)
         expect_optional_uuid(snapshot, "runtime_space_id", run.runtime_space_id)
+        agent_runtime_profile_for_snapshot(
+            snapshot,
+            workspace_id=run.workspace_id,
+            profile_id=run.agent_profile_id,
+        )
+        if run.agent_profile_id is not None:
+            if (
+                profile is None
+                or profile.id != run.agent_profile_id
+                or profile.workspace_id != run.workspace_id
+                or profile.status != "active"
+                or profile.archived_at is not None
+            ):
+                raise ValueError("Run agent profile is unavailable")
+        elif profile is not None:
+            raise ValueError("Run agent profile scope mismatch")
         if task is not None and task.workspace_id != run.workspace_id:
             raise ValueError("Authorization snapshot task workspace mismatch")
         if task is not None and "task_owner_agent_profile_id" in snapshot:
@@ -161,7 +178,6 @@ class RunAuthorizationService:
             resource_grants_for_snapshot(snapshot),
             lock=lock_resources,
         )
-
     def record_runtime_denial(
         self,
         run: AgentRun,
@@ -400,6 +416,52 @@ class RunAuthorizationService:
             }
             for ref in refs
         ]
+
+
+def agent_runtime_profile_for_snapshot(
+    snapshot: dict[str, object],
+    *,
+    workspace_id: UUID,
+    profile_id: UUID | None,
+) -> AgentRuntimeProfile:
+    raw_profile = snapshot.get("agent_profile")
+    if not isinstance(raw_profile, dict):
+        raise ValueError("Authorization snapshot agent profile is invalid")
+    raw_profile_id = raw_profile.get("id")
+    parsed_profile_id = uuid_or_none(raw_profile_id)
+    if raw_profile_id is not None and parsed_profile_id is None:
+        raise ValueError("Authorization snapshot agent profile id is invalid")
+    parsed_workspace_id = uuid_or_none(raw_profile.get("workspace_id"))
+    version = raw_profile.get("version")
+    name = raw_profile.get("name")
+    role = raw_profile.get("role")
+    instructions = raw_profile.get("instructions")
+    model = raw_profile.get("model")
+    model_settings = raw_profile.get("model_settings")
+    if parsed_profile_id != profile_id or parsed_workspace_id != workspace_id:
+        raise ValueError("Authorization snapshot agent profile scope mismatch")
+    if isinstance(version, bool) or not isinstance(version, int) or version <= 0:
+        raise ValueError("Authorization snapshot agent profile version is invalid")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("Authorization snapshot agent profile name is invalid")
+    if not isinstance(role, str) or not role.strip():
+        raise ValueError("Authorization snapshot agent profile role is invalid")
+    if not isinstance(instructions, str):
+        raise ValueError("Authorization snapshot agent profile instructions are invalid")
+    if not isinstance(model, str) or not model.strip():
+        raise ValueError("Authorization snapshot agent profile model is invalid")
+    if not isinstance(model_settings, dict):
+        raise ValueError("Authorization snapshot agent profile model settings are invalid")
+    return AgentRuntimeProfile(
+        id=parsed_profile_id,
+        workspace_id=parsed_workspace_id,
+        version=version,
+        name=name,
+        role=role,
+        instructions=instructions,
+        model=model,
+        model_settings=dict(model_settings),
+    )
 
 
 def capability_catalog_for_snapshot(

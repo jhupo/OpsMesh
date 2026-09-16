@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 
 from agents import Agent, RunConfig, RunHooks, Runner, RunResultStreaming, RunState, Session
 from agents.items import TResponseInputItem
@@ -70,6 +71,11 @@ async def run_openai_streamed(
                         payload=mapped.payload,
                         delta=mapped.delta,
                     )
+    except asyncio.CancelledError:
+        result.cancel()
+        with suppress(Exception):
+            await cancel_active_tools(request)
+        raise
     finally:
         await stop_cancellation_watcher(watcher)
     if cancelled.is_set():

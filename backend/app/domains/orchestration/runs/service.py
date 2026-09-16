@@ -136,7 +136,9 @@ class RunOrchestrationService:
             priority=self._run_job_routing().priority(run),
             routing=self._run_job_routing().routing(run),
         )
-        return self._queue.enqueue(job, force=force)
+        if force:
+            return self._queue.ensure_enqueued(job)
+        return self._queue.enqueue(job)
 
     def schedule_workspace_steps(
         self,

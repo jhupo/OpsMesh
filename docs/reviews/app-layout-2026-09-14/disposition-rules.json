@@ -775,11 +775,11 @@
         "domains/capabilities/catalog/service.py"
       ],
       "targets": [
-        "domains/capabilities/catalog/queries.py"
+        "domains/capabilities/catalog/service.py"
       ],
-      "action": "move",
+      "action": "keep",
       "phase": "R3",
-      "reason": "Catalog projection is distinct from capability CRUD."
+      "reason": "Capability catalog CRUD and projections remain cohesive in the current catalog service boundary."
     },
     {
       "sources": [
@@ -993,15 +993,14 @@
     },
     {
       "sources": [
-        "domains/orchestration/tasks/service.py",
-        "domains/orchestration/tasks/status.py"
+        "domains/orchestration/tasks/service.py"
       ],
       "targets": [
-        "domains/orchestration/tasks/state.py"
+        "domains/orchestration/tasks/service.py"
       ],
-      "action": "merge",
+      "action": "keep",
       "phase": "R4",
-      "reason": "Co-locate task state transitions; free service.py for task CRUD."
+      "reason": "Task CRUD, subworkflow creation and scoped task projections remain cohesive in the task service boundary."
     },
     {
       "sources": [

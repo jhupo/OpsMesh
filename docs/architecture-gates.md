@@ -76,7 +76,7 @@ domain independence, acyclic service dependencies, or complete DTO consolidation
 transport model is a distinct architectural migration, not an ignored-import workaround.
 
 After this bounded gate, active work proceeds through the remaining runtime release gate and
-operator-hardening work in the [Agent runtime completion plan](agent-runtime-completion-plan.md).
+operator-hardening work in the [Platform Productionization Plan](platform-productionization-plan.md).
 Knowledge-source registration, asynchronous workspace-file and isolated URL ingestion, immutable
 source revisions, citation spans, and permission-aware citation retrieval are covered by the current
 knowledge service. The remaining release gate is deliberately tag-only and is validated in CI.

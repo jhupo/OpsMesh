@@ -13,7 +13,7 @@ from backend.app.domains.agents.providers.probes import (
     OpenAICompatibleHealthProbe,
     ProviderHealthRegistry,
 )
-from backend.app.runtime.environment.backends.registry import build_runtime_backend_registry
+from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 
 
 def test_health_registry_selects_provider_sdk_adapters() -> None:
@@ -78,8 +78,8 @@ def test_health_registry_selects_provider_sdk_adapters() -> None:
 def test_runtime_registry_declares_only_implemented_backends() -> None:
     registry = build_runtime_backend_registry(None)
     matrix = registry.capabilities()
-    assert matrix["docker"].managed_container_lifecycle
-    assert not matrix["docker"].asynchronous_jobs
+    assert matrix["cloud_docker"].managed_container_lifecycle
+    assert not matrix["cloud_docker"].asynchronous_jobs
     assert matrix["self_hosted"].asynchronous_jobs
     assert matrix["self_hosted"].mcp_stdio
     assert not matrix["self_hosted"].managed_container_lifecycle

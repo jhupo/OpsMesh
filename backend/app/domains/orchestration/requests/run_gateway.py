@@ -13,6 +13,7 @@ from backend.app.domains.agents.runtime.contracts import (
 from backend.app.domains.agents.runtime.errors import (
     AgentRuntimeCancelledError,
     AgentRuntimePolicyError,
+    AgentRuntimeProviderError,
 )
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.requests.provider_audit import ModelProviderAuditService
@@ -65,6 +66,10 @@ class ModelRunGateway:
             self.session.commit()
             return None
         except Exception as exc:
+            if not isinstance(exc, AgentRuntimeProviderError):
+                self.mark_run_failed(run, exc)
+                self.session.commit()
+                raise
             fallback_request = routing.fallback_request(
                 run=run,
                 job=job,
@@ -98,11 +103,12 @@ class ModelRunGateway:
         except Exception as fallback_exc:
             self.events.append_model_request_failed_event(run, fallback_request, fallback_exc)
             audit.record_request_failed(run, fallback_request, job, fallback_exc)
-            routing.record_failure(
-                run,
-                fallback_request.model_provider_credential_id,
-                fallback_exc,
-            )
+            if isinstance(fallback_exc, AgentRuntimeProviderError):
+                routing.record_failure(
+                    run,
+                    fallback_request.model_provider_credential_id,
+                    fallback_exc,
+                )
             self.mark_run_failed(run, fallback_exc)
             self.session.commit()
             raise
@@ -197,7 +203,7 @@ class ModelRunGateway:
         except Exception as exc:
             self.events.append_model_request_failed_event(run, request, exc)
             audit.record_request_failed(run, request, job, exc)
-            if not isinstance(exc, AgentRuntimePolicyError):
+            if isinstance(exc, AgentRuntimeProviderError):
                 routing.record_failure(
                     run,
                     request.model_provider_credential_id,

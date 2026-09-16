@@ -12,6 +12,8 @@ from backend.app.domains.orchestration.runs.authorization.policy import (
     catalog_for_snapshot,
     catalog_has_stdio_tool,
     file_resource_ids,
+    parse_required_uuid,
+    parse_uuid_set,
     runtime_policy_disables_network,
     runtime_resource_grants,
     snapshot_file_scope_ids,
@@ -500,7 +502,7 @@ class RunRuntimeAuthorizationService:
         capability_catalog: dict[str, object] | None,
     ) -> tuple[UUID, ...]:
         granted_ids = file_resource_ids(capability_catalog)
-        dependency_ids = _uuid_set(
+        dependency_ids = parse_uuid_set(
             step.dependencies.get("allowed_file_ids")
             if step is not None and isinstance(step.dependencies, dict)
             else None,
@@ -548,7 +550,7 @@ def runtime_binding_for_snapshot(
         runtime_space_id = _optional_uuid(raw.get("runtime_space_id"))
         capability_resource_ids = tuple(
             sorted(
-                _uuid_set(
+                parse_uuid_set(
                     raw.get("capability_resource_ids"),
                     field="runtime binding capability_resource_ids",
                 ),
@@ -562,7 +564,7 @@ def runtime_binding_for_snapshot(
             raise ValueError("runtime binding file access mode is unsupported")
         allowed_file_ids = tuple(
             sorted(
-                _uuid_set(
+                parse_uuid_set(
                     file_access_scope.get("allowed_file_ids"),
                     field="runtime binding allowed_file_ids",
                 ),
@@ -606,26 +608,8 @@ def runtime_binding_for_snapshot(
     )
 
 
-def _uuid_set(value: object, *, field: str) -> set[UUID]:
-    if value is None:
-        return set()
-    if not isinstance(value, list):
-        raise ValueError(f"{field} must be an array")
-    result = {_required_uuid(item, field) for item in value}
-    if len(result) != len(value):
-        raise ValueError(f"{field} must not contain duplicates")
-    return result
-
-
-def _required_uuid(value: object, field: str) -> UUID:
-    try:
-        return UUID(str(value))
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field} must be a UUID") from exc
-
-
 def _optional_uuid(value: object) -> UUID | None:
-    return None if value is None else _required_uuid(value, "runtime binding identifier")
+    return None if value is None else parse_required_uuid(value, "runtime binding identifier")
 
 
 def _only(values: set[UUID]) -> UUID | None:

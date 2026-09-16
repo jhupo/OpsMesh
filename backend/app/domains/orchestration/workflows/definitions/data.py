@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload_item
+from backend.app.core.utils import walk_mapping
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowDataBinding
 
@@ -91,7 +92,11 @@ def _resolve_reference(
             "domain_state": task.domain_state,
             "final_output": task.final_output,
         }
-        return _walk(roots.get(parts[1], _MISSING), parts[2:]) if len(parts) > 1 else _MISSING
+        return (
+            walk_mapping(roots.get(parts[1], _MISSING), parts[2:], missing=_MISSING)
+            if len(parts) > 1
+            else _MISSING
+        )
     if parts[0] != "steps":
         return _MISSING
     if "output" in parts[1:]:
@@ -100,7 +105,7 @@ def _resolve_reference(
         step = by_package.get(step_key) or by_id.get(step_key)
         if step is None or step.status != "completed" or step.result_payload is None:
             return _MISSING
-        return _walk(step.result_payload, parts[marker_index + 1 :])
+        return walk_mapping(step.result_payload, parts[marker_index + 1 :], missing=_MISSING)
     if parts[-1] == "result_summary":
         step_key = ".".join(parts[1:-1])
         step = by_package.get(step_key) or by_id.get(step_key)
@@ -108,15 +113,6 @@ def _resolve_reference(
             return _MISSING
         return step.result_summary if step.result_summary is not None else _MISSING
     return _MISSING
-
-
-def _walk(value: object, parts: list[str]) -> object:
-    current = value
-    for part in parts:
-        if not isinstance(current, dict) or part not in current:
-            return _MISSING
-        current = current[part]
-    return current
 
 
 def _encoded_size(value: object) -> int:

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Protocol, TypedDict
@@ -59,6 +59,30 @@ if redis.call("ZREM", KEYS[1], ARGV[1]) == 0 then
     return 0
 end
 redis.call("RPUSH", KEYS[2], ARGV[1])
+return 1
+"""
+
+RETRY_OR_DEAD_LETTER_SCRIPT = """
+if redis.call("ZREM", KEYS[1], ARGV[1]) == 0 then
+    return 0
+end
+if ARGV[4] == "retry" then
+    if tonumber(ARGV[3]) <= 0 then
+        redis.call("RPUSH", KEYS[2], ARGV[2])
+    else
+        redis.call("ZADD", KEYS[3], ARGV[3], ARGV[2])
+    end
+else
+    redis.call("RPUSH", KEYS[4], ARGV[2])
+end
+return 1
+"""
+
+REQUEUE_DEAD_LETTER_SCRIPT = """
+if redis.call("LREM", KEYS[1], 1, ARGV[1]) == 0 then
+    return 0
+end
+redis.call("RPUSH", KEYS[2], ARGV[2])
 return 1
 """
 
@@ -128,6 +152,20 @@ class RedisQueue:
             ) as enqueue_trace:
                 return self._enqueue(job.with_trace_context(enqueue_trace), force=force)
         return self._enqueue(job, force=force)
+
+    def ensure_enqueued(self, job: JobPayload) -> bool:
+        """Restore a durable job only when no active Redis projection exists.
+
+        Recovery must not use ``force=True`` because that creates a second delivery when the
+        original payload is still queued, processing, or waiting for retry.  The idempotency key
+        is deliberately cleared only after all active projections have been inspected; a stale
+        key left behind by a Redis restart can then be repaired safely.
+        """
+
+        if self._active_projection_exists(job):
+            return False
+        self.redis.delete(self.keys.idempotency_key(str(job.workspace_id), job.idempotency_key))
+        return self.enqueue(job)
 
     def _enqueue(self, job: JobPayload, *, force: bool) -> bool:
         idempotency_key = self.keys.idempotency_key(str(job.workspace_id), job.idempotency_key)
@@ -252,24 +290,41 @@ class RedisQueue:
         now: float | None = None,
         lease_token: str | None = None,
     ) -> bool:
-        removed = self._remove_processing_job(job.job_id, lease_token=lease_token)
-        if lease_token is not None and removed is None:
-            return False
         next_job = job.next_attempt(error)
-        if job.can_retry:
-            retry_delay = self._retry_delay(job, delay_seconds=delay_seconds)
-            if retry_delay <= 0:
-                self.redis.rpush(self.keys.queue(self.queue_name), self._serialize(next_job))
+        serialized = self._serialize(next_job)
+        retry_delay = self._retry_delay(job, delay_seconds=delay_seconds)
+        due_at = (
+            (time.time() if now is None else now) + retry_delay
+            if job.can_retry and retry_delay > 0
+            else 0.0
+        )
+
+        if lease_token is None:
+            if job.can_retry:
+                if due_at > 0:
+                    self.redis.zadd(self._retry_key(), {serialized: due_at})
+                else:
+                    self.redis.rpush(self.keys.queue(self.queue_name), serialized)
             else:
-                due_at = (time.time() if now is None else now) + retry_delay
-                self.redis.zadd(self._retry_key(), {self._serialize(next_job): due_at})
+                self.redis.rpush(self.keys.dead_letter_queue(self.queue_name), serialized)
             return True
 
-        self.redis.rpush(
+        processing_entry = self._processing_entry_for(job.job_id, lease_token=lease_token)
+        if processing_entry is None:
+            return False
+        moved = self.redis.eval(  # type: ignore[no-untyped-call]
+            RETRY_OR_DEAD_LETTER_SCRIPT,
+            4,
+            self._processing_key(),
+            self.keys.queue(self.queue_name),
+            self._retry_key(),
             self.keys.dead_letter_queue(self.queue_name),
-            self._serialize(next_job),
+            processing_entry[1],
+            serialized,
+            due_at,
+            "retry" if job.can_retry else "dead",
         )
-        return True
+        return bool(moved)
 
     def reclaim_due_retries(
         self, *, limit: int = 100, now: float | None = None
@@ -432,13 +487,17 @@ class RedisQueue:
                 continue
             if workspace_id is not None and job.workspace_id != workspace_id:
                 return None
-            removed = self.redis.lrem(dead_letter_key, 1, raw_job)
-            if int(removed) == 0:
-                return None
             update = {"job_id": uuid4(), "attempt": 0} if reset_attempts else {"job_id": uuid4()}
             retry_job = job.model_copy(update=update)
-            self.redis.rpush(self.keys.queue(self.queue_name), self._serialize(retry_job))
-            return retry_job
+            moved = self.redis.eval(  # type: ignore[no-untyped-call]
+                REQUEUE_DEAD_LETTER_SCRIPT,
+                2,
+                dead_letter_key,
+                self.keys.queue(self.queue_name),
+                raw_job,
+                self._serialize(retry_job),
+            )
+            return retry_job if moved else None
         return None
 
     def remove_queued_job(
@@ -474,6 +533,19 @@ class RedisQueue:
             if lease is not None or self.blocking_timeout_seconds <= 0 or time.time() >= deadline:
                 return lease
             time.sleep(min(0.05, max(0, deadline - time.time())))
+
+    def _active_projection_exists(self, job: JobPayload) -> bool:
+        for raw_job in self.redis.lrange(self.keys.queue(self.queue_name), 0, -1):
+            if self._deserialize(raw_job).idempotency_key == job.idempotency_key:
+                return True
+        for raw_entry in self.redis.zrange(self._processing_key(), 0, -1):
+            processing_job = self._deserialize_processing_entry(raw_entry)["job"]
+            if processing_job.idempotency_key == job.idempotency_key:
+                return True
+        for raw_job in self.redis.zrange(self._retry_key(), 0, -1):
+            if self._deserialize(raw_job).idempotency_key == job.idempotency_key:
+                return True
+        return False
 
     def _pop_best_matching(
         self,
@@ -511,7 +583,8 @@ class RedisQueue:
         )
         if not leased:
             return None
-        return json.loads(processing_entry)["lease_id"]
+        lease_id = json.loads(processing_entry).get("lease_id")
+        return lease_id if isinstance(lease_id, str) else None
 
     def _remove_processing_job(
         self,
@@ -580,13 +653,13 @@ class RedisQueue:
 
     def _resource_ids_from_jobs(
         self,
-        raw_jobs: list[bytes | str],
+        raw_jobs: Sequence[bytes | str | JobPayload],
         *,
         job_type: JobType | None,
     ) -> set[UUID]:
         resource_ids: set[UUID] = set()
         for raw_job in raw_jobs:
-            job = self._deserialize(raw_job)
+            job = raw_job if isinstance(raw_job, JobPayload) else self._deserialize(raw_job)
             if job_type is not None and job.job_type != job_type:
                 continue
             resource_ids.add(job.resource_id)

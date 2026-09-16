@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.contracts import (
     RuntimeEnvironmentError,
@@ -19,6 +20,7 @@ from backend.app.runtime.contracts import (
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCreateRequest,
+    RuntimeHardeningPolicy,
     RuntimeLimits,
     RuntimeMount,
 )
@@ -27,16 +29,18 @@ from backend.app.runtime.environment.leases import RuntimeLeaseStore
 from backend.app.runtime.environment.manager import RuntimeManager
 from backend.app.runtime.environment.metadata import (
     default_runtime_hardening_policy,
+    runtime_hardening_metadata,
     runtime_isolation_metadata,
     runtime_labels,
 )
 from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.environment.policies.safety import is_digest_pinned_image
 from backend.app.runtime.environment.pool.leases import RuntimePoolLeaseStore
 from backend.app.runtime.environment.pool.policy import pooled_isolation_metadata
 from backend.app.runtime.environment.pool.reclaim import RuntimePoolReclaimer
 from backend.app.runtime.environment.pool.reset import RuntimePoolResetService
 from backend.app.runtime.environment.pool.service import (
-    MANAGED_RUNTIME_PROVIDERS,
+    MANAGED_RUNTIME_PROVIDER,
     RuntimePoolService,
 )
 
@@ -47,6 +51,19 @@ _RUNTIME_WORKSPACE_ROOT = "/workspace"
 class RunRuntimeEnvironmentResult:
     runtime: WorkspaceRuntime | None
     created: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _IsolatedRuntimeSpec:
+    child: WorkspaceRuntime
+    template: RuntimeTemplate
+    limits: RuntimeLimits
+    network_policy: dict[str, object]
+    network_disabled: bool
+    hardening: RuntimeHardeningPolicy
+    volume_name: str
+    isolation: dict[str, object]
+    persistent_mounts: tuple[RuntimeMount, ...]
 
 
 class RunRuntimeEnvironmentService:
@@ -78,6 +95,7 @@ class RunRuntimeEnvironmentService:
             self._session.flush([run])
             return RunRuntimeEnvironmentResult(runtime=None, created=False)
         self._require_managed_parent(parent)
+        self._template(parent)
         if mode == "pooled":
             return self._ensure_pooled_for_run(run, parent)
         if mode == "persistent":
@@ -89,42 +107,49 @@ class RunRuntimeEnvironmentService:
         run: AgentRun,
         parent: WorkspaceRuntime,
     ) -> RunRuntimeEnvironmentResult:
-        docker = self._docker
-        if docker is None:
-            raise RuntimeEnvironmentError(
-                "runtime_execution_client_missing",
-                "Managed run execution requires a worker-injected Docker client",
-            )
+        docker = self._require_docker()
         existing = self._existing_for_run(run, parent)
         if existing is not None:
-            self._require_parent_binding(existing, parent, run)
-            if existing.status in {"active", "running"} and existing.connection_status == "online":
-                run.execution_runtime_id = existing.id
-                return RunRuntimeEnvironmentResult(runtime=existing, created=False)
-            if existing.status in {"created", "provisioning"} and existing.docker_container_id:
-                docker = self._docker
-                if docker is None:
-                    raise RuntimeEnvironmentError(
-                        "runtime_execution_client_missing",
-                        "Managed run execution requires a worker-injected Docker client",
-                    )
-                docker.start_container(existing.docker_container_id)
-                existing.status = "active"
-                existing.connection_status = "online"
-                existing.last_heartbeat_at = datetime.now(UTC)
-                run.execution_runtime_id = existing.id
-                self._session.flush([existing, run])
-                return RunRuntimeEnvironmentResult(runtime=existing, created=False)
-            raise RuntimeEnvironmentError(
-                "runtime_execution_unavailable",
-                "The run execution runtime is not active and online",
-            )
+            return self._reuse_isolated_runtime(run, parent, existing, docker)
 
+        spec = self._prepare_isolated_runtime(run, parent)
+        container_id = self._provision_isolated_runtime(run, parent, spec, docker)
+        self._activate_isolated_runtime(run, parent, spec, container_id)
+        return RunRuntimeEnvironmentResult(runtime=spec.child, created=True)
+
+    def _reuse_isolated_runtime(
+        self,
+        run: AgentRun,
+        parent: WorkspaceRuntime,
+        existing: WorkspaceRuntime,
+        docker: DockerRuntimeClient,
+    ) -> RunRuntimeEnvironmentResult:
+        self._require_parent_binding(existing, parent, run)
+        if existing.status in {"active", "running"} and existing.connection_status == "online":
+            run.execution_runtime_id = existing.id
+            return RunRuntimeEnvironmentResult(runtime=existing, created=False)
+        if existing.status in {"created", "provisioning"} and existing.docker_container_id:
+            docker.start_container(existing.docker_container_id)
+            existing.status = "active"
+            existing.connection_status = "online"
+            existing.last_heartbeat_at = datetime.now(UTC)
+            run.execution_runtime_id = existing.id
+            self._session.flush([existing, run])
+            return RunRuntimeEnvironmentResult(runtime=existing, created=False)
+        raise RuntimeEnvironmentError(
+            "runtime_execution_unavailable",
+            "The run execution runtime is not active and online",
+        )
+
+    def _prepare_isolated_runtime(
+        self,
+        run: AgentRun,
+        parent: WorkspaceRuntime,
+    ) -> _IsolatedRuntimeSpec:
         template = self._template(parent)
         limits = _runtime_limits(parent.limits)
         network_policy = dict(parent.network_policy or {})
         network_disabled = _network_disabled(network_policy)
-        hardening = default_runtime_hardening_policy()
         volume_name = _run_volume_name(run.workspace_id, run.id)
         child = WorkspaceRuntime(
             workspace_id=run.workspace_id,
@@ -161,63 +186,91 @@ class RunRuntimeEnvironmentService:
             "ephemeral": True,
         }
         persistent_mounts = _persistent_mounts(parent.capabilities)
+        hardening = default_runtime_hardening_policy()
+        hardening_metadata = runtime_hardening_metadata(
+            hardening,
+            isolation_metadata=isolation,
+        )
+        identity = self._run_identity_metadata(run)
         child.capabilities = {
             "isolation": isolation,
-            "hardening": _object_dict(parent.capabilities.get("hardening")),
+            "hardening": hardening_metadata,
             "execution": {
                 "mode": "isolated",
                 "run_id": str(run.id),
                 "parent_runtime_id": str(parent.id),
                 "cleanup_status": "pending",
-                "persistent_mounts": [
-                    {
-                        "source": mount.source,
-                        "target": mount.target,
-                        "type": mount.mount_type,
-                        "read_only": mount.read_only,
-                    }
-                    for mount in persistent_mounts
-                ],
+                "identity": identity,
+                "persistent_mounts": [_mount_metadata(mount) for mount in persistent_mounts],
             },
             "managed_resources": {"docker_volumes": [volume_name]},
         }
+        return _IsolatedRuntimeSpec(
+            child=child,
+            template=template,
+            limits=limits,
+            network_policy=network_policy,
+            network_disabled=network_disabled,
+            hardening=hardening,
+            volume_name=volume_name,
+            isolation=isolation,
+            persistent_mounts=persistent_mounts,
+        )
+
+    def _provision_isolated_runtime(
+        self,
+        run: AgentRun,
+        parent: WorkspaceRuntime,
+        spec: _IsolatedRuntimeSpec,
+        docker: DockerRuntimeClient,
+    ) -> str:
         container_id: str | None = None
         try:
             container_id = docker.create_container(
                 RuntimeCreateRequest(
-                    image=template.image,
+                    image=spec.template.image,
                     name=f"opsmesh-run-{run.workspace_id.hex[:12]}-{run.id.hex}",
                     workspace_id=str(run.workspace_id),
-                    runtime_id=str(child.id),
+                    runtime_id=str(spec.child.id),
                     runtime_space_id=(
                         str(parent.runtime_space_id)
                         if parent.runtime_space_id is not None
                         else None
                     ),
-                    limits=limits,
-                    network_disabled=network_disabled,
-                    network_policy=network_policy,
+                    limits=spec.limits,
+                    network_disabled=spec.network_disabled,
+                    network_policy=spec.network_policy,
                     labels={
-                        **runtime_labels(child),
+                        **runtime_labels(spec.child),
+                        **self._run_identity_labels(run),
                         "opsmesh.run_id": str(run.id),
                         "opsmesh.parent_runtime_id": str(parent.id),
                     },
                     mounts=(
-                        RuntimeMount(source=volume_name, target=_RUNTIME_WORKSPACE_ROOT),
-                        *persistent_mounts,
+                        RuntimeMount(source=spec.volume_name, target=_RUNTIME_WORKSPACE_ROOT),
+                        *spec.persistent_mounts,
                     ),
-                    hardening=hardening,
+                    hardening=spec.hardening,
                     working_dir=_RUNTIME_WORKSPACE_ROOT,
                 )
             )
             docker.start_container(container_id)
+            return container_id
         except Exception as exc:
-            self._discard_failed_child(child, container_id, volume_name)
+            self._discard_failed_child(spec.child, container_id, spec.volume_name)
             raise RuntimeEnvironmentError(
                 "runtime_execution_provisioning_failed",
                 "The per-run execution runtime could not be provisioned",
             ) from exc
 
+    def _activate_isolated_runtime(
+        self,
+        run: AgentRun,
+        parent: WorkspaceRuntime,
+        spec: _IsolatedRuntimeSpec,
+        container_id: str,
+    ) -> None:
+        child = spec.child
         child.docker_container_id = container_id
         child.status = "active"
         child.connection_status = "online"
@@ -229,7 +282,7 @@ class RunRuntimeEnvironmentService:
                 "scope": "isolated_run",
                 "run_id": str(run.id),
                 "parent_runtime_id": str(parent.id),
-                "isolation": isolation,
+                "isolation": spec.isolation,
                 "hardening": child.capabilities["hardening"],
             },
         )
@@ -240,34 +293,30 @@ class RunRuntimeEnvironmentService:
             metadata={
                 "run_id": str(run.id),
                 "parent_runtime_id": str(parent.id),
-                "isolation": isolation,
+                "isolation": spec.isolation,
             },
         )
+        event_metadata = {
+            "execution_runtime_id": str(child.id),
+            "parent_runtime_id": str(parent.id),
+            "persistent_mount_count": len(spec.persistent_mounts),
+        }
         RunEventRecorder(self._session).append_event(
             run,
             "run.runtime_environment.created",
             "Per-run isolated execution environment created",
-            {
-                "execution_runtime_id": str(child.id),
-                "parent_runtime_id": str(parent.id),
-                "persistent_mount_count": len(persistent_mounts),
-            },
+            event_metadata,
         )
         AuditService(self._session).record_system_action(
             workspace_id=run.workspace_id,
             action="run.runtime_environment.created",
             target_type="agent_run",
             target_id=run.id,
-            metadata={
-                "execution_runtime_id": str(child.id),
-                "parent_runtime_id": str(parent.id),
-                "persistent_mount_count": len(persistent_mounts),
-            },
+            metadata=event_metadata,
         )
         run.execution_runtime_id = child.id
         _set_run_execution_metadata(run, status="active", runtime_id=child.id)
         self._session.flush([child, run])
-        return RunRuntimeEnvironmentResult(runtime=child, created=True)
 
     def _ensure_persistent_for_run(
         self,
@@ -353,6 +402,7 @@ class RunRuntimeEnvironmentService:
         member = acquisition.member
         now = datetime.now(UTC)
         isolation = pooled_isolation_metadata(parent, member, run)
+        identity = self._run_identity_metadata(run)
         child = WorkspaceRuntime(
             workspace_id=run.workspace_id,
             runtime_template_id=member.runtime_template_id,
@@ -379,6 +429,7 @@ class RunRuntimeEnvironmentService:
                     "parent_runtime_id": str(parent.id),
                     "pool_member_runtime_id": str(member.id),
                     "cleanup_status": "pending",
+                    "identity": identity,
                 },
                 "managed_resources": {"docker_volumes": []},
             },
@@ -448,7 +499,7 @@ class RunRuntimeEnvironmentService:
         return self._runtime(run.workspace_id, run.runtime_id)
 
     def _require_managed_parent(self, parent: WorkspaceRuntime) -> None:
-        if parent.runtime_provider not in MANAGED_RUNTIME_PROVIDERS:
+        if parent.runtime_provider != MANAGED_RUNTIME_PROVIDER:
             raise RuntimeEnvironmentError(
                 "runtime_provider_unsupported",
                 "The selected runtime provider does not expose managed execution",
@@ -458,11 +509,43 @@ class RunRuntimeEnvironmentService:
                 "runtime_isolation_unverified",
                 "Managed runtime has no platform isolation evidence",
             )
+        self._require_docker()
+
+    def _require_docker(self) -> DockerRuntimeClient:
         if self._docker is None:
             raise RuntimeEnvironmentError(
                 "runtime_execution_client_missing",
                 "Managed run execution requires a worker-injected Docker client",
             )
+        return self._docker
+
+    def _run_identity_labels(self, run: AgentRun) -> dict[str, str]:
+        return {
+            f"opsmesh.{key}": value
+            for key, value in self._run_identity_metadata(run).items()
+        }
+
+    def _run_identity_metadata(self, run: AgentRun) -> dict[str, str]:
+        labels: dict[str, str] = {}
+        if run.task_id is None:
+            return labels
+        task = self._session.scalar(
+            select(Task).where(
+                Task.workspace_id == run.workspace_id,
+                Task.id == run.task_id,
+            )
+        )
+        if task is None:
+            raise RuntimeEnvironmentError(
+                "runtime_task_unavailable",
+                "The run task is not available in the workspace",
+            )
+        labels["task_id"] = str(task.id)
+        if task.agent_team_id is not None:
+            labels["team_id"] = str(task.agent_team_id)
+        if task.workspace_project_id is not None:
+            labels["project_id"] = str(task.workspace_project_id)
+        return labels
 
     def cleanup_for_run(self, run: AgentRun) -> bool:
         execution_runtime_id = run.execution_runtime_id
@@ -764,6 +847,11 @@ class RunRuntimeEnvironmentService:
                 "runtime_template_unavailable",
                 "The parent runtime execution image is unavailable",
             )
+        if not is_digest_pinned_image(template.image):
+            raise RuntimeEnvironmentError(
+                "runtime_image_digest_required",
+                "Runtime images must be pinned by an immutable sha256 digest",
+            )
         return template
 
     @staticmethod
@@ -878,6 +966,15 @@ def _persistent_mounts(capabilities: dict[str, object]) -> tuple[RuntimeMount, .
             )
         )
     return tuple(mounts)
+
+
+def _mount_metadata(mount: RuntimeMount) -> dict[str, object]:
+    return {
+        "source": mount.source,
+        "target": mount.target,
+        "type": mount.mount_type,
+        "read_only": mount.read_only,
+    }
 
 
 def _run_volume_name(workspace_id: UUID, run_id: UUID) -> str:

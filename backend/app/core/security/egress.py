@@ -51,7 +51,10 @@ def validate_egress_url(url: str, *, policy: EgressUrlPolicy) -> str:
     except ValueError as exc:
         raise EgressUrlValidationError("URL port is invalid") from exc
 
-    host = _normalized_hostname(parsed.hostname)
+    hostname = parsed.hostname
+    if hostname is None:
+        raise EgressUrlValidationError("URL host is required")
+    host = _normalized_hostname(hostname)
     if _is_blocked_hostname(host):
         raise EgressUrlValidationError("URL host is not allowed")
 

@@ -126,6 +126,8 @@ class DockerRuntimeClient(Protocol):
 
     def remove_volume(self, volume_name: str) -> None: ...
 
+    def container_running(self, container_id: str) -> bool: ...
+
     def exec_command(
         self,
         container_id: str,

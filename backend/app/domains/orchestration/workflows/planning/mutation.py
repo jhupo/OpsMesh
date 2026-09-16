@@ -30,6 +30,10 @@ from backend.app.domains.orchestration.workflows.planning.mutation_materializati
     project_step,
 )
 from backend.app.domains.orchestration.workflows.planning.mutation_operations import (
+    is_cancelled,
+    is_platform_package,
+    ordered_unique,
+    package_map,
     raw_packages,
 )
 from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
@@ -268,7 +272,7 @@ class TaskPlanMutationService:
         package = self._validated_package(operation.get("package"))
         package_id = str(package["package_id"])
         self._ensure_mutable_package_identity(package)
-        if package_id in self._package_map(state.packages):
+        if package_id in package_map(state.packages):
             self._reject("plan_mutation_duplicate_package", "Work package ID already exists")
         self._ensure_dependencies_exist(package, state.packages)
         state.packages.append(package)
@@ -314,7 +318,7 @@ class TaskPlanMutationService:
                 "Merge requires two or more distinct packages",
             )
         sources = [self._mutable_source(state, package_id) for package_id in source_ids]
-        inherited = self._ordered_unique(
+        inherited = ordered_unique(
             [
                 dependency
                 for source in sources
@@ -361,12 +365,12 @@ class TaskPlanMutationService:
             for candidate in state.packages:
                 candidate_id = str(candidate["package_id"])
                 if (
-                    self._is_cancelled(candidate)
+                    is_cancelled(candidate)
                     or package_id not in self._dependencies(candidate)
                     or candidate_id in cancelled
                 ):
                     continue
-                if self._is_platform_package(candidate):
+                if is_platform_package(candidate):
                     self._detach_cancelled_dependency(state, candidate, package_id)
                     continue
                 dependents.append(candidate_id)
@@ -425,12 +429,12 @@ class TaskPlanMutationService:
         state.changed_package_ids.add(package_id)
 
     def _mutable_source(self, state: _MutationState, package_id: str) -> dict[str, object]:
-        package = self._package_map(state.packages).get(package_id)
+        package = package_map(state.packages).get(package_id)
         if package is None:
             self._reject("plan_mutation_package_not_found", "Work package was not found")
-        if self._is_platform_package(package):
+        if is_platform_package(package):
             self._reject("plan_mutation_reserved_package", "Platform-owned work cannot be mutated")
-        if self._is_cancelled(package):
+        if is_cancelled(package):
             self._reject("plan_mutation_package_cancelled", "Cancelled work cannot be mutated")
         step = state.steps.get(package_id)
         if step is None:
@@ -459,7 +463,7 @@ class TaskPlanMutationService:
     ) -> None:
         for package in state.packages:
             package_id = str(package["package_id"])
-            if package_id in source_ids or self._is_cancelled(package):
+            if package_id in source_ids or is_cancelled(package):
                 continue
             dependencies = self._dependencies(package)
             if not source_ids.intersection(dependencies):
@@ -516,7 +520,7 @@ class TaskPlanMutationService:
             summary_step is not None
             and summary_step.status in MUTABLE_STEP_STATUSES
             and summary_step.id not in state.active_run_step_ids
-            and not self._is_cancelled(summary)
+            and not is_cancelled(summary)
         ):
             dependencies = self._dependencies(summary)
             for package_id in sorted(new_work_package_ids):
@@ -542,9 +546,9 @@ class TaskPlanMutationService:
             for dependency in self._dependencies(summary)
             if dependency not in state.cancelled_package_ids
         ]
-        if not self._is_cancelled(summary):
+        if not is_cancelled(summary):
             prior_dependencies.insert(0, summary_id)
-        dependencies = self._ordered_unique(prior_dependencies + sorted(new_work_package_ids))
+        dependencies = ordered_unique(prior_dependencies + sorted(new_work_package_ids))
         summary_package = {
             "package_id": candidate_id,
             "title": "Manager summary revision",
@@ -571,7 +575,7 @@ class TaskPlanMutationService:
         before: list[dict[str, object]],
         after: list[dict[str, object]],
     ) -> None:
-        after_by_id = self._package_map(after)
+        after_by_id = package_map(after)
         for node in before:
             if not node.get("locked"):
                 continue
@@ -647,14 +651,14 @@ class TaskPlanMutationService:
             validate_project_plan(plan, task.team_snapshot)
         except ProjectPlanValidationError as exc:
             self._reject(exc.code, "Mutated project plan failed DAG validation")
-        package_map = self._package_map(raw_packages(plan))
-        for package in package_map.values():
-            if self._is_cancelled(package):
+        package_map_by_id = package_map(raw_packages(plan))
+        for package in package_map_by_id.values():
+            if is_cancelled(package):
                 continue
             if any(
-                self._is_cancelled(package_map[dependency])
+                is_cancelled(package_map_by_id[dependency])
                 for dependency in self._dependencies(package)
-                if dependency in package_map
+                if dependency in package_map_by_id
             ):
                 self._reject(
                     "plan_mutation_cancelled_dependency",
@@ -662,7 +666,7 @@ class TaskPlanMutationService:
                 )
         feasible_packages: list[dict[str, object]] = []
         for package in raw_packages(plan):
-            if self._is_cancelled(package):
+            if is_cancelled(package):
                 continue
             step = state.steps.get(str(package["package_id"]))
             if step is None or step.status not in FINAL_STEP_STATUSES:
@@ -682,7 +686,7 @@ class TaskPlanMutationService:
         next_order = max((step.order_index for step in state.steps.values()), default=-100) + 100
         for package in state.packages:
             package_id = str(package["package_id"])
-            if package_id in state.steps or self._is_cancelled(package):
+            if package_id in state.steps or is_cancelled(package):
                 continue
             step = materializer.build_step(task, package, order_index=next_order)
             next_order += 100
@@ -695,7 +699,7 @@ class TaskPlanMutationService:
             existing_step = state.steps.get(package_id)
             if existing_step is None:
                 continue
-            if self._is_cancelled(package):
+            if is_cancelled(package):
                 if existing_step.status == TaskStepStatus.CANCELLED.value:
                     continue
                 if existing_step.status not in MUTABLE_STEP_STATUSES:
@@ -850,7 +854,7 @@ class TaskPlanMutationService:
         return package
 
     def _ensure_mutable_package_identity(self, package: dict[str, object]) -> None:
-        if self._is_platform_package(package):
+        if is_platform_package(package):
             self._reject(
                 "plan_mutation_reserved_package",
                 "Platform-owned work cannot be added or generated by a mutation",
@@ -882,9 +886,6 @@ class TaskPlanMutationService:
             if package_id in existing_ids or package_id in new_ids or package_id in excluded:
                 self._reject("plan_mutation_duplicate_package", "Work package ID already exists")
             new_ids.add(package_id)
-
-    def _package_map(self, packages: list[dict[str, object]]) -> dict[str, dict[str, object]]:
-        return {str(package["package_id"]): package for package in packages}
 
     def _package_index(self, packages: list[dict[str, object]], package_id: str) -> int:
         for index, package in enumerate(packages):
@@ -926,21 +927,6 @@ class TaskPlanMutationService:
             self._reject("plan_mutation_plan_invalid", "Package dependencies must be a list")
         return [str(item) for item in value if isinstance(item, str)]
 
-    def _is_cancelled(self, package: dict[str, object]) -> bool:
-        mutation = package.get("mutation")
-        return isinstance(mutation, dict) and mutation.get("state") == "cancelled"
-
-    def _is_platform_package(self, package: dict[str, object]) -> bool:
-        package_id = str(package.get("package_id") or "")
-        review_policy = package.get("review_policy")
-        mode = review_policy.get("mode") if isinstance(review_policy, dict) else None
-        return (
-            package_id == "manager-planning"
-            or package_id.startswith("manager-summary")
-            or package_id.startswith("executive-")
-            or mode in {"final_acceptance", "executive_review"}
-        )
-
     def _mutation_id(self, value: str | None) -> str:
         if value is None:
             return str(uuid4())
@@ -957,16 +943,6 @@ class TaskPlanMutationService:
             return 0
         value = plan.get("plan_revision", 0)
         return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
-
-    @staticmethod
-    def _ordered_unique(values: list[str] | tuple[str, ...] | object) -> list[str]:
-        if not isinstance(values, (list, tuple)):
-            return []
-        result: list[str] = []
-        for value in values:
-            if value not in result:
-                result.append(value)
-        return result
 
     def _uuid(self, value: object, code: str) -> UUID:
         try:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -29,6 +29,7 @@ from backend.app.runtime.workers.leases import (
 from backend.app.runtime.workers.queue import RedisQueue
 
 
+@dataclass(slots=True)
 class StaleRunRecoveryCounts:
     requeued: int = 0
     failed_closed: int = 0

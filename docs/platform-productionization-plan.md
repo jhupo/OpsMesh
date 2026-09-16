@@ -32,12 +32,11 @@
 
 以下文档是基线索引，但其中的完成标记必须回到代码、迁移、工作流和测试复核：
 
-- [Backend Completion Plan](backend-completion-plan.md)
-- [Backend Next Task Table](backend-next-task-table.md)
+- [Architecture Gates](architecture-gates.md)
 - [Release Delivery Plan](release-delivery-plan.md)
 - [Observability, Audit, and Cost Operations](observability-audit-and-costs.md)
-- [Architecture Consolidation Plan](architecture-consolidation-plan.md)
-- [Agent Runtime Completion Plan](agent-runtime-completion-plan.md)
+- [代码组织与架构边界](code-organization-audit.md)
+- [Agent Runtime Architecture](agent-runtime-architecture.md)
 
 本阶段开始前先生成一次“现状快照”：当前分支、迁移 head、工作流文件、运行时镜像摘要、
 定向测试基线和未提交改动。历史 release 的通过不等于当前 `master` 已通过；当前 checkout
@@ -45,9 +44,9 @@
 
 ### 1.4 当前执行证据
 
-`P0-1` 已在当前 checkout 完成，阶段其余功能点仍未完成。此次收口建立了领域合同的唯一
+`P0-1` 已在当前 checkout 完成，`P0-2` 与 `P0-3` 也已完成定向实现和流程验收；其余功能点仍未完成。此次收口建立了领域合同的唯一
 所有者、API 到领域/运行时的单向映射和可执行的反向依赖门禁；迁移 head 复核为
-`0086_knowledge_revisions`。当前证据命令及结果为：
+`0089_track_consumed_tool_decisions`。当前证据命令及结果为：
 
 - `pytest backend/tests/test_architecture.py`：40 passed；
 - P0-1 影响的能力、MCP、Marketplace、Agent 消息、Workspace 导入导出、Runtime space、
@@ -56,7 +55,11 @@
 - `lint-imports --no-cache`：8 kept, 0 broken；
 - `git diff --check`：通过。
 
-P0-3 至 P1-11 仍保持未完成状态，不能使用本节证据代替它们的环境验收。
+P0-4 的代码合同已经收口；Docker/池/隔离的真实环境验收仍需在带 Docker daemon 的 release
+门禁中执行。本地本轮只执行静态、编译和导入检查，不把缺少 Docker daemon 的工作站结果冒充
+运行时环境验收。P0-5 已完成代码收口，真实双 SDK、审批恢复和取消演练仍需 release 门禁；
+P0-6 至 P1-11 仍保持未完成状态。当前迁移 head 已推进到
+`0089_track_consumed_tool_decisions`。
 
 `P0-2` 已在当前 checkout 完成配置、身份与租户安全收口。运行时 egress、模型 provider
 和 secret redaction 现在共享统一的 URL 形状校验与 host 提取规则：带 userinfo、fragment
@@ -69,8 +72,21 @@ authenticated context、workspace membership、role/capability grant 和 webhook
 - `pytest -q backend/tests/test_model_provider_service.py backend/tests/test_auth_api.py backend/tests/test_authorization.py backend/tests/test_webhooks.py`：通过；
 - `ruff check backend/app backend/tests/test_architecture.py`：通过；
 - `lint-imports --no-cache`：8 kept, 0 broken；
-- `alembic heads`：`0086_knowledge_revisions`（单 head）；
+- `alembic heads`：`0089_track_consumed_tool_decisions`（单 head）；
 - `git diff --check`：通过。
+
+`P0-3` 已在当前 checkout 完成 durable queue/worker recovery 收口。Redis 只作为队列投影；
+AgentRun、WorkerLease 和既有领域调度记录作为 durable 状态，维护任务可重建缺失的队列项。
+claim、heartbeat、retry、dead-letter 和人工死信重放的关键转移使用原子 Redis 脚本；恢复
+入队会检查 queued/processing/retry 三类活动投影，不会因旧幂等键制造重复投递；WorkerLease
+对已完成/失败的 job 拒绝重复执行，Redis visibility timeout 会同步撤销对应的 Postgres
+lease。stale-run、queue-governance、dead-letter、worker runner 和 agent recovery 流程均有
+流程级证据：
+
+- `pytest -q backend/tests/test_redis_queue.py backend/tests/test_worker_runner.py backend/tests/test_agent_runtime_recovery_e2e.py`：通过；
+- `pytest -q backend/tests/test_operations_api.py -k stale`：通过；
+- `pytest -q backend/tests/test_operations_api.py -k queue_governance`：通过；
+- 受影响模块 Ruff 与 `git diff --check`：通过。
 
 ## 2. 目标架构与不变量
 
@@ -220,6 +236,14 @@ import 而存在的模块；`git diff --check` 通过。
 
 ### P0-4 Runtime registry、Docker 池与隔离闭环
 
+当前代码状态（2026-09-16）：已实现 runtime registry 的组合根装配、四种执行模式的
+fail-closed 合同、Docker live sandbox session、OpenAI Agents SDK `SandboxRunConfig` 注入、
+pooled run workspace/reset/reclaim、digest-pinned image guard、非 root/只读根文件系统与
+资源限制，以及 workspace/team/task/project/runtime-space 身份元数据。Claude Agent SDK 不
+再接收宿主机 CLI 路径；其本地执行能力不稳定时直接关闭，命令、stdio MCP 和项目文件只可
+通过已授权的 OpsMesh runtime gateway。待补证据：真实 Docker pool 并发复用、清理失败隔离、
+跨租户拒绝和实际容器 hardening 的流程验收。
+
 目标：所有需要执行环境的 Agent、MCP 和项目文件操作都通过一个运行时合同完成。
 
 实现要点：
@@ -256,6 +280,13 @@ import 而存在的模块；`git diff --check` 通过。
   snapshot。
 - 处理 worker restart、SDK timeout、cancel、partial output、tool result continuation、
   provider unavailable 和 malformed response；不得隐式 provider fallback。
+- 授权快照使用 v3：冻结根 Agent runtime Profile、解析后的 provider 与 fallback 候选；运行时
+  只检查实时 Profile 是否仍可执行，不读取其可变提示词或模型设置。
+- Claude 审批恢复按精确 `tool_call_id + tool_name` 一次性消费，禁止扩大权限；OpenAI SDK
+  interruption 也要求唯一匹配。工具决定在成功注入后持久化消费时间，worker 崩溃可重放，
+  已消费决定不会污染下一次续接。
+- OpenAI/Claude 取消路径同时中断 SDK 和活动工具，SDK 错误按限流、传输不可用、格式错误、
+  最大轮次和策略错误分类；只有明确的 Provider 错误才允许 fallback。
 - 对现有代码做一次“SDK 已有能力 vs 自研重复逻辑”清单，删除等价的会话/压缩/重试/事件
   解析实现；保留的 OpsMesh 代码必须能说明产品策略或证据价值。
 
@@ -442,8 +473,10 @@ P1-8 evidence plane ───┼──> P1-9 release supply chain
 
 ### 日常每个功能点
 
-- 运行触及模块的定向 `pytest`，至少覆盖成功、拒绝、重试/取消、workspace isolation、
-  secret redaction 和幂等路径。
+- 代码改造和目录收敛默认不新增、也不反复执行单点 `pytest`；只有用户可见行为或跨边界
+  合同发生变化时，才在已有流程测试中补充一条端到端路径。
+- 流程测试只覆盖从请求入队、创建 team/project（适用时）、编排/执行到输出的完整链路，
+  以及该链路可观察的拒绝、重试/恢复、workspace isolation、幂等和 secret redaction。
 - 运行触及文件的 `ruff check`、必要的 `mypy` 子集和 `git diff --check`。
 - 运行架构/迁移/配置检查（如果功能点跨越对应边界）。
 - 不在本地开发阶段运行全量 pytest，不使用真实 provider credentials。
@@ -456,7 +489,9 @@ P1-8 evidence plane ───┼──> P1-9 release supply chain
 - 发布证据必须包含：source commit、tag、migration head、package hashes、image digests、
   workflow run、runner policy、测试摘要和 deployment acceptance 摘要。
 
-### 必须存在的负向测试类别
+### 流程测试中的负向分支
+
+以下只作为完整业务流程中的可观察分支，不为每个类、函数或 helper 单独建测试：
 
 - 跨 workspace resource/task/team/member/file/artifact/runtime/tool/memory ID；
 - disabled/revoked credential、MCP server、runtime、worker 和 provider；
@@ -469,7 +504,7 @@ P1-8 evidence plane ───┼──> P1-9 release supply chain
 
 只有全部条件满足，才能把本阶段标为完成：
 
-- [ ] P0-1 到 P0-6 的合同、状态机、隔离和 SDK 委托均有代码与定向测试证据。
+- [ ] P0-1 到 P0-6 的合同、状态机、隔离和 SDK 委托均有代码、必要的流程证据或静态检查证据。
 - [ ] P1-7 到 P1-11 的数据恢复、证据平面、发布、托管更新和演练均有实际环境证据。
 - [ ] 没有 API/Worker 宿主机执行用户或 Agent 控制代码，没有未授权的 host socket、网络或
   文件访问。

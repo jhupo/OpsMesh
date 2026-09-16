@@ -22,24 +22,44 @@ class ClaudeAgentSessionStore:
     def __init__(self, session: AgentRuntimeSession, *, session_id: str) -> None:
         self._session = session
         self._session_id = session_id
+        self._seen_entry_ids: set[
+            tuple[str | None, str | None, str]
+        ] | None = None
 
     async def append(self, key: SessionKey, entries: list[SessionStoreEntry]) -> None:
         if key["session_id"] != self._session_id:
             raise ValueError("Claude transcript key does not match the product session")
         if not entries:
             return
-        await self._session.add_items(
-            [
+        seen = await self._seen_ids()
+        project_key = key.get("project_key")
+        subpath = key.get("subpath")
+        pending_ids: set[tuple[str | None, str | None, str]] = set()
+        pending: list[dict[str, object]] = []
+        for entry in entries:
+            entry_id = entry.get("uuid")
+            dedup_key = (
+                (project_key, subpath, entry_id)
+                if isinstance(entry_id, str) and entry_id
+                else None
+            )
+            if dedup_key is not None and (dedup_key in seen or dedup_key in pending_ids):
+                continue
+            pending.append(
                 {
                     "_opsmesh_runtime": "claude_agent_sdk",
                     "session_id": self._session_id,
-                    "project_key": key.get("project_key"),
-                    "subpath": key.get("subpath"),
+                    "project_key": project_key,
+                    "subpath": subpath,
                     "entry": json.loads(json.dumps(entry)),
                 }
-                for entry in entries
-            ]
-        )
+            )
+            if dedup_key is not None:
+                pending_ids.add(dedup_key)
+        if not pending:
+            return
+        await self._session.add_items(pending)
+        seen.update(pending_ids)
 
     async def load(self, key: SessionKey) -> list[SessionStoreEntry] | None:
         if key["session_id"] != self._session_id:
@@ -53,12 +73,45 @@ class ClaudeAgentSessionStore:
                 continue
             if item.get("session_id") != self._session_id:
                 continue
+            if item.get("project_key") != key.get("project_key"):
+                continue
             if item.get("subpath") != key.get("subpath"):
                 continue
             entry = item.get("entry")
             if isinstance(entry, dict):
                 entries.append(json.loads(json.dumps(entry)))
         return entries or None
+
+    async def has_transcript(self) -> bool:
+        return bool(await self._stored_items())
+
+    async def _seen_ids(self) -> set[tuple[str | None, str | None, str]]:
+        if self._seen_entry_ids is None:
+            seen: set[tuple[str | None, str | None, str]] = set()
+            for item in await self._stored_items():
+                entry = item.get("entry")
+                entry_id = entry.get("uuid") if isinstance(entry, dict) else None
+                if isinstance(entry_id, str) and entry_id:
+                    subpath = item.get("subpath")
+                    project_key = item.get("project_key")
+                    seen.add(
+                        (
+                            project_key if isinstance(project_key, str) else None,
+                            subpath if isinstance(subpath, str) else None,
+                            entry_id,
+                        )
+                    )
+            self._seen_entry_ids = seen
+        return self._seen_entry_ids
+
+    async def _stored_items(self) -> list[dict[str, object]]:
+        return [
+            item
+            for item in await self._session.get_items()
+            if isinstance(item, dict)
+            and item.get("_opsmesh_runtime") == "claude_agent_sdk"
+            and item.get("session_id") == self._session_id
+        ]
 
 
 def _session_id(request: AgentRunRequest) -> str:
@@ -91,6 +144,8 @@ def _resume_session_id(request: AgentRunRequest) -> str | None:
 def _is_rejected_resume(request: AgentRunRequest) -> bool:
     if not request.approval_decisions:
         return False
+    if len(request.approval_decisions) != 1:
+        raise ValueError("Claude Agent SDK supports one deferred approval per resume state")
     if request.resume_state is None:
         raise ValueError("Approval decisions require a Claude Agent SDK resume state")
     payload = json.loads(request.resume_state.serialized_state)

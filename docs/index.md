@@ -1,153 +1,52 @@
-# Backend Documentation Index
+# OpsMesh 文档索引
 
-## What This Project Is
+OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已经包含 Workspace 隔离、访问
+控制、Agent SDK 适配、任务与团队编排、能力/MCP、隔离运行时、Worker、审计、成本和发布
+运维能力。前端与 Plugin Center 仍是后续独立阶段，不属于当前 backend 实现。
 
-OpsMesh is a backend-first, open-source enterprise agent framework for running AI agent teams with
-control, isolation, and auditability. The backend owns workspace isolation, agent orchestration,
-task execution, worker queues, Docker runtime control, file/artifact management, approvals,
-marketplaces, and audit evidence.
+## 当前实现
 
-Frontend work is intentionally out of scope for now. The current priority is a reliable backend control plane.
+1. [系统架构](architecture.md)：控制面、执行面、状态面和证据面的总览。
+2. [Backend 服务架构](backend-service-architecture.md)：API、领域、runtime、worker 与基础设施依赖方向。
+3. [Agent Runtime 架构](agent-runtime-architecture.md)：OpenAI/Claude SDK、沙箱合同、运行时池、项目 I/O 和执行证据。
+4. [Agent Runtime Contract](agent-runtime-contract.md)：Provider-neutral 请求、结果、事件、会话和审批边界。
+5. [能力与 Runtime](capabilities-and-runtime.md)：工具、技能、资源、MCP、权限和运行时关联。
+6. [Runtime 执行模式](runtime-execution-modes.md)：`none`、`isolated`、`pooled`、`persistent` 的授权与生命周期。
+7. [Backend Runtime Control Plane](backend-runtime-control-plane.md)：Docker、runtime space、命令、文件和清理。
+8. [Cloud Control Plane 与 Runtime Spaces](cloud-control-plane-and-runtime-spaces.md)：平台管理员、Worker fleet、配额和运行空间。
+9. [Workspace 数据管理](workspace-data-management.md)：项目文件、artifact、导入导出、备份和恢复。
+10. [Isolation 与 Security](isolation-and-security.md)：租户、凭据、网络、文件和执行隔离。
+11. [Threat Model](threat-model.md)：威胁、拒绝路径和必须保留的安全证据。
+12. [Domain Model](domain-model.md)：Workspace、Agent、Team、Task、Run、Capability 和 Runtime 实体。
+13. [API Design](api-design.md)：workspace-scoped API、错误 envelope 和分页契约。
+14. [Self-hosted Runtimes](self-hosted-runtimes.md)：用户自有机器的注册、心跳、任务和 artifact 回传。
+15. [Self-hosted Connector](self-hosted-connector.md)：官方 MCP SDK connector、恢复和安全合同。
+16. [Observability、Audit 与 Cost](observability-audit-and-costs.md)：日志、指标、链路、审计完整性和成本账本。
+17. [Open-source SDK Strategy](open-source-sdk-strategy.md)：官方 SDK 采用边界和禁止重复造轮子的规则。
+18. [Adapter Boundaries](adapter-boundaries.md)：MCP、Provider health 和 runtime backend registry 的 adapter 合同。
+19. [Shared Domain Services](shared-domain-services.md)：跨领域服务的 owner 与复用规则。
 
-## Backend Scope
+## 架构与质量
 
-The backend must provide:
+20. [Architecture Gates](architecture-gates.md)：Import Linter、依赖方向、API/Domain/Infrastructure 边界。
+21. [代码组织与架构边界](code-organization-audit.md)：当前目录、唯一 owner、拆分规则、重构结论和结构证据。
+22. [Decisions](decisions.md)：稳定的产品与架构决策。
 
-- user and workspace isolation
-- workspace-scoped agents and teams
-- task and run orchestration
-- async worker execution
-- OpenAI Agents SDK and Claude Agent SDK integration
-- Docker runtime management
-- MCP, tools, and skill capability control
-- file upload/download and artifact collection
-- approvals and audit events
-- self-hosted runtime support path
+## 发布与生产化
 
-## Recommended Reading Order
+23. [Platform Productionization Plan](platform-productionization-plan.md)：当前平台收口、可靠性和运维阶段。
+24. [Release Delivery Plan](release-delivery-plan.md)：tag 门禁、构建、签名、发布和公共下载验证。
+25. [Standalone Distributions](standalone-distributions.md)：CLI 与 server bundle 的构建和验证。
+26. [Backend Deployment](backend-deployment.md)：Compose/systemd 部署、更新、回滚和恢复。
+27. [Delivery Operations](delivery-operations.md)：发布后交付、托管安装和运维操作。
 
-1. [Architecture](architecture.md)
+## 文档规则
 
-   High-level backend system shape.
-
-2. [Agent Runtime Architecture](agent-runtime-architecture.md)
-
-   Current provider-neutral run boundaries, execution modes, project I/O, and evidence flow.
-
-3. [Backend Service Architecture](backend-service-architecture.md)
-
-   Split between API, orchestration, provider SDK runtime, workers, and runtime environment.
-
-4. [Domain Model](domain-model.md)
-
-   Core backend entities and relationships.
-
-5. [API Design](api-design.md)
-
-   Workspace-scoped API surface for the backend.
-
-6. [Domain Task Extensions](domain-task-extensions.md)
-
-   Backend model for team-specific task state, task view payloads, review comments, and revision requests.
-
-7. [Backend Runtime Control Plane](backend-runtime-control-plane.md)
-
-   Docker runtime lifecycle, limits, files, logs, and cleanup.
-
-8. [Cloud Control Plane And Runtime Spaces](cloud-control-plane-and-runtime-spaces.md)
-
-   Managed backend control plane objects, runtime spaces, worker fleet controls, quotas, and operator APIs.
-
-9. [Agent Runtime Contract](agent-runtime-contract.md)
-
-   Boundary between product orchestration and provider SDK execution.
-
-10. [Capabilities And Runtime](capabilities-and-runtime.md)
-
-   Capability, skill, tool, MCP, and runtime model.
-
-11. [Workspace Data Management](workspace-data-management.md)
-
-   Upload, download, artifacts, runtime staging, and exports.
-
-12. [Isolation And Security](isolation-and-security.md)
-
-   Workspace, runtime, tool, memory, file, and worker isolation.
-
-13. [Threat Model](threat-model.md)
-
-    Backend security threats and mitigations.
-
-14. [Self-Hosted Runtimes](self-hosted-runtimes.md)
-
-    User-owned machine execution model.
-
-15. [MVP Spec](mvp-spec.md)
-
-    First backend MVP acceptance criteria.
-
-16. [Roadmap](roadmap.md)
-
-    Backend-first implementation sequence.
-
-17. [Decisions](decisions.md)
-
-   Stable architecture and implementation decisions.
-
-18. [Backend Task Breakdown](backend-task-breakdown.md)
-
-   Actionable engineering task list from backend framework setup to complete backend capabilities.
-
-19. [Backend Deployment](backend-deployment.md)
-
-   Production VPS/systemd deployment, release bundle updates, local Compose guidance, and environment setup.
-
-20. [Backend Completion Plan](backend-completion-plan.md)
-
-   Detailed list of backend areas that are incomplete or only implemented as a basic foundation, with implementation tasks and acceptance criteria.
-
-21. [Backend Next Task Table](backend-next-task-table.md)
-
-   Active execution checklist for the next backend phase.
-
-22. [Open-Source SDK Strategy](open-source-sdk-strategy.md)
-
-   Candidate SDKs, adoption order, evaluation criteria, and the boundaries OpsMesh continues to own.
-
-23. [Observability, Audit, and Cost Operations](observability-audit-and-costs.md)
-
-   Production signal flow, deployment, verification, audit integrity, and model cost operations.
-
-24. [Agent Runtime Completion Plan](agent-runtime-completion-plan.md)
-
-   Active, acceptance-driven plan for SDK adaptation, approvals, workspace I/O, context and memory,
-   orchestration, and per-run isolation.
-
-25. [Architecture Consolidation Plan](architecture-consolidation-plan.md)
-
-   Repository-wide ownership map, dependency direction, runtime modes, migration sequence, and
-   acceptance criteria for keeping the backend modular without compatibility shims.
-
-26. [Code Organization Audit](code-organization-audit.md)
-
-   Evidence log for completed file moves, ownership decisions, focused validation, and remaining
-   boundaries that are intentionally retained for independent lifecycles or adapters.
-
-27. [Platform Closure and Productionization Plan](platform-productionization-plan.md)
-
-   The frozen next-phase plan for closing durable recovery, runtime isolation, SDK lifecycle,
-   capability/MCP operations, data recovery, observability, release supply chain, managed delivery,
-   and reliability drills. The Plugin Center is explicitly deferred to a later phase.
-
-## Non-Negotiable Backend Rules
-
-- Workspace isolation is mandatory.
-- Postgres is the source of truth.
-- Redis is for queueing, locks, pub/sub, and short-lived cache only.
-- API requests do not execute long-running agent work inline.
-- Workers execute asynchronous tasks.
-- User-controlled code never runs directly on the application host.
-- Dangerous execution happens in Docker, hosted tools, or self-hosted isolated runtimes.
-- MCP tools, skills, files, and runtimes are workspace-scoped.
-- Artifacts and downloads require authorization.
-- Product run events in Postgres are the durable user-visible truth.
+- `backend/app` 的目录、owner、拆分与依赖规则只在
+  [代码组织与架构边界](code-organization-audit.md) 中维护；`docs/reviews/app-layout-2026-09-14`
+  只保存机器生成证据，不再保存第二套重构方案或实施记录。
+- 当前实现文档必须标注状态和日期，不能把历史 release 或旧分支结果描述为当前状态。
+- 设计/计划文档只保留仍然影响源码边界的内容；完成后的阶段清单和临时发布记录应删除，
+  不与当前架构重复维护。
+- 源码目录、import owner 和删除路径以 `scripts/audit_app_layout.py` 以及架构测试为准。
+- Plugin Center 暂不作为可执行插件系统实现；后续必须复用 Capability Catalog、Runtime、Audit、Trace、Cost 和 Approval 合同。

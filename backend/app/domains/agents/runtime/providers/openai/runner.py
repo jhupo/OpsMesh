@@ -12,12 +12,17 @@ from agents import (
 )
 from agents.exceptions import (
     InputGuardrailTripwireTriggered,
+    MaxTurnsExceeded,
+    ModelBehaviorError,
+    ModelRefusalError,
     OutputGuardrailTripwireTriggered,
 )
 from agents.handoffs import HandoffInputData
 from agents.handoffs import handoff as sdk_handoff
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
+from agents.sandbox import SandboxAgent
+from openai import APIConnectionError, APITimeoutError, OpenAIError
 
 from backend.app.domains.agents.providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
@@ -44,6 +49,7 @@ from backend.app.domains.agents.runtime.contracts import (
 from backend.app.domains.agents.runtime.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimePolicyError,
+    AgentRuntimeProviderError,
     normalize_agent_error,
 )
 from backend.app.domains.agents.runtime.guardrails import (
@@ -100,6 +106,54 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         self._result_mapper = OpenAIAgentsResultMapper()
 
     async def _run_once(
+        self,
+        request: AgentRunRequest,
+        observer: AgentRuntimeExecutionObserver,
+    ) -> AgentRunResult:
+        try:
+            return await self._run_once_sdk(request, observer)
+        except MaxTurnsExceeded as exc:
+            raise AgentRuntimePolicyError(
+                code="agent_max_turns_exceeded",
+                message="Agent run reached its authorized turn limit",
+                event_type="agent.run.max_turns_exceeded",
+                metadata={"max_turns": request.max_turns},
+            ) from exc
+        except ModelRefusalError as exc:
+            raise AgentRuntimePolicyError(
+                code="model_output_refused",
+                message="The model refused to produce the requested output",
+                event_type="agent.model.refused",
+                metadata={"provider": request.provider, "model": request.model},
+            ) from exc
+        except ModelBehaviorError as exc:
+            raise AgentRuntimeProviderError(
+                code="provider_malformed_response",
+                message=str(exc),
+                retryable=False,
+            ) from exc
+        except OpenAIError as exc:
+            status_code = getattr(exc, "status_code", None)
+            transport_failure = isinstance(exc, APIConnectionError | APITimeoutError)
+            code = (
+                "provider_rate_limited"
+                if status_code == 429
+                else "provider_unavailable"
+                if (isinstance(status_code, int) and status_code >= 500) or transport_failure
+                else "provider_request_failed"
+            )
+            retryable = (
+                status_code == 429
+                or (isinstance(status_code, int) and status_code >= 500)
+                or transport_failure
+            )
+            raise AgentRuntimeProviderError(
+                code=code,
+                message=str(exc),
+                retryable=retryable,
+            ) from exc
+
+    async def _run_once_sdk(
         self,
         request: AgentRunRequest,
         observer: AgentRuntimeExecutionObserver,
@@ -221,11 +275,23 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         )
         if not request.approval_decisions:
             return state
-        interruptions = {
-            (item.call_id, item.name): item
+        sdk_interruptions = [
+            item
             for item in state.get_interruptions()
             if item.call_id is not None and item.name is not None
+        ]
+        interruptions = {
+            (item.call_id, item.name): item
+            for item in sdk_interruptions
         }
+        if len(interruptions) != len(sdk_interruptions):
+            raise ValueError("Stored OpenAI Agents state contains duplicate interruptions")
+        decision_keys = {
+            (decision.tool_call_id, decision.tool_name)
+            for decision in request.approval_decisions
+        }
+        if len(decision_keys) != len(request.approval_decisions):
+            raise ValueError("OpenAI approval decisions must be unique")
         for decision in request.approval_decisions:
             interruption = interruptions.get((decision.tool_call_id, decision.tool_name))
             if interruption is None:
@@ -275,7 +341,8 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             request,
             runtime_guardrail_results,
         )
-        return Agent(
+        agent_class = SandboxAgent if request.sandbox is not None else Agent
+        return agent_class(
             name=profile.name,
             instructions=profile.instructions,
             model=model,
@@ -416,7 +483,8 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             scoped_request,
             guardrail_results,
         )
-        return Agent(
+        agent_class = SandboxAgent if scoped_request.sandbox is not None else Agent
+        return agent_class(
             name=definition.target.ref.name,
             handoff_description=definition.target.handoff_description,
             instructions=definition.target.instructions,
@@ -555,7 +623,8 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             request,
             guardrail_results,
         )
-        return Agent(
+        agent_class = SandboxAgent if request.sandbox is not None else Agent
+        return agent_class(
             name=definition.ref.name,
             handoff_description=definition.handoff_description,
             instructions=definition.instructions,

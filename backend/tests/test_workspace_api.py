@@ -17,13 +17,13 @@ import backend.app.domains.agents.providers.health as model_provider_health_serv
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
+from backend.app.api.dependencies.redis import get_redis_client
+from backend.app.api.dependencies.runtime import get_docker_runtime_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.access.models import User
 from backend.app.domains.access.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
 from backend.app.domains.agents.memory.models import (
@@ -52,9 +52,6 @@ from backend.app.domains.orchestration.tasks.delivery.correction_diagnostics imp
 )
 from backend.app.domains.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
-from backend.app.domains.orchestration.tasks.observation.execution import (
-    TaskExecutionDiagnosticsService,
-)
 from backend.app.domains.orchestration.tasks.message_append import (
     TASK_MESSAGE_CREATED_EVENT_TYPE,
     TaskMessageAppendService,
@@ -64,6 +61,9 @@ from backend.app.domains.orchestration.tasks.models import (
     TaskEventOutbox,
     TaskMessage,
     TaskStep,
+)
+from backend.app.domains.orchestration.tasks.observation.execution import (
+    TaskExecutionDiagnosticsService,
 )
 from backend.app.domains.orchestration.tasks.observation.service import TaskObservationService
 from backend.app.domains.orchestration.tasks.observation.timeline import TaskTimelineService
@@ -83,13 +83,13 @@ from backend.app.domains.workspace.tenants.models import (
 from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.api.dependencies.runtime import get_docker_runtime_client
 from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
@@ -101,8 +101,8 @@ from backend.app.runtime.operations.timeline.service import (
     TimelineFilters,
 )
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.scheduling.models import WorkspaceScheduledJob
 
 TOKEN = "test-token"
@@ -2371,7 +2371,7 @@ def test_team_runtime_controls_create_sessions_mailbox_and_workspace_runtime() -
     developer = AgentProfile(workspace_id=workspace.id, name="Developer", role="developer")
     template = RuntimeTemplate(
         name="team-runtime-template",
-        image="python:3.12-slim",
+        image="python@sha256:" + "0" * 64,
         default_limits={
             "cpu_count": 1,
             "memory_mb": 512,
@@ -2502,7 +2502,7 @@ def test_team_runtime_controls_create_sessions_mailbox_and_workspace_runtime() -
     assert ensured_again.json()["workspace_runtime_id"] == ensured_runtime_id
     _consume_runtime_control_jobs(queue, session, docker, client.app.state.settings)
     assert len(docker.created_requests) == 1
-    assert docker.created_requests[0].image == "python:3.12-slim"
+    assert docker.created_requests[0].image == "python@sha256:" + "0" * 64
     assert docker.created_requests[0].name.startswith("opsmesh-")
     assert docker.started == ["container-1", "container-1"]
     assert bound.status_code == 200
@@ -2686,7 +2686,7 @@ def test_team_runtime_actions_require_manage_runtime_for_write_only_user(
     session.add(WorkspaceMember(workspace=workspace, user=writer, role="operator"))
     template = RuntimeTemplate(
         name="permission-runtime-template",
-        image="python:3.12-slim",
+        image="python@sha256:" + "0" * 64,
         default_limits={
             "cpu_count": 1,
             "memory_mb": 512,
@@ -4872,7 +4872,7 @@ def test_team_runtime_state_recovers_last_iteration_and_continue_context() -> No
     manager = AgentProfile(workspace_id=workspace.id, name="PM", role="project_manager")
     template = RuntimeTemplate(
         name="recovery-runtime-template",
-        image="python:3.12-slim",
+        image="python@sha256:" + "0" * 64,
         default_limits={
             "cpu_count": 1,
             "memory_mb": 512,
@@ -5193,7 +5193,7 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     developer = AgentProfile(workspace_id=workspace.id, name="Developer", role="developer")
     template = RuntimeTemplate(
         name="loop-runtime-template",
-        image="python:3.12-slim",
+        image="python@sha256:" + "0" * 64,
         default_limits={
             "cpu_count": 1,
             "memory_mb": 512,
@@ -6314,7 +6314,7 @@ def test_create_task_with_team_captures_workspace_team_snapshot() -> None:
     assert created_task.status_code == 201
     snapshot = created_task.json()["team_snapshot"]
     project_plan = created_task.json()["project_plan"]
-    assert snapshot["snapshot_version"] == 2
+    assert snapshot["snapshot_version"] == 3
     assert snapshot["team"]["capability_policy_version"] == 1
     assert snapshot["team"]["id"] == team.json()["id"]
     assert snapshot["team"]["manager_agent_profile_id"] == manager.json()["id"]
@@ -12116,7 +12116,7 @@ def _client(
             log_format="text",
             internal_api_token=TOKEN,
             database_url="sqlite+pysqlite:///:memory:",
-            runtime_allowed_images=["python:3.12-slim"],
+            runtime_allowed_images=["python@sha256:" + "0" * 64],
         )
     )
 

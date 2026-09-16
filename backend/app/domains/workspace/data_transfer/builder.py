@@ -55,123 +55,7 @@ class WorkspaceExportBuilder:
         request: WorkspaceExportRequest,
     ) -> WorkspaceExportResponse:
         included: list[str] = []
-        payload: dict[str, list[dict[str, object]]] = {
-            "agents": [],
-            "teams": [],
-            "team_members": [],
-            "tasks": [],
-            "task_steps": [],
-            "task_messages": [],
-            "runs": [],
-            "run_events": [],
-            "files": [],
-            "artifacts": [],
-            "runtime_spaces": [],
-            "runtime_space_quotas": [],
-            "skill_installs": [],
-            "audit_events": [],
-        }
-
-        if request.include_agents:
-            included.append("agents")
-            payload["agents"] = self._rows(
-                AgentProfile,
-                workspace.id,
-                request.max_items_per_collection,
-                _agent_payload,
-            )
-        if request.include_teams:
-            included.append("teams")
-            payload["teams"] = self._rows(
-                AgentTeam,
-                workspace.id,
-                request.max_items_per_collection,
-                _team_payload,
-            )
-            payload["team_members"] = self._rows(
-                AgentTeamMember,
-                workspace.id,
-                request.max_items_per_collection,
-                _team_member_payload,
-            )
-        if request.include_tasks:
-            included.append("tasks")
-            payload["tasks"] = self._rows(
-                Task,
-                workspace.id,
-                request.max_items_per_collection,
-                _task_payload,
-            )
-            payload["task_steps"] = self._rows(
-                TaskStep,
-                workspace.id,
-                request.max_items_per_collection,
-                _task_step_payload,
-            )
-            payload["task_messages"] = self._rows(
-                TaskMessage,
-                workspace.id,
-                request.max_items_per_collection,
-                _task_message_payload,
-            )
-        if request.include_runs:
-            included.append("runs")
-            payload["runs"] = self._rows(
-                AgentRun,
-                workspace.id,
-                request.max_items_per_collection,
-                _run_payload,
-            )
-            payload["run_events"] = self._rows(
-                RunEvent,
-                workspace.id,
-                request.max_items_per_collection,
-                _run_event_payload,
-            )
-        if request.include_files:
-            included.append("files")
-            payload["files"] = self._rows(
-                WorkspaceFile,
-                workspace.id,
-                request.max_items_per_collection,
-                _file_payload,
-            )
-            payload["artifacts"] = self._rows(
-                Artifact,
-                workspace.id,
-                request.max_items_per_collection,
-                _artifact_payload,
-            )
-        if request.include_runtime_spaces:
-            included.append("runtime_spaces")
-            payload["runtime_spaces"] = self._rows(
-                RuntimeSpace,
-                workspace.id,
-                request.max_items_per_collection,
-                _runtime_space_payload,
-            )
-            payload["runtime_space_quotas"] = self._rows(
-                RuntimeSpaceQuota,
-                workspace.id,
-                request.max_items_per_collection,
-                _runtime_space_quota_payload,
-            )
-        if request.include_skill_installs:
-            included.append("skill_installs")
-            payload["skill_installs"] = self._rows(
-                WorkspaceSkillInstall,
-                workspace.id,
-                request.max_items_per_collection,
-                _skill_install_payload,
-            )
-        if request.include_audit_events:
-            included.append("audit_events")
-            payload["audit_events"] = self._rows(
-                AuditEvent,
-                workspace.id,
-                request.max_items_per_collection,
-                _audit_payload,
-            )
+        payload = self._build_payload(workspace, request, included)
 
         counts = {key: len(value) for key, value in payload.items()}
         export = WorkspaceExportResponse(
@@ -199,6 +83,92 @@ class WorkspaceExportBuilder:
         )
         self._session.commit()
         return export
+
+    def _build_payload(
+        self,
+        workspace: Workspace,
+        request: WorkspaceExportRequest,
+        included: list[str],
+    ) -> dict[str, list[dict[str, object]]]:
+        payload: dict[str, list[dict[str, object]]] = {
+            "agents": [],
+            "teams": [],
+            "team_members": [],
+            "tasks": [],
+            "task_steps": [],
+            "task_messages": [],
+            "runs": [],
+            "run_events": [],
+            "files": [],
+            "artifacts": [],
+            "runtime_spaces": [],
+            "runtime_space_quotas": [],
+            "skill_installs": [],
+            "audit_events": [],
+        }
+        collection_specs = (
+            ("agents", "include_agents", (("agents", AgentProfile, _agent_payload),)),
+            (
+                "teams",
+                "include_teams",
+                (
+                    ("teams", AgentTeam, _team_payload),
+                    ("team_members", AgentTeamMember, _team_member_payload),
+                ),
+            ),
+            (
+                "tasks",
+                "include_tasks",
+                (
+                    ("tasks", Task, _task_payload),
+                    ("task_steps", TaskStep, _task_step_payload),
+                    ("task_messages", TaskMessage, _task_message_payload),
+                ),
+            ),
+            (
+                "runs",
+                "include_runs",
+                (("runs", AgentRun, _run_payload), ("run_events", RunEvent, _run_event_payload)),
+            ),
+            (
+                "files",
+                "include_files",
+                (
+                    ("files", WorkspaceFile, _file_payload),
+                    ("artifacts", Artifact, _artifact_payload),
+                ),
+            ),
+            (
+                "runtime_spaces",
+                "include_runtime_spaces",
+                (
+                    ("runtime_spaces", RuntimeSpace, _runtime_space_payload),
+                    ("runtime_space_quotas", RuntimeSpaceQuota, _runtime_space_quota_payload),
+                ),
+            ),
+            (
+                "skill_installs",
+                "include_skill_installs",
+                (("skill_installs", WorkspaceSkillInstall, _skill_install_payload),),
+            ),
+            (
+                "audit_events",
+                "include_audit_events",
+                (("audit_events", AuditEvent, _audit_payload),),
+            ),
+        )
+        for collection, flag, rows in collection_specs:
+            if not getattr(request, flag):
+                continue
+            included.append(collection)
+            for key, model, serializer in rows:
+                payload[key] = self._rows(
+                    model,
+                    workspace.id,
+                    request.max_items_per_collection,
+                    serializer,
+                )
+        return payload
 
     def _rows(
         self,

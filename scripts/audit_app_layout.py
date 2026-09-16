@@ -306,9 +306,13 @@ def write_dispositions() -> None:
                 break
         decisions[path] = decision
     used_overrides = set()
+    stale_overrides = []
     for rule in rules["overrides"]:
         for path in rule["sources"]:
-            if path not in decisions or path in used_overrides:
+            if path not in decisions:
+                stale_overrides.append(path)
+                continue
+            if path in used_overrides:
                 raise ValueError(f"Invalid or repeated override: {path}")
             used_overrides.add(path)
             decisions[path] = {key: rule[key] for key in ("action", "targets", "phase", "reason")}
@@ -415,7 +419,10 @@ def write_dispositions() -> None:
     )
     print(
         json.dumps(
-            {k: v for k, v in footprint.items() if k != "target_sources"},
+            {
+                **{k: v for k, v in footprint.items() if k != "target_sources"},
+                "stale_rules_ignored": sorted(set(stale_overrides)),
+            },
             ensure_ascii=False,
             indent=2,
         )
@@ -490,11 +497,15 @@ def main() -> None:
             commits = [x for x in record["transactions"] if x["call"].endswith(".commit")]
             if commits:
                 flags.append(f"COMMITS={len(commits)}")
-            digest.append(
+            line = (
                 f"{Path(record['path']).name} | {record['lines']}L "
-                f"in={len(record['callers'])} out={len(record['dependencies'])} "
-                f"{' '.join(flags)} | {'; '.join(declarations)}"
+                f"in={len(record['callers'])} out={len(record['dependencies'])}"
             )
+            if flags:
+                line += f" {' '.join(flags)}"
+            if declarations:
+                line += f" | {'; '.join(declarations)}"
+            digest.append(line)
     (OUTPUT / "declaration-review.txt").write_text("\n".join(digest) + "\n", encoding="utf-8")
     print(
         json.dumps(

@@ -20,7 +20,7 @@ def runtime_resource_grants(
     for resource in _catalog_resources(catalog):
         if resource.get("resource_type") != "runtime" or resource.get("access_mode") != "execute":
             continue
-        resource_ids.add(_required_uuid(resource.get("id"), "runtime resource id"))
+        resource_ids.add(parse_required_uuid(resource.get("id"), "runtime resource id"))
         locator = resource.get("locator")
         if not isinstance(locator, dict):
             raise RunRuntimeAuthorizationError(
@@ -36,11 +36,11 @@ def runtime_resource_grants(
             )
         if has_runtime:
             runtime_ids.add(
-                _required_uuid(locator.get("workspace_runtime_id"), "workspace runtime id")
+                parse_required_uuid(locator.get("workspace_runtime_id"), "workspace runtime id")
             )
         if has_runtime_space:
             runtime_space_ids.add(
-                _required_uuid(locator.get("runtime_space_id"), "runtime space id")
+                parse_required_uuid(locator.get("runtime_space_id"), "runtime space id")
             )
     return resource_ids, runtime_ids, runtime_space_ids
 
@@ -55,7 +55,7 @@ def file_resource_ids(catalog: dict[str, object] | None) -> set[UUID]:
             continue
         locator = resource.get("locator")
         if isinstance(locator, dict):
-            result.update(_uuid_set(locator.get("file_ids"), field="file resource file_ids"))
+            result.update(parse_uuid_set(locator.get("file_ids"), field="file resource file_ids"))
     return result
 
 
@@ -81,7 +81,7 @@ def snapshot_file_scope_ids(snapshot: dict[str, object]) -> set[UUID]:
     file_scope = snapshot.get("file_scope")
     if not isinstance(file_scope, dict):
         return set()
-    return _uuid_set(file_scope.get("allowed_file_ids"), field="snapshot allowed_file_ids")
+    return parse_uuid_set(file_scope.get("allowed_file_ids"), field="snapshot allowed_file_ids")
 
 
 def runtime_policy_disables_network(policy: dict[str, object]) -> bool:
@@ -121,18 +121,18 @@ def _catalog_resources(catalog: dict[str, object] | None) -> tuple[dict[str, obj
     return tuple(resources)
 
 
-def _uuid_set(value: object, *, field: str) -> set[UUID]:
+def parse_uuid_set(value: object, *, field: str) -> set[UUID]:
     if value is None:
         return set()
     if not isinstance(value, list):
         raise ValueError(f"{field} must be an array")
-    result = {_required_uuid(item, field) for item in value}
+    result = {parse_required_uuid(item, field) for item in value}
     if len(result) != len(value):
         raise ValueError(f"{field} must not contain duplicates")
     return result
 
 
-def _required_uuid(value: object, field: str) -> UUID:
+def parse_required_uuid(value: object, field: str) -> UUID:
     try:
         return UUID(str(value))
     except (TypeError, ValueError) as exc:

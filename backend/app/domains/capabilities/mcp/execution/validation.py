@@ -20,6 +20,7 @@ from backend.app.domains.capabilities.mcp.policy import mcp_health_check_stale
 from backend.app.domains.capabilities.resources.schema import validate_parameters
 from backend.app.domains.capabilities.tools.contracts import ToolResourceNotFoundError
 from backend.app.domains.orchestration.runs.models import (
+    AUTHORIZATION_SNAPSHOT_VERSION,
     AgentRun,
     authorization_snapshot_fingerprint,
 )
@@ -81,7 +82,7 @@ class McpExecutionValidator:
         snapshot: dict[str, object],
         request: McpExecutionRequest,
     ) -> None:
-        if snapshot.get("version") != 2:
+        if snapshot.get("version") != AUTHORIZATION_SNAPSHOT_VERSION:
             self._block(request, "authorization_snapshot_version_unsupported")
         fingerprint = snapshot.get("fingerprint")
         if (

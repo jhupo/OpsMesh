@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.execution import (
@@ -34,11 +33,13 @@ from backend.app.domains.orchestration.workflows.steps.scheduling_state import (
 )
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
     _seed_workspace,
@@ -148,6 +149,7 @@ def test_runtime_timeout_marks_run_failed_with_durable_evidence(
         session=session,
         dependencies=RunExecutionDependencies(
             lifecycle=_run_lifecycle(session),
+            runtime_backends=build_runtime_backend_registry(None),
         ),
         agent_runner=SlowRunner(),
     )
@@ -211,11 +213,21 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
     session.add(task)
     session.flush()
     snapshot = {
-        "version": 2,
+        "version": 3,
         "workspace_id": str(workspace.id),
         "task_id": str(task.id),
         "task_step_id": None,
         "agent_profile_id": None,
+        "agent_profile": {
+            "id": None,
+            "workspace_id": str(workspace.id),
+            "version": 1,
+            "name": "Default Agent",
+            "role": "worker",
+            "instructions": "Complete the assigned task.",
+            "model": "gpt-4.1",
+            "model_settings": {},
+        },
         "runtime_space_id": None,
         "allowed_tools": [],
         "capability_catalog": None,
@@ -243,7 +255,10 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
 
     result = RunExecutionService(
         session=session,
-        dependencies=RunExecutionDependencies(lifecycle=_run_lifecycle(session)),
+        dependencies=RunExecutionDependencies(
+            lifecycle=_run_lifecycle(session),
+            runtime_backends=build_runtime_backend_registry(None),
+        ),
         agent_runner=ExplodingRunner(),
     ).run_agent_sync(_job(workspace.id, run.id, user.id))
 

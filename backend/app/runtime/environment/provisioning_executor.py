@@ -137,7 +137,7 @@ class RuntimeProvisioningExecutor:
         self._events.append(
             runtime,
             "runtime.created",
-            container_id,
+            "Managed runtime container created",
             metadata={
                 "isolation": isolation_metadata,
                 "network_policy": dict(runtime.network_policy),
@@ -148,7 +148,7 @@ class RuntimeProvisioningExecutor:
         self._events.append(
             runtime,
             "runtime.lease_acquired",
-            container_id,
+            "Managed runtime lease acquired",
             metadata={"runtime_lease_id": str(lease.id)},
         )
         self._session.commit()

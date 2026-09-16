@@ -48,7 +48,8 @@ Linux amd64/Postgres 16/local-storage maintenance-window topology, not rolling o
 | Kubernetes and multi-region deployment | Future, driven by measured scale requirements |
 
 The APIs and database model may change before the first stable release. See the
-[backend completion plan](docs/backend-completion-plan.md) for detailed implementation status.
+[Platform Productionization Plan](docs/platform-productionization-plan.md) for the current scope
+and acceptance gates; source code and focused tests remain the implementation authority.
 
 ### Reference Architecture Coverage
 
@@ -57,7 +58,7 @@ The APIs and database model may change before the first stable release. See the
 | Web Portal and result views | Planned; frontend intentionally remains empty |
 | SSO, department identity, WAF, and load balancing | Planned; local API authentication and workspace RBAC exist |
 | API/Agent Gateway | Implemented at the application boundary: authentication, workspace roles, routing, rate limiting, security headers, and audit |
-| Session, configuration, and tool resolution | Implemented, including persistent sessions, effective Agent/team catalogs, fingerprinted authorization snapshot v2, dynamic SDK tool schemas, and a fail-closed execution gateway |
+| Session, configuration, and tool resolution | Implemented, including persistent sessions, effective Agent/team catalogs, fingerprinted authorization snapshot v3 with frozen runtime Profile and provider fallback policy, dynamic SDK tool schemas, and a fail-closed execution gateway |
 | Multi-Agent runtime | Implemented with the OpenAI Agents SDK, manager/specialist handoffs, approval waits, durable recovery, and worker restart E2E evidence |
 | Capability registry and Tool Gateway | Implemented for skills, MCP servers, credentials, allowlists, marketplace lifecycle, approval, limits, redaction, call audit, runtime-resource placement, live revocation, explicit MCP connection reconfiguration, and credential rotation |
 | MCP execution | Official MCP Python SDK used for Streamable HTTP, SSE, hosted remote servers, and isolated stdio; the self-hosted connector now provides durable claim, execution, completion, and restart recovery |
@@ -308,13 +309,12 @@ recommended order, and boundaries that remain owned by OpsMesh.
 
 ## Next Goals
 
-Active implementation is post-Phase 7 hardening across the
-[Agent runtime completion plan](docs/agent-runtime-completion-plan.md) and backend completion plan.
-The runtime workflow, recovery, operations evidence, architecture gates, and knowledge-source
-registry stage are complete. The remaining 7.5 release gate is intentionally tag-only: a new
-canonical release tag must run the complete suite, real PostgreSQL migration checks, native
-packaging, candidate image probes, signed publication, and managed delivery acceptance before the
-current checkout is called release-ready. Normal development uses focused checks.
+Active implementation follows the
+[Platform Productionization Plan](docs/platform-productionization-plan.md). Runtime workflow,
+recovery, operations evidence, architecture gates, knowledge-source registration and the current
+directory consolidation are implemented. Release readiness is still established only by the
+tag-triggered gate: complete tests, real PostgreSQL migration checks, package/image probes, signed
+publication and managed delivery acceptance. Normal development uses focused checks.
 
 ### 1. Restore and protect the quality baseline
 
@@ -373,26 +373,20 @@ current checkout is called release-ready. Normal development uses focused checks
 ## Repository Layout
 
 ```text
-backend/app/api/                              HTTP transport, schemas, and application services
-backend/app/api/routes/{...}/                 Routes grouped by agents, capabilities, operations, orchestration, platform, and workspace
-backend/app/api/schemas/{...}/                Transport contracts grouped by the same functional domains
-backend/app/api/services/workspace/{...}/     Workspace export, import, lifecycle, and file services
-backend/app/domains/agents/                           Agent profiles, SDK runtime, memory, and providers
+backend/app/api/                              HTTP transport, routes, schemas, dependencies, middleware
+backend/app/bootstrap/                        Application composition and infrastructure registration
+backend/app/domains/agents/                   Agent profiles, SDK runtime, memory, and providers
 backend/app/domains/agents/{profiles,memory,messages,providers,runtime}/  Agent lifecycle and execution domains
 backend/app/domains/agents/runtime/providers/{openai,claude}/ OpenAI and Claude SDK adapters
-backend/app/domains/capabilities/                     Skills, MCP, tools, marketplace, and policy
-backend/app/domains/capabilities/{catalog,governance,resources,skills,marketplace,tools}/  Capability feature modules
-backend/app/domains/capabilities/mcp/{transport,catalog,execution}/  MCP transport, catalog, and execution modules; shared policy.py stays at the MCP boundary
-backend/app/domains/orchestration/                    Requests, runs, approvals, tasks, and workflows
-backend/app/domains/orchestration/tasks/{...}/         Task control, collaboration, delivery, execution, management, observation, and operations
-backend/app/runtime/                        Runtime, worker, operations, and self-hosted execution
-backend/app/runtime/environment/{...}/          Runtime backends, commands, lifecycle, pools, policies, and spaces
-backend/app/runtime/operations/{...}/       Metrics, queues, recovery, runtimes, timeline, and worker operations
-backend/app/domains/workspace/                        Workspace tenant, projects, teams, storage, and reviews
-backend/app/domains/workspace/teams/{...}/            Team execution, operations, projects, providers, organization, and runtime modules
-backend/app/core/                        Identity, auth, persistence, security, and integrations
-backend/app/core/common/                 Provider-neutral config, pagination, values, and metrics primitives
-backend/app/observability/                    Audit, traces, costs, and notifications
+backend/app/domains/capabilities/           Skills, MCP, tools, marketplace, and policy
+backend/app/domains/orchestration/          Requests, runs, approvals, tasks, and workflows
+backend/app/domains/workspace/              Workspace tenant, projects, teams, storage, and reviews
+backend/app/domains/access/                 Users, tokens, membership, RBAC, and authenticated context
+backend/app/domains/platform/               Platform administration, releases, and updates
+backend/app/domains/integrations/           Webhook and external integration domains
+backend/app/runtime/                         Runtime, worker, operations, and self-hosted execution
+backend/app/observability/                   Audit, traces, costs, notifications, and telemetry
+backend/app/core/                            Config, errors, persistence, Redis, security, and shared primitives
 backend/migrations/           Alembic schema history
 backend/tests/                Unit and integration-style backend tests
 deploy/                       VPS/systemd and monitoring assets
@@ -492,7 +486,8 @@ permissions, health checks, monitoring, updates, and rollback.
 - [Open-Source SDK Strategy](docs/open-source-sdk-strategy.md)
 - [Observability, Audit, and Cost Operations](docs/observability-audit-and-costs.md)
 - [Roadmap](docs/roadmap.md)
-- [Backend Completion Plan](docs/backend-completion-plan.md)
+- [Platform Productionization Plan](docs/platform-productionization-plan.md)
+- [Code Organization and Architecture Boundaries](docs/code-organization-audit.md)
 
 ## Contributing
 

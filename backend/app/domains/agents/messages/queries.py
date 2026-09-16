@@ -1,8 +1,10 @@
+from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy import Select, func, select
+from sqlalchemy.orm import Session
 
 from backend.app.core.pagination import PageParams
 from backend.app.domains.agents.messages.contracts import AgentInbox
@@ -16,8 +18,31 @@ from backend.app.domains.agents.messages.models import (
 T = TypeVar("T")
 
 
-class AgentMailboxQueries:
+class AgentMailboxQueries(ABC):
     """Workspace-scoped mailbox reads, inbox projections and summary rollups."""
+
+    _session: Session
+
+    @abstractmethod
+    def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]: ...
+
+    @abstractmethod
+    def _require_thread(self, workspace_id: UUID, thread_id: UUID) -> AgentMessageThread: ...
+
+    @abstractmethod
+    def _require_agent(self, workspace_id: UUID, agent_profile_id: UUID | None) -> None: ...
+
+    @abstractmethod
+    def _require_task(self, workspace_id: UUID, task_id: UUID) -> None: ...
+
+    @abstractmethod
+    def _require_team(self, workspace_id: UUID, agent_team_id: UUID) -> None: ...
+
+    @abstractmethod
+    def _task_team_id(self, workspace_id: UUID, task_id: UUID) -> UUID | None: ...
+
+    @abstractmethod
+    def _require_message(self, workspace_id: UUID, thread_id: UUID, message_id: UUID) -> None: ...
 
     def list_threads(
         self,

@@ -15,8 +15,6 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
-from backend.app.observability.telemetry.request_context import current_log_context
-from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
@@ -71,6 +69,8 @@ from backend.app.observability.costs.models import (
     ModelUsageRecord,
     WorkspaceCostBudget,
 )
+from backend.app.observability.telemetry.request_context import current_log_context
+from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -79,16 +79,16 @@ from backend.app.runtime.environment.contracts import (
 )
 from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceEvent
+from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.runtime.workers.nodes import WorkerHeartbeatOperationsService
-from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.runner import (
     WorkerMaintenanceSummary,
     WorkerRunner,
     WorkerRunnerConfig,
 )
-from backend.app.runtime.workers.queue import RedisQueue
 
 
 @pytest.fixture(autouse=True)
@@ -1178,7 +1178,7 @@ def test_team_runtime_maintenance_consume_then_reschedules_on_next_cadence() -> 
         ),
         settings=Settings(
             environment="test",
-            runtime_allowed_images=["python:3.12-slim"],
+            runtime_allowed_images=["python@sha256:" + "0" * 64],
         ),
         runtime_docker_client=docker,
     )
@@ -1422,7 +1422,7 @@ def test_worker_runner_team_execution_loop_ensures_workspace_runtime() -> None:
         config=WorkerRunnerConfig(worker_id="worker-team-loop-runtime", queue_name="agent_runs"),
         settings=Settings(
             environment="test",
-            runtime_allowed_images=["python:3.12-slim"],
+            runtime_allowed_images=["python@sha256:" + "0" * 64],
         ),
         runtime_docker_client=docker,
     )
@@ -1443,7 +1443,7 @@ def test_worker_runner_team_execution_loop_ensures_workspace_runtime() -> None:
         assert team_runtime["workspace_runtime_id"] == str(runtime.id)
         assert team_runtime["status"] == "running"
     assert len(docker.created_requests) == 1
-    assert docker.created_requests[0].image == "python:3.12-slim"
+    assert docker.created_requests[0].image == "python@sha256:" + "0" * 64
     assert docker.started == ["container-1"]
 
 
@@ -1500,7 +1500,7 @@ def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime() -> N
         ),
         settings=Settings(
             environment="test",
-            runtime_allowed_images=["python:3.12-slim"],
+            runtime_allowed_images=["python@sha256:" + "0" * 64],
         ),
         runtime_docker_client=docker,
     )
@@ -1547,7 +1547,7 @@ def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterat
         config=WorkerRunnerConfig(worker_id="worker-team-loop-soak", queue_name="agent_runs"),
         settings=Settings(
             environment="test",
-            runtime_allowed_images=["python:3.12-slim"],
+            runtime_allowed_images=["python@sha256:" + "0" * 64],
         ),
         runtime_docker_client=docker,
     )
@@ -1627,7 +1627,7 @@ def test_team_runtime_scheduled_soak_across_thirty_minutes() -> None:
         ),
         settings=Settings(
             environment="test",
-            runtime_allowed_images=["python:3.12-slim"],
+            runtime_allowed_images=["python@sha256:" + "0" * 64],
         ),
         runtime_docker_client=docker,
     )
@@ -3267,7 +3267,7 @@ def _seed_team_loop_task(
         runtime_template = (
             RuntimeTemplate(
                 name=f"team-loop-template-{uuid4()}",
-                image="python:3.12-slim",
+                image="python@sha256:" + "0" * 64,
                 default_limits={
                     "cpu_count": 1,
                     "memory_mb": 512,

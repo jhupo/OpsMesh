@@ -45,7 +45,8 @@ docker run --rm opsmesh-runtime:local \
 The runtime image contains the small `opsmesh-runtime` package and the pinned official MCP Python
 SDK, not the API application or database clients. It runs as `opsmesh-runtime`, uses `/workspace`
 as its working directory, and reports SDK readiness before a stdio server is launched. Keep
-`OPSMESH_RUNTIME_ALLOWED_IMAGES` restricted to reviewed runtime image tags or immutable digests.
+`OPSMESH_RUNTIME_ALLOWED_IMAGES` restricted to reviewed runtime images pinned by immutable
+`@sha256:<64-hex>` digests.
 
 ## Self-Hosted MCP Connector
 
@@ -111,8 +112,8 @@ Set production values in `/opt/opsmesh/.env`, especially:
 - `OPSMESH_READINESS_WORKER_CHECK_ENABLED=true`
 - `OPSMESH_CREDENTIAL_ENCRYPTION_SECRET`
 - `OPSMESH_STORAGE_ROOT=/opt/opsmesh/data/storage`
-- `OPSMESH_RUNTIME_ALLOWED_IMAGES=["opsmesh-runtime:local"]` or a reviewed immutable runtime image
-  digest
+- `OPSMESH_RUNTIME_ALLOWED_IMAGES=["ghcr.io/jhupo/opsmesh-runtime@sha256:<64-hex>"]` using a
+  reviewed immutable runtime image digest
 
 Only the worker receives Docker authority for hosted task execution, in either deployment mode.
 The API process must not be able to control the Docker daemon.

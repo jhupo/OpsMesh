@@ -1,44 +1,36 @@
 {
-  "source_files": 1029,
+  "source_files": 934,
   "actions": {
-    "move": 209,
-    "keep": 485,
-    "remove-forwarder": 24,
-    "split-responsibility": 2,
-    "retain-review-entrypoint": 5,
-    "retire-superseded": 2,
-    "move-review-entrypoint": 1,
-    "edit-boundary": 9,
-    "merge": 125,
-    "consolidate-and-split": 3,
-    "split": 20,
+    "keep": 773,
+    "edit-boundary": 6,
+    "merge": 12,
+    "split": 12,
     "remove-unused-functions": 1,
-    "refactor-composition": 5,
-    "merge-review-entrypoint": 2,
-    "retain-package-marker": 100,
-    "remove-package-marker": 36
+    "retain-review-entrypoint": 4,
+    "merge-review-entrypoint": 1,
+    "retain-package-marker": 125
   },
-  "planned_implementation_files": 810,
+  "planned_implementation_files": 809,
   "planned_package_directories": 125,
   "new_files_without_single_source": [],
   "target_sources": {
     "api/client_ip.py": [
-      "core/common/client_ip.py"
+      "api/client_ip.py"
     ],
     "api/dependencies/admin.py": [
-      "core/auth/admin.py"
+      "api/dependencies/admin.py"
     ],
     "api/dependencies/auth.py": [
-      "core/auth/dependencies.py"
+      "api/dependencies/auth.py"
     ],
     "api/dependencies/queue.py": [
-      "api/dependencies.py"
+      "api/dependencies/queue.py"
     ],
     "api/dependencies/redis.py": [
-      "core/redis/dependencies.py"
+      "api/dependencies/redis.py"
     ],
     "api/dependencies/runtime.py": [
-      "runtime/environment/dependencies.py"
+      "api/dependencies/runtime.py"
     ],
     "api/errors.py": [
       "api/errors.py"
@@ -56,7 +48,7 @@
       "api/router.py"
     ],
     "api/routes/access/auth.py": [
-      "api/routes/platform/auth.py"
+      "api/routes/access/auth.py"
     ],
     "api/routes/agents/errors.py": [
       "api/routes/agents/errors.py"
@@ -206,46 +198,46 @@
       "api/routes/orchestration/tasks/transfers.py"
     ],
     "api/routes/platform/dependencies.py": [
-      "api/routes/admin/dependencies.py"
+      "api/routes/platform/dependencies.py"
     ],
     "api/routes/platform/leases.py": [
-      "api/routes/admin/leases.py"
+      "api/routes/platform/leases.py"
     ],
     "api/routes/platform/overview.py": [
-      "api/routes/admin/overview.py"
+      "api/routes/platform/overview.py"
     ],
     "api/routes/platform/policies.py": [
-      "api/routes/admin/policies.py"
+      "api/routes/platform/policies.py"
     ],
     "api/routes/platform/queues.py": [
-      "api/routes/admin/queues.py"
+      "api/routes/platform/queues.py"
     ],
     "api/routes/platform/responses.py": [
-      "api/routes/admin/responses.py"
+      "api/routes/platform/responses.py"
     ],
     "api/routes/platform/router.py": [
-      "api/routes/admin/router.py"
+      "api/routes/platform/router.py"
     ],
     "api/routes/platform/runtime_spaces.py": [
-      "api/routes/admin/runtime_spaces.py"
+      "api/routes/platform/runtime_spaces.py"
     ],
     "api/routes/platform/runtimes.py": [
-      "api/routes/admin/runtimes.py"
+      "api/routes/platform/runtimes.py"
     ],
     "api/routes/platform/security_events.py": [
-      "api/routes/admin/security_events.py"
+      "api/routes/platform/security_events.py"
     ],
     "api/routes/platform/system.py": [
-      "api/routes/admin/system.py"
+      "api/routes/platform/system.py"
     ],
     "api/routes/platform/updates.py": [
-      "api/routes/admin/updates.py"
+      "api/routes/platform/updates.py"
     ],
     "api/routes/platform/users.py": [
-      "api/routes/admin/users.py"
+      "api/routes/platform/users.py"
     ],
     "api/routes/platform/workers.py": [
-      "api/routes/admin/workers.py"
+      "api/routes/platform/workers.py"
     ],
     "api/routes/self_hosted/artifacts.py": [
       "api/routes/self_hosted/artifacts.py"
@@ -347,7 +339,7 @@
       "api/routes/workspace/workspaces.py"
     ],
     "api/schemas/access/auth.py": [
-      "api/schemas/platform/auth.py"
+      "api/schemas/access/auth.py"
     ],
     "api/schemas/agents/memory.py": [
       "api/schemas/agents/memory.py"
@@ -371,14 +363,13 @@
       "api/schemas/capabilities/policy_diagnostics.py"
     ],
     "api/schemas/integrations/webhooks.py": [
-      "api/schemas/platform/webhooks.py"
+      "api/schemas/integrations/webhooks.py"
     ],
     "api/schemas/operations/costs.py": [
       "api/schemas/operations/costs.py"
     ],
     "api/schemas/operations/filters.py": [
-      "api/schemas/operations/filters.py",
-      "api/schemas/operations/overview.py"
+      "api/schemas/operations/filters.py"
     ],
     "api/schemas/operations/runtimes.py": [
       "api/schemas/operations/runtimes.py"
@@ -390,7 +381,6 @@
       "api/schemas/operations/self_hosted.py"
     ],
     "api/schemas/operations/workers.py": [
-      "api/schemas/operations/overview.py",
       "api/schemas/operations/workers.py"
     ],
     "api/schemas/orchestration/approvals.py": [
@@ -400,23 +390,18 @@
       "api/schemas/orchestration/definitions.py"
     ],
     "api/schemas/orchestration/tasks/control.py": [
-      "api/schemas/orchestration/tasks/control.py",
-      "api/schemas/orchestration/tasks/overview.py"
+      "api/schemas/orchestration/tasks/control.py"
     ],
     "api/schemas/orchestration/tasks/core.py": [
-      "api/schemas/orchestration/tasks/core.py",
-      "api/schemas/orchestration/tasks/overview.py"
+      "api/schemas/orchestration/tasks/core.py"
     ],
     "api/schemas/orchestration/tasks/management.py": [
-      "api/schemas/orchestration/tasks/management.py",
-      "api/schemas/orchestration/tasks/overview.py"
+      "api/schemas/orchestration/tasks/management.py"
     ],
     "api/schemas/orchestration/tasks/status.py": [
-      "api/schemas/orchestration/tasks/overview.py",
       "api/schemas/orchestration/tasks/status.py"
     ],
     "api/schemas/orchestration/tasks/timeline.py": [
-      "api/schemas/orchestration/tasks/overview.py",
       "api/schemas/orchestration/tasks/timeline.py"
     ],
     "api/schemas/platform/admin.py": [
@@ -438,45 +423,41 @@
       "api/schemas/workspace/projects.py"
     ],
     "api/schemas/workspace/team_core.py": [
-      "api/schemas/workspace/team_core.py",
-      "api/schemas/workspace/teams.py"
+      "api/schemas/workspace/team_core.py"
     ],
     "api/schemas/workspace/team_execution.py": [
-      "api/schemas/workspace/team_execution.py",
-      "api/schemas/workspace/teams.py"
+      "api/schemas/workspace/team_execution.py"
     ],
     "api/schemas/workspace/team_operations_console.py": [
-      "api/schemas/workspace/team_operations_console.py",
-      "api/schemas/workspace/teams.py"
+      "api/schemas/workspace/team_operations_console.py"
     ],
     "api/schemas/workspace/team_runtime.py": [
-      "api/schemas/workspace/team_runtime.py",
-      "api/schemas/workspace/teams.py"
+      "api/schemas/workspace/team_runtime.py"
     ],
     "api/schemas/workspace/workspaces.py": [
       "api/schemas/workspace/workspaces.py"
     ],
     "bootstrap/models.py": [
-      "core/db/models.py"
+      "bootstrap/models.py"
     ],
     "bootstrap/providers.py": [
-      "domains/agents/runtime/execution/factory.py"
+      "bootstrap/providers.py"
     ],
     "bootstrap/resources.py": [
+      "bootstrap/resources.py",
       "main.py"
     ],
     "bootstrap/runtime.py": [
-      "runtime/environment/backends/registry.py",
-      "runtime/environment/manager_factory.py"
+      "bootstrap/runtime.py",
+      "runtime/environment/backends/registry.py"
     ],
     "bootstrap/telemetry.py": [
-      "observability/tracing.py"
+      "bootstrap/telemetry.py"
     ],
     "core/config.py": [
-      "core/common/config.py"
+      "core/config.py"
     ],
     "core/contracts.py": [
-      "api/schemas/common.py",
       "core/contracts.py"
     ],
     "core/db/base.py": [
@@ -492,16 +473,16 @@
       "core/db/session.py"
     ],
     "core/errors.py": [
-      "core/common/errors.py"
+      "core/errors.py"
     ],
     "core/executors.py": [
-      "core/common/executors.py"
+      "core/executors.py"
     ],
     "core/feature_flags.py": [
-      "core/common/feature_flags.py"
+      "core/feature_flags.py"
     ],
     "core/pagination.py": [
-      "core/common/pagination.py"
+      "core/pagination.py"
     ],
     "core/redis/cache.py": [
       "core/redis/cache.py"
@@ -513,43 +494,43 @@
       "core/redis/keys.py"
     ],
     "core/resources.py": [
-      "core/common/resources.py"
+      "core/resources.py"
     ],
     "core/security/egress.py": [
       "core/security/egress.py"
     ],
     "core/security/rate_limits.py": [
-      "core/rate_limits/service.py"
+      "core/security/rate_limits.py"
     ],
     "core/security/redaction.py": [
       "core/security/redaction.py"
     ],
     "core/security/secrets.py": [
-      "core/secrets/service.py"
+      "core/security/secrets.py"
     ],
     "core/utils.py": [
-      "core/common/values.py"
+      "core/utils.py"
     ],
     "delivery.py": [
       "delivery.py"
     ],
     "domains/access/admin.py": [
-      "core/identity/admin_service.py"
+      "domains/access/admin.py"
     ],
     "domains/access/context.py": [
-      "core/auth/context.py"
+      "domains/access/context.py"
     ],
     "domains/access/errors.py": [
-      "core/auth/errors.py"
+      "domains/access/errors.py"
     ],
     "domains/access/models.py": [
-      "core/identity/models.py"
+      "domains/access/models.py"
     ],
     "domains/access/permissions.py": [
-      "core/auth/permissions.py"
+      "domains/access/permissions.py"
     ],
     "domains/access/service.py": [
-      "core/auth/service.py"
+      "domains/access/service.py"
     ],
     "domains/agents/memory/authorization.py": [
       "domains/agents/memory/authorization.py"
@@ -594,22 +575,16 @@
       "domains/agents/memory/working.py"
     ],
     "domains/agents/messages/contracts.py": [
-      "api/schemas/agents/messages.py",
       "domains/agents/messages/contracts.py"
     ],
     "domains/agents/messages/models.py": [
       "domains/agents/messages/models.py"
     ],
     "domains/agents/messages/queries.py": [
-      "domains/agents/messages/inbox.py",
-      "domains/agents/messages/queries.py",
-      "domains/agents/messages/summary.py"
+      "domains/agents/messages/queries.py"
     ],
     "domains/agents/messages/service.py": [
-      "domains/agents/messages/messages.py",
-      "domains/agents/messages/service.py",
-      "domains/agents/messages/threads.py",
-      "domains/agents/messages/validation.py"
+      "domains/agents/messages/service.py"
     ],
     "domains/agents/profiles/contracts.py": [
       "domains/agents/profiles/contracts.py"
@@ -618,7 +593,7 @@
       "domains/agents/profiles/model_validation.py"
     ],
     "domains/agents/profiles/models.py": [
-      "domains/agents/models.py"
+      "domains/agents/profiles/models.py"
     ],
     "domains/agents/profiles/payloads.py": [
       "domains/agents/profiles/payloads.py"
@@ -627,100 +602,87 @@
       "domains/agents/profiles/reviews.py"
     ],
     "domains/agents/profiles/service.py": [
-      "domains/agents/profiles/commands.py",
-      "domains/agents/profiles/lifecycle.py",
-      "domains/agents/profiles/queries.py",
-      "domains/agents/service.py"
+      "domains/agents/profiles/service.py"
     ],
     "domains/agents/profiles/versions.py": [
       "domains/agents/profiles/versions.py"
     ],
     "domains/agents/providers/audit.py": [
-      "domains/agents/providers/audit/contracts.py",
-      "domains/agents/providers/audit/payloads.py",
-      "domains/agents/providers/audit/responses.py",
-      "domains/agents/providers/audit/writer.py"
+      "domains/agents/providers/audit.py"
     ],
     "domains/agents/providers/capabilities.py": [
-      "domains/agents/providers/catalog/capabilities.py"
+      "domains/agents/providers/capabilities.py"
     ],
     "domains/agents/providers/contracts.py": [
       "domains/agents/providers/contracts.py"
     ],
     "domains/agents/providers/credentials.py": [
-      "domains/agents/providers/credentials/commands.py"
+      "domains/agents/providers/credentials.py"
     ],
     "domains/agents/providers/health.py": [
-      "domains/agents/providers/health/service.py",
-      "domains/agents/providers/health/state.py",
-      "domains/agents/providers/health/summary.py"
+      "domains/agents/providers/health.py"
     ],
     "domains/agents/providers/metadata.py": [
-      "domains/agents/providers/catalog/metadata.py"
+      "domains/agents/providers/metadata.py"
     ],
     "domains/agents/providers/model_api.py": [
-      "domains/agents/providers/catalog/model_api.py"
+      "domains/agents/providers/model_api.py"
     ],
     "domains/agents/providers/models.py": [
-      "domains/agents/providers/credentials/models.py"
+      "domains/agents/providers/models.py"
     ],
     "domains/agents/providers/policy.py": [
-      "domains/agents/providers/catalog/policy.py"
+      "domains/agents/providers/policy.py"
     ],
     "domains/agents/providers/probes.py": [
-      "domains/agents/providers/health/probes.py"
+      "domains/agents/providers/probes.py"
     ],
     "domains/agents/providers/queries.py": [
-      "domains/agents/providers/credentials/queries.py"
+      "domains/agents/providers/queries.py"
     ],
     "domains/agents/providers/resolution.py": [
-      "domains/agents/providers/resolution/resolver.py",
-      "domains/agents/providers/resolution/service.py",
-      "domains/agents/providers/resolution/snapshot.py"
+      "domains/agents/providers/resolution.py"
     ],
     "domains/agents/providers/snapshots.py": [
-      "domains/agents/providers/resolution/resolver.py",
-      "domains/agents/providers/resolution/service.py",
-      "domains/agents/providers/resolution/snapshot.py"
+      "domains/agents/providers/snapshots.py"
     ],
     "domains/agents/providers/views.py": [
-      "domains/agents/providers/catalog/agent_summary.py"
+      "domains/agents/providers/views.py"
     ],
     "domains/agents/runtime/base.py": [
-      "domains/agents/runtime/execution/base.py"
+      "domains/agents/runtime/base.py"
     ],
     "domains/agents/runtime/cancellation.py": [
-      "domains/agents/runtime/execution/cancellation.py"
+      "domains/agents/runtime/cancellation.py"
     ],
     "domains/agents/runtime/capability_policy.py": [
-      "domains/agents/runtime/execution/capability_policy.py"
+      "domains/agents/runtime/capability_policy.py"
     ],
     "domains/agents/runtime/contracts.py": [
-      "domains/agents/runtime/execution/contracts.py"
+      "domains/agents/runtime/contracts.py"
     ],
     "domains/agents/runtime/errors.py": [
-      "domains/agents/runtime/execution/errors.py"
+      "domains/agents/runtime/errors.py"
     ],
     "domains/agents/runtime/events.py": [
-      "domains/agents/runtime/execution/events.py"
+      "domains/agents/runtime/events.py"
     ],
     "domains/agents/runtime/guardrails.py": [
-      "domains/agents/runtime/execution/guardrails.py"
+      "domains/agents/runtime/guardrails.py"
     ],
     "domains/agents/runtime/observer.py": [
-      "domains/agents/runtime/execution/observer.py"
+      "domains/agents/runtime/observer.py"
     ],
     "domains/agents/runtime/providers/claude/runner.py": [
       "domains/agents/runtime/providers/claude/runner.py"
     ],
-    "domains/agents/runtime/providers/claude/sandbox.py": [
-      "domains/agents/runtime/providers/claude/sandbox.py"
-    ],
     "domains/agents/runtime/providers/claude/sessions.py": [
-      "domains/agents/runtime/providers/claude/runner.py"
+      "domains/agents/runtime/providers/claude/runner.py",
+      "domains/agents/runtime/providers/claude/sessions.py"
     ],
     "domains/agents/runtime/providers/claude/tools.py": [
-      "domains/agents/runtime/providers/claude/runner.py"
+      "domains/agents/runtime/providers/claude/runner.py",
+      "domains/agents/runtime/providers/claude/tools.py"
     ],
     "domains/agents/runtime/providers/openai/compaction.py": [
       "domains/agents/runtime/providers/openai/compaction.py"
@@ -753,13 +715,13 @@
       "domains/agents/runtime/providers/openai/tools.py"
     ],
     "domains/agents/runtime/registry.py": [
-      "domains/agents/runtime/execution/registry.py"
+      "domains/agents/runtime/registry.py"
     ],
     "domains/agents/runtime/state.py": [
-      "domains/agents/runtime/execution/state.py"
+      "domains/agents/runtime/state.py"
     ],
     "domains/agents/runtime/tokens.py": [
-      "domains/agents/runtime/execution/tokens.py"
+      "domains/agents/runtime/tokens.py"
     ],
     "domains/agents/runtime/tools/arguments.py": [
       "domains/agents/runtime/tools/arguments.py"
@@ -783,46 +745,43 @@
       "domains/agents/runtime/tools/product.py"
     ],
     "domains/agents/runtime/usage.py": [
-      "domains/agents/runtime/execution/usage.py"
+      "domains/agents/runtime/usage.py"
     ],
     "domains/agents/sessions/management.py": [
-      "domains/agents/runtime/sessions/management.py"
+      "domains/agents/sessions/management.py"
     ],
     "domains/agents/sessions/models.py": [
-      "domains/agents/runtime/sessions/models.py"
+      "domains/agents/sessions/models.py"
     ],
     "domains/agents/sessions/repository.py": [
-      "domains/agents/runtime/sessions/repository.py"
+      "domains/agents/sessions/repository.py"
     ],
     "domains/agents/sessions/store.py": [
-      "domains/agents/runtime/sessions/models.py"
+      "domains/agents/sessions/store.py"
     ],
     "domains/agents/sessions/views.py": [
-      "domains/agents/runtime/sessions/views.py"
+      "domains/agents/sessions/views.py"
     ],
     "domains/capabilities/catalog/contracts.py": [
-      "api/schemas/capabilities/base.py",
       "domains/capabilities/catalog/contracts.py"
     ],
     "domains/capabilities/catalog/effective.py": [
       "domains/capabilities/catalog/effective.py"
     ],
     "domains/capabilities/catalog/models.py": [
-      "domains/capabilities/models.py"
+      "domains/capabilities/catalog/models.py"
     ],
     "domains/capabilities/catalog/product_tools.py": [
       "domains/capabilities/catalog/product_tools.py"
     ],
     "domains/capabilities/catalog/queries.py": [
-      "domains/capabilities/catalog/service.py"
+      "domains/capabilities/catalog/queries.py"
     ],
     "domains/capabilities/catalog/service.py": [
-      "domains/capabilities/service.py"
+      "domains/capabilities/catalog/service.py"
     ],
     "domains/capabilities/governance/actions.py": [
-      "domains/capabilities/governance/actions.py",
-      "domains/capabilities/governance/agent_actions.py",
-      "domains/capabilities/governance/skill_actions.py"
+      "domains/capabilities/governance/actions.py"
     ],
     "domains/capabilities/governance/agent_policy.py": [
       "domains/capabilities/governance/agent_policy.py"
@@ -843,7 +802,6 @@
       "domains/capabilities/governance/service.py"
     ],
     "domains/capabilities/marketplace/contracts.py": [
-      "api/schemas/capabilities/marketplace.py",
       "domains/capabilities/marketplace/contracts.py"
     ],
     "domains/capabilities/marketplace/listing_payloads.py": [
@@ -889,15 +847,12 @@
       "domains/capabilities/mcp/catalog/catalog.py"
     ],
     "domains/capabilities/mcp/catalog/contracts.py": [
-      "api/schemas/capabilities/mcp_credentials.py",
-      "api/schemas/capabilities/mcp_servers.py",
       "domains/capabilities/mcp/catalog/contracts.py"
     ],
     "domains/capabilities/mcp/catalog/credentials.py": [
       "domains/capabilities/mcp/catalog/credentials.py"
     ],
     "domains/capabilities/mcp/catalog/redaction.py": [
-      "api/schemas/capabilities/mcp_redaction.py",
       "domains/capabilities/mcp/catalog/redaction.py"
     ],
     "domains/capabilities/mcp/catalog/rules.py": [
@@ -916,15 +871,10 @@
       "domains/capabilities/mcp/execution/blocking.py"
     ],
     "domains/capabilities/mcp/execution/contracts.py": [
-      "api/schemas/capabilities/mcp_observability.py",
-      "domains/capabilities/mcp/execution/context.py",
-      "domains/capabilities/mcp/execution/contracts.py",
-      "domains/capabilities/mcp/execution/types.py"
+      "domains/capabilities/mcp/execution/contracts.py"
     ],
     "domains/capabilities/mcp/execution/events.py": [
-      "domains/capabilities/mcp/execution/call_logs.py",
-      "domains/capabilities/mcp/execution/logs.py",
-      "domains/capabilities/mcp/execution/notifications.py"
+      "domains/capabilities/mcp/execution/events.py"
     ],
     "domains/capabilities/mcp/execution/invocation.py": [
       "domains/capabilities/mcp/execution/invocation.py"
@@ -942,7 +892,7 @@
       "domains/capabilities/mcp/execution/validation.py"
     ],
     "domains/capabilities/mcp/models.py": [
-      "domains/capabilities/models.py"
+      "domains/capabilities/mcp/models.py"
     ],
     "domains/capabilities/mcp/policy.py": [
       "domains/capabilities/mcp/policy.py"
@@ -972,7 +922,7 @@
       "domains/capabilities/resources/locator.py"
     ],
     "domains/capabilities/resources/models.py": [
-      "domains/capabilities/models.py"
+      "domains/capabilities/resources/models.py"
     ],
     "domains/capabilities/resources/schema.py": [
       "domains/capabilities/resources/schema.py"
@@ -984,7 +934,6 @@
       "domains/capabilities/skills/availability.py"
     ],
     "domains/capabilities/skills/contracts.py": [
-      "api/schemas/capabilities/workspace_skills.py",
       "domains/capabilities/skills/contracts.py"
     ],
     "domains/capabilities/skills/diagnostic_types.py": [
@@ -1003,29 +952,28 @@
       "domains/capabilities/skills/manifest.py"
     ],
     "domains/capabilities/skills/models.py": [
-      "domains/capabilities/models.py"
+      "domains/capabilities/skills/models.py"
     ],
     "domains/capabilities/tools/contracts.py": [
-      "domains/capabilities/tools/context.py",
-      "domains/capabilities/tools/errors.py"
+      "domains/capabilities/tools/contracts.py"
     ],
     "domains/capabilities/tools/events.py": [
-      "domains/capabilities/tools/product_events.py"
+      "domains/capabilities/tools/events.py"
     ],
     "domains/capabilities/tools/files.py": [
-      "domains/capabilities/tools/product_files.py"
+      "domains/capabilities/tools/files.py"
     ],
     "domains/capabilities/tools/mailbox.py": [
-      "domains/capabilities/tools/product_mailbox.py"
+      "domains/capabilities/tools/mailbox.py"
     ],
     "domains/capabilities/tools/memory.py": [
-      "domains/capabilities/tools/product_memory.py"
+      "domains/capabilities/tools/memory.py"
     ],
     "domains/capabilities/tools/normalization.py": [
-      "domains/capabilities/tools/product_normalization.py"
+      "domains/capabilities/tools/normalization.py"
     ],
     "domains/capabilities/tools/service.py": [
-      "domains/capabilities/tools/product_service.py"
+      "domains/capabilities/tools/service.py"
     ],
     "domains/capabilities/tools/workspace_memory.py": [
       "domains/capabilities/tools/workspace_memory.py"
@@ -1034,38 +982,34 @@
       "domains/capabilities/tools/workspace_memory_documents.py"
     ],
     "domains/integrations/webhooks/delivery.py": [
-      "core/integrations/webhooks/delivery.py",
-      "core/integrations/webhooks/service.py"
+      "domains/integrations/webhooks/delivery.py"
     ],
     "domains/integrations/webhooks/delivery_state.py": [
-      "core/integrations/webhooks/delivery_state.py"
+      "domains/integrations/webhooks/delivery_state.py"
     ],
     "domains/integrations/webhooks/http_client.py": [
-      "core/integrations/webhooks/http_client.py",
-      "core/integrations/webhooks/service.py"
+      "domains/integrations/webhooks/http_client.py"
     ],
     "domains/integrations/webhooks/models.py": [
-      "core/integrations/webhooks/models.py"
+      "domains/integrations/webhooks/models.py"
     ],
     "domains/integrations/webhooks/policy.py": [
-      "core/integrations/webhooks/policy.py"
+      "domains/integrations/webhooks/policy.py"
     ],
     "domains/integrations/webhooks/replay.py": [
-      "core/integrations/webhooks/replay.py",
-      "core/integrations/webhooks/service.py"
+      "domains/integrations/webhooks/replay.py"
     ],
     "domains/integrations/webhooks/scheduler.py": [
-      "core/integrations/webhooks/scheduler.py",
-      "core/integrations/webhooks/service.py"
+      "domains/integrations/webhooks/scheduler.py"
     ],
     "domains/integrations/webhooks/signing.py": [
-      "core/integrations/webhooks/signing.py"
+      "domains/integrations/webhooks/signing.py"
     ],
     "domains/integrations/webhooks/subscriptions.py": [
-      "core/integrations/webhooks/service.py",
-      "core/integrations/webhooks/subscriptions.py"
+      "domains/integrations/webhooks/subscriptions.py"
     ],
     "domains/knowledge/content.py": [
+      "domains/knowledge/content.py",
       "domains/knowledge/ingestion.py"
     ],
     "domains/knowledge/contracts.py": [
@@ -1153,25 +1097,24 @@
       "domains/orchestration/runs/activity.py"
     ],
     "domains/orchestration/runs/authorization/policy.py": [
-      "domains/orchestration/runs/runtime_authorization.py"
+      "domains/orchestration/runs/authorization/policy.py"
     ],
     "domains/orchestration/runs/authorization/runtime.py": [
-      "domains/orchestration/runs/runtime_authorization.py"
+      "domains/orchestration/runs/authorization/runtime.py"
     ],
     "domains/orchestration/runs/authorization/snapshot.py": [
-      "domains/orchestration/runs/authorization_snapshot.py"
+      "domains/orchestration/runs/authorization/snapshot.py"
     ],
     "domains/orchestration/runs/authorization/tools.py": [
-      "domains/orchestration/runs/tool_authorization.py"
+      "domains/orchestration/runs/authorization/tools.py"
     ],
     "domains/orchestration/runs/authorization/validation.py": [
-      "domains/orchestration/requests/authorization.py"
+      "domains/orchestration/runs/authorization/validation.py"
     ],
     "domains/orchestration/runs/cancellation.py": [
       "domains/orchestration/runs/cancellation.py"
     ],
     "domains/orchestration/runs/contracts.py": [
-      "api/schemas/orchestration/runs.py",
       "domains/orchestration/runs/contracts.py"
     ],
     "domains/orchestration/runs/control.py": [
@@ -1181,7 +1124,6 @@
       "domains/orchestration/runs/eligibility.py"
     ],
     "domains/orchestration/runs/events.py": [
-      "domains/orchestration/runs/event_writer.py",
       "domains/orchestration/runs/events.py"
     ],
     "domains/orchestration/runs/execution.py": [
@@ -1200,8 +1142,7 @@
       "domains/orchestration/runs/models.py"
     ],
     "domains/orchestration/runs/queries.py": [
-      "domains/orchestration/runs/queries.py",
-      "domains/workspace/tenants/workspace_reads.py"
+      "domains/orchestration/runs/queries.py"
     ],
     "domains/orchestration/runs/resources.py": [
       "domains/orchestration/runs/resources.py"
@@ -1219,8 +1160,7 @@
       "domains/orchestration/runs/service.py"
     ],
     "domains/orchestration/runs/state.py": [
-      "domains/orchestration/runs/state.py",
-      "domains/orchestration/runs/status.py"
+      "domains/orchestration/runs/state.py"
     ],
     "domains/orchestration/runs/task_progress.py": [
       "domains/orchestration/runs/task_progress.py"
@@ -1229,22 +1169,22 @@
       "domains/orchestration/runs/terminal_state.py"
     ],
     "domains/orchestration/tasks/collaboration/contracts.py": [
-      "domains/orchestration/tasks/management/contracts.py"
+      "domains/orchestration/tasks/collaboration/contracts.py"
     ],
     "domains/orchestration/tasks/collaboration/handoff.py": [
-      "domains/orchestration/tasks/execution/handoff.py"
+      "domains/orchestration/tasks/collaboration/handoff.py"
     ],
     "domains/orchestration/tasks/collaboration/manager_diagnostics.py": [
-      "domains/orchestration/tasks/management/diagnostics.py"
+      "domains/orchestration/tasks/collaboration/manager_diagnostics.py"
     ],
     "domains/orchestration/tasks/collaboration/manager_lifecycle.py": [
-      "domains/orchestration/tasks/management/lifecycle.py"
+      "domains/orchestration/tasks/collaboration/manager_lifecycle.py"
     ],
     "domains/orchestration/tasks/collaboration/manager_queue.py": [
-      "domains/orchestration/tasks/management/queue.py"
+      "domains/orchestration/tasks/collaboration/manager_queue.py"
     ],
     "domains/orchestration/tasks/collaboration/manager_review_requests.py": [
-      "domains/orchestration/tasks/management/review_requests.py"
+      "domains/orchestration/tasks/collaboration/manager_review_requests.py"
     ],
     "domains/orchestration/tasks/collaboration/recovery.py": [
       "domains/orchestration/tasks/collaboration/recovery.py"
@@ -1256,20 +1196,19 @@
       "domains/orchestration/tasks/collaboration/state.py"
     ],
     "domains/orchestration/tasks/collaboration/transfer_package.py": [
-      "domains/orchestration/tasks/operations/transfers.py"
+      "domains/orchestration/tasks/collaboration/transfer_package.py"
     ],
     "domains/orchestration/tasks/collaboration/transfers.py": [
-      "domains/orchestration/tasks/operations/transfers.py"
+      "domains/orchestration/tasks/collaboration/transfers.py"
     ],
     "domains/orchestration/tasks/contracts.py": [
       "domains/orchestration/tasks/contracts.py"
     ],
     "domains/orchestration/tasks/control/actions.py": [
-      "domains/orchestration/tasks/operations/action_recording.py",
-      "domains/orchestration/tasks/operations/actions.py"
+      "domains/orchestration/tasks/control/actions.py"
     ],
     "domains/orchestration/tasks/control/dependencies.py": [
-      "domains/orchestration/tasks/operations/dependencies.py"
+      "domains/orchestration/tasks/control/dependencies.py"
     ],
     "domains/orchestration/tasks/control/diagnostics.py": [
       "domains/orchestration/tasks/control/diagnostics.py"
@@ -1278,15 +1217,13 @@
       "domains/orchestration/tasks/control/execution.py"
     ],
     "domains/orchestration/tasks/control/ownership.py": [
-      "domains/orchestration/tasks/operations/ownership.py"
+      "domains/orchestration/tasks/control/ownership.py"
     ],
     "domains/orchestration/tasks/control/queue_actions.py": [
-      "domains/orchestration/tasks/operations/queue_actions.py"
+      "domains/orchestration/tasks/control/queue_actions.py"
     ],
     "domains/orchestration/tasks/control/service.py": [
-      "domains/orchestration/tasks/control/messages.py",
-      "domains/orchestration/tasks/control/service.py",
-      "domains/orchestration/tasks/control/state.py"
+      "domains/orchestration/tasks/control/service.py"
     ],
     "domains/orchestration/tasks/delivery/correction_diagnostics.py": [
       "domains/orchestration/tasks/delivery/correction_diagnostics.py"
@@ -1316,17 +1253,16 @@
       "domains/orchestration/tasks/models.py"
     ],
     "domains/orchestration/tasks/observation/cards.py": [
-      "domains/orchestration/tasks/observation/cards.py",
-      "domains/orchestration/tasks/observation/quality_cards.py"
+      "domains/orchestration/tasks/observation/cards.py"
     ],
     "domains/orchestration/tasks/observation/domain.py": [
       "domains/orchestration/tasks/observation/domain.py"
     ],
     "domains/orchestration/tasks/observation/execution.py": [
-      "domains/orchestration/tasks/execution/diagnostics.py"
+      "domains/orchestration/tasks/observation/execution.py"
     ],
     "domains/orchestration/tasks/observation/execution_views.py": [
-      "domains/orchestration/tasks/execution/payloads.py"
+      "domains/orchestration/tasks/observation/execution_views.py"
     ],
     "domains/orchestration/tasks/observation/live_status.py": [
       "domains/orchestration/tasks/observation/live_status.py"
@@ -1341,31 +1277,28 @@
       "domains/orchestration/tasks/observation/repository.py"
     ],
     "domains/orchestration/tasks/observation/service.py": [
-      "domains/orchestration/tasks/observation/sections.py",
       "domains/orchestration/tasks/observation/service.py"
     ],
     "domains/orchestration/tasks/observation/timeline.py": [
-      "domains/orchestration/tasks/observation/timeline.py",
-      "domains/orchestration/tasks/observation/timeline_events.py"
+      "domains/orchestration/tasks/observation/timeline.py"
     ],
     "domains/orchestration/tasks/observation/transcript.py": [
       "domains/orchestration/tasks/observation/transcript.py"
     ],
     "domains/orchestration/tasks/queries.py": [
-      "domains/workspace/tenants/workspace_reads.py"
+      "domains/orchestration/tasks/queries.py"
     ],
     "domains/orchestration/tasks/service.py": [
-      "domains/orchestration/tasks/operations/workspace.py"
+      "domains/orchestration/tasks/service.py"
     ],
     "domains/orchestration/tasks/state.py": [
-      "domains/orchestration/tasks/service.py",
-      "domains/orchestration/tasks/status.py"
+      "domains/orchestration/tasks/state.py"
     ],
     "domains/orchestration/tasks/steps.py": [
-      "domains/orchestration/tasks/step_service.py",
-      "domains/orchestration/tasks/step_status.py"
+      "domains/orchestration/tasks/steps.py"
     ],
     "domains/orchestration/workflows/definitions/application.py": [
+      "domains/orchestration/workflows/definitions/application.py",
       "domains/orchestration/workflows/definitions/service.py"
     ],
     "domains/orchestration/workflows/definitions/blocked_reasons.py": [
@@ -1384,7 +1317,7 @@
       "domains/orchestration/workflows/definitions/data.py"
     ],
     "domains/orchestration/workflows/definitions/graph.py": [
-      "domains/orchestration/workflows/planning/project_plan/validation.py"
+      "domains/orchestration/workflows/definitions/graph.py"
     ],
     "domains/orchestration/workflows/definitions/service.py": [
       "domains/orchestration/workflows/definitions/service.py"
@@ -1393,7 +1326,8 @@
       "domains/orchestration/workflows/definitions/subworkflows.py"
     ],
     "domains/orchestration/workflows/definitions/validation.py": [
-      "domains/orchestration/workflows/definitions/service.py"
+      "domains/orchestration/workflows/definitions/service.py",
+      "domains/orchestration/workflows/definitions/validation.py"
     ],
     "domains/orchestration/workflows/planning/agent_plan.py": [
       "domains/orchestration/workflows/planning/agent_plan.py"
@@ -1414,20 +1348,19 @@
       "domains/orchestration/workflows/planning/feasibility.py"
     ],
     "domains/orchestration/workflows/planning/lifecycle.py": [
-      "domains/orchestration/tasks/delivery/plan_lifecycle.py"
+      "domains/orchestration/workflows/planning/lifecycle.py"
     ],
     "domains/orchestration/workflows/planning/member_matching.py": [
-      "domains/orchestration/workflows/planning/member_matching.py",
-      "domains/orchestration/workflows/planning/project_plan/member_matching.py"
+      "domains/orchestration/workflows/planning/member_matching.py"
     ],
     "domains/orchestration/workflows/planning/mutation.py": [
-      "domains/orchestration/workflows/planning/future_plan_mutation.py"
+      "domains/orchestration/workflows/planning/mutation.py"
     ],
     "domains/orchestration/workflows/planning/mutation_materialization.py": [
-      "domains/orchestration/workflows/planning/future_plan_mutation.py"
+      "domains/orchestration/workflows/planning/mutation_materialization.py"
     ],
     "domains/orchestration/workflows/planning/mutation_operations.py": [
-      "domains/orchestration/workflows/planning/future_plan_mutation.py"
+      "domains/orchestration/workflows/planning/mutation_operations.py"
     ],
     "domains/orchestration/workflows/planning/org_structure.py": [
       "domains/orchestration/workflows/planning/org_structure.py"
@@ -1445,13 +1378,13 @@
       "domains/orchestration/workflows/planning/pm_follow_up_work.py"
     ],
     "domains/orchestration/workflows/planning/team_project_plan.py": [
-      "domains/orchestration/workflows/planning/team_project_plan.py",
-      "domains/orchestration/workflows/planning/team_step_planner.py"
+      "domains/orchestration/workflows/planning/team_project_plan.py"
     ],
     "domains/orchestration/workflows/scheduling/capacity.py": [
       "domains/orchestration/workflows/scheduling/capacity.py"
     ],
     "domains/orchestration/workflows/scheduling/control.py": [
+      "domains/orchestration/workflows/scheduling/control.py",
       "runtime/operations/scheduler.py"
     ],
     "domains/orchestration/workflows/scheduling/limits.py": [
@@ -1482,225 +1415,208 @@
       "domains/orchestration/workflows/steps/scheduling_state.py"
     ],
     "domains/orchestration/workflows/templates/builder.py": [
-      "domains/orchestration/workflows/planning/project_plan/builder.py",
-      "domains/orchestration/workflows/planning/project_plan/context.py",
-      "domains/orchestration/workflows/planning/project_plan/models.py",
-      "domains/orchestration/workflows/planning/project_plans.py"
+      "domains/orchestration/workflows/templates/builder.py"
     ],
     "domains/orchestration/workflows/templates/execution.py": [
-      "domains/orchestration/workflows/planning/project_plan/execution.py"
+      "domains/orchestration/workflows/templates/execution.py"
     ],
     "domains/orchestration/workflows/templates/leadership.py": [
-      "domains/orchestration/workflows/planning/project_plan/leadership.py"
+      "domains/orchestration/workflows/templates/leadership.py"
     ],
     "domains/orchestration/workflows/templates/members.py": [
-      "domains/orchestration/workflows/planning/project_plan/member_roles.py",
-      "domains/orchestration/workflows/planning/project_plan/members.py"
+      "domains/orchestration/workflows/templates/members.py"
     ],
     "domains/orchestration/workflows/templates/normalization.py": [
-      "domains/orchestration/workflows/planning/project_plan/normalization.py"
+      "domains/orchestration/workflows/templates/normalization.py"
     ],
     "domains/orchestration/workflows/templates/packages.py": [
-      "domains/orchestration/workflows/planning/project_plan/packages.py"
+      "domains/orchestration/workflows/templates/packages.py"
     ],
     "domains/platform/admin/base.py": [
-      "core/admin/base.py"
+      "domains/platform/admin/base.py"
     ],
     "domains/platform/admin/common.py": [
-      "core/admin/common.py"
+      "domains/platform/admin/common.py"
     ],
     "domains/platform/admin/models.py": [
-      "core/admin/models.py"
+      "domains/platform/admin/models.py"
     ],
     "domains/platform/admin/operations_summary.py": [
-      "core/admin/operations_summary.py"
+      "domains/platform/admin/operations_summary.py"
     ],
     "domains/platform/admin/overview.py": [
-      "core/admin/overview.py"
+      "domains/platform/admin/overview.py"
     ],
     "domains/platform/admin/policy_control.py": [
-      "core/admin/policy_control.py"
+      "domains/platform/admin/policy_control.py"
     ],
     "domains/platform/admin/policy_events.py": [
-      "core/admin/policy_events.py"
+      "domains/platform/admin/policy_events.py"
     ],
     "domains/platform/admin/policy_reader.py": [
-      "core/admin/policy_reader.py"
+      "domains/platform/admin/policy_reader.py"
     ],
     "domains/platform/admin/queue_operations.py": [
-      "core/admin/queue_operations.py"
+      "domains/platform/admin/queue_operations.py"
     ],
     "domains/platform/admin/risky_policy_values.py": [
-      "core/admin/risky_policy_values.py"
+      "domains/platform/admin/risky_policy_values.py"
     ],
     "domains/platform/admin/runtime_control.py": [
-      "core/admin/runtime_control.py"
+      "domains/platform/admin/runtime_control.py"
     ],
     "domains/platform/admin/security_events.py": [
-      "core/admin/security_events.py"
+      "domains/platform/admin/security_events.py"
     ],
     "domains/platform/admin/worker_policy_control.py": [
-      "core/admin/worker_policy_control.py"
+      "domains/platform/admin/worker_policy_control.py"
     ],
     "domains/platform/admin/worker_policy_values.py": [
-      "core/admin/worker_policy_values.py"
+      "domains/platform/admin/worker_policy_values.py"
     ],
     "domains/platform/admin/workers.py": [
-      "core/admin/workers.py"
+      "domains/platform/admin/workers.py"
     ],
     "domains/platform/credential_rotation.py": [
-      "core/secrets/rotation.py"
+      "domains/platform/credential_rotation.py"
     ],
     "domains/platform/releases/cache.py": [
-      "core/admin/releases/cache.py"
+      "domains/platform/releases/cache.py"
     ],
     "domains/platform/releases/github.py": [
-      "core/admin/releases/github.py"
+      "domains/platform/releases/github.py"
     ],
     "domains/platform/releases/models.py": [
-      "core/admin/releases/models.py"
+      "domains/platform/releases/models.py"
     ],
     "domains/platform/releases/service.py": [
-      "core/admin/releases/service.py"
+      "domains/platform/releases/service.py"
     ],
     "domains/platform/releases/versioning.py": [
-      "core/admin/releases/versioning.py"
+      "domains/platform/releases/versioning.py"
     ],
     "domains/platform/updates/daemon.py": [
-      "core/admin/updates/daemon.py"
+      "domains/platform/updates/daemon.py"
     ],
     "domains/platform/updates/models.py": [
-      "core/admin/updates/models.py"
+      "domains/platform/updates/models.py"
     ],
     "domains/platform/updates/service.py": [
-      "core/admin/updates/service.py"
+      "domains/platform/updates/service.py"
     ],
     "domains/workspace/data_lifecycle/actions.py": [
-      "domains/workspace/tenants/lifecycle/actions/archive.py",
-      "domains/workspace/tenants/lifecycle/actions/integrity.py",
-      "domains/workspace/tenants/lifecycle/actions/restore.py",
-      "domains/workspace/tenants/lifecycle/actions/service.py"
+      "domains/workspace/data_lifecycle/actions.py"
     ],
     "domains/workspace/data_lifecycle/diagnostics.py": [
-      "domains/workspace/tenants/lifecycle/diagnostics/payloads.py",
-      "domains/workspace/tenants/lifecycle/diagnostics/service.py"
+      "domains/workspace/data_lifecycle/diagnostics.py"
     ],
     "domains/workspace/data_lifecycle/policy.py": [
-      "domains/workspace/tenants/lifecycle/policy.py"
+      "domains/workspace/data_lifecycle/policy.py"
     ],
     "domains/workspace/data_lifecycle/queries.py": [
-      "domains/workspace/tenants/lifecycle/diagnostics/queries.py"
+      "domains/workspace/data_lifecycle/queries.py"
     ],
     "domains/workspace/data_lifecycle/recovery.py": [
-      "domains/workspace/tenants/lifecycle/recovery.py"
+      "domains/workspace/data_lifecycle/recovery.py"
     ],
     "domains/workspace/data_lifecycle/repository.py": [
-      "domains/workspace/tenants/lifecycle/repository.py"
+      "domains/workspace/data_lifecycle/repository.py"
     ],
     "domains/workspace/data_lifecycle/retention.py": [
-      "domains/workspace/tenants/lifecycle/retention.py"
+      "domains/workspace/data_lifecycle/retention.py"
     ],
     "domains/workspace/data_lifecycle/scheduled_backup.py": [
-      "domains/workspace/tenants/lifecycle/scheduling/backup.py"
+      "domains/workspace/data_lifecycle/scheduled_backup.py"
     ],
     "domains/workspace/data_lifecycle/scheduled_restore.py": [
-      "domains/workspace/tenants/lifecycle/scheduling/restore.py"
+      "domains/workspace/data_lifecycle/scheduled_restore.py"
     ],
     "domains/workspace/data_lifecycle/scheduled_retention.py": [
-      "domains/workspace/tenants/lifecycle/scheduling/retention.py"
+      "domains/workspace/data_lifecycle/scheduled_retention.py"
     ],
     "domains/workspace/data_lifecycle/scheduling.py": [
-      "domains/workspace/tenants/lifecycle/scheduling/policy.py",
-      "domains/workspace/tenants/lifecycle/scheduling/service.py",
-      "domains/workspace/tenants/lifecycle/scheduling/summary.py"
+      "domains/workspace/data_lifecycle/scheduling.py"
     ],
     "domains/workspace/data_lifecycle/service.py": [
-      "domains/workspace/tenants/lifecycle/service.py"
+      "domains/workspace/data_lifecycle/service.py"
     ],
     "domains/workspace/data_lifecycle/settings.py": [
-      "domains/workspace/tenants/lifecycle/settings.py"
+      "domains/workspace/data_lifecycle/settings.py"
     ],
     "domains/workspace/data_transfer/archive_builder.py": [
-      "domains/workspace/projects/exports/archive_builder.py"
+      "domains/workspace/data_transfer/archive_builder.py"
     ],
     "domains/workspace/data_transfer/archive_integrity.py": [
-      "domains/workspace/projects/exports/archive_integrity.py"
+      "domains/workspace/data_transfer/archive_integrity.py"
     ],
     "domains/workspace/data_transfer/archive_jobs.py": [
-      "domains/workspace/projects/exports/archive_jobs.py"
+      "domains/workspace/data_transfer/archive_jobs.py"
     ],
     "domains/workspace/data_transfer/archive_restore_drill.py": [
-      "domains/workspace/projects/exports/archive_restore_drill.py"
+      "domains/workspace/data_transfer/archive_restore_drill.py"
     ],
     "domains/workspace/data_transfer/builder.py": [
-      "domains/workspace/projects/exports/builder.py"
+      "domains/workspace/data_transfer/builder.py"
     ],
     "domains/workspace/data_transfer/contracts.py": [
-      "api/schemas/workspace/exports.py",
-      "domains/workspace/projects/exports/contracts.py"
+      "domains/workspace/data_transfer/contracts.py"
     ],
     "domains/workspace/data_transfer/importers/agent.py": [
-      "domains/workspace/projects/imports/agent.py"
+      "domains/workspace/data_transfer/importers/agent.py"
     ],
     "domains/workspace/data_transfer/importers/archive.py": [
-      "domains/workspace/projects/exports/archive_import.py"
+      "domains/workspace/data_transfer/importers/archive.py"
     ],
     "domains/workspace/data_transfer/importers/artifacts.py": [
-      "domains/workspace/projects/exports/archive_artifact_import.py"
+      "domains/workspace/data_transfer/importers/artifacts.py"
     ],
     "domains/workspace/data_transfer/importers/context.py": [
-      "domains/workspace/projects/imports/context.py",
-      "domains/workspace/projects/imports/dependency_resolution.py",
-      "domains/workspace/projects/imports/fields.py",
-      "domains/workspace/projects/imports/resolution.py"
+      "domains/workspace/data_transfer/importers/context.py"
     ],
     "domains/workspace/data_transfer/importers/files.py": [
-      "domains/workspace/projects/exports/archive_file_import.py"
+      "domains/workspace/data_transfer/importers/files.py"
     ],
     "domains/workspace/data_transfer/importers/metadata.py": [
-      "domains/workspace/projects/imports/metadata.py"
+      "domains/workspace/data_transfer/importers/metadata.py"
     ],
     "domains/workspace/data_transfer/importers/preview.py": [
-      "domains/workspace/projects/imports/checksum.py",
-      "domains/workspace/projects/imports/conflicts.py",
-      "domains/workspace/projects/imports/preview.py"
+      "domains/workspace/data_transfer/importers/preview.py"
     ],
     "domains/workspace/data_transfer/importers/runtime_space.py": [
-      "domains/workspace/projects/imports/runtime_space.py"
+      "domains/workspace/data_transfer/importers/runtime_space.py"
     ],
     "domains/workspace/data_transfer/importers/skill_install.py": [
-      "domains/workspace/projects/imports/skill_install.py"
+      "domains/workspace/data_transfer/importers/skill_install.py"
     ],
     "domains/workspace/data_transfer/importers/task.py": [
-      "domains/workspace/projects/imports/task.py"
+      "domains/workspace/data_transfer/importers/task.py"
     ],
     "domains/workspace/data_transfer/importers/team.py": [
-      "domains/workspace/projects/imports/team.py"
+      "domains/workspace/data_transfer/importers/team.py"
     ],
     "domains/workspace/data_transfer/models.py": [
-      "domains/workspace/projects/export_models.py"
+      "domains/workspace/data_transfer/models.py"
     ],
     "domains/workspace/data_transfer/repository.py": [
-      "domains/workspace/projects/exports/archive_blob_reader.py",
-      "domains/workspace/projects/exports/archive_repository.py"
+      "domains/workspace/data_transfer/repository.py"
     ],
     "domains/workspace/data_transfer/serialization.py": [
-      "domains/workspace/projects/exports/payloads.py"
+      "domains/workspace/data_transfer/serialization.py"
     ],
     "domains/workspace/data_transfer/service.py": [
-      "domains/workspace/projects/exports/service.py"
+      "domains/workspace/data_transfer/service.py"
     ],
     "domains/workspace/extensions/contracts.py": [
-      "domains/workspace/domains/contracts.py"
+      "domains/workspace/extensions/contracts.py"
     ],
     "domains/workspace/extensions/models.py": [
-      "domains/workspace/domains/models.py"
+      "domains/workspace/extensions/models.py"
     ],
     "domains/workspace/extensions/service.py": [
-      "domains/workspace/domains/service.py"
+      "domains/workspace/extensions/service.py"
     ],
     "domains/workspace/projects/artifacts.py": [
-      "domains/workspace/projects/artifacts/service.py"
+      "domains/workspace/projects/artifacts.py"
     ],
     "domains/workspace/projects/contracts.py": [
       "domains/workspace/projects/contracts.py"
@@ -1808,14 +1724,13 @@
       "domains/workspace/storage/storage_transactions.py"
     ],
     "domains/workspace/teams/execution/loop.py": [
-      "domains/workspace/teams/execution_loop.py"
+      "domains/workspace/teams/execution/loop.py"
     ],
     "domains/workspace/teams/execution/loop_finalization.py": [
       "domains/workspace/teams/execution/loop_finalization.py"
     ],
     "domains/workspace/teams/execution/loop_state.py": [
-      "domains/workspace/teams/execution/loop_payloads.py",
-      "domains/workspace/teams/execution/loop_status.py"
+      "domains/workspace/teams/execution/loop_state.py"
     ],
     "domains/workspace/teams/execution/loop_support.py": [
       "domains/workspace/teams/execution/loop_support.py"
@@ -1830,7 +1745,7 @@
       "domains/workspace/teams/execution/member_workload.py"
     ],
     "domains/workspace/teams/execution/overview.py": [
-      "domains/workspace/teams/execution_overview.py"
+      "domains/workspace/teams/execution/overview.py"
     ],
     "domains/workspace/teams/execution/overview_contracts.py": [
       "domains/workspace/teams/execution/overview_contracts.py"
@@ -1842,37 +1757,31 @@
       "domains/workspace/teams/execution/overview_repository.py"
     ],
     "domains/workspace/teams/execution/queue.py": [
-      "domains/workspace/teams/execution/loop_queue.py",
-      "domains/workspace/teams/execution/queue_dispatch.py"
+      "domains/workspace/teams/execution/queue.py"
     ],
     "domains/workspace/teams/execution/queue_repository.py": [
       "domains/workspace/teams/execution/queue_repository.py"
     ],
     "domains/workspace/teams/execution/runtime_candidates.py": [
-      "domains/workspace/teams/execution/queue_runtime.py",
       "domains/workspace/teams/execution/runtime_candidates.py"
     ],
     "domains/workspace/teams/execution/summary.py": [
-      "domains/workspace/teams/execution/overview_bottlenecks.py",
-      "domains/workspace/teams/execution/overview_summary.py"
+      "domains/workspace/teams/execution/summary.py"
     ],
     "domains/workspace/teams/models.py": [
       "domains/workspace/teams/models.py"
     ],
     "domains/workspace/teams/operations/action_plan.py": [
-      "domains/workspace/teams/operations/command_center_action_plan.py",
-      "domains/workspace/teams/operations/command_center_grouping.py"
+      "domains/workspace/teams/operations/action_plan.py"
     ],
     "domains/workspace/teams/operations/actions.py": [
-      "domains/workspace/teams/operations/command_center_apply.py"
+      "domains/workspace/teams/operations/actions.py"
     ],
     "domains/workspace/teams/operations/command_center.py": [
-      "domains/workspace/teams/command_center.py"
+      "domains/workspace/teams/operations/command_center.py"
     ],
     "domains/workspace/teams/operations/console.py": [
-      "domains/workspace/teams/operations/console_controls.py",
-      "domains/workspace/teams/operations/console_payloads.py",
-      "domains/workspace/teams/operations_console.py"
+      "domains/workspace/teams/operations/console.py"
     ],
     "domains/workspace/teams/operations/console_mailbox.py": [
       "domains/workspace/teams/operations/console_mailbox.py"
@@ -1884,12 +1793,10 @@
       "domains/workspace/teams/operations/operator_actions.py"
     ],
     "domains/workspace/teams/operations/views.py": [
-      "domains/workspace/teams/operations/command_center_payloads.py",
-      "domains/workspace/teams/operations/console_normalization.py"
+      "domains/workspace/teams/operations/views.py"
     ],
     "domains/workspace/teams/operations/workspace.py": [
-      "domains/workspace/teams/operations/workspace_actions.py",
-      "domains/workspace/teams/workspace_command_center.py"
+      "domains/workspace/teams/operations/workspace.py"
     ],
     "domains/workspace/teams/operations/workspace_load.py": [
       "domains/workspace/teams/operations/workspace_load.py"
@@ -1910,11 +1817,10 @@
       "domains/workspace/teams/organization/policy_payloads.py"
     ],
     "domains/workspace/teams/organization/service.py": [
-      "domains/workspace/teams/operating_context_service.py"
+      "domains/workspace/teams/organization/service.py"
     ],
     "domains/workspace/teams/projects/dashboard.py": [
-      "domains/workspace/teams/projects/dashboard.py",
-      "domains/workspace/teams/projects/dashboard_views.py"
+      "domains/workspace/teams/projects/dashboard.py"
     ],
     "domains/workspace/teams/projects/dashboard_repository.py": [
       "domains/workspace/teams/projects/dashboard_repository.py"
@@ -1935,18 +1841,16 @@
       "domains/workspace/teams/projects/runtime.py"
     ],
     "domains/workspace/teams/projects/service.py": [
-      "domains/workspace/teams/project_service.py"
+      "domains/workspace/teams/projects/service.py"
     ],
     "domains/workspace/teams/projects/types.py": [
       "domains/workspace/teams/projects/types.py"
     ],
     "domains/workspace/teams/projects/views.py": [
-      "domains/workspace/teams/projects/assemblers.py",
-      "domains/workspace/teams/projects/governance.py",
-      "domains/workspace/teams/projects/tasks.py"
+      "domains/workspace/teams/projects/views.py"
     ],
     "domains/workspace/teams/providers/management.py": [
-      "domains/workspace/teams/operations/provider_management.py"
+      "domains/workspace/teams/providers/management.py"
     ],
     "domains/workspace/teams/providers/member.py": [
       "domains/workspace/teams/providers/member.py"
@@ -1958,20 +1862,16 @@
       "domains/workspace/teams/providers/repository.py"
     ],
     "domains/workspace/teams/providers/service.py": [
-      "domains/workspace/teams/provider_readiness_service.py"
+      "domains/workspace/teams/providers/service.py"
     ],
     "domains/workspace/teams/providers/summary.py": [
       "domains/workspace/teams/providers/summary.py"
     ],
     "domains/workspace/teams/providers/views.py": [
-      "domains/workspace/teams/operations/provider_actions.py",
-      "domains/workspace/teams/operations/provider_credentials.py",
-      "domains/workspace/teams/operations/provider_summary.py"
+      "domains/workspace/teams/providers/views.py"
     ],
     "domains/workspace/teams/runtime/binding.py": [
-      "domains/workspace/teams/runtime/workspace_binding.py",
-      "domains/workspace/teams/runtime/workspace_binding_commit.py",
-      "domains/workspace/teams/runtime/workspace_binding_payloads.py"
+      "domains/workspace/teams/runtime/binding.py"
     ],
     "domains/workspace/teams/runtime/heartbeat.py": [
       "domains/workspace/teams/runtime/heartbeat.py"
@@ -2007,13 +1907,13 @@
       "domains/workspace/teams/runtime/state_builder.py"
     ],
     "domains/workspace/teams/service.py": [
-      "domains/workspace/teams/workspace_service.py"
+      "domains/workspace/teams/service.py"
     ],
     "domains/workspace/tenants/contracts.py": [
       "domains/workspace/tenants/contracts.py"
     ],
     "domains/workspace/tenants/errors.py": [
-      "domains/workspace/tenants/workspace_lifecycle_errors.py"
+      "domains/workspace/tenants/errors.py"
     ],
     "domains/workspace/tenants/health/collector.py": [
       "domains/workspace/tenants/health/collector.py"
@@ -2031,115 +1931,116 @@
       "domains/workspace/tenants/health/trends.py"
     ],
     "domains/workspace/tenants/invites.py": [
-      "domains/workspace/tenants/workspace_invites.py"
+      "domains/workspace/tenants/invites.py"
     ],
     "domains/workspace/tenants/members.py": [
-      "domains/workspace/tenants/workspace_members.py"
+      "domains/workspace/tenants/members.py"
     ],
     "domains/workspace/tenants/models.py": [
       "domains/workspace/tenants/models.py"
     ],
     "domains/workspace/tenants/quota_management.py": [
-      "domains/workspace/tenants/workspace_quotas.py"
+      "domains/workspace/tenants/quota_management.py"
     ],
     "domains/workspace/tenants/reservations.py": [
-      "domains/workspace/tenants/quotas.py"
+      "domains/workspace/tenants/reservations.py"
     ],
     "domains/workspace/tenants/service.py": [
-      "domains/workspace/tenants/workspace_management.py"
+      "domains/workspace/tenants/service.py"
     ],
     "domains/workspace/tenants/settings.py": [
-      "domains/workspace/tenants/workspace_settings.py"
+      "domains/workspace/tenants/settings.py"
     ],
     "domains/workspace/tenants/snapshots.py": [
-      "domains/workspace/tenants/workspace_snapshots.py"
+      "domains/workspace/tenants/snapshots.py"
     ],
     "main.py": [
       "main.py"
     ],
     "observability/audit/integrity.py": [
-      "observability/audit_integrity.py"
+      "observability/audit/integrity.py"
     ],
     "observability/audit/models.py": [
-      "observability/audit_models.py"
+      "observability/audit/models.py"
     ],
     "observability/audit/queries.py": [
-      "domains/workspace/tenants/workspace_reads.py"
+      "observability/audit/queries.py"
     ],
     "observability/audit/security_events.py": [
-      "core/security/service.py"
+      "observability/audit/security_events.py"
     ],
     "observability/audit/security_models.py": [
-      "core/security/models.py"
+      "observability/audit/security_models.py"
     ],
     "observability/audit/service.py": [
-      "observability/audit_service.py"
+      "observability/audit/service.py"
     ],
     "observability/costs/models.py": [
-      "observability/cost_models.py"
+      "observability/costs/models.py"
     ],
     "observability/costs/pricing.py": [
-      "observability/cost_service.py"
+      "observability/costs/pricing.py"
     ],
     "observability/costs/queries.py": [
-      "observability/cost_service.py"
+      "observability/costs/queries.py"
     ],
     "observability/costs/service.py": [
-      "observability/cost_service.py"
+      "observability/costs/service.py"
     ],
     "observability/costs/usage.py": [
-      "observability/cost_usage.py"
+      "observability/costs/usage.py"
     ],
     "observability/notifications/contracts.py": [
-      "api/schemas/operations/notifications.py",
-      "observability/contracts.py"
+      "observability/notifications/contracts.py"
     ],
     "observability/notifications/models.py": [
-      "observability/notification_models.py"
+      "observability/notifications/models.py"
     ],
     "observability/notifications/service.py": [
-      "observability/notification_service.py"
+      "observability/notifications/service.py"
     ],
     "observability/telemetry/logging.py": [
-      "core/common/logging.py"
+      "observability/telemetry/logging.py"
     ],
     "observability/telemetry/metrics.py": [
-      "core/common/metrics.py"
+      "observability/telemetry/metrics.py"
     ],
     "observability/telemetry/request_context.py": [
-      "core/common/request_context.py"
+      "observability/telemetry/request_context.py"
     ],
     "observability/telemetry/trace_context.py": [
-      "core/common/trace_context.py"
+      "observability/telemetry/trace_context.py"
     ],
     "observability/telemetry/tracing.py": [
-      "observability/tracing.py"
+      "observability/telemetry/tracing.py"
     ],
     "runtime/contracts.py": [
-      "domains/agents/runtime/sandbox/contracts.py",
+      "runtime/contracts.py",
       "runtime/environment/contracts.py"
     ],
     "runtime/environment/backends/contracts.py": [
+      "runtime/environment/backends/contracts.py",
       "runtime/environment/backends/registry.py"
     ],
     "runtime/environment/backends/docker.py": [
       "runtime/environment/backends/docker.py",
       "runtime/environment/backends/registry.py"
     ],
+    "runtime/environment/backends/factory.py": [
+      "runtime/environment/backends/factory.py"
+    ],
     "runtime/environment/backends/registry.py": [
       "runtime/environment/backends/registry.py"
     ],
-    "runtime/environment/backends/sdk_process.py": [
-      "runtime/environment/backends/sdk_process.py"
-    ],
     "runtime/environment/backends/self_hosted.py": [
-      "runtime/environment/backends/registry.py"
+      "runtime/environment/backends/registry.py",
+      "runtime/environment/backends/self_hosted.py"
     ],
     "runtime/environment/cleanup.py": [
-      "runtime/environment/lifecycle/cleanup.py"
+      "runtime/environment/cleanup.py"
     ],
     "runtime/environment/cleanup_jobs.py": [
-      "runtime/operations/runtimes/cleanup.py"
+      "runtime/environment/cleanup_jobs.py"
     ],
     "runtime/environment/commands/executor.py": [
       "runtime/environment/commands/executor.py"
@@ -2154,13 +2055,13 @@
       "runtime/environment/commands/service.py"
     ],
     "runtime/environment/contracts.py": [
-      "runtime/environment/contracts.py",
-      "runtime/environment/lifecycle/control.py"
+      "runtime/environment/contracts.py"
     ],
     "runtime/environment/events.py": [
-      "runtime/environment/lifecycle/events.py"
+      "runtime/environment/events.py"
     ],
     "runtime/environment/leases.py": [
+      "runtime/environment/leases.py",
       "runtime/environment/pool/leases.py"
     ],
     "runtime/environment/manager.py": [
@@ -2173,7 +2074,7 @@
       "runtime/environment/models.py"
     ],
     "runtime/environment/policies/egress.py": [
-      "runtime/environment/backends/egress.py"
+      "runtime/environment/policies/egress.py"
     ],
     "runtime/environment/policies/quotas.py": [
       "runtime/environment/policies/quotas.py"
@@ -2185,21 +2086,25 @@
       "runtime/environment/policies/safety.py"
     ],
     "runtime/environment/policies/templates.py": [
-      "runtime/environment/backends/template_guard.py"
+      "runtime/environment/policies/templates.py"
     ],
     "runtime/environment/pool/leases.py": [
       "runtime/environment/pool/leases.py"
     ],
     "runtime/environment/pool/policy.py": [
+      "runtime/environment/pool/policy.py",
       "runtime/environment/run_environment.py"
     ],
     "runtime/environment/pool/reclaim.py": [
+      "runtime/environment/pool/reclaim.py",
       "runtime/environment/run_environment.py"
     ],
     "runtime/environment/pool/reset.py": [
+      "runtime/environment/pool/reset.py",
       "runtime/environment/run_environment.py"
     ],
     "runtime/environment/pool/service.py": [
+      "runtime/environment/pool/service.py",
       "runtime/environment/run_environment.py"
     ],
     "runtime/environment/project_files.py": [
@@ -2224,7 +2129,6 @@
       "runtime/environment/service.py"
     ],
     "runtime/environment/spaces/contracts.py": [
-      "api/schemas/operations/runtime_spaces.py",
       "runtime/environment/spaces/contracts.py"
     ],
     "runtime/environment/spaces/diagnostics.py": [
@@ -2234,21 +2138,16 @@
       "runtime/environment/spaces/lifecycle.py"
     ],
     "runtime/environment/spaces/lifecycle_support.py": [
-      "runtime/environment/spaces/blockers.py",
-      "runtime/environment/spaces/events.py"
+      "runtime/environment/spaces/lifecycle_support.py"
     ],
     "runtime/environment/spaces/models.py": [
       "runtime/environment/spaces/models.py"
     ],
     "runtime/environment/spaces/quotas.py": [
-      "runtime/environment/spaces/quota_counter.py",
       "runtime/environment/spaces/quotas.py"
     ],
     "runtime/environment/spaces/reservations.py": [
-      "runtime/environment/spaces/reservation_attachment.py",
-      "runtime/environment/spaces/reservation_capacity.py",
-      "runtime/environment/spaces/reservation_release.py",
-      "runtime/environment/spaces/reservation_usage.py"
+      "runtime/environment/spaces/reservations.py"
     ],
     "runtime/environment/spaces/service.py": [
       "runtime/environment/spaces/service.py"
@@ -2260,37 +2159,24 @@
       "runtime/environment/url_fetch.py"
     ],
     "runtime/operations/contracts/capacity.py": [
-      "api/schemas/operations/capacity.py",
-      "api/schemas/operations/overview.py",
       "runtime/operations/contracts/capacity.py"
     ],
     "runtime/operations/contracts/control_plane.py": [
-      "api/schemas/operations/control_plane.py",
-      "api/schemas/operations/overview.py",
       "runtime/operations/contracts/control_plane.py"
     ],
     "runtime/operations/contracts/events.py": [
-      "api/schemas/operations/events.py",
-      "api/schemas/operations/overview.py",
       "runtime/operations/contracts/events.py"
     ],
     "runtime/operations/contracts/outcomes.py": [
-      "api/schemas/operations/outcomes.py",
-      "api/schemas/operations/overview.py",
       "runtime/operations/contracts/outcomes.py"
     ],
     "runtime/operations/contracts/providers.py": [
-      "api/schemas/operations/providers.py",
       "runtime/operations/contracts/providers.py"
     ],
     "runtime/operations/contracts/queue.py": [
-      "api/schemas/operations/overview.py",
-      "api/schemas/operations/queue.py",
       "runtime/operations/contracts/queue.py"
     ],
     "runtime/operations/contracts/scheduler.py": [
-      "api/schemas/operations/overview.py",
-      "api/schemas/operations/scheduler.py",
       "runtime/operations/contracts/scheduler.py"
     ],
     "runtime/operations/control_plane.py": [
@@ -2354,9 +2240,7 @@
       "runtime/operations/queues/metrics.py"
     ],
     "runtime/operations/recovery.py": [
-      "runtime/operations/recovery/diagnostics.py",
-      "runtime/operations/recovery/domain.py",
-      "runtime/operations/recovery/queries.py"
+      "runtime/operations/recovery.py"
     ],
     "runtime/operations/run_activity.py": [
       "runtime/operations/run_activity.py"
@@ -2474,103 +2358,93 @@
     ],
     "runtime/workers/capacity.py": [
       "runtime/operations/workers/capacity.py",
-      "runtime/workers/execution/capacity.py"
+      "runtime/workers/capacity.py"
     ],
     "runtime/workers/cli.py": [
       "runtime/workers/cli.py"
     ],
     "runtime/workers/contracts.py": [
-      "runtime/workers/contracts.py",
-      "runtime/workers/execution/models.py"
+      "runtime/workers/contracts.py"
     ],
     "runtime/workers/handlers/agent_run.py": [
-      "runtime/workers/execution/handlers/agent_run.py"
+      "runtime/workers/handlers/agent_run.py"
     ],
     "runtime/workers/handlers/context.py": [
-      "runtime/workers/execution/handlers/context.py"
+      "runtime/workers/handlers/context.py"
     ],
     "runtime/workers/handlers/io.py": [
-      "runtime/workers/execution/handlers/io.py"
+      "runtime/workers/handlers/io.py"
     ],
     "runtime/workers/handlers/knowledge_ingest.py": [
-      "runtime/workers/execution/handlers/knowledge_ingest.py"
+      "runtime/workers/handlers/knowledge_ingest.py"
     ],
     "runtime/workers/handlers/maintenance.py": [
-      "runtime/workers/execution/handlers/maintenance.py"
+      "runtime/workers/handlers/maintenance.py"
     ],
     "runtime/workers/handlers/mcp_tool_execution.py": [
-      "runtime/workers/execution/handlers/mcp_tool_execution.py"
+      "runtime/workers/handlers/mcp_tool_execution.py"
     ],
     "runtime/workers/handlers/memory_embedding.py": [
-      "runtime/workers/execution/handlers/memory_embedding.py"
+      "runtime/workers/handlers/memory_embedding.py"
     ],
     "runtime/workers/handlers/memory_index.py": [
-      "runtime/workers/execution/handlers/memory_index.py"
+      "runtime/workers/handlers/memory_index.py"
     ],
     "runtime/workers/handlers/runtime_control.py": [
-      "runtime/workers/execution/handlers/runtime_control.py"
+      "runtime/workers/handlers/runtime_control.py"
     ],
     "runtime/workers/handlers/task_plan.py": [
-      "runtime/workers/execution/handlers/task_plan.py"
+      "runtime/workers/handlers/task_plan.py"
     ],
     "runtime/workers/handlers/team_execution_loop.py": [
-      "runtime/workers/execution/handlers/team_execution_loop.py"
+      "runtime/workers/handlers/team_execution_loop.py"
     ],
     "runtime/workers/heartbeat.py": [
-      "runtime/workers/lifecycle/heartbeat.py"
+      "runtime/workers/heartbeat.py"
     ],
     "runtime/workers/leases.py": [
-      "runtime/operations/recovery/lease_expiration.py",
-      "runtime/operations/workers/lease_heartbeats.py",
-      "runtime/operations/workers/lease_maintenance.py",
-      "runtime/operations/workers/lease_queries.py",
-      "runtime/operations/workers/lease_writer.py",
       "runtime/operations/workers/lifecycle.py",
-      "runtime/workers/lifecycle/leases.py"
+      "runtime/workers/leases.py"
     ],
     "runtime/workers/maintenance.py": [
-      "runtime/workers/lifecycle/maintenance.py"
+      "runtime/workers/maintenance.py"
     ],
     "runtime/workers/maintenance_runner.py": [
-      "core/common/maintenance.py"
+      "runtime/workers/maintenance_runner.py"
     ],
     "runtime/workers/models.py": [
-      "runtime/operations/models.py"
+      "runtime/workers/models.py"
     ],
     "runtime/workers/nodes.py": [
-      "runtime/operations/workers/heartbeats.py",
-      "runtime/operations/workers/node_control.py",
-      "runtime/operations/workers/node_registry.py",
-      "runtime/operations/workers/node_repository.py"
+      "runtime/workers/nodes.py"
     ],
     "runtime/workers/queue.py": [
       "runtime/workers/queue.py"
     ],
     "runtime/workers/recovery/reconciliation.py": [
-      "runtime/operations/queues/governance.py"
+      "runtime/operations/queues/governance.py",
+      "runtime/workers/recovery/reconciliation.py"
     ],
     "runtime/workers/recovery/rehydration.py": [
-      "runtime/operations/recovery/queue_rehydration.py"
+      "runtime/workers/recovery/rehydration.py"
     ],
     "runtime/workers/recovery/service.py": [
-      "runtime/operations/recovery/actions.py",
-      "runtime/operations/recovery/audit.py",
-      "runtime/operations/recovery/service.py"
+      "runtime/workers/recovery/service.py"
     ],
     "runtime/workers/registry.py": [
-      "runtime/workers/execution/registry.py"
+      "runtime/workers/registry.py"
     ],
     "runtime/workers/reporting.py": [
-      "runtime/workers/lifecycle/reporting.py"
+      "runtime/workers/reporting.py"
     ],
     "runtime/workers/revision.py": [
-      "runtime/workers/execution/revision.py"
+      "runtime/workers/revision.py"
     ],
     "runtime/workers/routing.py": [
-      "runtime/workers/execution/routing.py"
+      "runtime/workers/routing.py"
     ],
     "runtime/workers/runner.py": [
-      "runtime/workers/execution/runner.py"
+      "runtime/workers/runner.py"
     ],
     "runtime/workers/scheduling/calendar.py": [
       "runtime/workers/scheduling/calendar.py"
@@ -2585,7 +2459,7 @@
       "runtime/workers/scheduling/types.py"
     ],
     "runtime/workers/state.py": [
-      "runtime/workers/execution/state.py"
+      "runtime/workers/state.py"
     ]
   },
   "notes": "Design footprint, not implemented changes or fixed quotas. Targets of remove-forwarder are callers' replacement imports, not copy/merge instructions."

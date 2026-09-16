@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -11,12 +12,44 @@ from backend.app.domains.orchestration.workflows.planning.org_structure import b
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 
 
+@dataclass(frozen=True, slots=True)
+class _TeamSnapshotContext:
+    team: AgentTeam
+    members: list[AgentTeamMember]
+    agents: dict[UUID, AgentProfile]
+
+
 def build_team_snapshot(
     session: Session,
     *,
     workspace_id: UUID,
     team_id: UUID,
 ) -> dict[str, object]:
+    context = _load_team_snapshot_context(session, workspace_id=workspace_id, team_id=team_id)
+    snapshot = {
+        "snapshot_version": 3,
+        "captured_at": datetime.now(UTC).isoformat(),
+        "team": _team_snapshot(context.team),
+        "members": [
+            _member_snapshot(member, context.agents.get(member.agent_profile_id))
+            for member in context.members
+            if member.accepts_tasks
+        ],
+        "agents": [
+            _agent_snapshot(agent)
+            for agent in sorted(context.agents.values(), key=lambda item: item.name.lower())
+        ],
+    }
+    snapshot["organization"] = _organization_snapshot(snapshot)
+    return snapshot
+
+
+def _load_team_snapshot_context(
+    session: Session,
+    *,
+    workspace_id: UUID,
+    team_id: UUID,
+) -> _TeamSnapshotContext:
     team = session.scalar(
         select(AgentTeam).where(
             AgentTeam.workspace_id == workspace_id,
@@ -41,7 +74,6 @@ def build_team_snapshot(
     }
     if team.manager_agent_profile_id is not None:
         agent_ids.add(team.manager_agent_profile_id)
-
     agents = {
         agent.id: agent
         for agent in session.scalars(
@@ -51,33 +83,22 @@ def build_team_snapshot(
             )
         ).all()
     }
-    snapshot = {
-        "snapshot_version": 2,
-        "captured_at": datetime.now(UTC).isoformat(),
-        "team": {
-            "id": str(team.id),
-            "name": team.name,
-            "team_type": team.team_type,
-            "description": team.description,
-            "manager_agent_profile_id": stringify_or_none(team.manager_agent_profile_id),
-            "coordination_rules": team.coordination_rules,
-            "default_task_policy": team.default_task_policy,
-            "capability_policy": team.capability_policy,
-            "capability_policy_version": team.capability_policy_version,
-            "status": team.status,
-        },
-        "members": [
-            _member_snapshot(member, agents.get(member.agent_profile_id))
-            for member in members
-            if member.accepts_tasks
-        ],
-        "agents": [
-            _agent_snapshot(agent)
-            for agent in sorted(agents.values(), key=lambda item: item.name.lower())
-        ],
+    return _TeamSnapshotContext(team=team, members=list(members), agents=agents)
+
+
+def _team_snapshot(team: AgentTeam) -> dict[str, object]:
+    return {
+        "id": str(team.id),
+        "name": team.name,
+        "team_type": team.team_type,
+        "description": team.description,
+        "manager_agent_profile_id": stringify_or_none(team.manager_agent_profile_id),
+        "coordination_rules": team.coordination_rules,
+        "default_task_policy": team.default_task_policy,
+        "capability_policy": team.capability_policy,
+        "capability_policy_version": team.capability_policy_version,
+        "status": team.status,
     }
-    snapshot["organization"] = _organization_snapshot(snapshot)
-    return snapshot
 
 
 def _member_snapshot(
@@ -115,6 +136,7 @@ def _agent_snapshot(agent: AgentProfile | None) -> dict[str, object] | None:
         "model": agent.model,
         "model_provider_credential_id": stringify_or_none(agent.model_provider_credential_id),
         "model_api": configured_model_api(agent.model_settings or {}),
+        "model_settings": dict(agent.model_settings or {}),
         "capabilities": agent.capabilities,
         "skills": agent.skills,
         "tool_policy": agent.tool_policy,

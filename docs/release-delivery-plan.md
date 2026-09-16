@@ -14,7 +14,8 @@ repository Ruff gate. Migration identifiers introduced after rc9 were shortened 
 The complete pytest suite, real PostgreSQL upgrade, Docker candidate-image probes, native matrix,
 signed publication, and managed Compose/systemd acceptance remain reserved for the next pushed
 canonical release tag. Until that tag completes `.github/workflows/release-publish.yml`, Phase 7.5
-of the [Agent Runtime Completion Plan](agent-runtime-completion-plan.md) remains pending.
+defined by the [Platform Productionization Plan](platform-productionization-plan.md) remains the
+active release and productionization boundary.
 
 ## Final managed delivery acceptance (2026-09-10)
 

@@ -85,6 +85,14 @@ class ContextBudgetResult:
         }
 
 
+@dataclass(frozen=True)
+class _BudgetLimits:
+    context_window_tokens: int
+    input_budget_tokens: int
+    fixed_tokens: int
+    dynamic_budget_tokens: int
+
+
 class ContextBudgetManager:
     """Build a bounded provider input from product-owned context fragments.
 
@@ -107,6 +115,41 @@ class ContextBudgetManager:
         agent_tools: tuple[AgentRuntimeAgentTool, ...] = (),
         output_schema: AgentRuntimeOutputSchema | None = None,
     ) -> ContextBudgetResult:
+        limits = self._limits(
+            provider=provider,
+            model=model,
+            policy=policy,
+            instructions=instructions,
+            tool_definitions=tool_definitions,
+            continuations=continuations,
+            handoff_agents=handoff_agents,
+            agent_tools=agent_tools,
+            output_schema=output_schema,
+        )
+        rendered, decisions = self._select_fragments(fragments, limits.dynamic_budget_tokens)
+        return ContextBudgetResult(
+            text=rendered,
+            context_window_tokens=limits.context_window_tokens,
+            input_budget_tokens=limits.input_budget_tokens,
+            fixed_tokens=limits.fixed_tokens,
+            dynamic_budget_tokens=limits.dynamic_budget_tokens,
+            included_tokens=estimate_token_upper_bound(rendered),
+            decisions=decisions,
+        )
+
+    @staticmethod
+    def _limits(
+        *,
+        provider: str | None,
+        model: str | None,
+        policy: ContextBudgetPolicy,
+        instructions: str,
+        tool_definitions: tuple[AgentRuntimeToolDefinition, ...],
+        continuations: tuple[AgentRuntimeToolContinuation, ...],
+        handoff_agents: tuple[AgentRuntimeAgentDefinition, ...],
+        agent_tools: tuple[AgentRuntimeAgentTool, ...],
+        output_schema: AgentRuntimeOutputSchema | None,
+    ) -> _BudgetLimits:
         context_window = context_window_tokens(provider, model, policy)
         fixed_tokens = fixed_context_tokens(
             instructions=instructions,
@@ -135,17 +178,19 @@ class ContextBudgetManager:
                     "minimum_dynamic_context_tokens": MINIMUM_DYNAMIC_CONTEXT_TOKENS,
                 },
             )
+        return _BudgetLimits(context_window, input_budget, fixed_tokens, dynamic_budget)
 
+    @staticmethod
+    def _select_fragments(
+        fragments: tuple[ContextFragment, ...],
+        dynamic_budget: int,
+    ) -> tuple[str, tuple[ContextFragmentDecision, ...]]:
         selected: dict[int, str] = {}
         decisions: dict[int, ContextFragmentDecision] = {}
         remaining = dynamic_budget
         ordered = sorted(
             enumerate(fragments),
-            key=lambda item: (
-                not item[1].required,
-                -int(item[1].priority),
-                item[0],
-            ),
+            key=lambda item: (not item[1].required, -int(item[1].priority), item[0]),
         )
         for index, fragment in ordered:
             if not fragment.text:
@@ -173,18 +218,9 @@ class ContextBudgetManager:
                 estimated_tokens=estimated,
                 included_tokens=included,
             )
-
         rendered = "\n\n".join(selected[index] for index in sorted(selected)).strip()
         ordered_decisions = tuple(decisions[index] for index in sorted(decisions))
-        return ContextBudgetResult(
-            text=rendered,
-            context_window_tokens=context_window,
-            input_budget_tokens=input_budget,
-            fixed_tokens=fixed_tokens,
-            dynamic_budget_tokens=dynamic_budget,
-            included_tokens=estimate_token_upper_bound(rendered),
-            decisions=ordered_decisions,
-        )
+        return rendered, ordered_decisions
 
 
 def context_window_tokens(

@@ -10,18 +10,18 @@ from backend.app.domains.agents.providers.health import ModelProviderHealthServi
 from backend.app.domains.agents.providers.model_api import canonical_model_api
 from backend.app.domains.agents.providers.resolution import ModelProviderResolutionService
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest
-from backend.app.domains.agents.runtime.errors import normalize_agent_error
+from backend.app.domains.agents.runtime.errors import (
+    AgentRuntimeProviderError,
+    normalize_agent_error,
+)
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.requests.model_provider import (
     effective_resolved_model_api,
 )
 from backend.app.domains.orchestration.requests.provider_audit import ModelProviderAuditService
-from backend.app.domains.orchestration.requests.request_reviewing import (
-    model_provider_fallback_policy,
-)
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 from backend.app.runtime.workers.contracts import JobPayload
 
 
@@ -62,8 +62,10 @@ class ModelProviderRoutingService:
         failed_request: AgentRunRequest,
         exc: Exception,
     ) -> dict[str, Any] | None:
-        policy = model_provider_fallback_policy(self.workspace_settings(run.workspace_id))
-        if policy is None:
+        policy = authorization_snapshot_for_run(run).get("model_provider_fallback")
+        if not isinstance(policy, dict) or policy.get("enabled") is not True:
+            return None
+        if not isinstance(exc, AgentRuntimeProviderError):
             return None
         normalized_error = normalize_agent_error(exc)
         if not normalized_error.retryable:
@@ -110,7 +112,8 @@ class ModelProviderRoutingService:
         if credential_id is None or credential_id == failed_request.model_provider_credential_id:
             return None
         model = optional_string(candidate.get("model"))
-        if model is None:
+        expected_provider = optional_string(candidate.get("provider"))
+        if model is None or expected_provider is None:
             return None
         try:
             override = self.resolve_model_provider(
@@ -122,14 +125,11 @@ class ModelProviderRoutingService:
             )
         except (ModelProviderUnavailableError, ValueError):
             return None
+        if override["provider"] != expected_provider:
+            return None
         if override["provider"] == failed_request.provider:
             return None
         return override
-
-    def workspace_settings(self, workspace_id: UUID) -> dict[str, object]:
-        workspace = self.session.get(Workspace, workspace_id)
-        settings = workspace.settings if workspace is not None else {}
-        return settings if isinstance(settings, dict) else {}
 
     def resolve_model_provider(
         self,

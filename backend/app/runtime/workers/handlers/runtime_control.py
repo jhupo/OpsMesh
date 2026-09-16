@@ -46,6 +46,7 @@ class RuntimeCleanupJobHandler:
         cleanup.cleanup_terminal_run_workspaces(
             settings=self._context.settings,
             docker_client=self._context.runtime_docker_client,
+            runtime_backends=self._context.runtime_backends,
             workspace_id=job.workspace_id,
             limit=positive_int(
                 routing.get("limit"),

@@ -58,7 +58,7 @@ class ContextualMcpAdapterResolver:
         if run is None:
             self._deny_stdio("stdio_run_context_invalid", "MCP stdio run context is invalid")
         runtime = self._authorized_runtime_for_run(run)
-        if runtime.runtime_provider in {"docker", "cloud_docker"}:
+        if runtime.runtime_provider == "cloud_docker":
             if self._docker_client is None:
                 self._deny_stdio(
                     "stdio_runtime_client_missing",

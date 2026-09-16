@@ -28,8 +28,8 @@ from backend.app.domains.workspace.projects.snapshots.service import RunProjectS
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent
 from backend.app.domains.workspace.storage.storage import ObjectStorage, create_storage
-from backend.app.runtime.environment.backends.registry import build_runtime_backend_registry
-from backend.app.runtime.environment.contracts import DockerRuntimeClient, RuntimeProjectFilesystem
+from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
+from backend.app.runtime.environment.contracts import RuntimeProjectFilesystem
 from backend.app.runtime.environment.models import WorkspaceRuntime
 
 
@@ -46,12 +46,12 @@ class RunProjectIOService:
         self,
         session: Session,
         storage: ObjectStorage | None,
-        docker_client: DockerRuntimeClient | None,
+        runtime_backends: RuntimeBackendRegistry,
         settings: Settings,
     ) -> None:
         self._session = session
         self._storage = storage
-        self._docker_client = docker_client
+        self._runtime_backends = runtime_backends
         self._settings = settings
         self._states = ProjectIOStateService(session)
 
@@ -240,9 +240,7 @@ class RunProjectIOService:
             self._session.commit()
             return True
         try:
-            backend = build_runtime_backend_registry(self._docker_client).resolve(
-                runtime.runtime_provider
-            )
+            backend = self._runtime_backends.resolve(runtime.runtime_provider)
             filesystem = backend.project_filesystem(runtime, run.id) if backend else None
             if filesystem is None:
                 raise ProjectRunIOError(
@@ -401,9 +399,7 @@ class RunProjectIOService:
                 stage=stage,
                 retryable=False,
             )
-        backend = build_runtime_backend_registry(self._docker_client).resolve(
-            runtime.runtime_provider
-        )
+        backend = self._runtime_backends.resolve(runtime.runtime_provider)
         if backend is None:
             raise ProjectRunIOError(
                 code="project_runtime_provider_unsupported",

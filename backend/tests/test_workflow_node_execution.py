@@ -32,6 +32,7 @@ from backend.app.domains.orchestration.workflows.definitions.subworkflows import
 )
 from backend.app.domains.orchestration.workflows.steps.completion import TaskStepCompletionService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 
@@ -114,7 +115,10 @@ def test_direct_tool_node_uses_authorized_executor_without_model_execution() -> 
     result = asyncio.run(
         RunExecutionService(
             session,
-            RunExecutionDependencies(lifecycle=None),  # type: ignore[arg-type]
+            RunExecutionDependencies(
+                lifecycle=None,  # type: ignore[arg-type]
+                runtime_backends=build_runtime_backend_registry(None),
+            ),
         )._run_non_agent_node(run, job, request, "tool")
     )
     assert result is not None

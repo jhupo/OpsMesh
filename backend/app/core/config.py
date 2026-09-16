@@ -115,7 +115,7 @@ class Settings(BaseSettings):
     credential_encryption_key_id: str = Field(default="local")
     credential_encryption_previous_secrets: dict[str, str] = Field(default_factory=dict)
     secret_vault_providers: dict[str, dict[str, object]] = Field(default_factory=dict)
-    runtime_allowed_images: list[str] = Field(default_factory=lambda: ["opsmesh-runtime:local"])
+    runtime_allowed_images: list[str] = Field(default_factory=list)
     release_update_enabled: bool = Field(default=False)
     release_update_timeout_seconds: int = Field(default=900, ge=30, le=7_200)
     release_update_repository: str = Field(default="jhupo/OpsMesh")

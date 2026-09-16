@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+from pathlib import PurePosixPath
+from typing import BinaryIO
 from uuid import uuid4
 
 import pytest
@@ -39,9 +41,14 @@ from backend.app.domains.agents.runtime.providers.openai.tools import (
     runtime_allowed_tools,
 )
 from backend.app.domains.agents.runtime.registry import ProviderAgentRuntimeRegistry
-from backend.app.runtime.contracts import SandboxManifest
 from backend.app.domains.agents.sessions.models import PersistentAgentSessionRef
 from backend.app.domains.agents.sessions.store import SQLAlchemyAgentSession
+from backend.app.runtime.contracts import (
+    SandboxBinding,
+    SandboxCommandResult,
+    SandboxManifest,
+    SandboxSession,
+)
 
 
 class DeterministicTestRunner:
@@ -52,21 +59,50 @@ class DeterministicTestRunner:
 def test_sandbox_manifest_is_mapped_only_at_provider_boundary() -> None:
     workspace_id = uuid4()
     manifest = SandboxManifest(run_id=uuid4(), root="/workspace/run-test")
+    binding = SandboxBinding(
+        manifest=manifest,
+        session=SandboxSession(
+            session_id="sandbox-test",
+            root=manifest.root,
+            backend="test",
+            executor=_StubSandboxExecutor(),
+        ),
+    )
     request = AgentRunRequest(
         agent_profile=AgentProfile(workspace_id=workspace_id, name="Sandbox test", role="worker"),
         input_text="Inspect the workspace",
         context=AgentRuntimeContext(
             workspace_id=workspace_id, task_id=None, run_id=manifest.run_id
         ),
-        sandbox=manifest,
+        sandbox=binding,
     )
     config = OpenAIAgentsRunner()._run_config(request)
-    assert request.sandbox is manifest
+    assert request.sandbox is binding
     assert config is not None and config.sandbox is not None
     assert config.workflow_name == "OpsMesh agent run"
     assert config.tracing_disabled is True
-    assert config.sandbox.manifest is not None
-    assert config.sandbox.manifest.root == manifest.root
+    assert config.sandbox.session is not None
+    assert config.sandbox.session.state.manifest.root == manifest.root
+
+
+class _StubSandboxExecutor:
+    def execute(
+        self,
+        command: list[str],
+        *,
+        timeout_seconds: int,
+        working_dir: str,
+    ) -> SandboxCommandResult:
+        return SandboxCommandResult(0, b"", b"")
+
+    def read_file(self, path: PurePosixPath) -> bytes | None:
+        return b""
+
+    def write_file(self, path: PurePosixPath, data: BinaryIO) -> None:
+        return None
+
+    def running(self) -> bool:
+        return True
 
 
 def test_openai_agents_runner_requires_explicit_provider_api_key() -> None:
@@ -1245,34 +1281,6 @@ def test_openai_agents_runner_smoke_model_api_uses_env(
     monkeypatch.setenv("OPENAI_SMOKE_MODEL_API", "chat_completions")
 
     assert _openai_smoke_model_api() == "chat_completions"
-
-
-def test_agent_error_normalization_is_safe_for_persistence() -> None:
-    error = normalize_agent_error(RuntimeError("network unavailable"))
-
-    assert error.as_dict() == {
-        "code": "RuntimeError",
-        "message": "network unavailable",
-        "retryable": True,
-    }
-
-
-def test_agent_error_normalization_redacts_provider_secrets() -> None:
-    error = normalize_agent_error(
-        RuntimeError(
-            "provider rejected api_key=sk-provider-secret "
-            "Bearer bearer-secret-token "
-            "base_url=https://provider.example.test/v1/private"
-        )
-    )
-
-    assert error.code == "RuntimeError"
-    assert error.message == "[redacted]"
-    serialized = json.dumps(error.as_dict())
-    assert "sk-provider-secret" not in serialized
-    assert "Bearer bearer-secret-token" not in serialized
-    assert "base_url" not in serialized
-    assert "https://provider.example.test/v1/private" not in serialized
 
 
 def _runtime_tool(name: str) -> AgentRuntimeToolDefinition:

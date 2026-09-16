@@ -38,6 +38,7 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
+from backend.app.domains.agents.runtime.errors import AgentRuntimeProviderError
 from backend.app.domains.agents.runtime.state import AgentRunStateStore
 from backend.app.domains.agents.sessions.models import PersistentAgentSession
 from backend.app.domains.capabilities.mcp.models import (
@@ -108,6 +109,7 @@ from backend.app.domains.workspace.tenants.models import (
     WorkspaceReservation,
 )
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
@@ -116,8 +118,8 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceReservation,
 )
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
+from backend.app.runtime.workers.registry import WorkerJobHandler
 
 
 @pytest.fixture(autouse=True)
@@ -2549,7 +2551,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert snapshot["approval_policy"] == {"required_tools": ["write_artifact"]}
     assert request.context.allowed_tools == ("generate_image",)
     assert request.tool_executor is not None
-    assert request.context.metadata["authorization_snapshot_version"] == 2
+    assert request.context.metadata["authorization_snapshot_version"] == 3
     assert request.context.metadata["authorization_snapshot_fingerprint"] == snapshot["fingerprint"]
     assert request.context.tool_definitions[0].name == "generate_image"
     assert request.context.tool_definitions[0].mcp_server_id == server.id
@@ -2571,7 +2573,7 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
         task_id=task.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": _v2_authorization_snapshot(
+            "authorization_snapshot": _authorization_snapshot(
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
             ),
@@ -2991,7 +2993,7 @@ def test_agent_request_restores_provider_native_continuation_from_persistent_ses
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": _v2_authorization_snapshot(
+            "authorization_snapshot": _authorization_snapshot(
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -3052,7 +3054,7 @@ def test_model_request_review_allows_low_risk_request_after_semantic_approval() 
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": _v2_authorization_snapshot(
+            "authorization_snapshot": _authorization_snapshot(
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -3130,7 +3132,7 @@ def test_model_request_review_routes_sensitive_input_to_admin_approval(
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": _v2_authorization_snapshot(
+            "authorization_snapshot": _authorization_snapshot(
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -3189,7 +3191,7 @@ def test_model_request_review_does_not_repeat_after_admin_approval() -> None:
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": _v2_authorization_snapshot(
+            "authorization_snapshot": _authorization_snapshot(
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -4030,7 +4032,7 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
         "tool_policy_source": "agent_profile",
-        "authorization_snapshot_version": 2,
+        "authorization_snapshot_version": 3,
         "agent_mailbox": {
             "scope": {"task_id": str(task.id)},
             "thread_count": 0,
@@ -4382,7 +4384,7 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
         "tool_policy_source": "agent_profile",
-        "authorization_snapshot_version": 2,
+        "authorization_snapshot_version": 3,
         "context_scope": "task_step",
         "task_step_id": str(step.id),
         "work_package_id": "visual-design",
@@ -4660,7 +4662,7 @@ def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhe
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": _v2_authorization_snapshot(
+            "authorization_snapshot": _authorization_snapshot(
                 workspace_id=str(workspace.id), task_id=str(task.id),
                 agent_profile_id=str(agent.id), model_provider=snapshot,
             )
@@ -4764,7 +4766,7 @@ def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": _v2_authorization_snapshot(
+            "authorization_snapshot": _authorization_snapshot(
                 workspace_id=str(workspace.id), task_id=str(task.id),
                 agent_profile_id=str(agent.id), model_provider=snapshot,
             )
@@ -4833,7 +4835,7 @@ def test_worker_fails_closed_without_model_provider_fallback() -> None:
     workspace.settings = {
         "model_provider_fallback": {
             "enabled": True,
-            "retry_error_codes": ["RuntimeError"],
+            "retry_error_codes": ["provider_request_failed"],
             "candidates": [{"credential_id": str(backup.id), "model": "backup-model"}],
         }
     }
@@ -4979,7 +4981,7 @@ def test_worker_falls_back_across_model_provider_vendors() -> None:
     workspace.settings = {
         "model_provider_fallback": {
             "enabled": True,
-            "retry_error_codes": ["RuntimeError"],
+            "retry_error_codes": ["provider_request_failed"],
             "candidates": [
                 {
                     "credential_id": str(anthropic_backup.id),
@@ -5040,7 +5042,10 @@ def test_worker_falls_back_across_model_provider_vendors() -> None:
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
             self.requests.append(request)
             if len(self.requests) == 1:
-                raise RuntimeError("primary provider unavailable")
+                raise AgentRuntimeProviderError(
+                    code="provider_request_failed",
+                    message="primary provider unavailable",
+                )
             return AgentRunResult(final_output=f"handled by {request.provider}")
 
     runner = FallbackRunner()
@@ -5327,10 +5332,13 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
 
     class FailingRunner:
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
-            raise RuntimeError(
-                "primary provider unavailable api_key=sk-unavailable-secret "
-                "Bearer unavailable-token "
-                "base_url=https://primary.example.test/v1/private"
+            raise AgentRuntimeProviderError(
+                code="provider_request_failed",
+                message=(
+                    "primary provider unavailable api_key=sk-unavailable-secret "
+                    "Bearer unavailable-token "
+                    "base_url=https://primary.example.test/v1/private"
+                ),
             )
 
     job = JobPayload(
@@ -5469,7 +5477,7 @@ def test_agent_request_rejects_task_step_from_another_task() -> None:
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": _v2_authorization_snapshot(
+            "authorization_snapshot": _authorization_snapshot(
                 workspace_id=str(workspace.id), task_id=str(task.id),
                 task_step_id=str(step.id), agent_profile_id=str(agent.id),
             )
@@ -5575,7 +5583,7 @@ def test_agent_request_rejects_authorization_snapshot_scope_mismatch() -> None:
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": _v2_authorization_snapshot(
+            "authorization_snapshot": _authorization_snapshot(
                 workspace_id=str(uuid4()),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -5621,7 +5629,7 @@ def test_agent_request_rejects_authorization_snapshot_tool_escalation() -> None:
         agent_profile_id=agent.id,
         status=RunStatus.QUEUED.value,
         input={
-            "authorization_snapshot": _v2_authorization_snapshot(
+            "authorization_snapshot": _authorization_snapshot(
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -5662,7 +5670,7 @@ def test_agent_request_rejects_authorization_snapshot_installed_skill_tampering(
     )
     session.add_all([task, agent])
     session.flush()
-    snapshot = _v2_authorization_snapshot(
+    snapshot = _authorization_snapshot(
         workspace_id=str(workspace.id),
         task_id=str(task.id),
         agent_profile_id=str(agent.id),
@@ -5733,7 +5741,7 @@ def test_agent_request_rejects_authorization_snapshot_skill_provenance_mismatch(
     session.add(install)
     session.flush()
     agent.skills = {"installed_skill_ids": [str(install.id)]}
-    snapshot = _v2_authorization_snapshot(
+    snapshot = _authorization_snapshot(
         workspace_id=str(workspace.id),
         task_id=str(task.id),
         agent_profile_id=str(agent.id),
@@ -6415,11 +6423,23 @@ def _authorized_run_input(
     return {"authorization_snapshot": snapshot}
 
 
-def _v2_authorization_snapshot(**values: object) -> dict[str, object]:
+def _authorization_snapshot(**values: object) -> dict[str, object]:
+    workspace_id = values.get("workspace_id")
+    profile_id = values.get("agent_profile_id")
     snapshot: dict[str, object] = {
-        "version": 2,
+        "version": 3,
         "allowed_tools": [],
         "capability_catalog": None,
+        "agent_profile": {
+            "id": profile_id,
+            "workspace_id": workspace_id,
+            "version": 1,
+            "name": "Test Agent" if profile_id is not None else "Default Agent",
+            "role": "worker",
+            "instructions": "Complete the assigned task.",
+            "model": "gpt-4.1",
+            "model_settings": {},
+        },
     }
     snapshot.update(values)
     snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
@@ -6441,6 +6461,7 @@ def _run_agent_sync(
         settings=settings,
         dependencies=RunExecutionDependencies(
             lifecycle=_run_lifecycle(session),
+            runtime_backends=build_runtime_backend_registry(None),
         ),
     ).run_agent_sync(job)
 

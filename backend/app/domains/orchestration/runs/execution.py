@@ -53,6 +53,7 @@ from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.contracts import RuntimeEnvironmentError
+from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtime.workers.contracts import JobPayload
@@ -68,6 +69,7 @@ TERMINAL_RUN_STATUSES = {
 @dataclass(slots=True)
 class RunExecutionDependencies:
     lifecycle: RunLifecycleService
+    runtime_backends: RuntimeBackendRegistry
 
 
 @dataclass(slots=True)
@@ -161,131 +163,139 @@ class RunExecutionService:
                 self._commit_and_refresh(run)
                 return run
             if direct_result is not None:
-                if direct_result.status == "waiting_approval":
-                    self._lifecycle().mark_run_waiting_approval(run)
-                elif direct_result.status == "waiting_subworkflow":
-                    self._lifecycle().mark_run_waiting_subworkflow(run)
-                elif direct_result.status == "completed":
-                    self._lifecycle().mark_run_completed(
-                        run,
-                        AgentRunResult(
-                            final_output=json.dumps(
-                                direct_result.output or {}, ensure_ascii=False, default=str
-                            ),
-                        ),
-                        job.requested_by_user_id,
-                    )
-                else:
-                    self._lifecycle().mark_run_failed(
-                        run,
-                        ValueError(str((direct_result.error or {}).get("message", "Tool failed"))),
-                    )
-                self._commit_and_refresh(run)
-                return run
+                return self._complete_direct_result(run, direct_result, job)
             assert request is not None
-            try:
-                result = await self._run_model_with_runtime_limit(run, request, job)
-            except TimeoutError:
-                timeout_seconds = self._runtime_timeout_seconds(run)
-                timeout_error = AgentRuntimePolicyError(
-                    code="runtime_wall_time_exceeded",
-                    message="Run exceeded the authorized runtime wall-time limit",
-                    event_type="runtime.limit.exceeded",
-                    metadata={
-                        "limit": "timeout_seconds",
-                        "timeout_seconds": timeout_seconds,
-                    },
-                    retryable=True,
-                )
-                self._events().append_event(
-                    run,
-                    timeout_error.event_type,
-                    timeout_error.message,
-                    timeout_error.metadata,
-                )
-                AuditService(self.session).record_system_action(
-                    workspace_id=run.workspace_id,
-                    action="runtime.limit.exceeded",
-                    target_type="agent_run",
-                    target_id=run.id,
-                    metadata=timeout_error.metadata,
-                )
-                self._lifecycle().mark_run_failed(run, timeout_error)
-                self._commit_and_refresh(run)
-                return run
-            except AgentRuntimeCancelledError:
-                self.session.refresh(run)
-                if RunStatus(run.status) not in TERMINAL_RUN_STATUSES:
-                    self._lifecycle().mark_run_cancelled(
-                        run,
-                        completed_at=datetime.now(UTC),
-                    )
-                self._events().append_event(
-                    run,
-                    "run.cancellation_propagated",
-                    "Cancellation stopped the active agent SDK run",
-                    {"provider": request.provider if request is not None else None},
-                )
-                self._commit_and_refresh(run)
-                return run
-            if result is None:
-                self._commit_and_refresh(run)
-                return run
+            return await self._execute_model_result(run, request, job)
 
-            if self._run_cancelled_after_model_result(run):
-                self._commit_and_refresh(run)
-                return run
+    def _complete_direct_result(
+        self,
+        run: AgentRun,
+        result: AgentRuntimeToolResult,
+        job: JobPayload,
+    ) -> AgentRun:
+        if result.status == "waiting_approval":
+            self._lifecycle().mark_run_waiting_approval(run)
+        elif result.status == "waiting_subworkflow":
+            self._lifecycle().mark_run_waiting_subworkflow(run)
+        elif result.status == "completed":
+            self._lifecycle().mark_run_completed(
+                run,
+                AgentRunResult(
+                    final_output=json.dumps(result.output or {}, ensure_ascii=False, default=str),
+                ),
+                job.requested_by_user_id,
+            )
+        else:
+            self._lifecycle().mark_run_failed(
+                run,
+                ValueError(str((result.error or {}).get("message", "Tool failed"))),
+            )
+        self._commit_and_refresh(run)
+        return run
 
-            if request.approval_decisions:
-                PendingToolInvocationService(
-                    self.session,
-                    self._request_builder().secret_service(),
-                ).mark_rejections_consumed(
-                    workspace_id=run.workspace_id,
-                    run_id=run.id,
-                )
-            RunRuntimeEventMessageMapper(self.session).map(run, result)
-            if result.resume_state is not None:
-                self._state_store().save(
-                    workspace_id=run.workspace_id,
-                    run_id=run.id,
-                    state=result.resume_state,
-                )
-                AgentToolInterruptionService(
-                    self.session,
-                    self._request_builder().secret_service(),
-                ).persist(
-                    context=request.context,
-                    requested_by_agent_profile_id=run.agent_profile_id,
-                    interruptions=result.interruptions,
-                )
-                self._lifecycle().mark_run_waiting_approval(run)
-                self._commit_and_refresh(run)
-                return run
-            if self._lifecycle().agent_result_waiting_runtime(
-                result
-            ) or self._run_has_waiting_runtime_event(run):
-                self._lifecycle().mark_run_waiting_runtime(run)
-                self._commit_and_refresh(run)
-                return run
-
-            if request.resume_state is not None:
-                self._state_store().mark_consumed(
-                    workspace_id=run.workspace_id,
-                    run_id=run.id,
-                )
-            try:
-                self._project_io().harvest_outputs(
-                    run,
-                    actor_user_id=job.requested_by_user_id,
-                )
-            except ProjectRunIOError as exc:
-                self._lifecycle().mark_run_failed(run, exc)
-                self._commit_and_refresh(run)
-                return run
-            self._lifecycle().mark_run_completed(run, result, job.requested_by_user_id)
+    async def _execute_model_result(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        job: JobPayload,
+    ) -> AgentRun:
+        try:
+            result = await self._run_model_with_runtime_limit(run, request, job)
+        except TimeoutError:
+            return self._complete_timeout(run)
+        except AgentRuntimeCancelledError:
+            return self._complete_cancellation(run, request)
+        if result is None or self._run_cancelled_after_model_result(run):
             self._commit_and_refresh(run)
             return run
+        return self._persist_model_result(run, request, job, result)
+
+    def _complete_timeout(self, run: AgentRun) -> AgentRun:
+        timeout_seconds = self._runtime_timeout_seconds(run)
+        timeout_error = AgentRuntimePolicyError(
+            code="runtime_wall_time_exceeded",
+            message="Run exceeded the authorized runtime wall-time limit",
+            event_type="runtime.limit.exceeded",
+            metadata={"limit": "timeout_seconds", "timeout_seconds": timeout_seconds},
+            retryable=True,
+        )
+        self._events().append_event(
+            run,
+            timeout_error.event_type,
+            timeout_error.message,
+            timeout_error.metadata,
+        )
+        AuditService(self.session).record_system_action(
+            workspace_id=run.workspace_id,
+            action="runtime.limit.exceeded",
+            target_type="agent_run",
+            target_id=run.id,
+            metadata=timeout_error.metadata,
+        )
+        self._lifecycle().mark_run_failed(run, timeout_error)
+        self._commit_and_refresh(run)
+        return run
+
+    def _complete_cancellation(self, run: AgentRun, request: AgentRunRequest) -> AgentRun:
+        self.session.refresh(run)
+        if RunStatus(run.status) not in TERMINAL_RUN_STATUSES:
+            self._lifecycle().mark_run_cancelled(run, completed_at=datetime.now(UTC))
+        self._events().append_event(
+            run,
+            "run.cancellation_propagated",
+            "Cancellation stopped the active agent SDK run",
+            {"provider": request.provider},
+        )
+        self._commit_and_refresh(run)
+        return run
+
+    def _persist_model_result(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        job: JobPayload,
+        result: AgentRunResult,
+    ) -> AgentRun:
+        if request.approval_decisions:
+            PendingToolInvocationService(
+                self.session,
+                self._request_builder().secret_service(),
+            ).mark_decisions_consumed(workspace_id=run.workspace_id, run_id=run.id)
+        RunRuntimeEventMessageMapper(self.session).map(run, result)
+        if result.resume_state is not None:
+            self._state_store().save(
+                workspace_id=run.workspace_id,
+                run_id=run.id,
+                state=result.resume_state,
+            )
+            AgentToolInterruptionService(
+                self.session,
+                self._request_builder().secret_service(),
+            ).persist(
+                context=request.context,
+                requested_by_agent_profile_id=run.agent_profile_id,
+                interruptions=result.interruptions,
+            )
+            self._lifecycle().mark_run_waiting_approval(run)
+            self._commit_and_refresh(run)
+            return run
+        if self._lifecycle().agent_result_waiting_runtime(
+            result
+        ) or self._run_has_waiting_runtime_event(run):
+            self._lifecycle().mark_run_waiting_runtime(run)
+            self._commit_and_refresh(run)
+            return run
+        if request.resume_state is not None:
+            self._state_store().mark_consumed(workspace_id=run.workspace_id, run_id=run.id)
+        try:
+            self._project_io().harvest_outputs(run, actor_user_id=job.requested_by_user_id)
+        except ProjectRunIOError as exc:
+            self._lifecycle().mark_run_failed(run, exc)
+            self._commit_and_refresh(run)
+            return run
+        self._lifecycle().mark_run_completed(run, result, job.requested_by_user_id)
+        self._commit_and_refresh(run)
+        return run
 
     def run_agent_sync(self, job: JobPayload) -> AgentRun:
         return asyncio.run(self.run_agent(job))
@@ -505,7 +515,12 @@ class RunExecutionService:
         )
 
     def _request_builder(self) -> RunRequestBuilder:
-        return RunRequestBuilder(self.session, self._settings(), self.docker_client)
+        return RunRequestBuilder(
+            self.session,
+            self._settings(),
+            self.docker_client,
+            self.dependencies.runtime_backends,
+        )
 
     def _events(self) -> RunEventRecorder:
         return RunEventRecorder(self.session)
@@ -524,7 +539,7 @@ class RunExecutionService:
             self._project_io_service = RunProjectIOService(
                 self.session,
                 self.storage,
-                self.docker_client,
+                self.dependencies.runtime_backends,
                 self._settings(),
             )
         return self._project_io_service

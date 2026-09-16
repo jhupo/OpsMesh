@@ -211,7 +211,7 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
     )
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
-        runtime_provider="docker",
+        runtime_provider="cloud_docker",
         runtime_type="docker",
         execution_mode="persistent",
         name="critical-runtime",

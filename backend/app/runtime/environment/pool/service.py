@@ -8,7 +8,7 @@ from backend.app.runtime.environment.models import RuntimeLease, WorkspaceRuntim
 from backend.app.runtime.environment.pool.leases import RuntimePoolLeaseStore
 from backend.app.runtime.environment.pool.policy import pool_policy_matches, runtime_pool_key
 
-MANAGED_RUNTIME_PROVIDERS = frozenset({"docker", "cloud_docker"})
+MANAGED_RUNTIME_PROVIDER = "cloud_docker"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +34,7 @@ class RuntimePoolService:
             .where(
                 WorkspaceRuntime.workspace_id == parent.workspace_id,
                 WorkspaceRuntime.execution_mode == "pooled",
-                WorkspaceRuntime.runtime_provider.in_(MANAGED_RUNTIME_PROVIDERS),
+                WorkspaceRuntime.runtime_provider == MANAGED_RUNTIME_PROVIDER,
                 WorkspaceRuntime.status.in_(["active", "running"]),
                 WorkspaceRuntime.connection_status == "online",
                 WorkspaceRuntime.execution_run_id.is_(None),

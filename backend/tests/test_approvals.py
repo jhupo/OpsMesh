@@ -17,9 +17,9 @@ from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
 from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.models import User
@@ -415,7 +415,7 @@ def test_rejected_sdk_tool_invocation_queues_state_resume_without_failing_run() 
     assert decisions[0].status == "rejected"
     assert decisions[0].reason == "not allowed"
     assert queue.dequeue() is not None
-    PendingToolInvocationService(session, secrets).mark_rejections_consumed(
+    PendingToolInvocationService(session, secrets).mark_decisions_consumed(
         workspace_id=workspace.id,
         run_id=run.id,
     )

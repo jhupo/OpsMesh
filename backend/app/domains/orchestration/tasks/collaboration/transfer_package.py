@@ -1,5 +1,6 @@
 """Build the immutable, redacted context attached to a task transfer."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -14,6 +15,15 @@ from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, Ta
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 
 
+@dataclass(frozen=True, slots=True)
+class _TaskHandoffContext:
+    runs: list[AgentRun]
+    steps: list[TaskStep]
+    messages: list[TaskMessage]
+    artifacts: list[Artifact]
+    memories: list[WorkspaceMemoryEntry]
+
+
 class TaskHandoffPackageBuilder:
     """Read task execution context and produce a bounded transfer snapshot."""
 
@@ -21,6 +31,22 @@ class TaskHandoffPackageBuilder:
         self._session = session
 
     def build(self, task: Task, source_id: UUID, target_id: UUID) -> dict[str, object]:
+        context = self._load_context(task)
+        return {
+            "package_version": 1,
+            "captured_at": datetime.now(UTC).isoformat(),
+            "source_agent_profile_id": str(source_id),
+            "target_agent_profile_id": str(target_id),
+            "objective": self._objective(task),
+            "task_state": self._task_state(task),
+            "steps": [_step_package(step) for step in context.steps],
+            "messages": [_message_package(message) for message in context.messages],
+            "runs": [_run_package(run) for run in context.runs],
+            "artifacts": [_artifact_package(artifact) for artifact in context.artifacts],
+            "memory_references": [_memory_package(memory) for memory in context.memories],
+        }
+
+    def _load_context(self, task: Task) -> _TaskHandoffContext:
         runs = list(
             self._session.scalars(
                 select(AgentRun)
@@ -77,42 +103,44 @@ class TaskHandoffPackageBuilder:
                 .limit(100)
             ).all()
         )
+        return _TaskHandoffContext(
+            runs=runs,
+            steps=steps,
+            messages=messages,
+            artifacts=artifacts,
+            memories=memories,
+        )
+
+    @staticmethod
+    def _objective(task: Task) -> dict[str, object]:
         return {
-            "package_version": 1,
-            "captured_at": datetime.now(UTC).isoformat(),
-            "source_agent_profile_id": str(source_id),
-            "target_agent_profile_id": str(target_id),
-            "objective": {
-                "title": redact_text_fragments(task.title),
-                "description": redact_text_fragments(task.description),
-                "domain_type": task.domain_type,
-                "priority": task.priority,
-                "input": redact_sensitive_payload(task.input or {}, text_mode="fragments"),
-                "generic_state": redact_sensitive_payload(
-                    task.generic_state or {}, text_mode="fragments"
-                ),
-                "domain_state": redact_sensitive_payload(
-                    task.domain_state or {}, text_mode="fragments"
-                ),
-            },
-            "task_state": {
-                "status": task.status,
-                "owner_agent_profile_id": str(task.owner_agent_profile_id)
-                if task.owner_agent_profile_id is not None
-                else None,
-                "owner_version": owner_version(task),
-                "project_plan": redact_sensitive_payload(
-                    task.project_plan or {}, text_mode="fragments"
-                ),
-                "final_output": redact_sensitive_payload(task.final_output, text_mode="fragments")
-                if task.final_output is not None
-                else None,
-            },
-            "steps": [_step_package(step) for step in steps],
-            "messages": [_message_package(message) for message in messages],
-            "runs": [_run_package(run) for run in runs],
-            "artifacts": [_artifact_package(artifact) for artifact in artifacts],
-            "memory_references": [_memory_package(memory) for memory in memories],
+            "title": redact_text_fragments(task.title),
+            "description": redact_text_fragments(task.description),
+            "domain_type": task.domain_type,
+            "priority": task.priority,
+            "input": redact_sensitive_payload(task.input or {}, text_mode="fragments"),
+            "generic_state": redact_sensitive_payload(
+                task.generic_state or {}, text_mode="fragments"
+            ),
+            "domain_state": redact_sensitive_payload(
+                task.domain_state or {}, text_mode="fragments"
+            ),
+        }
+
+    @staticmethod
+    def _task_state(task: Task) -> dict[str, object]:
+        return {
+            "status": task.status,
+            "owner_agent_profile_id": str(task.owner_agent_profile_id)
+            if task.owner_agent_profile_id is not None
+            else None,
+            "owner_version": owner_version(task),
+            "project_plan": redact_sensitive_payload(
+                task.project_plan or {}, text_mode="fragments"
+            ),
+            "final_output": redact_sensitive_payload(task.final_output, text_mode="fragments")
+            if task.final_output is not None
+            else None,
         }
 
 

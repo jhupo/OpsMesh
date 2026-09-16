@@ -102,3 +102,6 @@ class PendingToolInvocation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

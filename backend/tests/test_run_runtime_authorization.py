@@ -8,7 +8,6 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
-from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutionBinding
@@ -21,22 +20,23 @@ from backend.app.domains.capabilities.mcp.models import (
     McpToolAllowlist,
 )
 from backend.app.domains.capabilities.resources.models import CapabilityResource
-from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
-from backend.app.domains.orchestration.runs.models import (
-    AgentRun,
-    RunEvent,
-    authorization_snapshot_fingerprint,
-)
 from backend.app.domains.orchestration.runs.authorization.policy import (
     RunRuntimeAuthorizationError,
 )
 from backend.app.domains.orchestration.runs.authorization.runtime import (
     RunRuntimeAuthorizationService,
 )
+from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
+from backend.app.domains.orchestration.runs.models import (
+    AgentRun,
+    RunEvent,
+    authorization_snapshot_fingerprint,
+)
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 
@@ -198,7 +198,7 @@ def test_stdio_tool_requires_concrete_authorized_runtime() -> None:
     session.flush()
     catalog = (
         EffectiveCapabilityCatalogService(session)
-        .build(workspace_id=workspace.id, agent_profile_id=profile.id)
+        .resolve(workspace_id=workspace.id, agent_profile_id=profile.id)
         .model_dump(mode="json")
     )
 
@@ -356,11 +356,12 @@ def test_file_grant_without_frozen_runtime_binding_is_rejected() -> None:
         ],
     )
     snapshot: dict[str, object] = {
-        "version": 2,
+        "version": 3,
         "workspace_id": str(workspace.id),
         "task_id": str(task.id),
         "task_step_id": str(step.id),
         "agent_profile_id": str(profile.id),
+        "agent_profile": _runtime_profile(workspace.id, profile),
         "runtime_space_id": None,
         "allowed_tools": [],
         "capability_catalog": catalog,
@@ -488,11 +489,12 @@ def _snapshot(
     binding: dict[str, object],
 ) -> dict[str, object]:
     snapshot: dict[str, object] = {
-        "version": 2,
+        "version": 3,
         "workspace_id": str(workspace_id),
         "task_id": str(task.id),
         "task_step_id": str(step.id),
         "agent_profile_id": str(profile.id),
+        "agent_profile": _runtime_profile(workspace_id, profile),
         "runtime_space_id": binding["runtime_space_id"],
         "allowed_tools": [],
         "capability_catalog": catalog,
@@ -506,6 +508,19 @@ def _snapshot(
     }
     snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
     return snapshot
+
+
+def _runtime_profile(workspace_id, profile: AgentProfile) -> dict[str, object]:
+    return {
+        "id": str(profile.id),
+        "workspace_id": str(workspace_id),
+        "version": profile.version,
+        "name": profile.name,
+        "role": profile.role,
+        "instructions": profile.instructions,
+        "model": profile.model,
+        "model_settings": dict(profile.model_settings or {}),
+    }
 
 
 def _catalog(

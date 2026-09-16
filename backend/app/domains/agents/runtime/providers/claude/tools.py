@@ -17,9 +17,13 @@ from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.agents.runtime.cancellation import raise_if_cancelled
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
+    AgentRuntimeApprovalDecision,
     AgentRuntimeToolDefinition,
 )
-from backend.app.domains.agents.runtime.errors import AgentRuntimeCancelledError
+from backend.app.domains.agents.runtime.errors import (
+    AgentRuntimeCancelledError,
+    normalize_agent_error,
+)
 from backend.app.domains.agents.runtime.observer import AgentRuntimeExecutionObserver
 
 _SDK_TOOL_PREFIX = "mcp__opsmesh__"
@@ -29,7 +33,8 @@ _SDK_TOOL_PREFIX = "mcp__opsmesh__"
 class _ApprovalState:
     reviews: dict[str, dict[str, object]]
     deferred: dict[str, dict[str, object]]
-    active_calls: dict[str, str]
+    decisions: dict[tuple[str, str], AgentRuntimeApprovalDecision]
+    active_calls: dict[tuple[str, str], list[str]]
 
 
 def _sdk_tool(
@@ -46,7 +51,11 @@ def _sdk_tool(
         if executor is None:
             return _tool_error("No runtime tool executor is configured")
         try:
-            tool_call_id = approval_state.active_calls.get(definition.name)
+            tool_call_id = _consume_active_call(
+                approval_state,
+                definition.name,
+                arguments,
+            )
             if not tool_call_id:
                 return _tool_error("Claude tool call is missing its runtime call ID")
             result = await executor.execute_tool(
@@ -73,7 +82,7 @@ def _sdk_tool(
         except AgentRuntimeCancelledError:
             raise
         except Exception as exc:
-            return _tool_error(str(exc))
+            return _tool_error(normalize_agent_error(exc).message)
 
     return invoke
 
@@ -169,6 +178,30 @@ def _approval_hook(
                     ),
                 }
             }
+        resumed_decision = approval_state.decisions.pop((call_id, product_name), None)
+        if resumed_decision is not None:
+            if resumed_decision.status == "approved":
+                _activate_call(
+                    approval_state,
+                    product_name,
+                    dict(input_data["tool_input"]),
+                    call_id,
+                )
+                return {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "permissionDecisionReason": "Tool approved by OpsMesh",
+                    }
+                }
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": resumed_decision.reason
+                    or "Tool rejected by OpsMesh",
+                }
+            }
         executor = request.tool_executor
         if executor is None:
             raise ValueError("Claude tool execution requires a runtime tool executor")
@@ -187,7 +220,6 @@ def _approval_hook(
             }
         decision = review.get("decision")
         approval_state.reviews[call_id] = dict(review)
-        approval_state.active_calls.pop(product_name, None)
         if decision == "deny":
             return {
                 "hookSpecificOutput": {
@@ -200,7 +232,12 @@ def _approval_hook(
             }
         if decision == "allow":
             if call_id:
-                approval_state.active_calls[product_name] = call_id
+                _activate_call(
+                    approval_state,
+                    product_name,
+                    dict(input_data["tool_input"]),
+                    call_id,
+                )
             return {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
@@ -236,6 +273,39 @@ def _approval_hook(
 
 def _tool_error(message: str) -> dict[str, object]:
     return {"content": [{"type": "text", "text": message}], "is_error": True}
+
+
+def _activate_call(
+    state: _ApprovalState,
+    tool_name: str,
+    arguments: dict[str, object],
+    call_id: str,
+) -> None:
+    if not call_id:
+        return
+    state.active_calls.setdefault(_active_call_key(tool_name, arguments), []).append(call_id)
+
+
+def _consume_active_call(
+    state: _ApprovalState,
+    tool_name: str,
+    arguments: dict[str, object],
+) -> str | None:
+    key = _active_call_key(tool_name, arguments)
+    call_ids = state.active_calls.get(key)
+    if not call_ids:
+        return None
+    call_id = call_ids.pop(0)
+    if not call_ids:
+        state.active_calls.pop(key, None)
+    return call_id
+
+
+def _active_call_key(tool_name: str, arguments: dict[str, object]) -> tuple[str, str]:
+    return (
+        tool_name,
+        json.dumps(arguments, ensure_ascii=True, separators=(",", ":"), sort_keys=True),
+    )
 
 
 def _product_tool_name(name: str) -> str:

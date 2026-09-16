@@ -1333,7 +1333,7 @@ def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
     docker = FakeDockerClient()
     settings = Settings(
         storage_root=".opsmesh-test-storage",
-        runtime_allowed_images=["python:3.12-slim"],
+        runtime_allowed_images=["python@sha256:" + "0" * 64],
     )
     service = RuntimeControlService(
         session,

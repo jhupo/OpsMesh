@@ -103,7 +103,7 @@ class WorkerRunner:
             claim_token = queue_lease.lease_token
             with self._job_log_context(job):
                 try:
-                    self._lease_reporter.start_lease(
+                    should_execute = self._lease_reporter.start_lease(
                         job,
                         claim_token=claim_token,
                         session=session,
@@ -118,6 +118,10 @@ class WorkerRunner:
                     )
                     raise
                 session.commit()  # release the admission lock before long-running execution
+                if not should_execute:
+                    if not self._queue.ack(job, lease_token=claim_token):
+                        raise RuntimeError("Duplicate terminal job could not be acknowledged")
+                    return True
                 with self._lease_heartbeat(job, claim_token):
                     try:
                         self._handle_job(job)

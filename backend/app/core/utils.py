@@ -20,6 +20,16 @@ def dict_list(value: object) -> list[dict[str, object]]:
     return [item for item in value if isinstance(item, dict)]
 
 
+def walk_mapping(value: object, parts: Iterable[str], *, missing: object) -> object:
+    """Resolve a bounded mapping path without raising on an absent key."""
+    current = value
+    for part in parts:
+        if not isinstance(current, dict) or part not in current:
+            return missing
+        current = current[part]
+    return current
+
+
 def int_or_zero(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 

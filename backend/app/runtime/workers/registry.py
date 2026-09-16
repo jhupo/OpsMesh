@@ -8,6 +8,7 @@ from backend.app.domains.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
+from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.handlers import (
@@ -46,6 +47,7 @@ class WorkerJobHandler:
     ) -> None:
         context = WorkerJobHandlerContext(
             session=session,
+            runtime_backends=build_runtime_backend_registry(runtime_docker_client),
             queue=queue,
             agent_runner=agent_runner,
             settings=settings,

@@ -3,12 +3,19 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
+from contextlib import suppress
 from typing import Protocol, cast
 
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    ClaudeSDKError,
+    CLIConnectionError,
+    CLIJSONDecodeError,
+    CLINotFoundError,
+    ProcessError,
+    ResultError,
     ResultMessage,
     StreamEvent,
     TextBlock,
@@ -20,7 +27,6 @@ from claude_agent_sdk import __version__ as claude_sdk_version
 from claude_agent_sdk.types import (
     EffortLevel,
     McpServerConfig,
-    SandboxSettings,
     SessionStore,
     ThinkingConfig,
 )
@@ -46,7 +52,11 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeStreamEvent,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.domains.agents.runtime.errors import AgentRuntimeCancelledError
+from backend.app.domains.agents.runtime.errors import (
+    AgentRuntimeCancelledError,
+    AgentRuntimePolicyError,
+    AgentRuntimeProviderError,
+)
 from backend.app.domains.agents.runtime.guardrails import (
     evaluate_guardrail_stage,
     guardrail_events,
@@ -147,6 +157,16 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
         request: AgentRunRequest,
         observer: AgentRuntimeExecutionObserver,
     ) -> AgentRunResult:
+        try:
+            return await self._run_once_sdk(request, observer)
+        except ClaudeSDKError as exc:
+            raise _claude_provider_error(exc) from exc
+
+    async def _run_once_sdk(
+        self,
+        request: AgentRunRequest,
+        observer: AgentRuntimeExecutionObserver,
+    ) -> AgentRunResult:
         session_id = _session_id(request)
         store = (
             ClaudeAgentSessionStore(request.session, session_id=session_id)
@@ -155,16 +175,21 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
         )
         resume_existing = False
         if store is not None and request.resume_state is None:
-            resume_existing = (
-                await store.load({"project_key": "opsmesh", "session_id": session_id}) is not None
-            )
+            resume_existing = await store.has_transcript()
+        decisions = {
+            (decision.tool_call_id, decision.tool_name): decision
+            for decision in request.approval_decisions
+        }
+        if len(decisions) != len(request.approval_decisions):
+            raise ValueError("Claude approval decisions must be unique")
         if _is_rejected_resume(request):
             return _rejected_result(request, self.capabilities)
-
-        approval_state = _ApprovalState(reviews={}, deferred={}, active_calls={})
-        if request.approval_decisions:
-            for decision in request.approval_decisions:
-                approval_state.active_calls[decision.tool_name] = decision.tool_call_id
+        approval_state = _ApprovalState(
+            reviews={},
+            deferred={},
+            decisions=decisions,
+            active_calls={},
+        )
         observer.lifecycle(
             "agent.started",
             "Claude agent started.",
@@ -192,35 +217,44 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
         await raise_if_cancelled(request.cancellation)
         client = self._client_factory(options)
         async with client:
-            await client.query(prompt)
-
-            async def watch_cancellation() -> None:
-                cancellation = request.cancellation
-                if cancellation is None:
-                    return
-                await cancellation.wait_cancelled()
-                cancelled.set()
-                await client.interrupt()
-                await cancel_active_tools(request)
-
-            watcher: asyncio.Task[object] | None = None
-            if request.cancellation is not None:
-                watcher = asyncio.create_task(watch_cancellation())
             try:
-                async for message in client.receive_response():
-                    messages.append(message)
-                    if request.stream and isinstance(message, StreamEvent):
-                        mapped = self._stream_event(
-                            message,
-                            sequence=len(observer.stream_events) + 1,
-                        )
-                        observer.stream(
-                            mapped.event_type,
-                            payload=mapped.payload,
-                            delta=mapped.delta,
-                        )
-            finally:
-                await stop_cancellation_watcher(watcher)
+                await client.query(prompt)
+
+                async def watch_cancellation() -> None:
+                    cancellation = request.cancellation
+                    if cancellation is None:
+                        return
+                    await cancellation.wait_cancelled()
+                    cancelled.set()
+                    with suppress(Exception):
+                        await client.interrupt()
+                    with suppress(Exception):
+                        await cancel_active_tools(request)
+
+                watcher: asyncio.Task[object] | None = None
+                if request.cancellation is not None:
+                    watcher = asyncio.create_task(watch_cancellation())
+                try:
+                    async for message in client.receive_response():
+                        messages.append(message)
+                        if request.stream and isinstance(message, StreamEvent):
+                            mapped = self._stream_event(
+                                message,
+                                sequence=len(observer.stream_events) + 1,
+                            )
+                            observer.stream(
+                                mapped.event_type,
+                                payload=mapped.payload,
+                                delta=mapped.delta,
+                            )
+                finally:
+                    await stop_cancellation_watcher(watcher)
+            except asyncio.CancelledError:
+                with suppress(Exception):
+                    await client.interrupt()
+                with suppress(Exception):
+                    await cancel_active_tools(request)
+                raise
         if cancelled.is_set():
             raise AgentRuntimeCancelledError
 
@@ -229,12 +263,16 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             None,
         )
         if result_message is None:
-            raise RuntimeError("Claude Agent SDK did not return a result message")
+            raise AgentRuntimeProviderError(
+                code="provider_missing_result",
+                message="Claude Agent SDK did not return a result message",
+            )
         if result_message.is_error and result_message.deferred_tool_use is None:
-            details = "; ".join(result_message.errors or []) or "Claude Agent SDK run failed"
-            raise RuntimeError(details)
+            raise _claude_result_error(result_message)
         if result_message.terminal_reason in {"aborted_streaming", "aborted_tools"}:
             raise AgentRuntimeCancelledError
+        if approval_state.decisions:
+            raise ValueError("Claude approval decision was not consumed by the SDK interruption")
 
         interruptions = self._interruptions(request, result_message, approval_state)
         resume = self._resume_state(result_message, interruptions)
@@ -299,21 +337,14 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
         }
         if request.base_url:
             env["ANTHROPIC_BASE_URL"] = request.base_url.rstrip("/")
-        sandbox_settings = request.context.metadata.get("sandbox_settings")
-        sandbox_session = request.context.metadata.get("sandbox_session")
-        sandbox_root = sandbox_session.get("root") if isinstance(sandbox_session, dict) else None
-        sandbox_cli_path = (
-            sandbox_session.get("cli_path") if isinstance(sandbox_session, dict) else None
-        )
         resume_id = _resume_session_id(request) or (session_id if resume_existing else None)
-        approved_resume = bool(request.approval_decisions and resume_id)
         options = ClaudeAgentOptions(
             tools=[],
             allowed_tools=[],
             system_prompt=request.agent_profile.instructions,
             mcp_servers=mcp_servers,
             strict_mcp_config=True,
-            permission_mode="bypassPermissions" if approved_resume else "default",
+            permission_mode="default",
             resume=resume_id,
             session_id=None if resume_id else session_id,
             max_turns=request.max_turns,
@@ -335,15 +366,7 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             session_store=cast(SessionStore, store) if store is not None else None,
             session_store_flush="eager",
             env=env,
-            cwd=sandbox_root,
-            cli_path=sandbox_cli_path,
         )
-        if sandbox_settings is not None:
-            if not isinstance(sandbox_settings, dict):
-                raise TypeError(
-                    "sandbox_settings must be a Claude Agent SDK SandboxSettings mapping"
-                )
-            options.sandbox = cast(SandboxSettings, dict(sandbox_settings))
         return options
 
     def _interruptions(
@@ -581,3 +604,83 @@ def _stream_delta(event: dict[str, object]) -> str | None:
     if isinstance(delta, str):
         return delta
     return None
+
+
+def _claude_provider_error(
+    exc: ClaudeSDKError,
+) -> AgentRuntimeProviderError | AgentRuntimePolicyError:
+    if isinstance(exc, CLINotFoundError):
+        return AgentRuntimeProviderError(
+            code="provider_sdk_unavailable",
+            message=str(exc),
+            retryable=False,
+        )
+    if isinstance(exc, CLIJSONDecodeError):
+        return AgentRuntimeProviderError(
+            code="provider_malformed_response",
+            message=str(exc),
+            retryable=False,
+        )
+    if isinstance(exc, ResultError):
+        return _claude_api_error(
+            message=str(exc),
+            status=exc.api_error_status,
+            terminal_reason=exc.terminal_reason,
+            subtype=exc.subtype,
+        )
+    if isinstance(exc, CLIConnectionError):
+        return AgentRuntimeProviderError(
+            code="provider_unavailable",
+            message=str(exc),
+            retryable=True,
+        )
+    if isinstance(exc, ProcessError):
+        return AgentRuntimeProviderError(
+            code="provider_process_failed",
+            message=str(exc),
+            retryable=False,
+        )
+    return AgentRuntimeProviderError(
+        code="provider_request_failed",
+        message=str(exc),
+        retryable=False,
+    )
+
+
+def _claude_result_error(
+    result: ResultMessage,
+) -> AgentRuntimeProviderError | AgentRuntimePolicyError:
+    details = "; ".join(result.errors or []) or result.result or "Claude Agent SDK run failed"
+    return _claude_api_error(
+        message=details,
+        status=result.api_error_status,
+        terminal_reason=result.terminal_reason,
+        subtype=result.subtype,
+    )
+
+
+def _claude_api_error(
+    *,
+    message: str,
+    status: int | None,
+    terminal_reason: str | None,
+    subtype: str | None,
+) -> AgentRuntimeProviderError | AgentRuntimePolicyError:
+    if terminal_reason == "max_turns" or subtype == "error_max_turns":
+        return AgentRuntimePolicyError(
+            code="agent_max_turns_exceeded",
+            message="Agent run reached its authorized turn limit",
+            event_type="agent.run.max_turns_exceeded",
+            metadata={"terminal_reason": terminal_reason, "result_subtype": subtype},
+        )
+    if status == 429:
+        code = "provider_rate_limited"
+    elif status is not None and status >= 500:
+        code = "provider_unavailable"
+    else:
+        code = "provider_request_failed"
+    retryable = status == 429 or (status is not None and status >= 500)
+    if status is None and terminal_reason == "api_error":
+        code = "provider_unavailable"
+        retryable = True
+    return AgentRuntimeProviderError(code=code, message=message, retryable=retryable)

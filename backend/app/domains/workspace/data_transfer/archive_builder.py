@@ -45,33 +45,25 @@ class WorkspaceArchiveExportBuilder:
                 json.dumps(metadata.model_dump(mode="json"), ensure_ascii=False, indent=2),
             )
             if request.include_file_bytes:
-                file_rows = self._file_rows(workspace.id, request.max_items_per_collection)
-                for file in file_rows:
-                    total_bytes = self._write_blob(
-                        archive=archive,
-                        storage=storage,
-                        storage_key=file.storage_key,
-                        archive_name=f"files/{file.id}/{safe_filename(file.filename)}",
-                        size_bytes=file.size_bytes,
-                        max_bytes_per_object=request.max_bytes_per_object,
-                        max_total_bytes=request.max_total_bytes,
-                        current_total=total_bytes,
-                        skipped=skipped,
-                    )
+                total_bytes = self._write_rows(
+                    archive=archive,
+                    storage=storage,
+                    rows=self._file_rows(workspace.id, request.max_items_per_collection),
+                    prefix="files",
+                    request=request,
+                    current_total=total_bytes,
+                    skipped=skipped,
+                )
             if request.include_artifact_bytes:
-                artifact_rows = self._artifact_rows(workspace.id, request.max_items_per_collection)
-                for artifact in artifact_rows:
-                    total_bytes = self._write_blob(
-                        archive=archive,
-                        storage=storage,
-                        storage_key=artifact.storage_key,
-                        archive_name=f"artifacts/{artifact.id}/{safe_filename(artifact.filename)}",
-                        size_bytes=artifact.size_bytes,
-                        max_bytes_per_object=request.max_bytes_per_object,
-                        max_total_bytes=request.max_total_bytes,
-                        current_total=total_bytes,
-                        skipped=skipped,
-                    )
+                total_bytes = self._write_rows(
+                    archive=archive,
+                    storage=storage,
+                    rows=self._artifact_rows(workspace.id, request.max_items_per_collection),
+                    prefix="artifacts",
+                    request=request,
+                    current_total=total_bytes,
+                    skipped=skipped,
+                )
             if skipped:
                 archive.writestr("skipped-objects.json", json.dumps(skipped, indent=2))
         AuditService(self._session).record_user_action(
@@ -93,6 +85,32 @@ class WorkspaceArchiveExportBuilder:
             skipped_objects=skipped,
             manifest_counts=metadata.manifest.counts,
         )
+
+    def _write_rows(
+        self,
+        *,
+        archive: ZipFile,
+        storage: ObjectStorage,
+        rows: list[WorkspaceFile] | list[Artifact],
+        prefix: str,
+        request: WorkspaceArchiveExportRequest,
+        current_total: int,
+        skipped: list[str],
+    ) -> int:
+        total = current_total
+        for row in rows:
+            total = self._write_blob(
+                archive=archive,
+                storage=storage,
+                storage_key=row.storage_key,
+                archive_name=f"{prefix}/{row.id}/{safe_filename(row.filename)}",
+                size_bytes=row.size_bytes,
+                max_bytes_per_object=request.max_bytes_per_object,
+                max_total_bytes=request.max_total_bytes,
+                current_total=total,
+                skipped=skipped,
+            )
+        return total
 
     def _file_rows(self, workspace_id: UUID, limit: int) -> list[WorkspaceFile]:
         return list(

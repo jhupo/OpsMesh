@@ -48,6 +48,18 @@ class RuntimePoolResetService:
         )
         if workspace_cleanup.exit_code != 0:
             raise RuntimeError("Pooled runtime workspace cleanup failed")
+        temporary_cleanup = self._docker.exec_command(
+            member.docker_container_id,
+            [
+                "sh",
+                "-c",
+                "find /tmp -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +",
+            ],
+            timeout_seconds,
+            working_dir="/",
+        )
+        if temporary_cleanup.exit_code != 0:
+            raise RuntimeError("Pooled runtime temporary storage cleanup failed")
 
     def destroy_failed_member(
         self,

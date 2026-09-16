@@ -19,7 +19,21 @@ def build_recovery_plan(
     collaboration: dict[str, object],
     execution: dict[str, object],
 ) -> list[dict[str, object]]:
-    items: list[dict[str, object]] = []
+    items = [
+        *_handoff_recovery_items(collaboration),
+        *_blocked_step_recovery_items(execution),
+        *_manager_recovery_items(collaboration),
+        *_downstream_recovery_items(collaboration, execution),
+    ]
+    return sorted(
+        dedupe_recovery_plan(items),
+        key=lambda item: (-int_or_zero(item["priority"]), str(item["action"])),
+    )
+
+
+def _handoff_recovery_items(
+    collaboration: dict[str, object],
+) -> list[dict[str, object]]:
     handoff_source_step_ids: list[UUID] = []
     handoff_reasons: list[str] = []
     for handoff in dict_list(collaboration.get("handoffs")):
@@ -30,18 +44,23 @@ def build_recovery_plan(
         if isinstance(step_id, UUID):
             handoff_source_step_ids.append(step_id)
         handoff_reasons.append(str(status))
-    if handoff_source_step_ids:
-        items.append(
-            recovery_plan_item(
-                action="schedule_downstream_steps",
-                source="handoff",
-                priority=90,
-                reason="handoff_ready_for_downstream",
-                task_step_ids=handoff_source_step_ids,
-                blocked_reasons=["handoff_ready_for_downstream", *handoff_reasons],
-            )
+    if not handoff_source_step_ids:
+        return []
+    return [
+        recovery_plan_item(
+            action="schedule_downstream_steps",
+            source="handoff",
+            priority=90,
+            reason="handoff_ready_for_downstream",
+            task_step_ids=handoff_source_step_ids,
+            blocked_reasons=["handoff_ready_for_downstream", *handoff_reasons],
         )
+    ]
 
+
+def _blocked_step_recovery_items(
+    execution: dict[str, object],
+) -> list[dict[str, object]]:
     blocked_step_ids: list[UUID] = []
     blocked_reasons: list[str] = []
     for step in dict_list(execution.get("steps")):
@@ -50,43 +69,57 @@ def build_recovery_plan(
             continue
         blocked_step_ids.append(step_id)
         blocked_reasons.extend(string_list(step.get("blocked_reasons")))
-    if blocked_step_ids:
-        items.append(
-            recovery_plan_item(
-                action="requeue_blocked_steps",
-                source="execution_diagnostics",
-                priority=80,
-                reason="blocked_steps_detected",
-                task_step_ids=blocked_step_ids,
-                blocked_reasons=blocked_reasons or ["blocked_steps_detected"],
-            )
+    if not blocked_step_ids:
+        return []
+    return [
+        recovery_plan_item(
+            action="requeue_blocked_steps",
+            source="execution_diagnostics",
+            priority=80,
+            reason="blocked_steps_detected",
+            task_step_ids=blocked_step_ids,
+            blocked_reasons=blocked_reasons or ["blocked_steps_detected"],
         )
+    ]
 
+
+def _manager_recovery_items(
+    collaboration: dict[str, object],
+) -> list[dict[str, object]]:
     manager = dict_or_empty(collaboration.get("manager"))
     manager_reasons = string_list(manager.get("blocked_reasons"))
-    if needs_manager_review(manager_reasons):
-        items.append(
-            recovery_plan_item(
-                action="request_manager_review",
-                source="manager",
-                priority=70,
-                reason="manager_protocol_needs_review",
-                task_step_ids=[],
-                blocked_reasons=manager_reasons,
-            )
+    if not needs_manager_review(manager_reasons):
+        return []
+    return [
+        recovery_plan_item(
+            action="request_manager_review",
+            source="manager",
+            priority=70,
+            reason="manager_protocol_needs_review",
+            task_step_ids=[],
+            blocked_reasons=manager_reasons,
         )
+    ]
 
+
+def _downstream_recovery_items(
+    collaboration: dict[str, object],
+    execution: dict[str, object],
+) -> list[dict[str, object]]:
     summary_reasons = string_list(
         dict_or_empty(collaboration.get("summary")).get("blocked_reasons")
     )
-    if "downstream_blocked" in summary_reasons and not blocked_step_ids:
+    has_blocked_steps = any(
+        step.get("status") == "blocked" for step in dict_list(execution.get("steps"))
+    )
+    if "downstream_blocked" in summary_reasons and not has_blocked_steps:
         blocked_downstream_ids = [
             step_id
             for handoff in dict_list(collaboration.get("handoffs"))
             for step_id in uuid_list(handoff.get("blocked_downstream_step_ids"))
         ]
         if blocked_downstream_ids:
-            items.append(
+            return [
                 recovery_plan_item(
                     action="requeue_blocked_steps",
                     source="collaboration_state",
@@ -95,12 +128,8 @@ def build_recovery_plan(
                     task_step_ids=blocked_downstream_ids,
                     blocked_reasons=["downstream_blocked"],
                 )
-            )
-
-    return sorted(
-        dedupe_recovery_plan(items),
-        key=lambda item: (-int_or_zero(item["priority"]), str(item["action"])),
-    )
+            ]
+    return []
 
 
 def recovery_plan_item(

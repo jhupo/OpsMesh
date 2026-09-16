@@ -73,11 +73,21 @@ def authorize_project_run(
         },
     }
     snapshot: dict[str, object] = {
-        "version": 2,
+        "version": 3,
         "workspace_id": str(run.workspace_id),
         "task_id": str(task.id),
         "task_step_id": None,
         "agent_profile_id": None,
+        "agent_profile": {
+            "id": None,
+            "workspace_id": str(run.workspace_id),
+            "version": 1,
+            "name": "Default Agent",
+            "role": "worker",
+            "instructions": "Complete the assigned task.",
+            "model": "gpt-4.1",
+            "model_settings": {},
+        },
         "runtime_space_id": None,
         "allowed_tools": [],
         "capability_catalog": catalog,

@@ -1286,7 +1286,7 @@ def _set_mcp_snapshot(
     }
     catalog["fingerprint"] = effective_catalog_fingerprint(catalog)
     snapshot: dict[str, object] = {
-        "version": 2,
+        "version": 3,
         "workspace_id": str(workspace.id),
         "allowed_tools": [allow.tool_name],
         "capability_catalog": catalog,

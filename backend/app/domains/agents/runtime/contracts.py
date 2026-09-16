@@ -5,8 +5,7 @@ from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.runtime.contracts import SandboxManifest
+from backend.app.runtime.contracts import SandboxBinding
 
 AgentRuntimeSessionItem = dict[str, object]
 
@@ -77,6 +76,20 @@ class AgentRuntimeAgentRef:
     name: str
     profile_id: UUID | None = None
     role: str | None = None
+
+
+@dataclass(frozen=True)
+class AgentRuntimeProfile:
+    """Immutable root-agent definition accepted by provider SDK adapters."""
+
+    id: UUID | None
+    workspace_id: UUID
+    version: int
+    name: str
+    role: str
+    instructions: str
+    model: str
+    model_settings: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -333,7 +346,7 @@ class AgentRuntimeToolExecutor(Protocol):
 
 @dataclass(frozen=True)
 class AgentRunRequest:
-    agent_profile: AgentProfile
+    agent_profile: AgentRuntimeProfile
     input_text: str
     context: AgentRuntimeContext
     max_turns: int = 10
@@ -358,7 +371,7 @@ class AgentRunRequest:
     guardrails: AgentRuntimeGuardrails | None = None
     stream: bool = False
     cancellation: AgentRuntimeCancellation | None = None
-    sandbox: SandboxManifest | None = None
+    sandbox: SandboxBinding | None = None
 
 
 @dataclass(frozen=True)

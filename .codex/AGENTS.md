@@ -22,7 +22,8 @@ Use these documents as the project map instead of guessing:
 - `docs/isolation-and-security.md`: mandatory tenant and runtime isolation rules.
 - `docs/threat-model.md`: threats and required mitigations.
 - `docs/open-source-sdk-strategy.md`: dependency adoption and replacement strategy.
-- `docs/backend-completion-plan.md`: detailed implementation status, not a substitute for code.
+- `docs/platform-productionization-plan.md`: current productionization status and remaining gates,
+  not a substitute for code.
 
 Treat code, migrations, and tests as evidence of current behavior. Documents containing words such
 as "should", "planned", or "future" describe intent and must not be represented as implemented.

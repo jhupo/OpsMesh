@@ -47,18 +47,7 @@ class RunRequestPromptRenderer:
         allowed_tools: tuple[str, ...] = (),
         runtime_metadata: dict[str, object] | None = None,
     ) -> tuple[ContextFragment, ...]:
-        task = (
-            self.session.scalar(
-                select(Task).where(
-                    Task.workspace_id == run.workspace_id,
-                    Task.id == run.task_id,
-                )
-            )
-            if run.task_id is not None
-            else None
-        )
-        if task is None and run.task_id is not None:
-            raise ValueError("Run task is unavailable in workspace")
+        task = self._task_for_run(run)
         if task is None:
             return (
                 ContextFragment(
@@ -68,7 +57,56 @@ class RunRequestPromptRenderer:
                     required=True,
                 ),
             )
+        fragments = self._task_fragments(run, task, allowed_tools=allowed_tools)
+        if run.task_step_id is not None:
+            step = self._step_for_run(run, task)
+            fragments.extend(self._step_fragments(run, task, step))
+        rendered_runtime_context = runtime_context_text(
+            allowed_tools=allowed_tools,
+            metadata=runtime_metadata or {},
+        )
+        if rendered_runtime_context:
+            fragments.append(
+                ContextFragment(
+                    key="runtime.capabilities",
+                    text=rendered_runtime_context,
+                    priority=ContextPriority.HIGH,
+                )
+            )
+        return tuple(fragments)
 
+    def _task_for_run(self, run: AgentRun) -> Task | None:
+        if run.task_id is None:
+            return None
+        task = self.session.scalar(
+            select(Task).where(
+                Task.workspace_id == run.workspace_id,
+                Task.id == run.task_id,
+            )
+        )
+        if task is None:
+            raise ValueError("Run task is unavailable in workspace")
+        return task
+
+    def _step_for_run(self, run: AgentRun, task: Task) -> TaskStep:
+        step = self.session.scalar(
+            select(TaskStep).where(
+                TaskStep.workspace_id == run.workspace_id,
+                TaskStep.task_id == task.id,
+                TaskStep.id == run.task_step_id,
+            )
+        )
+        if step is None:
+            raise ValueError("Run step is unavailable in task")
+        return step
+
+    def _task_fragments(
+        self,
+        run: AgentRun,
+        task: Task,
+        *,
+        allowed_tools: tuple[str, ...],
+    ) -> list[ContextFragment]:
         fragments = [
             ContextFragment(
                 key="task.objective",
@@ -90,108 +128,99 @@ class RunRequestPromptRenderer:
                     priority=ContextPriority.HIGH,
                 )
             )
-        if run.task_step_id is not None:
-            step = self.session.scalar(
-                select(TaskStep).where(
-                    TaskStep.workspace_id == run.workspace_id,
-                    TaskStep.task_id == task.id,
-                    TaskStep.id == run.task_step_id,
-                )
+        return fragments
+
+    def _step_fragments(
+        self,
+        run: AgentRun,
+        task: Task,
+        step: TaskStep,
+    ) -> list[ContextFragment]:
+        fragments = [
+            ContextFragment(
+                key="step.objective",
+                text=f"Current step: {step.title}\n{step.description}".strip(),
+                priority=ContextPriority.CRITICAL,
+                required=True,
             )
-            if step is None:
-                raise ValueError("Run step is unavailable in task")
-            if step is not None:
-                fragments.append(
-                    ContextFragment(
-                        key="step.objective",
-                        text=f"Current step: {step.title}\n{step.description}".strip(),
-                        priority=ContextPriority.CRITICAL,
-                        required=True,
-                    )
-                )
-                step_context_text = step_context_text_for_request(step)
-                if step_context_text:
-                    fragments.append(
-                        ContextFragment(
-                            key="step.requirements",
-                            text=step_context_text,
-                            priority=ContextPriority.HIGH,
-                        )
-                    )
-                workflow_inputs = resolve_workflow_inputs(self.session, task, step)
-                if workflow_inputs:
-                    fragments.append(
-                        ContextFragment(
-                            key="workflow.input_bindings",
-                            text="Bound workflow inputs:\n"
-                            + json.dumps(
-                                redact_sensitive_payload(workflow_inputs),
-                                ensure_ascii=False,
-                                default=str,
-                            ),
-                            priority=ContextPriority.HIGH,
-                            required=True,
-                            allow_truncation=False,
-                        )
-                    )
-                if is_pm_summary_step(step):
-                    fragments.append(
-                        ContextFragment(
-                            key="step.output_contract",
-                            text=(
-                                "PM acceptance output: return JSON with decision "
-                                "`approved`, `request_revision`, or `add_missing_work`; include "
-                                "`summary`, optional `reasons`, `revision_requests`, and "
-                                "`missing_work_packages`."
-                            ),
-                            priority=ContextPriority.CRITICAL,
-                            required=True,
-                            allow_truncation=False,
-                        )
-                    )
-                if is_agent_planning_step(step):
-                    fragments.append(
-                        ContextFragment(
-                            key="planning.inputs",
-                            text="Planning input (untrusted task data and team roster):\n"
-                            + json.dumps(
-                                redact_sensitive_payload(
-                                    {"input": task.input, "roster": task.team_snapshot}
-                                ),
-                                ensure_ascii=False,
-                                default=str,
-                            ),
-                            priority=ContextPriority.CRITICAL,
-                            required=True,
-                            allow_truncation=False,
-                        )
-                    )
-                previous_summaries = self.completed_step_summaries(
-                    run.workspace_id,
-                    task.id,
-                    before=step.order_index,
-                )
-                if previous_summaries:
-                    fragments.append(
-                        ContextFragment(
-                            key="task.completed_steps",
-                            text="Completed step summaries:\n" + "\n".join(previous_summaries),
-                            priority=ContextPriority.NORMAL,
-                        )
-                    )
-        rendered_runtime_context = runtime_context_text(
-            allowed_tools=allowed_tools,
-            metadata=runtime_metadata or {},
-        )
-        if rendered_runtime_context:
+        ]
+        step_context_text = step_context_text_for_request(step)
+        if step_context_text:
             fragments.append(
                 ContextFragment(
-                    key="runtime.capabilities",
-                    text=rendered_runtime_context,
+                    key="step.requirements",
+                    text=step_context_text,
                     priority=ContextPriority.HIGH,
                 )
             )
-        return tuple(fragments)
+        workflow_inputs = resolve_workflow_inputs(self.session, task, step)
+        if workflow_inputs:
+            fragments.append(
+                ContextFragment(
+                    key="workflow.input_bindings",
+                    text="Bound workflow inputs:\n"
+                    + json.dumps(
+                        redact_sensitive_payload(workflow_inputs),
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                    priority=ContextPriority.HIGH,
+                    required=True,
+                    allow_truncation=False,
+                )
+            )
+        fragments.extend(self._special_step_fragments(task, step))
+        previous_summaries = self.completed_step_summaries(
+            run.workspace_id,
+            task.id,
+            before=step.order_index,
+        )
+        if previous_summaries:
+            fragments.append(
+                ContextFragment(
+                    key="task.completed_steps",
+                    text="Completed step summaries:\n" + "\n".join(previous_summaries),
+                    priority=ContextPriority.NORMAL,
+                )
+            )
+        return fragments
+
+    @staticmethod
+    def _special_step_fragments(task: Task, step: TaskStep) -> list[ContextFragment]:
+        fragments: list[ContextFragment] = []
+        if is_pm_summary_step(step):
+            fragments.append(
+                ContextFragment(
+                    key="step.output_contract",
+                    text=(
+                        "PM acceptance output: return JSON with decision "
+                        "`approved`, `request_revision`, or `add_missing_work`; include "
+                        "`summary`, optional `reasons`, `revision_requests`, and "
+                        "`missing_work_packages`."
+                    ),
+                    priority=ContextPriority.CRITICAL,
+                    required=True,
+                    allow_truncation=False,
+                )
+            )
+        if is_agent_planning_step(step):
+            fragments.append(
+                ContextFragment(
+                    key="planning.inputs",
+                    text="Planning input (untrusted task data and team roster):\n"
+                    + json.dumps(
+                        redact_sensitive_payload(
+                            {"input": task.input, "roster": task.team_snapshot}
+                        ),
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                    priority=ContextPriority.CRITICAL,
+                    required=True,
+                    allow_truncation=False,
+                )
+            )
+        return fragments
 
     def team_context_text_for_run(
         self,

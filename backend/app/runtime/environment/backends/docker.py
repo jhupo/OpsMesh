@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import io
+import math
+import posixpath
 import re
 import tarfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import PurePosixPath
 from subprocess import TimeoutExpired
-from typing import Any
+from typing import Any, BinaryIO
 from uuid import UUID, uuid4
 
 import docker
@@ -16,9 +20,13 @@ from docker.models.containers import Container
 from docker.types import Mount
 from requests.exceptions import Timeout as RequestsTimeout
 
-from backend.app.runtime.contracts import SandboxManifest, SandboxSession
+from backend.app.runtime.contracts import (
+    SandboxCommandResult,
+    SandboxManifest,
+    SandboxSession,
+    SandboxSessionExecutor,
+)
 from backend.app.runtime.environment.backends.contracts import RuntimeBackendCapabilities
-from backend.app.runtime.environment.backends.sdk_process import RuntimeSdkProcess
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -59,17 +67,79 @@ class DockerRuntimeBackend:
     ) -> SandboxSession:
         if not runtime.docker_container_id:
             raise RuntimeError("Docker runtime has no active container")
+        if self._client is None:
+            raise RuntimeError("Docker sandbox sessions require a worker-injected client")
         return SandboxSession(
-            session_id=runtime.docker_container_id,
+            session_id=str(manifest.run_id),
             root=manifest.root,
             backend="docker",
+            executor=DockerSandboxSessionExecutor(
+                client=self._client,
+                container_id=runtime.docker_container_id,
+                root=manifest.root,
+                timeout_seconds=_runtime_limit(runtime, "timeout_seconds", 300),
+                max_file_bytes=_runtime_limit(runtime, "max_output_bytes", 256_000),
+            ),
             persistent=runtime.execution_mode == "persistent",
         )
 
-    def sdk_process(self, session: SandboxSession) -> RuntimeSdkProcess:
-        if self._client is None:
-            raise RuntimeError("SDK process execution requires a worker-injected Docker client")
-        return RuntimeSdkProcess(self._client, session.session_id, session.root)
+@dataclass(frozen=True, slots=True)
+class DockerSandboxSessionExecutor(SandboxSessionExecutor):
+    client: DockerRuntimeClient
+    container_id: str
+    root: str
+    timeout_seconds: int
+    max_file_bytes: int
+
+    def execute(
+        self,
+        command: list[str],
+        *,
+        timeout_seconds: int,
+        working_dir: str,
+    ) -> SandboxCommandResult:
+        bounded_timeout = max(1, min(math.ceil(timeout_seconds), self.timeout_seconds))
+        result = self.client.exec_command(
+            self.container_id,
+            command,
+            bounded_timeout,
+            working_dir=working_dir,
+        )
+        stdout = _bounded_bytes(result.stdout.encode("utf-8"), self.max_file_bytes)
+        stderr = _bounded_bytes(result.stderr.encode("utf-8"), self.max_file_bytes)
+        return SandboxCommandResult(
+            exit_code=result.exit_code,
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+    def read_file(self, path: PurePosixPath) -> bytes | None:
+        return self.client.copy_file_from_container(
+            self.container_id,
+            path.as_posix(),
+            self.max_file_bytes,
+            self.timeout_seconds,
+        )
+
+    def write_file(self, path: PurePosixPath, data: BinaryIO) -> None:
+        payload = data.read(self.max_file_bytes + 1)
+        if not isinstance(payload, bytes):
+            raise TypeError("Sandbox file writes require a binary stream")
+        if len(payload) > self.max_file_bytes:
+            raise ValueError("Sandbox file exceeds the runtime transfer limit")
+        parent = posixpath.dirname(path.as_posix()) or self.root
+        name = posixpath.basename(path.as_posix())
+        if not name:
+            raise ValueError("Sandbox file path must name a file")
+        self.client.copy_archive_to_container(
+            self.container_id,
+            parent,
+            _single_file_archive(name, payload),
+            self.timeout_seconds,
+        )
+
+    def running(self) -> bool:
+        return self.client.container_running(self.container_id)
 
 
 class DockerSdkRuntimeClient(DockerRuntimeClient):
@@ -136,6 +206,15 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
     def remove_volume(self, volume_name: str) -> None:
         with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
             client.volumes.get(volume_name).remove(force=True)
+
+    def container_running(self, container_id: str) -> bool:
+        try:
+            with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
+                container = client.containers.get(container_id)
+                container.reload()
+                return container.status == "running"
+        except NotFound:
+            return False
 
     def exec_command(
         self,
@@ -336,6 +415,31 @@ def _input_file_archive(directory_name: str, content: bytes, *, uid: int, gid: i
         file_info.gid = gid
         tar.addfile(file_info, io.BytesIO(content))
     return output.getvalue()
+
+
+def _single_file_archive(name: str, content: bytes) -> bytes:
+    if name in {"", ".", ".."} or "/" in name or "\\" in name:
+        raise ValueError("Sandbox file name is invalid")
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+        file_info = tarfile.TarInfo(name)
+        file_info.size = len(content)
+        file_info.mode = 0o600
+        tar.addfile(file_info, io.BytesIO(content))
+    return output.getvalue()
+
+
+def _runtime_limit(runtime: WorkspaceRuntime, key: str, default: int) -> int:
+    value = runtime.limits.get(key)
+    return value if isinstance(value, int) and value > 0 else default
+
+
+def _bounded_bytes(content: bytes, limit: int) -> bytes:
+    if len(content) <= limit:
+        return content
+    marker = b"\n[output truncated by OpsMesh runtime policy]\n"
+    retained = max(0, limit - len(marker))
+    return content[:retained] + marker[: limit - retained]
 
 
 def _rewrite_archive_owner(archive: bytes, *, uid: int, gid: int) -> bytes:

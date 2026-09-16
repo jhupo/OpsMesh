@@ -77,7 +77,7 @@ def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> Non
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="run-isolation", settings={})
     template = RuntimeTemplate(
         name="run-isolation-image",
-        image="python:3.12-slim",
+        image="python@sha256:" + "0" * 64,
         default_limits={},
         default_network_policy={"disabled": True},
         created_at=datetime.now(UTC),
@@ -151,7 +151,7 @@ def test_pooled_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="pooled", settings={})
     template = RuntimeTemplate(
         name="pooled-image",
-        image="python:3.12-slim",
+        image="python@sha256:" + "0" * 64,
         default_limits={},
         default_network_policy={"disabled": True},
         created_at=datetime.now(UTC),
@@ -223,7 +223,7 @@ def test_pooled_runs_use_distinct_pool_members_until_a_member_is_released() -> N
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="pool-members", settings={})
     template = RuntimeTemplate(
         name="pool-members-image",
-        image="python:3.12-slim",
+        image="python@sha256:" + "0" * 64,
         default_limits={},
         default_network_policy={"disabled": True},
         created_at=datetime.now(UTC),
@@ -300,7 +300,7 @@ def test_persistent_run_binds_parent_without_child_or_container_cleanup() -> Non
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="persistent", settings={})
     template = RuntimeTemplate(
         name="persistent-image",
-        image="python:3.12-slim",
+        image="python@sha256:" + "0" * 64,
         default_limits={},
         default_network_policy={"disabled": True},
         created_at=datetime.now(UTC),
@@ -344,7 +344,7 @@ def test_persistent_runtime_rejects_a_concurrent_run() -> None:
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="persistent-busy", settings={})
     template = RuntimeTemplate(
         name="persistent-busy-image",
-        image="python:3.12-slim",
+        image="python@sha256:" + "0" * 64,
         default_limits={},
         default_network_policy={"disabled": True},
         created_at=datetime.now(UTC),

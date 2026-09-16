@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Literal, Protocol, cast
+from pathlib import PurePosixPath
+from typing import BinaryIO, Literal, Protocol, cast
 from uuid import UUID
 
 
@@ -54,11 +55,43 @@ class SandboxManifest:
 
 
 @dataclass(frozen=True, slots=True)
+class SandboxCommandResult:
+    exit_code: int
+    stdout: bytes
+    stderr: bytes
+
+
+class SandboxSessionExecutor(Protocol):
+    """Operations available inside one already-authorized runtime session."""
+
+    def execute(
+        self,
+        command: list[str],
+        *,
+        timeout_seconds: int,
+        working_dir: str,
+    ) -> SandboxCommandResult: ...
+
+    def read_file(self, path: PurePosixPath) -> bytes | None: ...
+
+    def write_file(self, path: PurePosixPath, data: BinaryIO) -> None: ...
+
+    def running(self) -> bool: ...
+
+
+@dataclass(frozen=True, slots=True)
 class SandboxSession:
     session_id: str
     root: str
     backend: str
+    executor: SandboxSessionExecutor
     persistent: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SandboxBinding:
+    manifest: SandboxManifest
+    session: SandboxSession
 
 
 class SandboxBackend(Protocol):

@@ -9,6 +9,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
+AUTHORIZATION_SNAPSHOT_VERSION = 3
+
 
 def authorization_snapshot_fingerprint(snapshot: dict[str, object]) -> str:
     payload = {key: value for key, value in snapshot.items() if key != "fingerprint"}

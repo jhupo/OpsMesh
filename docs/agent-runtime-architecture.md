@@ -1,6 +1,6 @@
 # Agent Runtime Architecture
 
-Status: current implementation, 2026-09-13.
+Status: current implementation, 2026-09-16.
 
 This document is the authoritative view of one OpsMesh agent run. It describes the boundaries that
 are implemented today; it does not describe a future canvas format or a provider-specific product
@@ -76,8 +76,13 @@ matrix says it is supported; there is no silent cross-provider fallback.
 
 The execution runtime is a separate resource boundary. It owns Docker lifecycle and pooling,
 self-hosted dispatch, resource limits, network policy, command execution, stdio MCP placement,
-workspace mounts, cleanup, and runtime evidence. The agent adapter receives a `SandboxManifest` and
-the acquired session; it never owns the Docker lease or container lifecycle.
+workspace mounts, cleanup, and runtime evidence. OpenAI runs receive an OpsMesh-owned live
+`SandboxSession` through the official Agents SDK `SandboxRunConfig`; the SDK owns the agent tools,
+while OpsMesh retains lease, policy, project I/O, and cleanup ownership. Claude runs do not receive
+a host-local CLI path or a fake SDK sandbox: the Claude adapter exposes only authorized OpsMesh MCP
+tools, and any command, stdio MCP, or project-file operation is dispatched through the runtime
+gateway. An unavailable provider/runtime bridge fails closed; it never falls back to the API or
+Worker host.
 
 ## Run lifecycle
 
@@ -113,8 +118,12 @@ sequenceDiagram
         Note over Worker,Adapter: Shell, stdio MCP, and project filesystem are denied
     else execution_mode = isolated/pooled/persistent
         Worker->>Runtime: Acquire bound session and stage exact project snapshot
-        Runtime-->>Worker: SandboxSession + redacted I/O contract
-        Worker->>Adapter: Build SDK run with authorized session
+        Runtime-->>Worker: Provider-neutral session + redacted I/O contract
+        alt OpenAI provider
+            Worker->>Adapter: Inject live OpsMesh session into official SandboxRunConfig
+        else Claude or provider without native sandbox
+            Worker->>Adapter: Expose only authorized runtime/MCP gateway capabilities
+        end
     end
     Worker->>Memory: Retrieve bounded working/episodic/semantic context
     Memory->>DB: Query only frozen memory grants
@@ -189,4 +198,5 @@ not introduce a second authorization, memory, project-I/O, Docker, or audit impl
 
 The stable boundaries and their owning code are listed in
 [Backend Service Architecture](backend-service-architecture.md), while the acceptance status for
-the integrated runtime is tracked in the [Agent Runtime Completion Plan](agent-runtime-completion-plan.md).
+the integrated runtime is verified by the focused runtime tests and release-tag gates described in
+the [Platform Productionization Plan](platform-productionization-plan.md).

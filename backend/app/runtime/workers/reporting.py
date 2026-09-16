@@ -32,12 +32,11 @@ class WorkerLeaseReporter:
         *,
         claim_token: str,
         session: Session | None = None,
-    ) -> None:
+    ) -> bool:
         if session is not None:
-            self._start_lease(session, job, claim_token=claim_token)
-            return
+            return self._start_lease(session, job, claim_token=claim_token)
         with self._session_scope() as lease_session:
-            self._start_lease(lease_session, job, claim_token=claim_token)
+            return self._start_lease(lease_session, job, claim_token=claim_token)
 
     def heartbeat_lease(self, job: JobPayload, *, claim_token: str) -> bool:
         with self._session_scope() as session:
@@ -67,8 +66,8 @@ class WorkerLeaseReporter:
                 is not None
             )
 
-    def _start_lease(self, session: Session, job: JobPayload, *, claim_token: str) -> None:
-        WorkerLeaseWriter(session).start_worker_lease(
+    def _start_lease(self, session: Session, job: JobPayload, *, claim_token: str) -> bool:
+        lease = WorkerLeaseWriter(session).start_worker_lease(
             worker_id=self._config.worker_id,
             queue_name=self._config.queue_name,
             job=job,
@@ -87,6 +86,7 @@ class WorkerLeaseReporter:
                 **(job.trace_metadata() or current_trace_metadata()),
             },
         )
+        return lease.status == "running" and lease.claim_token == claim_token
 
     def record_team_execution_loop_failure(
         self,

@@ -71,12 +71,3 @@ def model_provider_request_snapshot(request: AgentRunRequest) -> dict[str, objec
         if request.model_provider_credential_id is not None
         else None,
     }
-
-
-def model_provider_fallback_policy(settings: dict[str, object]) -> dict[str, object] | None:
-    raw = settings.get("model_provider_fallback")
-    if not isinstance(raw, dict):
-        return None
-    if raw.get("enabled") is not True:
-        return None
-    return raw

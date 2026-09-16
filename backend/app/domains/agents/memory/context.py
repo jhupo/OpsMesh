@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.memory.authorization import memory_read_scopes
 from backend.app.domains.agents.memory.embedding_service import (
+    MemoryQueryEmbedding,
     WorkspaceMemoryQueryEmbeddingService,
 )
 from backend.app.domains.agents.memory.policy import (
+    ContextMemoryRetrievalPolicy,
     context_memory_retrieval_policy,
     episodic_memory_policy,
     semantic_memory_policy,
@@ -59,32 +62,17 @@ class AgentMemoryContextService:
         memory_policy: object,
     ) -> AgentMemoryContext:
         policy = context_memory_retrieval_policy(memory_policy)
-        evidence: dict[str, object] = {
-            "enabled": policy.enabled,
-            "policy": policy.model_dump(mode="json"),
-        }
+        evidence = self._base_evidence(policy)
         if not policy.enabled:
             return _skipped(evidence, "disabled")
-
         access_scopes = memory_read_scopes(resource_grants)
         evidence["access_scopes"] = [scope.evidence() for scope in access_scopes]
         if not access_scopes:
             return _skipped(evidence, "no_authorized_memory_resource")
-
-        episodic_policy = episodic_memory_policy(memory_policy)
-        semantic_policy = semantic_memory_policy(memory_policy)
-        layer_limits = {
-            layer: limit
-            for layer, enabled, limit in (
-                ("episodic", episodic_policy.retrieval_enabled, episodic_policy.max_results),
-                ("semantic", semantic_policy.retrieval_enabled, semantic_policy.max_results),
-            )
-            if enabled
-        }
+        layer_limits = self._layer_limits(memory_policy)
         evidence["layer_limits"] = layer_limits
         if not layer_limits:
             return _skipped(evidence, "memory_layer_retrieval_disabled")
-
         query = truncate_to_token_bound(
             self._query_for_run(run=run, task=task, profile=profile),
             policy.query_max_tokens,
@@ -93,11 +81,7 @@ class AgentMemoryContextService:
             return _skipped(evidence, "empty_retrieval_query")
         evidence["query_fingerprint"] = query_fingerprint(query)
         evidence["query_tokens"] = estimate_token_upper_bound(query)
-
-        query_embedding = WorkspaceMemoryQueryEmbeddingService(
-            self._session,
-            self._secret_service,
-        ).generate(workspace_id=run.workspace_id, query=query)
+        query_embedding = self._query_embedding(run.workspace_id, query)
         evidence["query_embedding"] = query_embedding.evidence
         items = WorkspaceMemorySearchService(self._session).search(
             workspace_id=run.workspace_id,
@@ -111,10 +95,7 @@ class AgentMemoryContextService:
             query_embedding_evidence=query_embedding.evidence,
             agent_run_id=run.id,
         )
-        text, rendered_items = _render_memory_context(
-            items,
-            max_tokens=policy.max_context_tokens,
-        )
+        text, rendered_items = _render_memory_context(items, max_tokens=policy.max_context_tokens)
         evidence.update(
             {
                 "status": "completed",
@@ -125,6 +106,32 @@ class AgentMemoryContextService:
             }
         )
         return AgentMemoryContext(text=text, evidence=evidence)
+
+    @staticmethod
+    def _base_evidence(policy: ContextMemoryRetrievalPolicy) -> dict[str, object]:
+        return {
+            "enabled": policy.enabled,
+            "policy": policy.model_dump(mode="json"),
+        }
+
+    @staticmethod
+    def _layer_limits(memory_policy: object) -> dict[str, int]:
+        episodic_policy = episodic_memory_policy(memory_policy)
+        semantic_policy = semantic_memory_policy(memory_policy)
+        return {
+            layer: limit
+            for layer, enabled, limit in (
+                ("episodic", episodic_policy.retrieval_enabled, episodic_policy.max_results),
+                ("semantic", semantic_policy.retrieval_enabled, semantic_policy.max_results),
+            )
+            if enabled
+        }
+
+    def _query_embedding(self, workspace_id: UUID, query: str) -> MemoryQueryEmbedding:
+        return WorkspaceMemoryQueryEmbeddingService(
+            self._session,
+            self._secret_service,
+        ).generate(workspace_id=workspace_id, query=query)
 
     def _query_for_run(
         self,

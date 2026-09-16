@@ -21,8 +21,10 @@ from backend.app.domains.workspace.storage.storage import create_storage
 from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoopQueueService
 from backend.app.domains.workspace.tenants.health.service import WorkspaceHealthService
 from backend.app.observability.audit.integrity import AuditIntegrityService
+from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.environment.cleanup_jobs import RuntimeCleanupService
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
+from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.leases import WorkerLeaseMaintenanceService
 from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.recovery.rehydration import QueueRehydrationService
@@ -98,13 +100,14 @@ class WorkerMaintenanceService:
         self._config = config
         self._settings = settings
         self._runtime_docker_client = runtime_docker_client
+        self._runtime_backends = build_runtime_backend_registry(runtime_docker_client)
 
     def run(self) -> WorkerMaintenanceSummary:
         try:
             self._queue.reclaim_due_retries(limit=self._config.recovery_batch_size)
-            self._queue.reclaim_expired(limit=self._config.recovery_batch_size)
+            reclaimed_jobs = self._queue.reclaim_expired(limit=self._config.recovery_batch_size)
             with self._session_scope() as session:
-                return self._run_database_maintenance(session)
+                return self._run_database_maintenance(session, reclaimed_jobs=reclaimed_jobs)
         except Exception as exc:
             logger.exception("Failed to run worker maintenance")
             return WorkerMaintenanceSummary(
@@ -113,7 +116,16 @@ class WorkerMaintenanceService:
                 last_error=str(exc),
             )
 
-    def _run_database_maintenance(self, session: Session) -> WorkerMaintenanceSummary:
+    def _run_database_maintenance(
+        self,
+        session: Session,
+        *,
+        reclaimed_jobs: list[JobPayload] | None = None,
+    ) -> WorkerMaintenanceSummary:
+        reclaimed_job_ids = [job.job_id for job in (reclaimed_jobs or [])]
+        reclaimed_expired_leases = WorkerLeaseMaintenanceService(
+            session
+        ).expire_worker_leases_for_jobs(job_ids=reclaimed_job_ids)
         run_orchestration = RunOrchestrationService(session, queue=self._queue)
         recovery = RunControlService(
             session=session,
@@ -146,6 +158,7 @@ class WorkerMaintenanceService:
             RuntimeCleanupService(session).cleanup_terminal_run_workspaces(
                 settings=self._settings,
                 docker_client=self._runtime_docker_client,
+                runtime_backends=self._runtime_backends,
                 limit=self._config.recovery_batch_size,
             )
         )
@@ -199,7 +212,7 @@ class WorkerMaintenanceService:
         )
         return WorkerMaintenanceSummary(
             recovered_runs=recovery.recovered_runs,
-            expired_leases=expired_leases,
+            expired_leases=expired_leases + reclaimed_expired_leases,
             stale_runtimes=stale_runtimes,
             deleted_runtime_records=deleted_runtime_records,
             lifecycle_backup_jobs_enqueued=lifecycle_summary.backup_jobs_enqueued,

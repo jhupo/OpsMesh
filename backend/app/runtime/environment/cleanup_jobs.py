@@ -9,6 +9,7 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.workspace.projects.io.service import RunProjectIOService
 from backend.app.domains.workspace.projects.models import AgentRunProjectIOState
+from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.run_environment import RunRuntimeEnvironmentService
@@ -56,6 +57,7 @@ class RuntimeCleanupService:
         *,
         settings: Settings | None,
         docker_client: DockerRuntimeClient | None,
+        runtime_backends: RuntimeBackendRegistry,
         workspace_id: UUID | None = None,
         limit: int = 100,
     ) -> tuple[int, int]:
@@ -105,7 +107,7 @@ class RuntimeCleanupService:
             if RunProjectIOService(
                 self._session,
                 storage=None,
-                docker_client=docker_client,
+                runtime_backends=runtime_backends,
                 settings=settings,
             ).cleanup_runtime_workspace(run, reason="worker_maintenance"):
                 completed += 1

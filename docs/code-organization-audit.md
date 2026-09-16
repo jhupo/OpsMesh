@@ -1,317 +1,368 @@
-# Backend application organization audit
+# OpsMesh 代码组织与架构边界
 
-## Scope and acceptance
+状态：当前有效；更新日期：2026-09-16
 
-This consolidation covers package ownership throughout backend/app. It does not claim that every
-feature in the product roadmap is complete. Source moves must update production imports, test
-imports, dynamic patch targets, architecture gates and documentation together, without aliases.
+本文档是 `backend/app` 代码组织、目录归属和依赖方向的唯一权威说明。它合并并取代了
+历史目录重构方案、全量结构审查方案和实施记录。当前行为仍以源码、迁移和架构检查为准；
+本文档不把历史计划、旧提交或旧测试结果当作当前实现证据。
 
-## Current ownership
+生产化工作的优先级和未完成事项由
+[平台收口与生产化计划](platform-productionization-plan.md) 维护，不在本文重复建立任务清单。
 
-| Area | Current owner | Change |
+## 1. 合并结论
+
+此前几份重构文档分别描述了设计目标、逐文件审查和 R0-R8 实施记录，但在重构完成后产生了
+三个问题：
+
+- “目标尚未实现”和“R0-R8 已完成”同时存在，状态互相冲突；
+- 旧 HEAD、旧文件数量和旧目标树长期保留，容易被误认为当前 checkout；
+- 当前所有权规则、历史迁移步骤和后续生产化任务重复维护，更新时容易遗漏。
+
+合并后只保留三类信息：
+
+1. 当前目录和唯一 owner；
+2. 仍然约束代码的架构决策；
+3. 可由脚本重新生成和验证的结构证据。
+
+历史阶段编号和逐批迁移过程不再作为规范。机器生成的审查证据继续保存在
+`docs/reviews/app-layout-2026-09-14/`，但它们是结构证据，不是第二套设计文档。
+
+### 1.1 架构设计依据
+
+本架构不是照搬某个开源项目的目录，而是从成熟系统中抽取稳定边界：
+
+- n8n：工作流合同、执行核心、传输入口与扩展节点分离；
+- Temporal：持久控制状态、任务调度、Worker 和 SDK 客户端分离；
+- OpenHands：Agent/Controller/Event state 与实际 Runtime/Sandbox 分离；
+- LangGraph：图执行合同与 checkpoint、Postgres/SQLite 等持久化实现分离；
+- PydanticAI：Provider-neutral Agent 核心与 Toolset/MCP 能力扩展分离；
+- Prefect：SDK、API/Server、Worker 和 Integration adapter 分离。
+
+OpsMesh 只采用这些项目共同证明有效的原则：
+
+1. 合同先于具体实现；
+2. Durable control state 与短期执行资源分离；
+3. 一个状态机和副作用只有一个产品 owner；
+4. Provider、Runtime、Storage 和 Telemetry 通过窄 adapter 接入；
+5. 只有真实生命周期、协议、安全或持久化边界才建立子包。
+
+目录名称和层级仍以 OpsMesh 的 Workspace 隔离、Agent 编排、Capability Gateway、Runtime
+执行及 durable evidence 需求为准，不追求与参考项目一一对应。
+
+### 1.2 旧方案到当前设计的演进
+
+| 设计点 | 旧方案 | 当前决定 |
 | --- | --- | --- |
-| Runtime models, backends, pools and lifecycle | runtime/environment | Former runtime_manager and runtimes share one owner. |
-| Placement quotas and reservations | runtime/environment/spaces | Former runtime_spaces and runtime/spaces, now direct modules. |
-| Audit, costs, traces and notification delivery | observability | Direct modules, with explicit audit_, cost_ and notification_ names. |
-| Object storage, file metadata and artifact persistence | domains/workspace/storage | Former files and artifacts; one byte-storage boundary. |
-| Project snapshots, staging policy and export metadata | domains/workspace/projects | Project-domain policy remains separate from storage drivers. |
-| Provider SDK implementation and helpers | domains/agents/runtime/providers | OpenAI helpers and Claude runner no longer have separate sibling packages. |
-| Vendor-neutral execution environment | domains/agents/runtime/sandbox | Former sandbox; distinct from the infrastructure runtime resource owner. |
-| Run execution and state application | domains/orchestration/runs | Includes runtime authorization and execution state helpers. |
-| Plan validation, scheduling and step lifecycle | domains/orchestration/workflows | Former planning, policies, steps and scheduler micro-packages consolidated. |
-| Authorized request construction and provider gateway | domains/orchestration/requests | Former run_request and models_layer; these are services, not database models. |
-| Orchestration database entities | domains/orchestration/models.py | Kept as a module; creating a one-file models package would add needless depth. |
-| Planning attempts, feasibility, ownership and project plans | domains/orchestration/workflows/plan_* | Former top-level planning; one orchestration owner for automatic and user-authored work. |
-| Platform administration, release discovery and updates | domains/platform/admin, domains/platform/releases, domains/platform/updates | Former core/admin control-plane code; privileged updater remains an explicit process entry. |
-| Webhook subscriptions, delivery and replay | domains/integrations/webhooks | Former core/integrations/webhooks; the integration domain owns delivery state and policy. |
+| 顶层结构 | `api/core/domains/runtime/observability` 五个目录 | 增加 `bootstrap`，形成六个稳定边界 |
+| 认证与身份 | 认证仍部分属于 `core` | 用户、令牌和 RBAC 归 `domains/access`；HTTP 认证依赖归 `api` |
+| 具体实现装配 | 只描述 composition root，没有明确目录 | ORM、SDK、Runtime、Storage 和 Telemetry 统一在 `bootstrap` 装配 |
+| 业务域范围 | 主要描述 Agent、Capability、Orchestration、Workspace | 增加 Access、Knowledge、Platform 和 Integrations 的明确 owner |
+| Agent Provider | 模型配置和 SDK adapter 容易混在 `providers` | 模型配置属于 Agents；SDK 执行 adapter 属于 `agents/runtime/providers` |
+| Runtime | 目标目录名为 `runtime/execution` | 中立合同位于 `runtime/contracts.py`，资源生命周期归 `runtime/environment` |
+| 目录深度 | 普通功能建议最多两层 | 不设机械深度上限，只按真实边界决定是否保留子包 |
+| 验证方式 | 迁移批次和模块级测试并行维护 | 结构改造使用静态门禁；行为变化只更新已有产品流程测试 |
 
-### Platform foundations and shared helpers
+这些变化是旧设计落地后的校正，不是重新建立一套架构。尤其是 `bootstrap`：旧方案要求具体
+实现只能在组合根装配，却没有给组合根稳定位置；当前结构补齐了这个缺口，并阻止装配逻辑
+再次进入 `core` 或 import-time side effect。
 
-`backend/app/core/common` is the single owner for cross-domain, provider-neutral foundations:
-configuration, logging, metrics, request/trace context, pagination contracts, typed value
-normalization, resource sizing, executors, and maintenance primitives. These modules deliberately
-remain small when they define a stable contract used by several domains; they are not a generic
-catch-all package. There is no root-level `utils.py`. Helpers belong in the narrowest typed module
-that owns their behavior (for example `common/typing.py` for value coercion and
-`common/trace_context.py` for propagation). This keeps imports discoverable and prevents unrelated
-business logic from accumulating in a dumping ground.
+## 2. 当前结构
 
-Core persistence and security adapters remain nested under `core/db`, `core/redis`,
-`core/security`, and `core/secrets`. Access, platform control-plane, and external integration
-behavior are product domains under `domains/access`, `domains/platform`, and
-`domains/integrations`; they are not infrastructure utility folders.
+当前 `backend/app` 是模块化单体，顶层只有稳定的产品或基础设施边界：
 
-Task orchestration follows the same ownership rule. `domains/orchestration/tasks` keeps durable
-task models, status transitions, the event bus, and public state services at its root. Control,
-collaboration, delivery, execution, management, observation, and operator actions live in their
-corresponding nested packages; filename prefixes such as `control_*` and `observation_*` are not
-used to simulate package boundaries.
+```text
+backend/app/
+├── api/             # HTTP transport、schemas、dependencies、middleware、routes
+├── bootstrap/       # 组合根、模型注册、具体 adapter 和进程资源装配
+├── core/            # 配置、数据库、Redis、安全及 provider-neutral 技术原语
+├── domains/         # 产品业务、状态机、策略和应用服务
+├── observability/   # audit、cost、notifications、telemetry
+├── runtime/         # 执行环境、worker、operations、self-hosted runtime
+├── main.py          # API 进程入口
+└── delivery.py      # 交付/运维进程入口
+```
 
-## Edge-domain consolidation
+当前结构快照包含 935 个 Python 文件，其中 810 个为非 `__init__.py` 实现文件，共 125 个
+包目录。这些数字用于发现遗漏，不是代码质量目标，也不能为了降低数字而合并真实边界。
 
-- Team project views are direct teams/project_* modules. Resource summaries now live with the
-  response assembler and small record helpers with project_types. The package re-export is gone.
-- Queue implementation is directly owned by workers: redis_queue, queue_contracts, queue_leases,
-  queue_retries and the other queue_* modules. Filtering lives with queue queries, not a standalone
-  nineteen-line module. Queue storage and worker-run leases remain distinct lifecycle concepts.
-- Product-tool dispatch and file, memory, mailbox and event implementations are direct tools/product_*
-  modules. Authorization contexts remain explicit; they are not merged into workspace CRUD services.
-- Scheduled jobs are owned by workers/scheduled_jobs.py, scheduled_models.py, scheduled_types.py
-  and schedules.py. Six service mixins and their internal plumbing protocol were removed in favor
-  of a concrete service. Scheduling calculation remains pure and separate from transaction handling.
-- Team project views and dashboards import canonical run statuses directly; duplicate status aliases
-  were removed. Operations still reads scheduling/queue evidence but does not own execution logic.
-- This batch consolidates 43 old source files into 28 direct domain modules and removes all four
-  former directories. Public API paths, database table identities and tenant-scoped queries are
-  unchanged. Workspaces remains the tenant owner; team project assembly is not a second tenant service.
+`__pycache__`、临时测试目录、构建产物和运行时数据都不是源码结构，不得提交。
 
-## Retained boundaries
+## 3. 顶层边界与依赖方向
 
-- domains/capabilities/mcp is an SDK protocol/execution boundary.
-- API routes and schema groups retain their authentication and transport grouping.
-- access, platform, integrations, security, secrets, db, runtime/self_hosted and domains/workspace
-  are separate security or lifecycle owners; the target tree was not an instruction to erase these
-  domains.
+### 3.1 API
 
-## File-level review policy
+`api` 只负责传输层：解析请求、校验 HTTP DTO、取得 authenticated context、调用用例并映射
+响应和错误。路由不得拥有 SQL、状态转换、Provider SDK 调用、Docker 生命周期或长任务执行。
 
-The inventory for the current tree contains many implementation files because the product has
-durable state, policy, and recovery contracts. A file is retained when it owns an independently
-tested model, service, adapter, or lifecycle state machine; line count alone is not a reason to
-merge it. The review removes dead modules, one-line forwarding modules, and constants that have no
-independent ownership. Related behavior is grouped by function inside its domain (for example
-runtime placement, queue operations, project I/O, and team execution), while large state machines
-remain separate to keep transactions and failure semantics visible. API route aggregators are kept
-only where they compose a real transport feature group. No compatibility aliases are used for
-removed paths.
+### 3.2 Bootstrap
 
-## Defects repaired during migration
+`bootstrap` 是唯一允许认识多种具体实现的组合根。它负责 ORM 模型注册、Provider adapter、
+Runtime backend、队列、存储和 telemetry 的构造与生命周期。具体实现不得通过 import-time
+副作用自行注册，也不得把装配逻辑塞回 `core`。
 
-The previous layout had unresolved imports into removed orchestration modules. The initial
-health-test collection failed on orchestration.run_eligibility. Callers now use the actual owning
-modules. Relative imports and dynamic test patch targets were updated too. The runs package's
-lazy __getattr__ compatibility export was removed; callers import runs.service explicitly.
+### 3.3 Core
 
-The static architecture test resolves every application import directly against source files,
-without importing providers or requiring credentials. It catches removed absolute and relative
-module targets. Existing import-linter rules continue to enforce SDK and infrastructure boundaries.
+`core` 只保存跨领域、低依赖的技术基础：配置、数据库/Redis 连接、安全与脱敏、通用错误、
+资源生命周期和小型纯值原语。它不能依赖 `api`，也不能成为业务 `utils`、service 或 DTO
+的收容目录。
 
-## Verification
+### 3.4 Domains
 
-Use focused architecture, health, user orchestration, runtime environment and project I/O tests
-for this package migration. Provider contract and storage tests cover the other moved boundaries.
-Passing these tests demonstrates the tested refactor paths, not release readiness or completion
-of unrelated SDK capabilities. Full-suite release tests remain tag-only.
+`domains` 保存产品状态、策略、命令、查询和应用服务：
 
-Validated in this change: 53 architecture/health/orchestration/runtime/project-I/O tests,
-43 provider-contract/runtime/storage-boundary tests, 21 Claude/storage/notification tests,
-and two final source-layout/import checks passed (119 checks in total). Ruff passes for app.
-The initial five typing defects were subsequently repaired: AgentRunRequest carries a typed
-product SandboxManifest, the OpenAI provider alone builds SandboxRunConfig, tracing has a valid
-workflow name, and runtime metadata and Claude settings retain their appropriate boundary types.
-The shared runtime package no longer imports a vendor SDK. Its unused manifest/session re-export
-modules and mixed-vendor mapper were deleted. The provider-neutral import gate covers this package.
+```text
+domains/
+├── access/          # 用户、令牌、认证、RBAC、authenticated context
+├── agents/          # profile、provider、session、message、memory、Agent SDK runtime
+├── capabilities/    # catalog、tool、skill、resource、MCP、governance、marketplace
+├── integrations/    # Webhook 等外部产品集成
+├── knowledge/       # 知识来源、索引和检索生命周期
+├── orchestration/   # request、run、approval、task、workflow、planning
+├── platform/        # 平台管理、release、update、credential rotation
+└── workspace/       # tenant、project、file、artifact、team、data lifecycle
+```
 
-The edge-domain batch passed 60 focused queue/scheduled-job/product-tool/architecture/health tests.
-Workers, teams and tools also pass focused mypy (151 source files).
+领域拥有自己的状态机和稳定合同。领域模块不能导入 API route 或 transport-only schema，也不
+能直接构造 Docker、Redis client 或厂商 SDK client。
 
-## Directory consolidation acceptance (not file-level completion)
+### 3.5 Runtime
 
-All seven consolidation directions in the original plan now have concrete owners above:
-Agent providers/runtime, physical runtimes, observability, storage/projects, orchestration,
-team/workspace ownership, and worker/operations ownership. Removed modules have no compatibility
-aliases. The models.py file replaces the proposed one-file models package intentionally.
-API route groups remain distinct transport/authentication boundaries, not arbitrary nesting.
+`runtime` 管理真实执行资源，而不是 Agent 业务编排：
 
-An AST comparison of same-named functions spanning at least sixteen lines across app found four
-exact duplicate groups. Runtime-space event writing now has one implementation, worker policy
-creation/update has one service owner, and continuation prompt formatting belongs to the shared
-Agent adapter base. The remaining TaskControl/DeliveryDecision audit helpers only adapt their
-domain command to the same AuditService; keeping that adapter does not create a second audit
-algorithm or persistence owner. This comparison is not a claim that all semantically similar code
-is identical or should be merged.
+```text
+runtime/
+├── contracts.py     # provider-neutral execution mode、policy、manifest、session
+├── environment/     # backend、pool、lease、command、space、staging、cleanup
+├── workers/         # queue、runner、handler、node、lease、scheduling、recovery
+├── self_hosted/     # enrollment、dispatch、project transfer、worker protocol
+└── operations/      # 只读诊断、容量、时间线和治理入口
+```
 
-Final verification includes full app mypy, Ruff, the seven import-linter contracts, source-path
-checks, focused planner/runtime/API/provider tests, and the sandbox-manifest boundary regression.
-Live-provider smoke tests remain explicitly skipped without credentials. No full pytest suite,
-release tag, push, or remote publication is part of this directory-consolidation acceptance.
+Agent SDK adapter 通过中立合同请求运行环境，但不拥有 Docker pool、租约或项目文件 staging。
+Runtime backend 不构建 Agent、MCP 或业务授权对象。具体绑定只在组合根完成。
 
-## File-level consolidation follow-up: 2026-09-12
+### 3.6 Observability
 
-The subsequent file merges were initially reported as complete too early. A cold import of the
-Operations API failed: worker lifecycle buckets imported a helper back from the service, and
-stale-run recovery actions imported their result contract back from the orchestrator. The pure
-worker-routing helper now belongs to the bucket module; the recovery result belongs to the action
-executor that produces it. Neither fix relies on a compatibility alias or deferred runtime import.
+`observability` 统一持有审计、成本、通知和 telemetry 证据。领域和 Runtime 产生 typed event；
+它们不各自实现一套审计、计费或 trace 协议。Provider trace 不能取代产品审计。
 
-The new Teams execution-loop support module initially had no callers and duplicated four old
-modules. Callers now use the consolidated module; the four superseded files are deleted. The
-execution-overview member re-export module is also removed, with callers using the actual owners.
+### 3.7 允许的依赖
 
-A related integration test found that QueuedRuntimeControl omitted execution_mode and pool_key
-from create-job routing. It now accepts and persists these settings and includes the stored values
-in the job. Worker validation remains strict; no missing-field fallback was added.
+```text
+HTTP/CLI/Worker entrypoint
+          │
+          ▼
+application/domain service
+          │
+          ▼
+domain contract / policy / state machine
+          │
+          ▼
+infrastructure port
 
-Validation for this follow-up: Operations API, team capacity, Runtime manager and existing
-architecture tests passed (71 tests); four additional architecture checks cover fresh-process
-imports and deleted Teams sources. The focused team execution-loop/overview selection passed
-14 tests. App/test/script Ruff and app mypy passed. No full pytest suite or GitHub release run
-was requested. These results cover this batch, not every possible future file consolidation.
+bootstrap ──> concrete SDK/runtime/storage/telemetry adapters
+```
 
-Unrelated pre-existing workspace changes remain untouched; a successful commit does not imply a
-clean workspace. The earlier clean-workspace statement was inaccurate.
+禁止的反向依赖包括：
 
-## File-level consolidation follow-up: 2026-09-12 (continued)
+- `domains`、`runtime`、`core` 或 `observability` 导入 API route；
+- Worker 执行合同依赖 HTTP response schema；
+- Provider-neutral 合同依赖 OpenAI、Claude、Docker 等厂商对象；
+- Runtime backend 反向构造 Agent/MCP 业务服务；
+- `core` 依赖具体业务领域以完成隐式注册。
 
-Workers no longer carry a one-file base protocol package: the handler protocol now lives with the
-worker handler registry, and the superseded `workers/job_handlers/base.py` source is deleted.
-The Teams operating-context re-export was removed; callers import the concrete context service.
-Workspace export format ownership now lives in the export schema contract instead of a standalone
-constants module. The API redaction re-export was also removed so application code imports the
-security redaction service directly; this keeps memory and schema code from depending on an API
-compatibility layer. Architecture source-path checks now validate deleted files at their actual
-`backend/app` locations (the earlier check accidentally prefixed all paths with `teams`).
+## 4. 领域唯一归属
 
-Validation for this follow-up: 16 architecture tests, two focused workspace redaction tests,
-full app Ruff, app mypy (960 files), and a cold import of 959 application modules passed. No
-compatibility aliases or full-suite test run were introduced.
+| 能力 | 唯一 owner |
+| --- | --- |
+| 用户、令牌、RBAC、authenticated context | `domains/access` |
+| Workspace、成员、邀请和 tenant settings | `domains/workspace/tenants` |
+| Agent profile、模型凭据、provider 解析与健康 | `domains/agents` |
+| OpenAI/Claude SDK 执行适配 | `domains/agents/runtime/providers` |
+| Agent session、message 和三层 memory | `domains/agents` 对应子域 |
+| Tool、skill、resource、MCP 和 capability policy | `domains/capabilities` |
+| Task、Run、Step、Workflow、Approval 和 Planning | `domains/orchestration` |
+| Project 文件、artifact、导入导出和数据生命周期 | `domains/workspace` |
+| Team 组织、执行、运维、provider 和 runtime binding | `domains/workspace/teams` |
+| 发布、更新和平台管理策略 | `domains/platform` |
+| Docker/runtime pool、Worker、queue 和 self-hosted 执行 | `runtime` |
+| Audit、cost、trace、metrics 和 notification | `observability` |
+| 具体实现注册和进程装配 | `bootstrap` |
 
-## File-level consolidation follow-up: 2026-09-13
+用户权限和 Workspace 成员关系是相邻但不同的边界：`access` 解析主体及平台权限，`tenants`
+维护 Workspace 资源关系。不得再建立一套平行的“组织权限”系统。
 
-The cross-domain run query audit found two copies of the same workspace-scoped SQL query for
-active tasks by agent, plus two copies of run-to-task ownership validation. Both now belong to
-`domains/orchestration/runs/queries.py`; team projections and workflow scheduling consume that
-owner directly, so the repository and service layers do not retain forwarding wrappers.
+## 5. 已确定的关键设计
 
-The same audit found repeated UTC normalization helpers in authentication, cost accounting,
-operations metrics/events, self-hosted maintenance, and the three-layer memory implementation.
-All callers now use `core/common/values.py` for the canonical datetime normalization and lifecycle
-rollup serialization. Team execution uses the shared string-list and de-duplication primitives;
-the execution contract module retains only team-specific constants and typed records.
+### 5.1 Agent SDK 与运行时分层
 
-Self-hosted worker trust evaluation follows the same rule: enrollment/trust owns the canonical
-`worker_trust_state` decision, while operations only assembles its response. The former duplicate
-operations implementation was removed.
+OpenAI Agents SDK 和 Claude Agent SDK 适配器实现同一个 OpsMesh Agent Runtime 合同。厂商
+SDK 自带的 run、session、tool、approval、continuation、compaction 和事件能力，应通过公开
+接口直接使用；OpsMesh 只补充 workspace 授权、快照、策略、脱敏、运行时注入和 durable
+evidence。
 
-Run request construction applies the same ownership rule. Task/profile lookup and workspace
-authorization checks are implemented once in `domains/orchestration/requests/authorization.py`;
-the model request builder and persistent-session service call those functions directly instead of
-maintaining parallel validation methods.
+沙箱概念分成两层：
 
-Run-event retrieval is likewise centralized in `domains/orchestration/runs/queries.py`: latest-event
-projections and full event timelines share the same workspace-scoped query owner. Observation
-repositories and timeline assembly no longer carry duplicate event-loading methods.
+```text
+Agent SDK adapter
+      │ requests execution capabilities
+      ▼
+runtime/contracts.py
+      │ allocates concrete resources
+      ▼
+runtime/environment/
+```
 
-The immutable run authorization snapshot is also read through that run query boundary. Model
-request construction, self-hosted worker policy, and MCP execution checks no longer each implement
-their own snapshot extraction; MCP context now owns only its audit metadata projection.
+执行模式只有：
 
-The architecture gate now asserts these ownership rules, including the absence of local `_as_utc`
-implementations and the presence of the canonical run-query/value modules. Focused architecture,
-authentication, memory lifecycle, cost, operations, team-capacity and execution-loop tests passed;
-Ruff and full application mypy passed. No compatibility aliases, full-suite run, release tag or
-remote publication were introduced.
+- `none`：没有 shell、stdio MCP、项目文件 staging 或本地代码执行能力；
+- `isolated`：为 Run 创建独立运行环境；
+- `pooled`：租用预热成员，并使用 Run 专属目录和租约；
+- `persistent`：绑定可连续使用的固定运行环境。
 
-## File-level consolidation follow-up: 2026-09-13 (memory and runtime spaces)
+`none` 永远不表示在 API/Worker 宿主机执行。厂商沙箱不可用时必须拒绝或选择已授权的
+OpsMesh backend，不能静默降级。
 
-The memory domain no longer uses one package directory for each small implementation. Authorization,
-configuration, context, indexing, lifecycle, embedding, retrieval and memory-store modules now live
-directly under `domains/agents/memory` with explicit names. Episodic, semantic and working memory
-remain separate files because they own different persistence and promotion semantics; only the
-artificial `access`, `configuration`, `context`, `embeddings`, `indexing`, `lifecycle`, `retrieval`
-and `stores` package layers were removed. All application and test imports were updated directly;
-no forwarding packages remain.
+### 5.2 Capability 与 MCP
 
-Runtime-space reservation accounting follows the same rule. Attachment, capacity, release and usage
-implementations now live directly under `runtime/environment/spaces` as `reservation_*.py` modules.
-The reservation subpackage was removed while the reservation state machine and quota transaction
-boundaries were preserved. Callers use the concrete modules directly.
+Capability Catalog 是工具、技能、资源和 MCP 的有效视图；Gateway 根据 workspace、team、
+agent、run grant 和 policy 计算授权。模型输出不是授权来源。
 
-The architecture gate asserts the flattened memory owner and the absence of the reservations
-subpackage. Focused memory, product-tool, workspace-file, runtime-space and architecture tests pass;
-Ruff passes for the changed source. No database schema or public API behavior changed.
+MCP 的 catalog、execution 和 transport 是真实边界。HTTP/SSE/Streamable HTTP 和 stdio
+协议使用官方 MCP SDK；stdio 只能在绑定的隔离 runtime 或 self-hosted job 内执行。
 
-## File-level consolidation follow-up: 2026-09-13 (worker queue boundary)
+### 5.3 Orchestration
 
-The Redis worker queue no longer uses a package of mixins, scripts, serialization helpers and a
-FastAPI dependency module. Enqueueing, leasing, retry/dead-letter handling, inspection and
-serialization now live in the single cohesive `runtime/workers/queue.py` execution module. The
-queue's public surface is unchanged (`RedisQueue` and `consume_once`), while the superseded
-`runtime/workers/queue` package was deleted without aliases.
+Task、Run、Step、Workflow 和 Approval 保留独立状态机，但每个状态转换只有一个 owner。
+自动规划、用户编排和组织模板共享同一套图校验、条件判断、Step materialization 和调度
+执行链；它们只在计划来源、编辑权限和锁定区域上不同，不复制执行器。
 
-`get_worker_queue` is an HTTP dependency, so it now belongs to `api/dependencies/workers.py`; runtime
-worker code no longer imports FastAPI. Every application and test import was updated directly to the
-new owners. This keeps the queue implementation in the data plane and transport dependency
-resolution in the API boundary.
+### 5.4 Workspace 与文件
 
-The queue retains one idempotency, lease, retry and workspace-filter implementation. No queue data
-format, Redis key, retry policy or public API behavior changed. Focused Redis queue, worker
-dependency, worker runner and architecture tests must pass before this batch is committed.
+Project 文件、运行输入快照、runtime staging、输出 harvest、artifact version 和外部存储
+补偿是不同生命周期，不得合并成一个通用文件服务。Workspace 全量导入导出归
+`data_transfer`，备份、恢复和保留策略归 `data_lifecycle`。
 
-## File-level consolidation follow-up: 2026-09-13 (self-hosted transport boundary)
+### 5.5 Worker 与 durable state
 
-Self-hosted runtime services no longer import request models from `api/schemas/operations`. Those
-Pydantic models are transport concerns; the runtime now declares structural payload contracts in
-`runtime/self_hosted/contracts.py`. FastAPI request models satisfy those contracts at the API edge,
-while enrollment, heartbeat, job completion, MCP completion, progress and project-file services
-depend only on the runtime-owned shapes. This removes an inward dependency without introducing
-aliases, conversion wrappers or a second validation implementation.
+Postgres 是任务、Run、Lease 和业务调度记录的事实源；Redis 只保存队列投影、锁、短期幂等
+窗口和 pub/sub。Redis 状态丢失后应从 durable state 重建，不能反向把 Redis 当作最终事实。
 
-The architecture test now rejects direct API imports from the self-hosted runtime package. Focused
-self-hosted runtime, connector, project-file and architecture tests, application mypy, Ruff and the
-seven import-linter contracts passed for this batch.
+Claim、heartbeat、ack、retry、dead-letter、cancel 和 recovery 必须保持 fencing、幂等和
+workspace scope。重复投递不能造成第二次不可逆副作用。
 
-## File-level consolidation follow-up: 2026-09-13 (capability catalog contracts)
+### 5.6 Observability
 
-The capability catalog had a reverse dependency: domain services imported effective-catalog,
-policy and tool-descriptor models from `api/schemas/capabilities/catalog.py`. The stable catalog
-contracts now live with the capabilities domain in `catalog/contracts.py`, including resource and
-tool descriptors, team policy scopes and effective authorization results. API schemas retain only
-HTTP request models and use the domain contracts for response shapes. Resource services accept
-domain-owned payload protocols, so transport validation remains at the API edge while domain
-authorization and persistence stay independent.
+日志、指标、trace、审计和成本共享 correlation identifiers 与统一脱敏规则，但拥有不同的
+持久化语义。审计和成本是 durable product evidence；telemetry exporter 故障不能删除业务
+证据，也不能阻塞状态提交。
 
-The catalog, resource, governance and planning services now import the domain contract directly;
-the previous API-to-domain inversion is removed without aliases or duplicate model implementations.
-Focused capability, planning and architecture tests, Ruff, application mypy and import-linter pass.
+## 6. 文件和目录设计规则
 
-## File-level consolidation follow-up: 2026-09-13 (agent domain contracts)
+### 6.1 何时保留子包
 
-Agent profile responses and model-provider usage audit responses were also owned by API schema
-modules while agent-domain services assembled them. They now live in the agent profile and provider
-audit contract modules respectively. Message and profile command services accept domain-level
-payload shapes (or mappings) and no longer import API request classes. API routes still validate
-HTTP input and select the domain response contract explicitly.
+只有以下情况值得建立子包：
 
-The agent domain has no direct API-schema imports; the architecture gate covers that invariant.
-Agent management, mailbox, provider-operations and architecture tests, Ruff and application mypy
-passed after the move. No forwarding module or compatibility alias was added.
+- 独立状态机或生命周期；
+- 持久化、事务或并发边界；
+- 安全、租户或隔离边界；
+- 稳定协议或可替换 adapter；
+- 多个实现共享的明确公共合同。
 
-## File-level consolidation follow-up: 2026-09-14 (workspace export ownership)
+文件少于三个不自动说明目录错误；Provider adapter、项目 I/O 和安全协议即使规模小，也可能
+是必要边界。反过来，文件数量多也不能成为继续拆分的理由。
 
-Workspace export/archive and restore-import code had an accidental API-service owner even though it
-is used by tenant lifecycle actions and worker handlers. The complete export package moved to
-`domains/workspace/projects/exports`; its companion import helpers moved to
-`domains/workspace/projects/imports`. API routes now call the domain project services directly,
-while tenant recovery, scheduled backup/restore and worker project handlers use the same owner.
-The former `api/services/workspace/{exports,imports}` packages are deleted, not left as forwarding
-shims. Focused export, maintenance and architecture tests plus Ruff and mypy pass for this move.
+### 6.2 何时合并
 
-The import-linter now protects the boundary by rejecting any future domain/runtime dependency on
-`api.services`; the contract is intentionally narrower than a blanket API-schema ban while the
-remaining transport response models are migrated by their owning domain.
+以下内容应优先回到所属用例：
 
-## File-level consolidation follow-up: 2026-09-14 (workspace tenant ownership)
+- 只有一次转发的 service、factory 或 wrapper；
+- 只被唯一调用方使用的 payload/summary/support helper；
+- 共享同一个私有状态和同一次事务的碎片；
+- 仅为保留旧 import 路径存在的 re-export；
+- 与官方 SDK 或现有权威路径重复的实现。
 
-Workspace administration services now have a domain owner at `domains/workspace/tenants`. The
-explicit modules `workspace_management.py`, `workspace_members.py`, `workspace_invites.py`,
-`workspace_quotas.py`, `workspace_settings.py`, `workspace_snapshots.py`, `workspace_reads.py` and
-`workspace_lifecycle_errors.py` replace the former `api/services/workspace/lifecycle` package.
-Stable request shapes are structural contracts in `tenants/contracts.py`; API schemas remain the
-HTTP validation boundary and are passed to the services without importing transport types in the
-domain. The old `api/services` tree is deleted, so there is one owner and no compatibility import
-path. Workspace file persistence is likewise owned by `domains/workspace/storage/service.py`.
+### 6.3 何时拆分
 
-The architecture test now asserts the deleted service tree and lifecycle package stay absent and
-the tenant module set remains explicit. Focused workspace API, audit, export, architecture, Ruff,
-mypy and import-linter checks are required before committing future tenant changes.
+入口函数同时承担查询、授权、纯策略、事务、外部调用和响应拼装时，应按执行阶段拆分。
+拆分依据是职责与副作用，不是机械行数。600 行以上只是审查信号；Redis 原子协议、SDK runner
+等高度内聚实现可以在理由明确时保留。
+
+### 6.4 命名与公共工具
+
+- 文件和目录使用业务词汇，不使用无归属的 `helpers`、`common_service`、`models_layer`；
+- `models.py` 只包含持久化模型及必要约束，不混入会话存储或业务执行；
+- `repository` 只在集中查询、锁或持久化协议确实消除重复时存在；
+- `core/utils.py` 只容纳 provider-neutral、无业务状态的小型纯原语；
+- `build`、`resolve`、`import`、`run` 等入口应体现阶段，不得隐藏全部查询与副作用。
+
+### 6.5 禁止兼容代码
+
+内部合同变化时一次性更新所有调用方、迁移、文档和必要的流程测试。禁止旧路径别名、
+deprecated wrapper、fallback import、双写、重复 endpoint 和静默行为回退。
+
+## 7. 事务、安全与状态不变量
+
+1. Workspace 是数据、Agent、Task、文件、Memory、Capability 和 Runtime 的租户边界。
+2. 资源查询不能只使用资源 ID；API、Service、Worker、Cache、Storage 和 Tool 路径都必须携带
+   workspace scope。
+3. API 不执行长任务，用户或 Agent 控制的代码不在 API/Worker 宿主机运行。
+4. 模型提出计划和动作；产品服务决定授权、策略、配额、状态转换和副作用。
+5. 凭据只在最窄执行边界解密，不进入 payload、日志、trace、导出或错误详情。
+6. 高风险动作 fail closed，并保留 approval、audit 或 security evidence。
+7. 普通业务命令由一个用例拥有最终提交；内部协作者只 flush 或返回结果。
+8. 外部调用不得在不受控的长数据库锁内执行；意图、执行结果和补偿必须可恢复。
+9. 一个状态机、policy evaluator、redaction rule 和 evidence writer 只有一个 owner。
+
+## 8. 已完成重构的保留结论
+
+历史迁移过程不再逐阶段维护，但以下结果必须持续成立：
+
+- ORM 注册和具体实现装配已从底层连接模块移到 `bootstrap`；
+- 用户/令牌归 `access`，平台控制归 `platform`，Webhook 归 `integrations`；
+- API forwarding schema、空继承响应和旧内部路由包装已清理；
+- Agent provider、session、message、tool 与 MCP 已按真实协议和生命周期归属；
+- Task/Run/Workflow 的状态、规划、协作和执行职责已收敛到各自 owner；
+- Workspace 的归档、导入导出、备份恢复和 Team 子功能已按生命周期归类；
+- Runtime 四种模式、Docker pool、Worker lease、recovery 和 self-hosted 边界已统一；
+- Audit、cost、notification 和 telemetry 已归 `observability` 的明确子域；
+- 旧路径、空包、无效转发和重复 Runtime tool/file 执行路径已移除。
+
+如果当前代码不再满足其中某项，应修正代码或本节，不得增加兼容层维持旧描述。
+
+## 9. 结构证据与验证
+
+机器生成证据位于 `docs/reviews/app-layout-2026-09-14/`：
+
+- `source-inventory.json`：当前 Python 文件的哈希、声明、依赖、调用方和事务调用；
+- `declaration-review.txt`：按包排列的实现声明摘要；
+- `file-dispositions.csv`：原审查来源到当前目标的逐文件处置记录；
+- `disposition-rules.json`：处置规则；
+- `target-footprint.json`：当前目标实现文件和包目录集合。
+
+这些文件由 `scripts/audit_app_layout.py` 维护，不手工改写。验证命令：
+
+```bash
+uv run python scripts/audit_app_layout.py --check
+uv run python scripts/audit_app_layout.py --target-check
+uv run ruff check <affected-files>
+git diff --check
+```
+
+代码组织重构默认不新增、也不反复执行单文件或单类测试。只有用户可见行为或跨边界合同
+改变时，才更新已有流程测试；流程应从请求入队、team/project 创建（适用时）、编排执行到
+最终输出，并在该链路中覆盖必要的拒绝、恢复、隔离、幂等和脱敏行为。完整测试套件只在
+release tag 门禁运行。
+
+## 10. 变更完成标准
+
+代码组织变更只有同时满足以下条件才能完成：
+
+- 新位置有唯一 owner，并符合依赖方向；
+- 所有调用方和动态入口已经更新，没有旧路径兼容导出；
+- 没有空包、重复实现、隐式注册或循环装配；
+- Workspace、授权、事务、运行时隔离和 durable evidence 语义不退化；
+- 审查快照和目标布局证据已重新生成；
+- Ruff、必要的类型/导入/架构检查和 `git diff --check` 通过；
+- 如果改变产品行为，已有端到端流程测试已经同步更新；
+- 文档索引和相关架构文档只引用本文件，不再维护第二套目录重构计划。

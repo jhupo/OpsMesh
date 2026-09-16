@@ -9,6 +9,7 @@ from backend.app.domains.capabilities.mcp.transport.contracts import (
     McpToolAdapter,
     McpToolAdapterResolver,
 )
+from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.workers.queue import RedisQueue
 
@@ -16,6 +17,7 @@ from backend.app.runtime.workers.queue import RedisQueue
 @dataclass(frozen=True, slots=True)
 class WorkerJobHandlerContext:
     session: Session
+    runtime_backends: RuntimeBackendRegistry
     queue: RedisQueue | None = None
     agent_runner: AgentRuntimeExecutor | None = None
     settings: Settings | None = None

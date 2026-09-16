@@ -51,6 +51,22 @@ class AgentRuntimePolicyError(Exception):
         self.retryable = retryable
 
 
+class AgentRuntimeProviderError(RuntimeError):
+    """A provider SDK failed while executing a model request.
+
+    Only this typed error is eligible for model-provider fallback. Adapter code
+    must translate vendor SDK failures at the boundary so programming errors,
+    policy violations, and storage failures cannot trigger another provider.
+    """
+
+    def __init__(self, *, code: str, message: str, retryable: bool = True) -> None:
+        safe_message = _safe_error_message(message)
+        super().__init__(safe_message)
+        self.code = code
+        self.message = safe_message
+        self.retryable = retryable
+
+
 class AgentRuntimeGuardrailBlockedError(AgentRuntimePolicyError):
     def __init__(self, result: AgentRuntimeGuardrailResult) -> None:
         super().__init__(
@@ -133,11 +149,20 @@ def normalize_agent_error(exc: Exception) -> NormalizedAgentError:
             message=exc.message,
             retryable=exc.retryable,
         )
-    message = str(exc) or "Agent runtime failed"
-    message = _SENSITIVE_PROVIDER_CONFIG_PATTERN.sub("[redacted]", message)
-    message = redact_sensitive_text(_SENSITIVE_URL_PATTERN.sub("[redacted]", message))
+    if isinstance(exc, AgentRuntimeProviderError):
+        return NormalizedAgentError(
+            code=exc.code,
+            message=exc.message,
+            retryable=exc.retryable,
+        )
     return NormalizedAgentError(
         code=exc.__class__.__name__,
-        message=message,
-        retryable=True,
+        message=_safe_error_message(str(exc)),
+        retryable=False,
     )
+
+
+def _safe_error_message(message: str) -> str:
+    safe_message = message or "Agent runtime failed"
+    safe_message = _SENSITIVE_PROVIDER_CONFIG_PATTERN.sub("[redacted]", safe_message)
+    return redact_sensitive_text(_SENSITIVE_URL_PATTERN.sub("[redacted]", safe_message))

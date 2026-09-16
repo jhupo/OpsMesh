@@ -14,6 +14,7 @@ from backend.app.domains.orchestration.runs.authorization.runtime import (
 )
 from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
 from backend.app.domains.orchestration.runs.models import (
+    AUTHORIZATION_SNAPSHOT_VERSION,
     AgentRun,
     authorization_snapshot_fingerprint,
 )
@@ -131,7 +132,7 @@ class ProjectFileBoundaryService:
                 {},
             )
         snapshot = _authorization_snapshot(run)
-        if snapshot.get("version") != 2:
+        if snapshot.get("version") != AUTHORIZATION_SNAPSHOT_VERSION:
             raise ProjectBoundaryViolation(
                 "project_input_authorization_invalid",
                 "Project input authorization snapshot is invalid",
@@ -270,7 +271,7 @@ class ProjectFileBoundaryService:
             item.max_bytes for item in manifest.outputs
         )
         capacity_bytes = MAX_PROJECT_WORKSPACE_BYTES
-        if runtime.runtime_provider in {"docker", "cloud_docker"}:
+        if runtime.runtime_provider == "cloud_docker":
             disk_mb = runtime.limits.get("disk_mb")
             if isinstance(disk_mb, bool) or not isinstance(disk_mb, int) or disk_mb <= 0:
                 raise ProjectBoundaryViolation(

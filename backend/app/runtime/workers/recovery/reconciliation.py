@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import UUID
 
 from redis import Redis
@@ -24,6 +25,7 @@ from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.queue import RedisQueue
 
 
+@dataclass(slots=True)
 class QueueGovernanceReconcileCounts:
     requeued_missing_runs: int = 0
     removed_orphaned_jobs: int = 0

@@ -8,6 +8,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.utils import walk_mapping
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 
 ConditionState = Literal["true", "false", "pending"]
@@ -272,7 +273,7 @@ def _resolve_path(
         marker_index = parts.index("output", 1)
         if step.result_payload is None:
             return _MISSING
-        return _walk(step.result_payload, parts[marker_index + 1 :])
+        return walk_mapping(step.result_payload, parts[marker_index + 1 :], missing=_MISSING)
     return _MISSING
 
 
@@ -298,15 +299,6 @@ def _step_reference_key(path: str) -> str | None:
     if "output" in parts[1:]:
         return ".".join(parts[1 : parts.index("output", 1)])
     return ".".join(parts[1:-1])
-
-
-def _walk(value: object, parts: list[str]) -> object:
-    current = value
-    for part in parts:
-        if not isinstance(current, dict) or part not in current:
-            return _MISSING
-        current = current[part]
-    return current
 
 
 def _compare(actual: object, operator: str, expected: object) -> bool:

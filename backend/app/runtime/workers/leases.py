@@ -14,6 +14,7 @@ from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.models import WorkerLease
 
 RUNNING_LEASE_STATUSES = frozenset({"running"})
+TERMINAL_LEASE_STATUSES = frozenset({"completed", "failed"})
 LIFECYCLE_EVENTS_LIMIT = 50
 
 
@@ -167,9 +168,30 @@ class WorkerLeaseMaintenanceService:
         )
         expired_at = datetime.now(UTC)
         for lease in stale_leases:
-            _expire_stale_worker_lease(lease, expired_at)
+            _expire_stale_worker_lease(lease, expired_at, expired_by="worker_maintenance")
         self._session.commit()
         return len(stale_leases)
+
+    def expire_worker_leases_for_jobs(
+        self,
+        *,
+        job_ids: list[UUID],
+        expired_at: datetime | None = None,
+    ) -> int:
+        """Revoke DB leases after Redis has reclaimed their visibility entries."""
+
+        if not job_ids:
+            return 0
+        leases = self._session.scalars(
+            select(WorkerLease).where(
+                WorkerLease.job_id.in_(job_ids),
+                WorkerLease.status.in_(RUNNING_LEASE_STATUSES),
+            )
+        ).all()
+        at = expired_at or datetime.now(UTC)
+        for lease in leases:
+            _expire_stale_worker_lease(lease, at, expired_by="redis_visibility_timeout")
+        return len(leases)
 
     def _stale_worker_leases(
         self,
@@ -188,13 +210,18 @@ class WorkerLeaseMaintenanceService:
         return list(self._session.scalars(statement).all())
 
 
-def _expire_stale_worker_lease(lease: WorkerLease, expired_at: datetime) -> None:
+def _expire_stale_worker_lease(
+    lease: WorkerLease,
+    expired_at: datetime,
+    *,
+    expired_by: str,
+) -> None:
     lease.status = "expired"
     lease.finished_at = expired_at
     lease.lease_metadata = append_worker_lifecycle_events(
         dict(lease.lease_metadata or {})
         | {
-            "expired_by": "worker_maintenance",
+            "expired_by": expired_by,
             "expired_at": expired_at.isoformat(),
         },
         [
@@ -278,6 +305,11 @@ class WorkerLeaseWriter:
         else:
             if lease.status == "running" and lease.claim_token not in {None, claim_token}:
                 raise WorkerLeaseOwnershipError("Worker lease is owned by another claim")
+            if lease.status in TERMINAL_LEASE_STATUSES:
+                # A duplicate Redis delivery after the durable completion/failure commit must
+                # never execute the handler a second time.  The caller acknowledges the
+                # duplicate projection after observing this terminal lease.
+                return lease
             _restart_worker_lease(
                 lease,
                 worker_id=worker_id,
@@ -337,11 +369,15 @@ class WorkerLeaseWriter:
             .where(
                 WorkerLease.job_id == job_id,
                 WorkerLease.claim_token == claim_token,
-                WorkerLease.status == "running",
             )
             .with_for_update()
         )
         if lease is None:
+            return None
+
+        if lease.status in TERMINAL_LEASE_STATUSES:
+            return lease if lease.status == status else None
+        if lease.status != "running":
             return None
 
         finished_at = datetime.now(UTC)

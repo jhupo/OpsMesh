@@ -5,6 +5,7 @@ from backend.app.domains.orchestration.runs.execution import (
     RunExecutionDependencies,
     RunExecutionService,
 )
+from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.handlers.agent_run import AgentRunJobHandler
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
@@ -12,6 +13,7 @@ from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
 
 def test_agent_run_handler_passes_worker_docker_client_to_execution_service(monkeypatch) -> None:
     docker_client = object()
+    runtime_backends = build_runtime_backend_registry(None)
     captured: dict[str, object] = {}
 
     class _FakeOrchestration:
@@ -39,6 +41,7 @@ def test_agent_run_handler_passes_worker_docker_client_to_execution_service(monk
     )
     context = WorkerJobHandlerContext(
         session=object(),
+        runtime_backends=runtime_backends,
         queue=object(),
         runtime_docker_client=docker_client,
     )
@@ -52,17 +55,25 @@ def test_agent_run_handler_passes_worker_docker_client_to_execution_service(monk
     AgentRunJobHandler(context).handle(job)
 
     assert captured["docker_client"] is docker_client
-    assert captured["dependencies"] == RunExecutionDependencies(lifecycle="lifecycle")
+    assert captured["dependencies"] == RunExecutionDependencies(
+        lifecycle="lifecycle",
+        runtime_backends=runtime_backends,
+    )
     assert captured["job"] is job
 
 
 def test_run_execution_request_builder_retains_docker_client() -> None:
     docker_client = object()
+    runtime_backends = build_runtime_backend_registry(None)
     service = RunExecutionService(
         session=object(),
-        dependencies=RunExecutionDependencies(lifecycle=object()),
+        dependencies=RunExecutionDependencies(
+            lifecycle=object(),
+            runtime_backends=runtime_backends,
+        ),
         settings=Settings(environment="test"),
         docker_client=docker_client,
     )
 
     assert service._request_builder().docker_client is docker_client
+    assert service._request_builder().runtime_backends is runtime_backends
