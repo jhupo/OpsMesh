@@ -17,6 +17,11 @@ class AuditEventResponse(ORMModel):
     action: str
     target_type: str
     target_id: str
+    request_id: str | None
+    trace_id: str | None
+    span_id: str | None
+    worker_id: str | None
+    runtime_id: str | None
     audit_metadata: dict[str, object]
     previous_hash: str | None
     current_hash: str | None

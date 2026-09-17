@@ -59,7 +59,7 @@ async def record_worker_heartbeat(
     if payload.workspace_id is not None and payload.workspace_id != context.workspace.id:
         raise HTTPException(status_code=400, detail="Heartbeat workspace_id must match path")
     _require_worker_heartbeat_token(
-        request_context=security_request_context(request),
+        request=request,
         context=context,
         settings=settings,
         session=session,

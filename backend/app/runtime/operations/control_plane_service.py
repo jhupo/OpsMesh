@@ -12,6 +12,7 @@ from backend.app.runtime.operations.control_plane import (
     control_plane_health,
     control_plane_issues,
 )
+from backend.app.runtime.operations.evidence import OperationsEvidenceService
 from backend.app.runtime.operations.operation_capacity_payloads import (
     OperationsCapacityPayloadService,
 )
@@ -41,6 +42,7 @@ class OperationsControlPlaneService:
         queue_name: str,
         *,
         window_seconds: int,
+        audit_stale_after_seconds: int,
     ) -> OperationsControlPlaneResponse:
         now = datetime.now(UTC)
         queue = OperationsQueueLatencyService(self._redis, self._keys).queue_latency(
@@ -62,6 +64,12 @@ class OperationsControlPlaneService:
         self_hosted_machines = OperationsSelfHostedMachineService(
             self._session
         ).self_hosted_machines_payload(workspace_id)
+        evidence_service = OperationsEvidenceService(self._session)
+        evidence = evidence_service.payload(
+            workspace_id,
+            audit_stale_after_seconds=audit_stale_after_seconds,
+            now=now,
+        )
         issues = control_plane_issues(
             queue=queue,
             worker_capacity=worker_capacity,
@@ -70,6 +78,7 @@ class OperationsControlPlaneService:
             outcomes=outcomes,
             mcp_jobs=mcp_jobs,
             self_hosted_machines=self_hosted_machines,
+            evidence=evidence,
         )
         return OperationsControlPlaneResponse(
             generated_at=now,
@@ -81,5 +90,7 @@ class OperationsControlPlaneService:
             outcomes=outcomes,
             mcp_jobs=mcp_jobs,
             self_hosted_machines=self_hosted_machines,
+            evidence=evidence,
+            drilldowns=evidence_service.drilldowns(workspace_id),
             issues=issues,
         )

@@ -74,6 +74,9 @@ class ModelUsageRecordResponse(ORMModel):
     currency: str | None
     metering_status: str
     job_attempt: int
+    request_sequence: int
+    attempt_outcome: str
+    error_code: str | None
     request_count: int
     input_tokens: int
     output_tokens: int
@@ -85,7 +88,12 @@ class ModelUsageRecordResponse(ORMModel):
     cached_input_cost: Decimal | None
     request_cost: Decimal | None
     total_cost: Decimal | None
+    budget_decision: dict[str, object]
+    request_id: str | None
     trace_id: str | None
+    span_id: str | None
+    worker_id: str | None
+    runtime_id: str | None
     occurred_at: datetime
 
 

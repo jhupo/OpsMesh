@@ -90,19 +90,27 @@ def test_cost_api_is_workspace_scoped_audited_and_returns_summary() -> None:
     )
     session.add(run)
     session.flush()
-    CostAccountingService(session).record_usage(
-        run=run,
-        request=AgentRunRequest(
-            agent_profile=profile,
-            input_text="test",
-            context=AgentRuntimeContext(
-                workspace_id=workspace.id,
-                task_id=None,
-                run_id=run.id,
-            ),
-            provider="openai",
-            model="gpt-cost-api",
+    cost_service = CostAccountingService(session)
+    model_request = AgentRunRequest(
+        agent_profile=profile,
+        input_text="test",
+        context=AgentRuntimeContext(
+            workspace_id=workspace.id,
+            task_id=None,
+            run_id=run.id,
         ),
+        provider="openai",
+        model="gpt-cost-api",
+    )
+    budget_decision = cost_service.assert_budget_available(
+        workspace.id,
+        provider="openai",
+        model="gpt-cost-api",
+        now=now,
+    )
+    cost_service.record_attempt(
+        run=run,
+        request=model_request,
         result=AgentRunResult(
             final_output="done",
             usage=AgentRuntimeUsage(
@@ -113,6 +121,9 @@ def test_cost_api_is_workspace_scoped_audited_and_returns_summary() -> None:
             ),
         ),
         job_attempt=0,
+        request_sequence=0,
+        attempt_outcome="succeeded",
+        budget_decision=budget_decision,
         occurred_at=now,
     )
     session.commit()

@@ -15,12 +15,11 @@ from sqlalchemy.pool import StaticPool
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
+from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.profiles.models import AgentProfile
@@ -37,13 +36,13 @@ from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMembe
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
 )
-from backend.app.runtime.workers.models import WorkerLease, WorkerNode
 from backend.app.runtime.operations.timeline.service import (
     TeamRuntimeTimelineService,
     TimelineFilters,
@@ -55,6 +54,7 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.workers.models import WorkerLease, WorkerNode
 from backend.app.runtime.workers.queue import RedisQueue
 
 TOKEN = "test-token"
@@ -66,6 +66,8 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     client, session = _client(redis)
     owner, workspace = _seed_workspace(session)
     keys = RedisKeyBuilder("opsmesh")
+    correlation_trace_id = "0123456789abcdef0123456789abcdef"
+    correlation_request_id = "request-operations-flow"
     failed_run_id = uuid4()
     queued_job = JobPayload(
         workspace_id=workspace.id,
@@ -131,7 +133,9 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
         queue_name="agent_runs",
         job_id=uuid4(),
         job_type="agent.run",
-        resource_id=uuid4(),
+        resource_id=failed_run.id,
+        request_id=correlation_request_id,
+        trace_id=correlation_trace_id,
         status="running",
         attempt=0,
         lease_metadata={"scope": "owned"},
@@ -144,6 +148,8 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
         job_id=uuid4(),
         job_type="agent.run",
         resource_id=uuid4(),
+        request_id=correlation_request_id,
+        trace_id=correlation_trace_id,
         status="running",
         attempt=0,
         lease_metadata={"scope": "other"},
@@ -158,6 +164,10 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
                 workspace_runtime_id=runtime.id,
                 event_type="runtime.failed",
                 message="bad",
+                request_id=correlation_request_id,
+                trace_id=correlation_trace_id,
+                worker_id="worker-stale",
+                runtime_id=str(runtime.id),
                 created_at=datetime.now(UTC),
             ),
             RunEvent(
@@ -166,6 +176,10 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
                 event_type="run.failed",
                 sequence=1,
                 message="bad",
+                request_id=correlation_request_id,
+                trace_id=correlation_trace_id,
+                worker_id="worker-stale",
+                runtime_id=str(runtime.id),
                 created_at=datetime.now(UTC),
             ),
             AuditEvent(
@@ -176,6 +190,10 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
                 action="approval.rejected",
                 target_type="approval",
                 target_id="approval-1",
+                request_id=correlation_request_id,
+                trace_id=correlation_trace_id,
+                worker_id="worker-stale",
+                runtime_id=str(runtime.id),
                 created_at=datetime.now(UTC),
             ),
         ]
@@ -333,6 +351,37 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     )
     assert audit.status_code == 200
     assert audit.json()["total"] == 1
+
+    correlation = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/correlation"
+        f"?trace_id={correlation_trace_id}",
+        headers=_headers(owner.id),
+    )
+    assert correlation.status_code == 200
+    correlation_payload = correlation.json()
+    assert correlation_payload["trace_ids"] == [correlation_trace_id]
+    assert correlation_payload["request_ids"] == [correlation_request_id]
+    assert correlation_payload["task_ids"] == []
+    assert correlation_payload["run_ids"] == [str(failed_run.id)]
+    assert correlation_payload["worker_ids"] == ["worker-stale"]
+    assert correlation_payload["runtime_ids"] == [str(runtime.id)]
+    assert correlation_payload["evidence_counts"] == {
+        "run_events": 1,
+        "runtime_events": 1,
+        "worker_leases": 1,
+        "mcp_tool_calls": 0,
+        "audit_events": 1,
+        "model_attempts": 0,
+    }
+    assert correlation_payload["drilldowns"]["run_events"].endswith(
+        f"trace_id={correlation_trace_id}"
+    )
+
+    ambiguous_correlation = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/correlation",
+        headers=_headers(owner.id),
+    )
+    assert ambiguous_correlation.status_code == 400
 
     cleanup = client.post(
         f"/api/v1/workspaces/{workspace.id}/operations/runtime-cleanup"
@@ -1630,8 +1679,17 @@ def test_operations_aggregates_return_zero_metrics_for_empty_workspace() -> None
     assert runtime_capacity.json()["worker_types"] == []
     assert control_plane.json()["health"] == "critical"
     assert [issue["code"] for issue in control_plane.json()["issues"]] == [
-        "worker_fleet_empty"
+        "worker_fleet_empty",
+        "audit_integrity_missing",
+        "data_lifecycle_not_ready",
     ]
+    assert control_plane.json()["evidence"]["audit_integrity"]["status"] == "missing"
+    assert control_plane.json()["evidence"]["cost_accounting"]["status"] == "healthy"
+    assert control_plane.json()["evidence"]["data_lifecycle"]["status"] == "blocked"
+    assert control_plane.json()["drilldowns"]["audit"].endswith(
+        "/operations/audit-integrity"
+    )
+    assert control_plane.json()["drilldowns"]["costs"].endswith("/costs/summary")
 
 
 def test_operations_queue_insights_reports_priority_and_type_buckets() -> None:
@@ -2522,6 +2580,9 @@ def test_operations_control_plane_summarizes_capacity_and_health_issues() -> Non
     assert payload["mcp_jobs"]["failed"] == 1
     assert payload["self_hosted_machines"]["degraded"] == 1
     assert payload["self_hosted_machines"]["stale"] == 1
+    assert payload["evidence"]["audit_integrity"]["status"] == "missing"
+    assert payload["evidence"]["cost_accounting"]["status"] == "healthy"
+    assert payload["drilldowns"]["queue"].endswith("/operations/queue-insights")
     assert {
         "queue_latency_high",
         "worker_capacity_exhausted",

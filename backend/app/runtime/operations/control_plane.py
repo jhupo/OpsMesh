@@ -6,6 +6,7 @@ from backend.app.runtime.operations.contracts.capacity import (
 )
 from backend.app.runtime.operations.contracts.control_plane import (
     OperationsControlPlaneIssueResponse,
+    OperationsEvidencePlaneResponse,
     OperationsSelfHostedMachinesResponse,
 )
 from backend.app.runtime.operations.contracts.outcomes import (
@@ -252,6 +253,73 @@ def append_self_hosted_machine_issues(
         )
 
 
+def append_evidence_issues(
+    issues: list[OperationsControlPlaneIssueResponse],
+    evidence: OperationsEvidencePlaneResponse,
+) -> None:
+    audit = evidence.audit_integrity
+    if audit.status != "valid":
+        issues.append(
+            OperationsControlPlaneIssueResponse(
+                severity="critical" if audit.status == "invalid" else "warning",
+                code=f"audit_integrity_{audit.status}",
+                message="Workspace audit integrity requires operator attention.",
+                count=audit.count,
+                metadata={
+                    "drilldown": audit.drilldown,
+                    "recommended_actions": audit.recommended_actions,
+                },
+            )
+        )
+    costs = evidence.cost_accounting
+    if costs.status != "healthy":
+        issues.append(
+            OperationsControlPlaneIssueResponse(
+                severity="critical" if costs.status == "critical" else "warning",
+                code="cost_evidence_incomplete",
+                message="Model cost evidence or budget state requires operator attention.",
+                count=costs.count,
+                metadata={
+                    **costs.metadata,
+                    "drilldown": costs.drilldown,
+                    "recommended_actions": costs.recommended_actions,
+                },
+            )
+        )
+    notifications = evidence.notifications
+    if notifications.count:
+        issues.append(
+            OperationsControlPlaneIssueResponse(
+                severity=(
+                    "critical" if notifications.status == "critical" else "warning"
+                ),
+                code="governance_notifications_unread",
+                message="Unread governance notifications require operator review.",
+                count=notifications.count,
+                metadata={
+                    **notifications.metadata,
+                    "drilldown": notifications.drilldown,
+                    "recommended_actions": notifications.recommended_actions,
+                },
+            )
+        )
+    lifecycle_status = evidence.data_lifecycle.get("status")
+    if lifecycle_status not in {"ready", "ready_with_warnings"}:
+        issues.append(
+            OperationsControlPlaneIssueResponse(
+                severity="warning",
+                code="data_lifecycle_not_ready",
+                message="Workspace recovery readiness is incomplete.",
+                metadata={
+                    "status": lifecycle_status,
+                    "recommended_actions": evidence.data_lifecycle.get(
+                        "recommended_actions", []
+                    ),
+                },
+            )
+        )
+
+
 def control_plane_issues(
     *,
     queue: QueueLatencyResponse,
@@ -261,6 +329,7 @@ def control_plane_issues(
     outcomes: OperationsOutcomesResponse,
     mcp_jobs: OperationsMcpJobsResponse,
     self_hosted_machines: OperationsSelfHostedMachinesResponse,
+    evidence: OperationsEvidencePlaneResponse,
 ) -> list[OperationsControlPlaneIssueResponse]:
     issues: list[OperationsControlPlaneIssueResponse] = []
     append_queue_issues(issues, queue)
@@ -271,4 +340,5 @@ def control_plane_issues(
     append_outcome_issues(issues, outcomes)
     append_mcp_job_issues(issues, mcp_jobs)
     append_self_hosted_machine_issues(issues, self_hosted_machines)
+    append_evidence_issues(issues, evidence)
     return issues

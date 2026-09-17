@@ -75,17 +75,14 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             else uuid.uuid4().hex
         )
         request_id_token = request_id_var.set(request_id)
-        trace_context = None
-        if self._settings.tracing_enabled:
-            trace_context = trace_context_from_current_span() or trace_context_from_headers(
-                request.headers
-            )
-        trace_tokens = set_trace_context(trace_context) if trace_context is not None else {}
+        trace_context = trace_context_from_current_span() or trace_context_from_headers(
+            request.headers
+        )
+        trace_tokens = set_trace_context(trace_context)
         request.state.request_id = request_id
-        if trace_context is not None:
-            request.state.trace_id = trace_context.trace_id
-            request.state.span_id = trace_context.span_id
-            request.state.parent_span_id = trace_context.parent_span_id
+        request.state.trace_id = trace_context.trace_id
+        request.state.span_id = trace_context.span_id
+        request.state.parent_span_id = trace_context.parent_span_id
         started_at = time.perf_counter()
         status_code = 500
 
@@ -95,8 +92,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             duration_ms = _elapsed_ms(started_at)
             response.headers["X-Process-Time-Ms"] = str(duration_ms)
             response.headers[REQUEST_ID_HEADER] = request_id
-            if trace_context is not None:
-                _set_trace_response_headers(response, trace_context)
+            _set_trace_response_headers(response, trace_context)
             record_http_request(request.method, _metrics_path(request), status_code, duration_ms)
             log_level = (
                 logging.WARNING

@@ -20,6 +20,7 @@ LOG_CONTEXT_FIELDS = (
     "task_id",
     "run_id",
     "worker_id",
+    "runtime_id",
 )
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
@@ -28,6 +29,7 @@ user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
 task_id_var: ContextVar[str | None] = ContextVar("task_id", default=None)
 run_id_var: ContextVar[str | None] = ContextVar("run_id", default=None)
 worker_id_var: ContextVar[str | None] = ContextVar("worker_id", default=None)
+runtime_id_var: ContextVar[str | None] = ContextVar("runtime_id", default=None)
 
 _CONTEXT_VARS = {
     "request_id": request_id_var,
@@ -39,11 +41,20 @@ _CONTEXT_VARS = {
     "task_id": task_id_var,
     "run_id": run_id_var,
     "worker_id": worker_id_var,
+    "runtime_id": runtime_id_var,
 }
 
 
 def current_log_context() -> dict[str, str | None]:
     return {field: _CONTEXT_VARS[field].get() for field in LOG_CONTEXT_FIELDS}
+
+
+def current_evidence_context() -> dict[str, str]:
+    return {
+        field: value
+        for field, value in current_log_context().items()
+        if value is not None
+    }
 
 
 def set_log_context(**values: object) -> dict[str, Token[str | None]]:

@@ -21,7 +21,7 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 13. [API Design](api-design.md)：workspace-scoped API、错误 envelope 和分页契约。
 14. [Self-hosted Runtimes](self-hosted-runtimes.md)：用户自有机器的注册、心跳、任务和 artifact 回传。
 15. [Self-hosted Connector](self-hosted-connector.md)：官方 MCP SDK connector、恢复和安全合同。
-16. [Observability、Audit 与 Cost](observability-audit-and-costs.md)：日志、指标、链路、审计完整性和成本账本。
+16. [Observability、Audit 与 Cost](observability-audit-and-costs.md)：日志、指标、链路、审计完整性、成本账本和工作区治理告警（P1-8，2026-09-17）。
 17. [Open-source SDK Strategy](open-source-sdk-strategy.md)：官方 SDK 采用边界和禁止重复造轮子的规则。
 18. [Adapter Boundaries](adapter-boundaries.md)：MCP、Provider health 和 runtime backend registry 的 adapter 合同。
 19. [Shared Domain Services](shared-domain-services.md)：跨领域服务的 owner 与复用规则。

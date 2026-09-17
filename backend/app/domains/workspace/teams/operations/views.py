@@ -156,14 +156,6 @@ def _scheduled_run_payload(run: AgentRun) -> dict[str, object]:
     }
 
 
-def _dict(value: object) -> dict[str, object]:
-    return dict_or_empty(value)
-
-
-def _string_list(value: object) -> list[str]:
-    return string_list(value)
-
-
 def _unique_strings(values: Iterable[object]) -> list[str]:
     unique: list[str] = []
     for value in values:

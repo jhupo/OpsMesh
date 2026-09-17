@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.models import AuditIntegrityCheck
 from backend.app.observability.audit.service import AuditService
+from backend.app.observability.notifications.service import GovernanceNotificationService
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class AuditIntegrityService:
         )
         self._session.add(check)
         self._session.flush([check])
+        GovernanceNotificationService(self._session).record_audit_integrity(check)
         return check
 
     def latest(self, workspace_id: UUID) -> AuditIntegrityCheck | None:

@@ -18,9 +18,11 @@ from backend.app.domains.capabilities.mcp.transport.contracts import (
 from backend.app.domains.platform.updates.service import maintenance_enabled
 from backend.app.observability.telemetry.request_context import log_context
 from backend.app.observability.telemetry.trace_context import (
+    child_trace_context,
     current_trace_context,
     new_trace_context,
     telemetry_span,
+    trace_context,
 )
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.workers.capacity import WorkerCapacitySnapshotService, worker_can_run_job
@@ -214,11 +216,21 @@ class WorkerRunner:
             job.resource_id if job.job_type.value in {"agent.run", "mcp.tool_execution"} else None
         )
         parent_trace = job.trace_context()
+        runtime_id = job.routing.get("runtime_id") or job.routing.get("workspace_runtime_id")
+        task_id = job.routing.get("task_id")
         if not self._tracing_enabled():
-            with log_context(
-                worker_id=self._config.worker_id,
-                workspace_id=job.workspace_id,
-                run_id=run_id,
+            active_trace = child_trace_context(parent_trace)
+            with (
+                trace_context(active_trace),
+                log_context(
+                    request_id=job.request_id,
+                    worker_id=self._config.worker_id,
+                    workspace_id=job.workspace_id,
+                    task_id=task_id,
+                    run_id=run_id,
+                    runtime_id=runtime_id,
+                    **active_trace.metadata(),
+                ),
             ):
                 yield
             return
@@ -237,9 +249,12 @@ class WorkerRunner:
                 },
             ) as active_trace,
             log_context(
+                request_id=job.request_id,
                 worker_id=self._config.worker_id,
                 workspace_id=job.workspace_id,
+                task_id=task_id,
                 run_id=run_id,
+                runtime_id=runtime_id,
                 **active_trace.metadata(),
             ),
         ):

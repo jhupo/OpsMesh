@@ -7,7 +7,8 @@ from sqlalchemy import select
 
 from backend.app.core.pagination import PageParams
 from backend.app.domains.platform.admin.base import AdminSessionService
-from backend.app.runtime.environment.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
+from backend.app.runtime.environment.events import new_runtime_event
+from backend.app.runtime.environment.models import RuntimeLease, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
@@ -138,13 +139,13 @@ class AdminRuntimeService(AdminSessionService):
                 )
             )
         self._session.add(
-            RuntimeEvent(
+            new_runtime_event(
                 workspace_id=runtime.workspace_id,
                 workspace_runtime_id=runtime.id,
                 runtime_space_id=runtime.runtime_space_id,
                 event_type="runtime.force_stop_requested",
                 message=reason,
-                event_metadata={
+                metadata={
                     "source": "platform_admin",
                     "runtime_lease_id": str(lease.id) if lease is not None else None,
                     "runtime_lease_release_pending": lease is not None,

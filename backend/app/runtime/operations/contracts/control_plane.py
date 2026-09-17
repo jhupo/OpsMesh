@@ -140,6 +140,43 @@ class OperationsControlPlaneIssueResponse(BaseModel):
         return redact_sensitive_payload(value)
 
 
+class OperationsEvidenceSignalResponse(BaseModel):
+    status: str
+    count: int = 0
+    last_observed_at: datetime | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
+    recommended_actions: list[str] = Field(default_factory=list)
+    drilldown: str
+
+    @field_serializer("metadata")
+    def _serialize_signal_metadata(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
+class OperationsEvidencePlaneResponse(BaseModel):
+    audit_integrity: OperationsEvidenceSignalResponse
+    cost_accounting: OperationsEvidenceSignalResponse
+    notifications: OperationsEvidenceSignalResponse
+    data_lifecycle: dict[str, object] = Field(default_factory=dict)
+
+    @field_serializer("data_lifecycle")
+    def _serialize_data_lifecycle(self, value: dict[str, object]) -> dict[str, object]:
+        return redact_sensitive_payload(value)
+
+
+class OperationsDrilldownsResponse(BaseModel):
+    api_metrics: str
+    queue: str
+    workers: str
+    runtimes: str
+    mcp: str
+    approvals: str
+    audit: str
+    costs: str
+    data_lifecycle: str
+    notifications: str
+
+
 class OperationsControlPlaneResponse(BaseModel):
     generated_at: datetime
     health: str
@@ -150,4 +187,6 @@ class OperationsControlPlaneResponse(BaseModel):
     outcomes: OperationsOutcomesResponse
     mcp_jobs: OperationsMcpJobsResponse
     self_hosted_machines: OperationsSelfHostedMachinesResponse
+    evidence: OperationsEvidencePlaneResponse
+    drilldowns: OperationsDrilldownsResponse
     issues: list[OperationsControlPlaneIssueResponse]

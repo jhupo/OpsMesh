@@ -45,7 +45,6 @@ class ModelRunGateway:
     ) -> AgentRunResult | None:
         approval = self.approvals()
         routing = self.routing()
-        audit = self.audit()
         if approval.requires_approval(run, request):
             return None
         try:
@@ -101,14 +100,6 @@ class ModelRunGateway:
             self.session.commit()
             return None
         except Exception as fallback_exc:
-            self.events.append_model_request_failed_event(run, fallback_request, fallback_exc)
-            audit.record_request_failed(run, fallback_request, job, fallback_exc)
-            if isinstance(fallback_exc, AgentRuntimeProviderError):
-                routing.record_failure(
-                    run,
-                    fallback_request.model_provider_credential_id,
-                    fallback_exc,
-                )
             self.mark_run_failed(run, fallback_exc)
             self.session.commit()
             raise
@@ -118,8 +109,6 @@ class ModelRunGateway:
             failed_request=request,
             selected_request=fallback_request,
         )
-        self.events.append_model_provider_used_event(run, fallback_request)
-        audit.record_provider_used(run, fallback_request, job, fallback_selected=True)
         return result
 
     async def execute_model_request(
@@ -132,8 +121,9 @@ class ModelRunGateway:
     ) -> AgentRunResult:
         routing = self.routing()
         audit = self.audit()
+        costs = CostAccountingService(self.session)
         try:
-            CostAccountingService(self.session).assert_budget_available(
+            budget_decision = costs.assert_budget_available(
                 run.workspace_id,
                 provider=request.provider or "openai",
                 model=request.model or request.agent_profile.model,
@@ -143,34 +133,93 @@ class ModelRunGateway:
                 run,
                 "cost.budget_blocked",
                 "Model request blocked by workspace cost budget",
-                {"reason": str(exc)},
-            )
-            raise
-        try:
-            self.events.append_model_request_started_event(
-                run,
-                request,
-                fallback_selected=fallback_selected,
-            )
-            self.session.commit()
-            with telemetry_span(
-                "opsmesh.model.request",
-                parent=current_trace_context(),
-                kind=SpanKind.CLIENT,
-                attributes={
-                    "opsmesh.workspace.id": str(run.workspace_id),
-                    "opsmesh.run.id": str(run.id),
-                    "gen_ai.provider.name": request.provider or "openai",
-                    "gen_ai.request.model": request.model or request.agent_profile.model,
-                    "opsmesh.model.fallback": fallback_selected,
+                {
+                    "reason": str(exc),
+                    "budget_decision": exc.decision.snapshot()
+                    if exc.decision is not None
+                    else None,
                 },
-            ):
+            )
+            if exc.decision is not None:
+                costs.record_budget_blocked(
+                    run=run,
+                    request=request,
+                    decision=exc.decision,
+                )
+            raise
+        self.events.append_model_request_started_event(
+            run,
+            request,
+            fallback_selected=fallback_selected,
+        )
+        self.session.commit()
+        request_sequence = 1 if fallback_selected else 0
+        with telemetry_span(
+            "opsmesh.model.request",
+            parent=current_trace_context(),
+            kind=SpanKind.CLIENT,
+            attributes={
+                "opsmesh.workspace.id": str(run.workspace_id),
+                "opsmesh.run.id": str(run.id),
+                "gen_ai.provider.name": request.provider or "openai",
+                "gen_ai.request.model": request.model or request.agent_profile.model,
+                "opsmesh.model.fallback": fallback_selected,
+            },
+        ):
+            try:
                 result = await self.agent_runner.run(request)
-            usage_record = CostAccountingService(self.session).record_usage(
+            except AgentRuntimeCancelledError as exc:
+                costs.record_attempt(
+                    run=run,
+                    request=request,
+                    result=None,
+                    job_attempt=job.attempt,
+                    request_sequence=request_sequence,
+                    attempt_outcome="cancelled",
+                    budget_decision=budget_decision,
+                    error=exc,
+                )
+                self.events.append_event(
+                    run,
+                    "model.request_cancelled",
+                    "Cancellation reached the active agent SDK run",
+                    {
+                        "model": request.model,
+                        "provider": request.provider,
+                        "propagated": True,
+                    },
+                )
+                self.session.commit()
+                raise
+            except Exception as exc:
+                costs.record_attempt(
+                    run=run,
+                    request=request,
+                    result=None,
+                    job_attempt=job.attempt,
+                    request_sequence=request_sequence,
+                    attempt_outcome="failed",
+                    budget_decision=budget_decision,
+                    error=exc,
+                )
+                self.events.append_model_request_failed_event(run, request, exc)
+                audit.record_request_failed(run, request, job, exc)
+                if isinstance(exc, AgentRuntimeProviderError):
+                    routing.record_failure(
+                        run,
+                        request.model_provider_credential_id,
+                        exc,
+                    )
+                self.session.commit()
+                raise
+            usage_record = costs.record_attempt(
                 run=run,
                 request=request,
                 result=result,
                 job_attempt=job.attempt,
+                request_sequence=request_sequence,
+                attempt_outcome="succeeded",
+                budget_decision=budget_decision,
             )
             self.events.append_event(
                 run,
@@ -185,35 +234,18 @@ class ModelRunGateway:
                     else None,
                     "total_tokens": usage_record.total_tokens,
                     "job_attempt": usage_record.job_attempt,
+                    "request_sequence": usage_record.request_sequence,
                 },
             )
             self.events.append_model_response_received_event(run, request, result)
-        except AgentRuntimeCancelledError:
-            self.events.append_event(
-                run,
-                "model.request_cancelled",
-                "Cancellation reached the active agent SDK run",
-                {
-                    "model": request.model,
-                    "provider": request.provider,
-                    "propagated": True,
-                },
-            )
-            raise
-        except Exception as exc:
-            self.events.append_model_request_failed_event(run, request, exc)
-            audit.record_request_failed(run, request, job, exc)
-            if isinstance(exc, AgentRuntimeProviderError):
-                routing.record_failure(
-                    run,
-                    request.model_provider_credential_id,
-                    exc,
-                )
-            raise
-        routing.record_success(run, request.model_provider_credential_id)
-        if not fallback_selected:
             self.events.append_model_provider_used_event(run, request)
-            audit.record_provider_used(run, request, job, fallback_selected=False)
+            audit.record_provider_used(
+                run,
+                request,
+                job,
+                fallback_selected=fallback_selected,
+            )
+            routing.record_success(run, request.model_provider_credential_id)
         return result
 
     def approvals(self) -> ModelRequestApprovalService:

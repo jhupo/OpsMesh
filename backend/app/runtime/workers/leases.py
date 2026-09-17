@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
-from backend.app.observability.telemetry.trace_context import current_trace_metadata
+from backend.app.observability.telemetry.trace_context import (
+    current_trace_context,
+    current_trace_metadata,
+)
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.models import WorkerLease
 
@@ -411,6 +414,7 @@ def _new_worker_lease(
     metadata: dict[str, object],
     now: datetime,
 ) -> WorkerLease:
+    trace = job.trace_context() or current_trace_context()
     return WorkerLease(
         workspace_id=job.workspace_id,
         worker_id=worker_id,
@@ -421,6 +425,10 @@ def _new_worker_lease(
         resource_id=job.resource_id,
         status="running",
         attempt=job.attempt,
+        request_id=job.request_id,
+        trace_id=trace.trace_id if trace is not None else None,
+        span_id=trace.span_id if trace is not None else None,
+        runtime_id=_runtime_id(job),
         lease_metadata=append_worker_lifecycle_events(
             metadata,
             [
@@ -443,11 +451,16 @@ def _restart_worker_lease(
     metadata: dict[str, object],
     now: datetime,
 ) -> None:
+    trace = job.trace_context() or current_trace_context()
     lease.worker_id = worker_id
     lease.queue_name = queue_name
     lease.status = "running"
     lease.claim_token = claim_token
     lease.attempt = job.attempt
+    lease.request_id = job.request_id
+    lease.trace_id = trace.trace_id if trace is not None else None
+    lease.span_id = trace.span_id if trace is not None else None
+    lease.runtime_id = _runtime_id(job)
     lease.lease_metadata = append_worker_lifecycle_events(
         dict(lease.lease_metadata or {}) | metadata,
         [
@@ -467,6 +480,11 @@ def _lease_event(event_type: str, at: datetime, job: JobPayload) -> dict[str, ob
         attempt=job.attempt,
         metadata=current_trace_metadata(),
     )
+
+
+def _runtime_id(job: JobPayload) -> str | None:
+    value = job.routing.get("runtime_id") or job.routing.get("workspace_runtime_id")
+    return str(value) if value is not None else None
 
 
 def append_worker_lifecycle_events(

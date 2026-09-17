@@ -44,7 +44,7 @@ Linux amd64/Postgres 16/local-storage maintenance-window topology, not rolling o
 | Web Portal | Planned; intentionally not scaffolded yet |
 | Enterprise SSO and fine-grained authorization | Planned |
 | Knowledge registry and vector/hybrid retrieval | Implemented: workspace-scoped URL/workspace-file registration, immutable revisions, bounded asynchronous ingestion, isolated URL fetching, citation spans, resource-grant-aware citation retrieval, three-layer memory, hybrid retrieval, and authorized context injection |
-| Logs, metrics, tracing, audit integrity, and cost accounting | Implemented |
+| Logs, metrics, tracing, audit integrity, and cost accounting | Implemented; durable correlation and governance evidence cover API, queue, worker, runtime, MCP, audit, and model attempts |
 | Kubernetes and multi-region deployment | Future, driven by measured scale requirements |
 
 The APIs and database model may change before the first stable release. See the

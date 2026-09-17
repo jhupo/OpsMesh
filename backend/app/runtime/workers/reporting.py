@@ -82,6 +82,7 @@ class WorkerLeaseReporter:
                 "requested_by_agent_run_id": str(job.requested_by_agent_run_id)
                 if job.requested_by_agent_run_id is not None
                 else None,
+                "request_id": job.request_id,
                 "routing": dict(job.routing),
                 **(job.trace_metadata() or current_trace_metadata()),
             },

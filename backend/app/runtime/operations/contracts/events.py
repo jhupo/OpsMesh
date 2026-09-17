@@ -15,6 +15,11 @@ class RuntimeEventResponse(BaseModel):
     workspace_runtime_id: UUID
     event_type: str
     message: str
+    request_id: str | None
+    trace_id: str | None
+    span_id: str | None
+    worker_id: str | None
+    runtime_id: str | None
     event_metadata: dict[str, object]
     created_at: datetime
 
@@ -42,6 +47,18 @@ class SecurityEventResponse(ORMModel):
     @field_serializer("event_metadata")
     def _serialize_event_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
+
+
+class OperationsCorrelationResponse(BaseModel):
+    workspace_id: UUID
+    trace_ids: list[str]
+    request_ids: list[str]
+    task_ids: list[UUID]
+    run_ids: list[UUID]
+    worker_ids: list[str]
+    runtime_ids: list[str]
+    evidence_counts: dict[str, int]
+    drilldowns: dict[str, str]
 
 
 class TeamRuntimeTimelineEventResponse(BaseModel):

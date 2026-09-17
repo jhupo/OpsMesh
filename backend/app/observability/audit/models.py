@@ -15,6 +15,8 @@ class AuditEvent(UUIDPrimaryKeyMixin, Base):
         Index("ix_audit_events_workspace_target", "workspace_id", "target_type", "target_id"),
         Index("ix_audit_events_workspace_created", "workspace_id", "created_at"),
         Index("ix_audit_events_workspace_current_hash", "workspace_id", "current_hash"),
+        Index("ix_audit_events_workspace_trace", "workspace_id", "trace_id"),
+        Index("ix_audit_events_workspace_request", "workspace_id", "request_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -31,6 +33,11 @@ class AuditEvent(UUIDPrimaryKeyMixin, Base):
     action: Mapped[str] = mapped_column(String(120), nullable=False)
     target_type: Mapped[str] = mapped_column(String(120), nullable=False)
     target_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    span_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    runtime_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     audit_metadata: Mapped[dict[str, object]] = mapped_column(
         "metadata",
         JSONB,

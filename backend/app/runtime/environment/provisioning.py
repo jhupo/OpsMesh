@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.runtime.contracts import RuntimeExecutionMode, validate_runtime_execution_mode
 from backend.app.runtime.environment.contracts import RuntimeLimits, RuntimeManagerProvider
-from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.environment.events import new_runtime_event
+from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.policies.runtime import (
     RuntimePolicyResolution,
     limits_metadata,
@@ -109,13 +110,13 @@ class RuntimeProvisioningService:
         self._session.add(runtime)
         self._session.flush()
         self._session.add(
-            RuntimeEvent(
+            new_runtime_event(
                 workspace_id=workspace_id,
                 workspace_runtime_id=runtime.id,
                 runtime_space_id=runtime_space_id,
                 event_type="runtime.provisioning_queued",
                 message="Runtime provisioning queued for worker execution",
-                event_metadata={
+                metadata={
                     "runtime_id": str(runtime.id),
                     "template_id": str(template.id),
                     "execution_mode": execution_mode,

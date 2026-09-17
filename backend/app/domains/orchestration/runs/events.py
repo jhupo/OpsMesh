@@ -20,6 +20,7 @@ from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
+from backend.app.observability.telemetry.request_context import current_evidence_context
 from backend.app.observability.telemetry.trace_context import with_current_trace_metadata
 from backend.app.runtime.workers.contracts import JobPayload
 
@@ -57,12 +58,18 @@ class RunEventWriter:
             )
             or 0
         ) + 1
+        evidence = current_evidence_context()
         event = RunEvent(
             workspace_id=workspace_id,
             agent_run_id=run_id,
             sequence=sequence,
             event_type=event_type,
             message=redact_sensitive_text(message),
+            request_id=evidence.get("request_id"),
+            trace_id=evidence.get("trace_id"),
+            span_id=evidence.get("span_id"),
+            worker_id=evidence.get("worker_id"),
+            runtime_id=evidence.get("runtime_id"),
             event_metadata=redact_sensitive_payload(with_current_trace_metadata(metadata)),
             created_at=datetime.now(UTC),
         )

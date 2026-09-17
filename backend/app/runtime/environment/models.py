@@ -105,6 +105,8 @@ class RuntimeEvent(UUIDPrimaryKeyMixin, Base):
         Index("ix_runtime_events_workspace_runtime", "workspace_id", "workspace_runtime_id"),
         Index("ix_runtime_events_workspace_runtime_space", "workspace_id", "runtime_space_id"),
         Index("ix_runtime_events_workspace_type", "workspace_id", "event_type"),
+        Index("ix_runtime_events_workspace_trace", "workspace_id", "trace_id"),
+        Index("ix_runtime_events_workspace_request", "workspace_id", "request_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -121,6 +123,11 @@ class RuntimeEvent(UUIDPrimaryKeyMixin, Base):
     )
     event_type: Mapped[str] = mapped_column(String(120), nullable=False)
     message: Mapped[str] = mapped_column(String, nullable=False, default="")
+    request_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    span_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    runtime_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     event_metadata: Mapped[dict[str, object]] = mapped_column(
         "metadata",
         JSONB,

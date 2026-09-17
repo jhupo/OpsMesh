@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
@@ -21,10 +21,11 @@ from backend.app.domains.agents.runtime.contracts import (
 from backend.app.domains.agents.runtime.usage import runtime_usage
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
 from backend.app.observability.costs.pricing import CostPricingService
 from backend.app.observability.costs.queries import CostQueryService
+from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
 from backend.app.observability.costs.usage import normalize_model_usage
+from backend.app.observability.notifications.models import WorkspaceNotification
 
 
 def test_usage_normalization_handles_provider_aliases_and_redacts_raw_payload() -> None:
@@ -122,14 +123,16 @@ def test_cost_accounting_prices_usage_idempotently_and_isolates_workspaces() -> 
     request = _request(profile, run)
     result = _usage_result()
 
-    first = service.record_usage(
+    first = _record_succeeded_attempt(
+        service,
         run=run,
         request=request,
         result=result,
         job_attempt=2,
         occurred_at=now,
     )
-    second = service.record_usage(
+    second = _record_succeeded_attempt(
+        service,
         run=run,
         request=request,
         result=result,
@@ -194,7 +197,8 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         effective_to=None,
         source="operator",
     )
-    priced = service.record_usage(
+    priced = _record_succeeded_attempt(
+        service,
         run=run,
         request=_request(profile, run),
         result=_usage_result(),
@@ -202,7 +206,8 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         occurred_at=now,
     )
     unpriced_profile, unpriced_run = _add_run(session, workspace, model="other-model")
-    unpriced = service.record_usage(
+    unpriced = _record_succeeded_attempt(
+        service,
         run=unpriced_run,
         request=AgentRunRequest(
             agent_profile=unpriced_profile,
@@ -220,7 +225,8 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         occurred_at=now,
     )
     missing_profile, missing_run = _add_run(session, workspace, model="missing-usage")
-    missing = service.record_usage(
+    missing = _record_succeeded_attempt(
+        service,
         run=missing_run,
         request=AgentRunRequest(
             agent_profile=missing_profile,
@@ -253,7 +259,8 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         source="test",
     )
     euro_profile, euro_run = _add_run(session, workspace, model="gemini-cost")
-    euro_usage = service.record_usage(
+    euro_usage = _record_succeeded_attempt(
+        service,
         run=euro_run,
         request=AgentRunRequest(
             agent_profile=euro_profile,
@@ -275,7 +282,8 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
         workspace,
         model="gemini-cost",
     )
-    euro_missing_usage = service.record_usage(
+    euro_missing_usage = _record_succeeded_attempt(
+        service,
         run=euro_missing_run,
         request=AgentRunRequest(
             agent_profile=euro_missing_profile,
@@ -318,6 +326,16 @@ def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None
     assert euro_usage.currency == "EUR"
     assert euro_missing_usage.currency == "EUR"
     assert euro_missing_usage.metering_status == "missing_usage"
+    notification_types = set(
+        session.scalars(
+            select(WorkspaceNotification.notification_type).where(
+                WorkspaceNotification.workspace_id == workspace.id
+            )
+        ).all()
+    )
+    assert {"cost.unpriced", "cost.missing_usage"} <= notification_types
+    assert priced.budget_decision["allowed"] is True
+    assert priced.budget_decision["pricing_version"] == "wildcard-v1"
 
     summary = query_service.summary(
         workspace.id,
@@ -412,6 +430,33 @@ def test_cost_configuration_rejects_invalid_service_inputs() -> None:
             enforcement="warn",
             enabled=True,
         )
+
+
+def _record_succeeded_attempt(
+    service: CostAccountingService,
+    *,
+    run: AgentRun,
+    request: AgentRunRequest,
+    result: AgentRunResult,
+    job_attempt: int,
+    occurred_at: datetime,
+):
+    decision = service.assert_budget_available(
+        run.workspace_id,
+        provider=request.provider or "openai",
+        model=request.model or request.agent_profile.model,
+        now=occurred_at,
+    )
+    return service.record_attempt(
+        run=run,
+        request=request,
+        result=result,
+        job_attempt=job_attempt,
+        request_sequence=0,
+        attempt_outcome="succeeded",
+        budget_decision=decision,
+        occurred_at=occurred_at,
+    )
 
 
 def _usage_result() -> AgentRunResult:

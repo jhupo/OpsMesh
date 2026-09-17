@@ -118,7 +118,8 @@ class ModelUsageRecord(UUIDPrimaryKeyMixin, Base):
             "workspace_id",
             "agent_run_id",
             "job_attempt",
-            name="uq_model_usage_records_run_attempt",
+            "request_sequence",
+            name="uq_model_usage_records_run_job_attempt_request",
         ),
         CheckConstraint("request_count >= 0", name="ck_model_usage_request_count"),
         CheckConstraint("input_tokens >= 0", name="ck_model_usage_input_tokens"),
@@ -131,6 +132,11 @@ class ModelUsageRecord(UUIDPrimaryKeyMixin, Base):
             name="ck_model_usage_total_covers_components",
         ),
         CheckConstraint("job_attempt >= 0", name="ck_model_usage_job_attempt"),
+        CheckConstraint("request_sequence >= 0", name="ck_model_usage_request_sequence"),
+        CheckConstraint(
+            "attempt_outcome IN ('succeeded', 'failed', 'cancelled')",
+            name="ck_model_usage_attempt_outcome",
+        ),
         CheckConstraint(
             "cached_input_tokens <= input_tokens",
             name="ck_model_usage_cached_within_input",
@@ -168,6 +174,8 @@ class ModelUsageRecord(UUIDPrimaryKeyMixin, Base):
         Index("ix_model_usage_workspace_provider", "workspace_id", "provider", "occurred_at"),
         Index("ix_model_usage_workspace_model", "workspace_id", "model", "occurred_at"),
         Index("ix_model_usage_workspace_agent", "workspace_id", "agent_profile_id", "occurred_at"),
+        Index("ix_model_usage_workspace_trace", "workspace_id", "trace_id"),
+        Index("ix_model_usage_workspace_request", "workspace_id", "request_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -197,6 +205,13 @@ class ModelUsageRecord(UUIDPrimaryKeyMixin, Base):
     currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     metering_status: Mapped[str] = mapped_column(String(32), nullable=False)
     job_attempt: Mapped[int] = mapped_column(nullable=False, default=0)
+    request_sequence: Mapped[int] = mapped_column(nullable=False, default=0)
+    attempt_outcome: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="succeeded",
+    )
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
     request_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
@@ -209,5 +224,14 @@ class ModelUsageRecord(UUIDPrimaryKeyMixin, Base):
     request_cost: Mapped[Decimal | None] = mapped_column(Numeric(24, 12), nullable=True)
     total_cost: Mapped[Decimal | None] = mapped_column(Numeric(24, 12), nullable=True)
     raw_usage: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    budget_decision: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+    request_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    span_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    runtime_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

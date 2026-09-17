@@ -36,6 +36,7 @@ from backend.app.domains.orchestration.runs.contracts import AgentRunResponse, R
 from backend.app.observability.audit.integrity import AuditIntegrityService
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.operations.contracts.events import (
+    OperationsCorrelationResponse,
     RuntimeEventResponse,
     SecurityEventResponse,
 )
@@ -59,6 +60,23 @@ else:
 
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operations"])
+
+
+@router.get("/correlation", response_model=OperationsCorrelationResponse)
+async def operations_correlation(
+    trace_id: str | None = Query(default=None, min_length=32, max_length=32),
+    request_id: str | None = Query(default=None, min_length=1, max_length=80),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
+    session: Session = Depends(get_db_session),
+) -> OperationsCorrelationResponse:
+    try:
+        return OperationsEventQueryService(session).correlation(
+            context.workspace.id,
+            trace_id=trace_id,
+            request_id=request_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/audit-integrity", response_model=AuditIntegrityStatusResponse)
@@ -121,6 +139,8 @@ async def queue_audit_integrity_verification(
 async def list_run_events(
     page: PageParams = Depends(pagination_params),
     event_type: str | None = Query(default=None),
+    trace_id: str | None = Query(default=None, min_length=32, max_length=32),
+    request_id: str | None = Query(default=None, min_length=1, max_length=80),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> RunEventFilterResponse:
@@ -128,6 +148,8 @@ async def list_run_events(
         context.workspace.id,
         page,
         event_type,
+        trace_id,
+        request_id,
     )
     return RunEventFilterResponse(
         items=[RunEventResponse.model_validate(item) for item in items],
@@ -142,6 +164,8 @@ async def list_runtime_events(
     page: PageParams = Depends(pagination_params),
     runtime_id: UUID | None = Query(default=None),
     event_type: str | None = Query(default=None),
+    trace_id: str | None = Query(default=None, min_length=32, max_length=32),
+    request_id: str | None = Query(default=None, min_length=1, max_length=80),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[RuntimeEventResponse]:
@@ -150,6 +174,8 @@ async def list_runtime_events(
         page,
         runtime_id,
         event_type,
+        trace_id,
+        request_id,
     )
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
@@ -220,6 +246,8 @@ async def filter_audit_events(
     page: PageParams = Depends(pagination_params),
     action: str | None = Query(default=None),
     target_type: str | None = Query(default=None),
+    trace_id: str | None = Query(default=None, min_length=32, max_length=32),
+    request_id: str | None = Query(default=None, min_length=1, max_length=80),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> AuditEventFilterResponse:
@@ -228,6 +256,8 @@ async def filter_audit_events(
         page,
         action,
         target_type,
+        trace_id,
+        request_id,
     )
     return AuditEventFilterResponse(
         items=[AuditEventResponse.model_validate(item) for item in items],

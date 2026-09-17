@@ -14,7 +14,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.telemetry.trace_context import with_current_trace_metadata
+from backend.app.observability.telemetry.request_context import current_evidence_context
 
 
 @dataclass(frozen=True)
@@ -52,6 +52,7 @@ class AuditService:
         metadata: dict[str, object] | None = None,
     ) -> AuditEvent:
         created_at = datetime.now(UTC)
+        evidence = current_evidence_context()
         self._lock_workspace(workspace_id)
         event = AuditEvent(
             id=uuid4(),
@@ -63,7 +64,12 @@ class AuditService:
             action=action,
             target_type=target_type,
             target_id=str(target_id),
-            audit_metadata=redact_sensitive_payload(with_current_trace_metadata(metadata)),
+            request_id=evidence.get("request_id"),
+            trace_id=evidence.get("trace_id"),
+            span_id=evidence.get("span_id"),
+            worker_id=evidence.get("worker_id"),
+            runtime_id=evidence.get("runtime_id"),
+            audit_metadata=redact_sensitive_payload(dict(metadata or {}) | evidence),
             previous_hash=self._latest_hash(workspace_id),
             created_at=created_at,
         )
@@ -83,6 +89,7 @@ class AuditService:
         actor_id: str = "opsmesh.worker",
     ) -> AuditEvent:
         created_at = datetime.now(UTC)
+        evidence = current_evidence_context()
         self._lock_workspace(workspace_id)
         event = AuditEvent(
             id=uuid4(),
@@ -94,7 +101,12 @@ class AuditService:
             action=action,
             target_type=target_type,
             target_id=str(target_id),
-            audit_metadata=redact_sensitive_payload(with_current_trace_metadata(metadata)),
+            request_id=evidence.get("request_id"),
+            trace_id=evidence.get("trace_id"),
+            span_id=evidence.get("span_id"),
+            worker_id=evidence.get("worker_id"),
+            runtime_id=evidence.get("runtime_id"),
+            audit_metadata=redact_sensitive_payload(dict(metadata or {}) | evidence),
             previous_hash=self._latest_hash(workspace_id),
             created_at=created_at,
         )

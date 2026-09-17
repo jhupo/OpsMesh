@@ -109,6 +109,7 @@ from backend.app.domains.workspace.tenants.models import (
     WorkspaceReservation,
 )
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.costs.models import ModelUsageRecord
 from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
@@ -4926,7 +4927,6 @@ def test_worker_fails_closed_without_model_provider_fallback() -> None:
             AgentMessage.message_type == "team.runtime.model_provider.fallback_selected",
         )
     )
-
     assert [request.model for request in runner.requests] == ["primary-model"]
     assert runner.requests[0].api_key == "sk-primary"
     assert [request.model_api for request in runner.requests] == ["chat_completions"]
@@ -5072,6 +5072,11 @@ def test_worker_falls_back_across_model_provider_vendors() -> None:
             AuditEvent.target_id == str(run.id),
         )
     )
+    model_attempts = session.scalars(
+        select(ModelUsageRecord)
+        .where(ModelUsageRecord.agent_run_id == run.id)
+        .order_by(ModelUsageRecord.request_sequence)
+    ).all()
 
     assert [(request.provider, request.model) for request in runner.requests] == [
         ("openai-compatible", "primary-model"),
@@ -5099,6 +5104,13 @@ def test_worker_falls_back_across_model_provider_vendors() -> None:
     assert audit.audit_metadata["model"] == "claude-sonnet-4-5"
     assert audit.audit_metadata["model_api"] == "anthropic_messages"
     assert audit.audit_metadata["credential_id"] == str(anthropic_backup.id)
+    assert [attempt.request_sequence for attempt in model_attempts] == [0, 1]
+    assert [attempt.attempt_outcome for attempt in model_attempts] == [
+        "failed",
+        "succeeded",
+    ]
+    assert model_attempts[0].error_code == "AgentRuntimeProviderError"
+    assert model_attempts[1].error_code is None
 
 
 def test_worker_ignores_budget_exhausted_model_provider_fallback_policy() -> None:

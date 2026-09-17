@@ -42,6 +42,11 @@ class RunEventResponse(ORMModel):
     event_type: str
     sequence: int
     message: str
+    request_id: str | None
+    trace_id: str | None
+    span_id: str | None
+    worker_id: str | None
+    runtime_id: str | None
     event_metadata: dict[str, object]
     created_at: datetime
 

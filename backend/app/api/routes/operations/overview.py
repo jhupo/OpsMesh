@@ -87,7 +87,10 @@ async def operations_control_plane(
     cache: RedisJsonCache = Depends(get_cache_service),
     settings: Settings = Depends(get_settings),
 ) -> OperationsControlPlaneResponse:
-    cache_key = f"control-plane:{context.workspace.id}:{queue_name}:{window_seconds}"
+    cache_key = (
+        f"control-plane:{context.workspace.id}:{queue_name}:{window_seconds}:"
+        f"{settings.audit_integrity_stale_after_seconds}"
+    )
     cached = cache.get_or_set(
         cache_key,
         lambda: (
@@ -100,6 +103,7 @@ async def operations_control_plane(
                 context.workspace.id,
                 queue_name,
                 window_seconds=window_seconds,
+                audit_stale_after_seconds=settings.audit_integrity_stale_after_seconds,
             )
             .model_dump(mode="json")
         ),

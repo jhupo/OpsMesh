@@ -45,6 +45,8 @@ class CostQueryService:
         model: str | None,
         limit: int,
         offset: int,
+        trace_id: str | None = None,
+        request_id: str | None = None,
     ) -> tuple[list[ModelUsageRecord], int]:
         filters = [
             ModelUsageRecord.workspace_id == workspace_id,
@@ -55,6 +57,10 @@ class CostQueryService:
             filters.append(ModelUsageRecord.provider == canonical_model_provider(provider))
         if model is not None:
             filters.append(ModelUsageRecord.model == model)
+        if trace_id is not None:
+            filters.append(ModelUsageRecord.trace_id == trace_id)
+        if request_id is not None:
+            filters.append(ModelUsageRecord.request_id == request_id)
         total = int(
             self._session.scalar(select(func.count()).select_from(ModelUsageRecord).where(*filters))
             or 0

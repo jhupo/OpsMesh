@@ -20,6 +20,7 @@ from opentelemetry.trace import SpanKind
 from redis import Redis
 
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.observability.telemetry.request_context import request_id_var
 from backend.app.observability.telemetry.trace_context import current_trace_context, telemetry_span
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 
@@ -151,6 +152,8 @@ class RedisQueue:
                 },
             ) as enqueue_trace:
                 return self._enqueue(job.with_trace_context(enqueue_trace), force=force)
+        if current_trace is not None or request_id_var.get() is not None:
+            job = job.with_trace_context()
         return self._enqueue(job, force=force)
 
     def ensure_enqueued(self, job: JobPayload) -> bool:

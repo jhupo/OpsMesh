@@ -118,6 +118,9 @@ class WorkerLease(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_worker_leases_workspace_status", "workspace_id", "status"),
         Index("ix_worker_leases_status_heartbeat", "status", "last_heartbeat_at"),
         Index("ix_worker_leases_resource", "workspace_id", "job_type", "resource_id"),
+        Index("ix_worker_leases_workspace_trace", "workspace_id", "trace_id"),
+        Index("ix_worker_leases_workspace_request", "workspace_id", "request_id"),
+        Index("ix_worker_leases_workspace_runtime", "workspace_id", "runtime_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -136,6 +139,10 @@ class WorkerLease(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     resource_id: Mapped[UUID] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="running")
     attempt: Mapped[int] = mapped_column(nullable=False, default=0)
+    request_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    span_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    runtime_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     lease_metadata: Mapped[dict[str, object]] = mapped_column(
         "metadata",
         JSONB,

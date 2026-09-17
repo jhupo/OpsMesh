@@ -38,8 +38,8 @@ from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.domains.orchestration.tasks.models import TaskMessage
 from backend.app.observability.audit.service import AuditService
+from backend.app.observability.telemetry.request_context import current_evidence_context
 from backend.app.observability.telemetry.trace_context import (
-    current_trace_context,
     with_current_trace_metadata,
 )
 
@@ -90,15 +90,22 @@ class McpToolCallLogQueryService:
                     "agent_profile_id": run.agent_profile_id,
                 }
             )
-        trace = current_trace_context()
+        evidence = current_evidence_context()
         log = McpToolCallLog(
             workspace_id=workspace_id,
             latency_ms=_latency_ms_from_payload(response_payload, error_payload),
             argument_sha256=hash_from_payload(request_payload, "arguments_sha256"),
             response_sha256=response_hash_from_payload(response_payload),
             error_code=error_code(error_payload),
-            trace_id=trace.trace_id if trace is not None else None,
-            span_id=trace.span_id if trace is not None else None,
+            request_id=evidence.get("request_id"),
+            worker_id=evidence.get("worker_id"),
+            runtime_id=(
+                str(run.execution_runtime_id or run.runtime_id)
+                if run is not None and (run.execution_runtime_id or run.runtime_id) is not None
+                else evidence.get("runtime_id")
+            ),
+            trace_id=evidence.get("trace_id"),
+            span_id=evidence.get("span_id"),
             created_at=datetime.now(UTC),
             **payload,
         )
@@ -115,6 +122,8 @@ class McpToolCallLogQueryService:
         mcp_server_id: UUID | None = None,
         tool_name: str | None = None,
         status: str | None = None,
+        trace_id: str | None = None,
+        request_id: str | None = None,
     ) -> tuple[list[McpToolCallLog], int]:
         if mcp_server_id is not None:
             require_mcp_server(self._session, workspace_id, mcp_server_id)
@@ -125,6 +134,10 @@ class McpToolCallLogQueryService:
             statement = statement.where(McpToolCallLog.tool_name == tool_name)
         if status is not None:
             statement = statement.where(McpToolCallLog.status == status)
+        if trace_id is not None:
+            statement = statement.where(McpToolCallLog.trace_id == trace_id)
+        if request_id is not None:
+            statement = statement.where(McpToolCallLog.request_id == request_id)
         return self._page(statement.order_by(McpToolCallLog.created_at.desc()), page)
 
     def _mcp_log_run_context(
@@ -194,7 +207,7 @@ class McpToolCallLogService:
             redact_sensitive_payload(response) if response is not None else None
         )
         redacted_error = redact_sensitive_payload(error) if error is not None else None
-        trace = current_trace_context()
+        evidence = current_evidence_context()
         log = McpToolCallLog(
             workspace_id=request.workspace_id,
             mcp_server_id=server_id,
@@ -208,8 +221,15 @@ class McpToolCallLogService:
             argument_sha256=argument_sha256,
             response_sha256=response_sha256,
             error_code=error_code(error),
-            trace_id=trace.trace_id if trace is not None else None,
-            span_id=trace.span_id if trace is not None else None,
+            request_id=evidence.get("request_id"),
+            worker_id=evidence.get("worker_id"),
+            runtime_id=(
+                str(run.execution_runtime_id or run.runtime_id)
+                if run is not None and (run.execution_runtime_id or run.runtime_id) is not None
+                else evidence.get("runtime_id")
+            ),
+            trace_id=evidence.get("trace_id"),
+            span_id=evidence.get("span_id"),
             request=with_current_trace_metadata(
                 {
                     "arguments_sha256": argument_sha256,

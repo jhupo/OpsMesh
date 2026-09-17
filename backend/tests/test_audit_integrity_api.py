@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import fakeredis
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
@@ -22,9 +22,10 @@ from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMem
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent, AuditIntegrityCheck
 from backend.app.observability.audit.service import AuditService
+from backend.app.observability.notifications.models import WorkspaceNotification
 from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.workers.registry import WorkerJobHandler
 
 TOKEN = "audit-integrity-api-token"
 
@@ -82,6 +83,46 @@ def test_audit_integrity_api_queues_worker_verification_and_reports_status() -> 
         )
         is not None
     )
+
+    first_event = session.scalar(
+        select(AuditEvent)
+        .where(AuditEvent.workspace_id == workspace.id)
+        .order_by(AuditEvent.created_at, AuditEvent.id)
+        .limit(1)
+    )
+    assert first_event is not None
+    session.execute(
+        update(AuditEvent)
+        .where(AuditEvent.id == first_event.id)
+        .values(current_hash="sha256:storage-corruption")
+    )
+    session.commit()
+
+    requeued = client.post(
+        f"/api/v1/workspaces/{workspace.id}/operations/audit-integrity/verify",
+        headers=_headers(owner.id),
+    )
+    assert requeued.status_code == 202
+    corrupt_job = queue.dequeue()
+    assert corrupt_job is not None
+    WorkerJobHandler(session).handle(corrupt_job)
+    session.commit()
+
+    invalid = client.get(
+        f"/api/v1/workspaces/{workspace.id}/operations/audit-integrity",
+        headers=_headers(owner.id),
+    )
+    notification = session.scalar(
+        select(WorkspaceNotification).where(
+            WorkspaceNotification.workspace_id == workspace.id,
+            WorkspaceNotification.notification_type == "audit.integrity_invalid",
+        )
+    )
+    assert invalid.status_code == 200
+    assert invalid.json()["status"] == "invalid"
+    assert notification is not None
+    assert notification.severity == "critical"
+    assert notification.metadata_["recommended_actions"]
     assert (
         session.scalar(
             select(AuditEvent).where(

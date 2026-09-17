@@ -34,6 +34,9 @@ class McpToolCallLogResponse(ORMModel):
     argument_sha256: str | None
     response_sha256: str | None
     error_code: str | None
+    request_id: str | None
+    worker_id: str | None
+    runtime_id: str | None
     trace_id: str | None
     span_id: str | None
     request: dict[str, object]

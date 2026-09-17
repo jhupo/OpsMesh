@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.utils import ensure_aware_utc
@@ -22,32 +23,86 @@ from backend.app.observability.costs.pricing import (
     normalize_currency,
 )
 from backend.app.observability.costs.queries import CostQueryService
-from backend.app.observability.costs.usage import normalize_model_usage
-from backend.app.observability.telemetry.trace_context import current_trace_context
+from backend.app.observability.costs.usage import NormalizedModelUsage, normalize_model_usage
+from backend.app.observability.notifications.service import GovernanceNotificationService
+from backend.app.observability.telemetry.request_context import current_evidence_context
+
+
+@dataclass(frozen=True)
+class CostBudgetDecision:
+    allowed: bool
+    reason: str
+    evaluated_at: datetime
+    provider: str
+    model: str
+    pricing_rule_id: UUID | None
+    pricing_version: str | None
+    currency: str | None
+    budget_id: UUID | None
+    budget_state: str
+    enforcement: str | None
+    spent: Decimal | None
+    monthly_limit: Decimal | None
+    warning_ratio: Decimal | None
+    utilization_ratio: Decimal | None
+
+    def snapshot(self) -> dict[str, object]:
+        return {
+            "allowed": self.allowed,
+            "reason": self.reason,
+            "evaluated_at": self.evaluated_at.isoformat(),
+            "provider": self.provider,
+            "model": self.model,
+            "pricing_rule_id": str(self.pricing_rule_id)
+            if self.pricing_rule_id is not None
+            else None,
+            "pricing_version": self.pricing_version,
+            "currency": self.currency,
+            "budget_id": str(self.budget_id) if self.budget_id is not None else None,
+            "budget_state": self.budget_state,
+            "enforcement": self.enforcement,
+            "spent": _decimal_string(self.spent),
+            "monthly_limit": _decimal_string(self.monthly_limit),
+            "warning_ratio": _decimal_string(self.warning_ratio),
+            "utilization_ratio": _decimal_string(self.utilization_ratio),
+        }
 
 
 class CostBudgetExceededError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        decision: CostBudgetDecision | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.decision = decision
 
 
 class CostAccountingService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def record_usage(
+    def record_attempt(
         self,
         *,
         run: AgentRun,
         request: AgentRunRequest,
-        result: AgentRunResult,
+        result: AgentRunResult | None,
         job_attempt: int,
+        request_sequence: int,
+        attempt_outcome: str,
+        budget_decision: CostBudgetDecision,
+        error: Exception | None = None,
         occurred_at: datetime | None = None,
     ) -> ModelUsageRecord:
+        if attempt_outcome not in {"succeeded", "failed", "cancelled"}:
+            raise ValueError("attempt_outcome must be succeeded, failed, or cancelled")
         existing = self._session.scalar(
             select(ModelUsageRecord).where(
                 ModelUsageRecord.workspace_id == run.workspace_id,
                 ModelUsageRecord.agent_run_id == run.id,
                 ModelUsageRecord.job_attempt == job_attempt,
+                ModelUsageRecord.request_sequence == request_sequence,
             )
         )
         if existing is not None:
@@ -56,7 +111,7 @@ class CostAccountingService:
         occurred_at = ensure_aware_utc(occurred_at or datetime.now(UTC))
         provider = canonical_model_provider(request.provider or "openai")
         model = request.model or request.agent_profile.model
-        usage = normalize_model_usage(result)
+        usage = normalize_model_usage(result) if result is not None else _missing_usage()
         pricing = CostPricingService(self._session).resolve_rule(
             workspace_id=run.workspace_id,
             provider=provider,
@@ -66,7 +121,7 @@ class CostAccountingService:
         costs = (
             calculate_costs(usage, pricing) if pricing is not None and usage.available else None
         )
-        trace = current_trace_context()
+        evidence = current_evidence_context()
         record = ModelUsageRecord(
             id=uuid4(),
             workspace_id=run.workspace_id,
@@ -87,6 +142,9 @@ class CostAccountingService:
                 else "unpriced"
             ),
             job_attempt=job_attempt,
+            request_sequence=request_sequence,
+            attempt_outcome=attempt_outcome,
+            error_code=type(error).__name__ if error is not None else None,
             request_count=usage.request_count,
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
@@ -99,11 +157,17 @@ class CostAccountingService:
             request_cost=costs[3] if costs is not None else None,
             total_cost=costs[4] if costs is not None else None,
             raw_usage=usage.raw_usage,
-            trace_id=trace.trace_id if trace is not None else None,
+            budget_decision=budget_decision.snapshot(),
+            request_id=evidence.get("request_id"),
+            trace_id=evidence.get("trace_id"),
+            span_id=evidence.get("span_id"),
+            worker_id=evidence.get("worker_id"),
+            runtime_id=evidence.get("runtime_id"),
             occurred_at=occurred_at,
         )
         self._session.add(record)
         self._session.flush([record])
+        GovernanceNotificationService(self._session).record_model_attempt(record)
         return record
 
     def assert_budget_available(
@@ -113,48 +177,148 @@ class CostAccountingService:
         provider: str,
         model: str,
         now: datetime | None = None,
-    ) -> None:
+    ) -> CostBudgetDecision:
+        decision = self.evaluate_budget(
+            workspace_id,
+            provider=provider,
+            model=model,
+            now=now,
+        )
+        if not decision.allowed:
+            message = (
+                "workspace blocking budget requires an active model pricing rule"
+                if decision.reason == "pricing_rule_missing"
+                else f"workspace model cost budget exhausted for {decision.currency}"
+            )
+            raise CostBudgetExceededError(message, decision)
+        return decision
+
+    def evaluate_budget(
+        self,
+        workspace_id: UUID,
+        *,
+        provider: str,
+        model: str,
+        now: datetime | None = None,
+    ) -> CostBudgetDecision:
         now = ensure_aware_utc(now or datetime.now(UTC))
+        normalized_provider = canonical_model_provider(provider)
         pricing = CostPricingService(self._session).resolve_rule(
             workspace_id=workspace_id,
-            provider=canonical_model_provider(provider),
+            provider=normalized_provider,
             model=model,
             occurred_at=now,
         )
         if pricing is None:
-            blocking_budget_exists = self._session.scalar(
-                select(func.count())
-                .select_from(WorkspaceCostBudget)
+            blocking_budget = self._session.scalar(
+                select(WorkspaceCostBudget)
                 .where(
                     WorkspaceCostBudget.workspace_id == workspace_id,
                     WorkspaceCostBudget.enabled.is_(True),
                     WorkspaceCostBudget.enforcement == "block",
                 )
+                .order_by(WorkspaceCostBudget.currency, WorkspaceCostBudget.id)
+                .limit(1)
             )
-            if blocking_budget_exists:
-                raise CostBudgetExceededError(
-                    "workspace blocking budget requires an active model pricing rule"
-                )
-            return
+            return CostBudgetDecision(
+                allowed=blocking_budget is None,
+                reason=(
+                    "pricing_unconfigured"
+                    if blocking_budget is None
+                    else "pricing_rule_missing"
+                ),
+                evaluated_at=now,
+                provider=normalized_provider,
+                model=model,
+                pricing_rule_id=None,
+                pricing_version=None,
+                currency=blocking_budget.currency if blocking_budget is not None else None,
+                budget_id=blocking_budget.id if blocking_budget is not None else None,
+                budget_state="unconfigured",
+                enforcement=(
+                    blocking_budget.enforcement if blocking_budget is not None else None
+                ),
+                spent=None,
+                monthly_limit=(
+                    blocking_budget.monthly_limit if blocking_budget is not None else None
+                ),
+                warning_ratio=(
+                    blocking_budget.warning_ratio if blocking_budget is not None else None
+                ),
+                utilization_ratio=None,
+            )
         budget = self._session.scalar(
             select(WorkspaceCostBudget).where(
                 WorkspaceCostBudget.workspace_id == workspace_id,
                 WorkspaceCostBudget.currency == pricing.currency,
                 WorkspaceCostBudget.enabled.is_(True),
-                WorkspaceCostBudget.enforcement == "block",
             )
         )
         if budget is None:
-            return
+            return CostBudgetDecision(
+                allowed=True,
+                reason="budget_unconfigured",
+                evaluated_at=now,
+                provider=normalized_provider,
+                model=model,
+                pricing_rule_id=pricing.id,
+                pricing_version=pricing.version,
+                currency=pricing.currency,
+                budget_id=None,
+                budget_state="unconfigured",
+                enforcement=None,
+                spent=None,
+                monthly_limit=None,
+                warning_ratio=None,
+                utilization_ratio=None,
+            )
         status = CostQueryService(self._session).budget_status(
             workspace_id,
             currency=budget.currency,
             now=now,
         )
-        if status.state == "exhausted":
-            raise CostBudgetExceededError(
-                f"workspace model cost budget exhausted for {budget.currency}"
-            )
+        blocked = status.state == "exhausted" and budget.enforcement == "block"
+        return CostBudgetDecision(
+            allowed=not blocked,
+            reason="budget_exhausted" if blocked else f"budget_{status.state}",
+            evaluated_at=now,
+            provider=normalized_provider,
+            model=model,
+            pricing_rule_id=pricing.id,
+            pricing_version=pricing.version,
+            currency=pricing.currency,
+            budget_id=budget.id,
+            budget_state=status.state,
+            enforcement=budget.enforcement,
+            spent=status.spent,
+            monthly_limit=status.monthly_limit,
+            warning_ratio=status.warning_ratio,
+            utilization_ratio=status.utilization_ratio,
+        )
+
+    def record_budget_blocked(
+        self,
+        *,
+        run: AgentRun,
+        request: AgentRunRequest,
+        decision: CostBudgetDecision,
+    ) -> None:
+        AuditService(self._session).record_system_action(
+            workspace_id=run.workspace_id,
+            action="cost.budget_blocked",
+            target_type="agent_run",
+            target_id=run.id,
+            metadata={
+                "provider": request.provider,
+                "model": request.model or request.agent_profile.model,
+                "budget_decision": decision.snapshot(),
+            },
+        )
+        GovernanceNotificationService(self._session).record_budget_blocked(
+            workspace_id=run.workspace_id,
+            run_id=run.id,
+            decision=decision.snapshot(),
+        )
 
     def assert_projected_budget_available(
         self,
@@ -242,3 +406,20 @@ class CostAccountingService:
             },
         )
         return budget
+
+
+def _missing_usage() -> NormalizedModelUsage:
+    return NormalizedModelUsage(
+        request_count=1,
+        input_tokens=0,
+        output_tokens=0,
+        cached_input_tokens=0,
+        reasoning_tokens=0,
+        total_tokens=0,
+        raw_usage={},
+        available=False,
+    )
+
+
+def _decimal_string(value: Decimal | None) -> str | None:
+    return str(value) if value is not None else None

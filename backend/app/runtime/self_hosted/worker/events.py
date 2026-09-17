@@ -7,6 +7,7 @@ from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.orchestration.runs.events import RunEventWriter
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.runtime.environment.events import new_runtime_event
 from backend.app.runtime.environment.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpaceEvent
 
@@ -34,12 +35,13 @@ class SelfHostedEventRecorder:
         message: str,
         metadata: dict[str, object] | None = None,
     ) -> RuntimeEvent:
-        event = RuntimeEvent(
+        event = new_runtime_event(
             workspace_id=runtime.workspace_id,
             workspace_runtime_id=runtime.id,
+            runtime_space_id=runtime.runtime_space_id,
             event_type=event_type,
             message=message,
-            event_metadata=metadata or {},
+            metadata=metadata,
             created_at=datetime.now(UTC),
         )
         self._session.add(event)

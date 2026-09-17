@@ -12,7 +12,8 @@ from backend.app.domains.orchestration.approvals.policy import (
 )
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.contracts import RuntimeManagerProvider
-from backend.app.runtime.environment.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime.environment.events import new_runtime_event
+from backend.app.runtime.environment.models import RuntimeCommand, WorkspaceRuntime
 from backend.app.runtime.environment.queries import RuntimeControlQueryService
 from backend.app.runtime.environment.security_events import RuntimeSecurityEventRecorder
 
@@ -66,7 +67,7 @@ class RuntimeCommandService:
         self._session.add(record)
         self._session.flush()
         self._session.add(
-            RuntimeEvent(
+            new_runtime_event(
                 workspace_id=workspace_id,
                 workspace_runtime_id=runtime.id,
                 runtime_space_id=runtime.runtime_space_id,
@@ -76,7 +77,7 @@ class RuntimeCommandService:
                     if allowed
                     else "Runtime command blocked by policy"
                 ),
-                event_metadata={
+                metadata={
                     "runtime_id": str(runtime.id),
                     "command_id": str(record.id),
                     **_decision_metadata(command, decision),
@@ -182,13 +183,13 @@ class RuntimeCommandService:
         metadata = _decision_metadata(command, decision)
         metadata["command_id"] = str(record.id)
         self._session.add(
-            RuntimeEvent(
+            new_runtime_event(
                 workspace_id=runtime.workspace_id,
                 workspace_runtime_id=runtime.id,
                 runtime_space_id=runtime.runtime_space_id,
                 event_type="runtime.command.blocked",
                 message="Runtime command blocked",
-                event_metadata=metadata,
+                metadata=metadata,
                 created_at=datetime.now(UTC),
             )
         )

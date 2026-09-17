@@ -1,8 +1,10 @@
 # Observability, Audit, and Cost Operations
 
-OpsMesh ships a single-VPS observability and governance stack. Application logs, metrics, and
-traces are correlated by `trace_id`; audit evidence remains a separate durable Postgres record;
-model usage and calculated cost are stored in a workspace-scoped ledger.
+OpsMesh ships a single-VPS observability and governance stack. API requests always receive a
+correlation context, even when OTLP export is disabled. `request_id`, `trace_id`, `span_id`,
+task/run, worker, and runtime identifiers are carried into queue jobs and durable evidence. Audit
+evidence remains a separate Postgres record; every model attempt and its budget decision are stored
+in a workspace-scoped ledger.
 
 ## Signal Flow
 
@@ -12,7 +14,7 @@ model usage and calculated cost are stored in a workspace-scoped ledger.
 | Metrics | API and Postgres/Redis domain collectors | official Prometheus Python client | Prometheus and Grafana | 30 days |
 | Traces | FastAPI, HTTPX, SQLAlchemy, Redis, queue, and worker spans | OTLP gRPC | Tempo and Grafana | 7 days |
 | Audit | Product services | SQLAlchemy transaction | Postgres `audit_events` plus integrity snapshots | WORM by default |
-| Model cost | Model response usage events | orchestration transaction | Postgres `model_usage_records` | Product data retention |
+| Model attempt and cost | Model success, failure, and cancellation | orchestration transaction | Postgres `model_usage_records` | Product data retention |
 
 The checked-in stack is under `deploy/server/monitoring`. It pins Prometheus, Alertmanager, Loki,
 Tempo, OpenTelemetry Collector, and Grafana versions and uses persistent Docker volumes. On the
@@ -99,6 +101,30 @@ The production environment example enables both `OPSMESH_SMOKE_MONITORING` and
 non-placeholder webhook config. Receiver-side delivery confirmation remains part of the external
 receiver's own test procedure; OpsMesh alerts on Alertmanager notification failures.
 
+## Correlation and Operations Evidence
+
+`X-Request-ID`, W3C `traceparent`, and the OpsMesh trace headers are accepted at the API boundary.
+The API returns the effective identifiers and queue jobs retain them. Worker execution creates a
+child span context even when tracing export is disabled, so run events, runtime events, worker
+leases, MCP calls, audit events, and model-attempt records remain correlatable without relying on
+Tempo availability.
+
+Operators can resolve the durable evidence for exactly one trace or request identifier through:
+
+- `GET /api/v1/workspaces/{workspace_id}/operations/correlation?trace_id=...`
+- `GET /api/v1/workspaces/{workspace_id}/operations/correlation?request_id=...`
+
+The response contains only workspace-scoped identifiers, evidence counts, and drill-down links; it
+does not aggregate raw prompts, tool inputs, credentials, or provider payloads. The workspace
+control-plane endpoint also rolls up API/queue/worker/runtime/MCP/approval, audit integrity, cost,
+governance notification, and data-lifecycle status:
+
+- `GET /api/v1/workspaces/{workspace_id}/operations/control-plane`
+
+Application logs use the same identifiers and redact structured metadata before export. Original
+prompts, credentials, authorization headers, file contents, and secret-bearing URLs are not valid
+log or trace attributes.
+
 ## Audit Integrity
 
 Audit events are independently recorded, redacted, and chained per workspace with SHA-256 hashes.
@@ -115,7 +141,9 @@ Operators can inspect or queue an immediate check through:
 - `GET /api/v1/workspaces/{workspace_id}/operations/audit-events`
 
 The first two endpoints require workspace admin permission. Queuing a verification is itself an
-audit event. The default check interval is one hour and the stale threshold is two hours.
+audit event. A failed verification also creates one deduplicated critical workspace notification
+with a drill-down and remediation actions. The default check interval is one hour and the stale
+threshold is two hours.
 
 Database superusers can disable database triggers, so Postgres access control and encrypted,
 off-host database backups remain part of the audit trust boundary. Back up the database and
@@ -124,9 +152,16 @@ truth.
 
 ## Cost Accounting
 
-Every completed model request writes one `model_usage_records` row in the same durable workflow as
-the run events. OpenAI-style and Anthropic-style token fields are normalized; cached-input and
+Every provider attempt writes one immutable `model_usage_records` row in the same durable workflow
+as the run events. Primary and fallback requests are distinguished by `request_sequence`; worker
+retries are distinguished by `job_attempt`; `attempt_outcome` records `succeeded`, `failed`, or
+`cancelled`. OpenAI-style and Anthropic-style token fields are normalized; cached-input and
 reasoning tokens are retained separately. Raw usage metadata is redacted before persistence.
+
+Each row snapshots the pricing version and the pre-request budget decision, including enforcement,
+spend, limit, utilization, and the decision reason. Later pricing or budget changes never rewrite
+historical attempts. Failed and cancelled attempts remain visible even when the provider reports no
+usage.
 
 Metering status is explicit:
 
@@ -156,7 +191,9 @@ model requests after recorded spend reaches the matching pricing currency's limi
 blocking budget is enabled, requests without an active pricing rule fail closed instead of bypassing
 enforcement. Calls already in flight can finish, so this is an operational guardrail rather than a
 prepaid billing authorization system. Unpriced and missing-usage records are visible in summaries
-and alerts and must be resolved before financial reconciliation.
+and alerts and must be resolved before financial reconciliation. Unpriced attempts, missing usage,
+budget warnings, exhausted budgets, and fail-closed budget rejections also create deduplicated,
+workspace-scoped governance notifications with remediation links.
 
 ## Alerts and Dashboards
 

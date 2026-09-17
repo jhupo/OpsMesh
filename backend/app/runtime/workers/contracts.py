@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.app.observability.telemetry.request_context import request_id_var
 from backend.app.observability.telemetry.trace_context import (
     TraceContext,
     child_trace_context,
@@ -45,6 +46,7 @@ class JobPayload(BaseModel):
     last_error: str | None = None
     last_error_type: str | None = None
     last_failed_at: datetime | None = None
+    request_id: str | None = Field(default=None, max_length=80)
     trace_id: str | None = None
     span_id: str | None = None
     parent_span_id: str | None = None
@@ -71,7 +73,12 @@ class JobPayload(BaseModel):
 
     def with_trace_context(self, context: TraceContext | None = None) -> "JobPayload":
         context = context or child_trace_context()
-        return self.model_copy(update=context.metadata())
+        return self.model_copy(
+            update={
+                **context.metadata(),
+                "request_id": self.request_id or request_id_var.get(),
+            }
+        )
 
     def trace_metadata(self) -> dict[str, object]:
         context = self.trace_context()

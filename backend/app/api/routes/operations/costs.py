@@ -36,6 +36,8 @@ async def list_model_usage(
     end_at: datetime | None = Query(default=None),
     provider: str | None = Query(default=None),
     model: str | None = Query(default=None),
+    trace_id: str | None = Query(default=None, min_length=32, max_length=32),
+    request_id: str | None = Query(default=None, min_length=1, max_length=80),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[ModelUsageRecordResponse]:
@@ -48,6 +50,8 @@ async def list_model_usage(
         model=model,
         limit=page.limit,
         offset=page.offset,
+        trace_id=trace_id,
+        request_id=request_id,
     )
     return PageResponse(
         items=[ModelUsageRecordResponse.model_validate(row) for row in rows],

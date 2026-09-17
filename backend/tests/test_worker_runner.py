@@ -64,12 +64,14 @@ from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoop
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.costs.models import (
     ModelPricingRule,
     ModelUsageRecord,
     WorkspaceCostBudget,
 )
-from backend.app.observability.telemetry.request_context import current_log_context
+from backend.app.observability.notifications.models import WorkspaceNotification
+from backend.app.observability.telemetry.request_context import current_log_context, log_context
 from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
@@ -216,7 +218,7 @@ def test_worker_runner_run_once_processes_agent_job() -> None:
         trace_id="0123456789abcdef0123456789abcdef",
         span_id="abcdef0123456789",
     )
-    with trace_context(parent_trace):
+    with trace_context(parent_trace), log_context(request_id="request-worker-flow"):
         queue.enqueue(
             JobPayload(
                 workspace_id=workspace_id,
@@ -236,6 +238,7 @@ def test_worker_runner_run_once_processes_agent_job() -> None:
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-1", queue_name="agent_runs"),
         agent_runner=DeterministicAgentRunner(),
+        settings=Settings(environment="test", tracing_enabled=False),
     )
 
     assert runner.run_once() is True
@@ -256,12 +259,23 @@ def test_worker_runner_run_once_processes_agent_job() -> None:
         assert event is not None
         assert event.event_metadata["trace_id"] == parent_trace.trace_id
         assert event.event_metadata["parent_span_id"] == queued_trace.span_id
+        assert event.request_id == "request-worker-flow"
+        assert event.trace_id == parent_trace.trace_id
+        assert event.worker_id == "worker-1"
         usage = session.scalar(
             select(ModelUsageRecord).where(ModelUsageRecord.agent_run_id == run_id)
         )
         assert usage is not None
         assert usage.metering_status == "missing_usage"
         assert usage.trace_id == parent_trace.trace_id
+        assert usage.request_id == "request-worker-flow"
+        assert usage.worker_id == "worker-1"
+        assert usage.attempt_outcome == "succeeded"
+        assert usage.budget_decision["allowed"] is True
+        lease = session.scalar(select(WorkerLease).where(WorkerLease.resource_id == run_id))
+        assert lease is not None
+        assert lease.request_id == "request-worker-flow"
+        assert lease.trace_id == parent_trace.trace_id
         assert (
             session.scalar(
                 select(RunEvent).where(
@@ -436,6 +450,24 @@ def test_worker_blocks_model_call_when_workspace_cost_budget_is_exhausted() -> N
             )
             is not None
         )
+        audit = session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.workspace_id == workspace_id,
+                AuditEvent.agent_run_id == run_id,
+                AuditEvent.action == "cost.budget_blocked",
+            )
+        )
+        notification = session.scalar(
+            select(WorkspaceNotification).where(
+                WorkspaceNotification.workspace_id == workspace_id,
+                WorkspaceNotification.source_id == run_id,
+                WorkspaceNotification.notification_type == "cost.budget_exhausted",
+            )
+        )
+        assert audit is not None
+        assert audit.trace_id is not None
+        assert notification is not None
+        assert notification.severity == "critical"
 
 
 def test_worker_runner_maintenance_reclaims_job_after_crash_before_lease() -> None:

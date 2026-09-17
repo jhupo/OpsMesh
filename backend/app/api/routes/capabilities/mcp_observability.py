@@ -79,6 +79,8 @@ async def list_mcp_tool_call_logs(
     mcp_server_id: UUID | None = Query(default=None),
     tool_name: str | None = Query(default=None, min_length=1, max_length=160),
     status_filter: str | None = Query(default=None, alias="status", min_length=1, max_length=32),
+    trace_id: str | None = Query(default=None, min_length=32, max_length=32),
+    request_id: str | None = Query(default=None, min_length=1, max_length=80),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[McpToolCallLogResponse]:
@@ -89,6 +91,8 @@ async def list_mcp_tool_call_logs(
             mcp_server_id=mcp_server_id,
             tool_name=tool_name,
             status=status_filter,
+            trace_id=trace_id,
+            request_id=request_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

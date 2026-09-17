@@ -2,8 +2,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from opentelemetry.trace import SpanKind
 
+from backend.app.api.middleware import RequestContextMiddleware
+from backend.app.core.config import Settings
 from backend.app.observability.telemetry.trace_context import (
     current_trace_context,
     telemetry_span,
@@ -11,6 +15,34 @@ from backend.app.observability.telemetry.trace_context import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_correlation_headers_remain_active_when_otel_export_is_disabled() -> None:
+    app = FastAPI()
+    app.add_middleware(
+        RequestContextMiddleware,
+        settings=Settings(environment="test", tracing_enabled=False),
+    )
+
+    @app.get("/probe")
+    async def probe() -> dict[str, str]:
+        return {"status": "ok"}
+
+    trace_id = "0123456789abcdef0123456789abcdef"
+    parent_span_id = "abcdef0123456789"
+    response = TestClient(app).get(
+        "/probe",
+        headers={
+            "X-Request-ID": "request-no-exporter",
+            "traceparent": f"00-{trace_id}-{parent_span_id}-01",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["x-request-id"] == "request-no-exporter"
+    assert response.headers["x-trace-id"] == trace_id
+    assert response.headers["x-parent-span-id"] == parent_span_id
+    assert len(response.headers["x-span-id"]) == 16
 
 
 def test_w3c_traceparent_is_preserved_at_the_product_boundary() -> None:
