@@ -16,6 +16,8 @@ from backend.app.domains.workspace.data_lifecycle.policy import (
 from backend.app.domains.workspace.data_lifecycle.repository import (
     WorkspaceDataLifecycleRepository,
 )
+from backend.app.domains.workspace.data_transfer.models import WorkspaceExportJob
+from backend.app.domains.workspace.projects.models import WorkspaceProjectFile
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.tenants.models import Workspace
@@ -107,6 +109,7 @@ class WorkspaceRetentionService:
                 workspace_id=workspace_id,
                 generated_at=generated_at,
                 policy=policy,
+                latest_success=latest_success,
                 include_files=include_files,
                 include_export_jobs=include_export_jobs,
                 include_artifacts=include_artifacts,
@@ -168,6 +171,7 @@ class WorkspaceRetentionService:
         workspace_id: UUID,
         generated_at: datetime,
         policy: dict[str, object],
+        latest_success: WorkspaceExportJob | None,
         include_files: bool,
         include_export_jobs: bool,
         include_artifacts: bool,
@@ -181,6 +185,7 @@ class WorkspaceRetentionService:
                     generated_at=generated_at,
                     retention_days=_retention_days(policy, "file_retention_days"),
                     delete_policy=str(policy.get("delete_policy") or "manual_review"),
+                    latest_success=latest_success,
                     limit=max_items - len(candidates),
                 )
             )
@@ -211,6 +216,7 @@ class WorkspaceRetentionService:
         generated_at: datetime,
         retention_days: int | None,
         delete_policy: str,
+        latest_success: WorkspaceExportJob | None,
         limit: int,
     ) -> list[dict[str, object]]:
         if retention_days is None or limit <= 0:
@@ -232,21 +238,70 @@ class WorkspaceRetentionService:
             .order_by(WorkspaceFile.created_at.asc(), WorkspaceFile.id.asc())
             .limit(limit)
         ).all()
-        return [
-            _candidate_payload(
-                resource_type="file",
-                resource_id=file.id,
-                created_at=file.created_at,
-                generated_at=generated_at,
-                retention_days=retention_days,
-                status=file.status,
-                action=action,
-                filename=file.filename,
-                size_bytes=file.size_bytes,
-                reason=reason,
+        referenced_file_ids = set(
+            self._session.scalars(
+                select(WorkspaceProjectFile.workspace_file_id).where(
+                    WorkspaceProjectFile.workspace_id == workspace_id,
+                    WorkspaceProjectFile.status == "active",
+                    WorkspaceProjectFile.workspace_file_id.in_(
+                        [file.id for file in files]
+                    ),
+                )
+            ).all()
+        )
+        candidates: list[dict[str, object]] = []
+        for file in files:
+            is_referenced = file.id in referenced_file_ids
+            is_backed_up = self._archive_includes_file(latest_success, file.id)
+            candidates.append(
+                _candidate_payload(
+                    resource_type="file",
+                    resource_id=file.id,
+                    created_at=file.created_at,
+                    generated_at=generated_at,
+                    retention_days=retention_days,
+                    status=file.status,
+                    action=(
+                        "manual_review"
+                        if is_referenced or not is_backed_up
+                        else action
+                    ),
+                    filename=file.filename,
+                    size_bytes=file.size_bytes,
+                    reason=(
+                        "file_referenced_by_active_project"
+                        if is_referenced
+                        else (
+                            "file_not_backed_by_latest_archive"
+                            if not is_backed_up
+                            else reason
+                        )
+                    ),
+                )
             )
-            for file in files
-        ]
+        return candidates
+
+    @staticmethod
+    def _archive_includes_file(
+        latest_success: WorkspaceExportJob | None,
+        file_id: UUID,
+    ) -> bool:
+        job_metadata = latest_success.job_metadata if latest_success is not None else None
+        if not isinstance(job_metadata, dict):
+            return False
+        inventory = job_metadata.get("object_inventory")
+        if not isinstance(inventory, list):
+            return False
+        source_id = str(file_id)
+        return any(
+            isinstance(item, dict)
+            and item.get("status") == "included"
+            and (
+                item.get("resource_id") == source_id
+                or item.get("archive_name", "").startswith(f"files/{source_id}/")
+            )
+            for item in inventory
+        )
 
     def _export_job_retention_candidates(
         self,

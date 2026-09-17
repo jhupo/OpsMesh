@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
 from uuid import UUID
 from zipfile import ZipFile
 
@@ -34,6 +35,8 @@ class WorkspaceArchiveBlobReader:
         response: WorkspaceImportResponse,
         request: WorkspaceArchiveImportRequest,
         total_bytes: int,
+        expected_checksum: str,
+        allow_checksum_replacement: bool = False,
     ) -> bytes | None:
         if archive_name not in self._archive_names:
             response.skipped_counts[collection] += 1
@@ -50,6 +53,19 @@ class WorkspaceArchiveBlobReader:
             )
             return None
         content = self._archive.read(archive_name)
+        if sha256(content).hexdigest() != expected_checksum and not allow_checksum_replacement:
+            response.skipped_counts[collection] += 1
+            response.conflict_plan.append(
+                WorkspaceImportConflict(
+                    collection=collection,
+                    source_id=source_id,
+                    field="checksum_sha256",
+                    strategy="reject",
+                    severity="error",
+                    message=f"{collection[:-1].title()} bytes failed checksum validation.",
+                )
+            )
+            return None
         if len(content) > request.max_bytes_per_object:
             response.skipped_counts[collection] += 1
             response.warnings.append(f"Skipped {collection[:-1]} {source_id}: object too large")

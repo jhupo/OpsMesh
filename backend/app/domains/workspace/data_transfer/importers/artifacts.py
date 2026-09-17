@@ -84,6 +84,11 @@ class WorkspaceArchiveArtifactImporter:
             response=response,
             request=request,
             total_bytes=total_bytes,
+            expected_checksum=_string_field(item, "checksum_sha256"),
+            allow_checksum_replacement=(
+                _archive_resolution_action(request, "artifacts", source_id)
+                == "replace_archive_object"
+            ),
         )
         if content is None:
             return total_bytes

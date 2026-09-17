@@ -93,6 +93,9 @@ def inspect_archive_content(
         "manifest_valid": False,
         "workspace_matches": False,
         "format_version_matches": False,
+        "payload_checksum_matches": False,
+        "object_inventory_present": False,
+        "object_inventory_valid": False,
     }
     metadata: dict[str, object] = {
         "filename": filename,
@@ -108,6 +111,7 @@ def inspect_archive_content(
             checks["zip_readable"] = True
             names = set(archive.namelist())
             checks["metadata_present"] = "metadata.json" in names
+            checks["object_inventory_present"] = "object-inventory.json" in names
             metadata["archive_entry_count"] = len(names)
             if checks["metadata_present"]:
                 inspect_metadata_payload(
@@ -116,10 +120,35 @@ def inspect_archive_content(
                     checks,
                     lambda counts: manifest_counts.update(counts),
                 )
+            if checks["object_inventory_present"]:
+                inventory = json.loads(archive.read("object-inventory.json"))
+                checks["object_inventory_valid"] = _verify_object_inventory(archive, inventory)
     except (BadZipFile, json.JSONDecodeError, UnicodeDecodeError) as exc:
         metadata["archive_error"] = str(exc)[:500]
     metadata["manifest_counts"] = manifest_counts
     return checks, metadata
+
+
+def _verify_object_inventory(archive: ZipFile, inventory: object) -> bool:
+    if not isinstance(inventory, list):
+        return False
+    names = set(archive.namelist())
+    for entry in inventory:
+        if not isinstance(entry, dict):
+            return False
+        if entry.get("status") != "included":
+            continue
+        name = entry.get("archive_name")
+        expected_checksum = entry.get("checksum_sha256")
+        expected_size = entry.get("size_bytes")
+        if not isinstance(name, str) or not isinstance(expected_checksum, str):
+            return False
+        if not isinstance(expected_size, int) or name not in names:
+            return False
+        content = archive.read(name)
+        if len(content) != expected_size or sha256(content).hexdigest() != expected_checksum:
+            return False
+    return True
 
 
 def inspect_metadata_payload(
@@ -128,8 +157,9 @@ def inspect_metadata_payload(
     checks: dict[str, bool],
     record_counts: Callable[[dict[str, int]], None],
 ) -> None:
-    manifest = payload.get("manifest") if isinstance(payload, dict) else None
-    workspace = payload.get("workspace") if isinstance(payload, dict) else None
+    payload_dict = payload if isinstance(payload, dict) else {}
+    manifest = payload_dict.get("manifest")
+    workspace = payload_dict.get("workspace")
     if isinstance(manifest, dict):
         checks["format_version_matches"] = (
             manifest.get("format_version") == SUPPORTED_WORKSPACE_EXPORT_FORMAT
@@ -144,6 +174,22 @@ def inspect_metadata_payload(
                     if isinstance(value, int) and value >= 0
                 }
             )
+        raw_checksum = manifest.get("payload_checksum_sha256")
+        if isinstance(raw_checksum, str):
+            collections = {
+                str(key): value
+                for key, value in payload_dict.items()
+                if key not in {"manifest", "workspace"}
+            }
+            actual_checksum = sha256(
+                json.dumps(
+                    {"workspace": workspace, "collections": collections},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()
+            checks["payload_checksum_matches"] = raw_checksum == actual_checksum
     elif isinstance(workspace, dict):
         checks["workspace_matches"] = workspace.get("id") == str(workspace_id)
     checks["manifest_valid"] = (

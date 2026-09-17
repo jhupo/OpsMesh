@@ -344,18 +344,21 @@ Initial export types:
 - run log export
 - workspace metadata archive export
 
-Implemented metadata export:
+Implemented metadata export (`workspace-export.v2`):
 
 - `POST /api/v1/workspaces/{workspace_id}/exports/metadata`
-- exports workspace, agents, teams, tasks, runs, file/artifact metadata, and audit metadata as JSON
+- exports workspace, agents, teams, tasks, runs, projects (configuration versions, input bindings,
+  output declarations), file/artifact metadata, three-layer memory metadata, and audit metadata as JSON
 - enforces workspace authorization
-- records `workspace.export.created`
+- records `workspace.export.created`; manifest carries a canonical payload checksum, dependency graph,
+  and `secrets-excluded-redacted` sensitive-field policy
 
 Implemented metadata import:
 
 - `POST /api/v1/workspaces/{workspace_id}/exports/metadata/import`
 - supports dry-run by default
-- imports agents, teams, team members, tasks, and task steps into the target workspace
+- imports agents, teams, team members, tasks, project definitions/versions/outputs, and three-layer
+  memory metadata into the target workspace; workspace and agent/team/task scopes are remapped
 - keeps imported tasks as drafts and does not enqueue runs automatically
 - records `workspace.import.created` on committed imports
 
@@ -368,6 +371,8 @@ Implemented archive export:
 - enforces per-object and total archive byte limits
 - writes `skipped-objects.json` when storage objects are missing or too large
 - records `workspace.archive_export.created`
+- writes `object-inventory.json` with an independent checksum and size for every included file/artifact;
+  storage bytes whose checksum differs from Postgres metadata are skipped and recorded as evidence
 
 Implemented async archive export jobs:
 
@@ -386,7 +391,18 @@ Implemented archive import:
 - can restore workspace file bytes into the target workspace
 - can restore artifact bytes into the target workspace and remap artifacts to imported tasks when available
 - supports dry-run, per-object byte limits, and total restored byte limits
+- verifies the v2 metadata checksum before any write and verifies every imported object checksum before
+  staging; imported project IDs, memory scopes, artifact versions, and file bindings are remapped to the
+  target workspace. Embedding vectors and credential references are excluded and marked for rebuild or
+  manual rebind.
 - records `workspace.archive_import.created` on committed imports
+
+Implemented restore drill:
+
+- `POST /api/v1/workspaces/{workspace_id}/exports/archive/jobs/{job_id}/restore-drill` creates a
+  disposable workspace, performs a committed archive import against the configured storage adapter,
+  checks required resolutions and object restoration, records the result, and removes the disposable
+  workspace and objects. It does not run against or mutate the source workspace.
 
 Workspace metadata archive export can include:
 
@@ -452,12 +468,9 @@ For the first backend implementation:
 - artifact collection from Docker runtime
 - access events
 
-Later:
+Future scope:
 
 - pre-signed uploads
-- object storage backend
 - file previews
 - virus scanning
-- embeddings/indexing
-- bulk export
-- retention policies
+- large-object multipart upload

@@ -10,6 +10,11 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.agents.memory.models import (
+    WorkspaceMemoryConfiguration,
+    WorkspaceMemoryEntry,
+    WorkspaceMemoryVersion,
+)
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.skills.models import WorkspaceSkillInstall
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
@@ -23,6 +28,12 @@ from backend.app.domains.workspace.data_lifecycle.settings import (
 from backend.app.domains.workspace.data_transfer.models import (
     WorkspaceExportJob,
     WorkspaceExportJobStatus,
+)
+from backend.app.domains.workspace.projects.models import (
+    WorkspaceProject,
+    WorkspaceProjectConfigurationVersion,
+    WorkspaceProjectFile,
+    WorkspaceProjectOutput,
 )
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent, WorkspaceFile
@@ -116,6 +127,12 @@ def export_job_payload(job: WorkspaceExportJob | None) -> dict[str, object] | No
         "has_storage_object": job.storage_key is not None,
         "request": job.request,
         "metadata": job.job_metadata,
+        "source_release": job.source_release,
+        "source_schema_revision": job.source_schema_revision,
+        "retention_until": job.retention_until,
+        "verification_status": job.verification_status,
+        "verified_at": job.verified_at,
+        "manifest_checksum_sha256": job.manifest_checksum_sha256,
     }
 
 
@@ -144,6 +161,19 @@ ARCHIVE_COVERAGE_COLUMNS = {
     "run_events": (RunEvent.id, RunEvent.workspace_id),
     "files": (WorkspaceFile.id, WorkspaceFile.workspace_id),
     "artifacts": (Artifact.id, Artifact.workspace_id),
+    "projects": (WorkspaceProject.id, WorkspaceProject.workspace_id),
+    "project_configuration_versions": (
+        WorkspaceProjectConfigurationVersion.id,
+        WorkspaceProjectConfigurationVersion.workspace_id,
+    ),
+    "project_files": (WorkspaceProjectFile.id, WorkspaceProjectFile.workspace_id),
+    "project_outputs": (WorkspaceProjectOutput.id, WorkspaceProjectOutput.workspace_id),
+    "memory_entries": (WorkspaceMemoryEntry.id, WorkspaceMemoryEntry.workspace_id),
+    "memory_versions": (WorkspaceMemoryVersion.id, WorkspaceMemoryVersion.workspace_id),
+    "memory_configurations": (
+        WorkspaceMemoryConfiguration.id,
+        WorkspaceMemoryConfiguration.workspace_id,
+    ),
     "runtime_spaces": (RuntimeSpace.id, RuntimeSpace.workspace_id),
     "runtime_space_quotas": (RuntimeSpaceQuota.id, RuntimeSpaceQuota.workspace_id),
     "skill_installs": (WorkspaceSkillInstall.id, WorkspaceSkillInstall.workspace_id),

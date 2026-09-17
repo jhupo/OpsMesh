@@ -28,6 +28,8 @@ class ArchiveImportForm:
         import_tasks: bool = Form(default=True),
         import_file_bytes: bool = Form(default=True),
         import_artifact_bytes: bool = Form(default=True),
+        import_memory: bool = Form(default=True),
+        import_projects: bool = Form(default=True),
         name_prefix: str = Form(default="Imported "),
         max_items_per_collection: int = Form(default=500),
         max_bytes_per_object: int = Form(default=25 * 1024 * 1024),
@@ -39,6 +41,8 @@ class ArchiveImportForm:
         self.import_tasks = import_tasks
         self.import_file_bytes = import_file_bytes
         self.import_artifact_bytes = import_artifact_bytes
+        self.import_memory = import_memory
+        self.import_projects = import_projects
         self.name_prefix = name_prefix
         self.max_items_per_collection = max_items_per_collection
         self.max_bytes_per_object = max_bytes_per_object
@@ -53,6 +57,8 @@ class ArchiveImportForm:
             import_tasks=self.import_tasks,
             import_file_bytes=self.import_file_bytes,
             import_artifact_bytes=self.import_artifact_bytes,
+            import_memory=self.import_memory,
+            import_projects=self.import_projects,
             name_prefix=self.name_prefix,
             max_items_per_collection=self.max_items_per_collection,
             max_bytes_per_object=self.max_bytes_per_object,

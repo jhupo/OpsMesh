@@ -19,12 +19,17 @@ from sqlalchemy.pool import StaticPool
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
+from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.access.models import User
+from backend.app.domains.agents.memory.models import (
+    WorkspaceMemoryConfiguration,
+    WorkspaceMemoryEntry,
+    memory_content_fingerprint,
+)
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.skills.models import (
     Skill,
@@ -32,6 +37,12 @@ from backend.app.domains.capabilities.skills.models import (
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.data_transfer.models import WorkspaceExportJob
+from backend.app.domains.workspace.projects.models import (
+    WorkspaceProject,
+    WorkspaceProjectConfigurationVersion,
+    WorkspaceProjectFile,
+    WorkspaceProjectOutput,
+)
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.domains.workspace.storage.storage import LocalStorage
@@ -40,8 +51,8 @@ from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMem
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
 
 TOKEN = "test-token"
 
@@ -116,7 +127,7 @@ def test_workspace_metadata_export_is_scoped_and_audited(tmp_path: Path) -> None
         "content-disposition"
     ]
     payload = json.loads(response.content)
-    assert payload["manifest"]["format_version"] == "workspace-export.v1"
+    assert payload["manifest"]["format_version"] == "workspace-export.v2"
     assert payload["workspace"]["id"] == str(workspace.id)
     assert payload["manifest"]["counts"]["agents"] == 1
     assert payload["manifest"]["counts"]["teams"] == 1
@@ -286,7 +297,7 @@ def test_workspace_data_lifecycle_diagnostics_reports_backup_retention_and_audit
 
     assert response.status_code == 200
     body = response.json()
-    assert body["export_import"]["format_version"] == "workspace-export.v1"
+    assert body["export_import"]["format_version"] == "workspace-export.v2"
     assert body["export_import"]["archive_import_supported"] is True
     assert body["export_import"]["latest_export_job"]["status"] == "failed"
     assert body["export_import"]["latest_export_job"]["request"]["headers"] == "[redacted]"
@@ -1278,6 +1289,18 @@ def test_workspace_retention_preview_reports_scoped_candidates_and_redacts_metad
     task = Task(workspace_id=workspace.id, created_by_user_id=owner.id, title="Retention task")
     session.add_all([old_file, fresh_file, foreign_file, old_job, backup_job, task])
     session.flush()
+    backup_job.job_metadata = {
+        "format_version": "workspace-export.v2",
+        "object_inventory": [
+            {
+                "archive_name": f"files/{old_file.id}/old.txt",
+                "resource_id": str(old_file.id),
+                "status": "included",
+                "size_bytes": old_file.size_bytes,
+                "checksum_sha256": old_file.checksum_sha256,
+            }
+        ],
+    }
     old_artifact = Artifact(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -1366,6 +1389,19 @@ def test_workspace_retention_apply_soft_deletes_files_and_records_audit(
         created_at=datetime.now(UTC),
     )
     session.add_all([old_file, backup_job])
+    session.flush()
+    backup_job.job_metadata = {
+        "format_version": "workspace-export.v2",
+        "object_inventory": [
+            {
+                "archive_name": f"files/{old_file.id}/old.txt",
+                "resource_id": str(old_file.id),
+                "status": "included",
+                "size_bytes": old_file.size_bytes,
+                "checksum_sha256": old_file.checksum_sha256,
+            }
+        ],
+    }
     session.commit()
 
     response = client.post(
@@ -1399,6 +1435,109 @@ def test_workspace_retention_apply_soft_deletes_files_and_records_audit(
     )
     assert audit is not None
     assert audit.audit_metadata["applied_counts"]["files"] == 1
+
+
+def test_workspace_retention_protects_files_referenced_by_active_projects(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    owner, workspace = _seed_workspace(
+        session,
+        email="owner-retention-project-reference@example.com",
+        slug="owner-retention-project-reference",
+    )
+    workspace.settings = _retention_settings()
+    old_at = datetime.now(UTC) - timedelta(days=40)
+    old_file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=owner.id,
+        filename="project-input.txt",
+        content_type="text/plain",
+        size_bytes=12,
+        checksum_sha256="9" * 64,
+        storage_key="workspaces/owner-retention-project-reference/files/input.txt",
+        created_at=old_at,
+    )
+    unbacked_file = WorkspaceFile(
+        workspace_id=workspace.id,
+        uploaded_by_user_id=owner.id,
+        filename="unbacked.txt",
+        content_type="text/plain",
+        size_bytes=8,
+        checksum_sha256="b" * 64,
+        storage_key="workspaces/owner-retention-project-reference/files/unbacked.txt",
+        created_at=old_at,
+    )
+    project = WorkspaceProject(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        name="Protected project",
+        slug="protected-project",
+    )
+    backup_job = WorkspaceExportJob(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        export_type="workspace_archive",
+        status="completed",
+        request={},
+        storage_key="workspaces/owner-retention-project-reference/exports/latest.zip",
+        filename="latest.zip",
+        content_type="application/zip",
+        size_bytes=40,
+        checksum_sha256="a" * 64,
+        completed_at=datetime.now(UTC),
+        created_at=datetime.now(UTC),
+    )
+    session.add_all([old_file, unbacked_file, project, backup_job])
+    session.flush()
+    backup_job.job_metadata = {
+        "format_version": "workspace-export.v2",
+        "object_inventory": [
+            {
+                "archive_name": f"files/{old_file.id}/input.txt",
+                "resource_id": str(old_file.id),
+                "status": "included",
+                "size_bytes": old_file.size_bytes,
+                "checksum_sha256": old_file.checksum_sha256,
+            }
+        ],
+    }
+    session.add(
+        WorkspaceProjectFile(
+            workspace_id=workspace.id,
+            project_id=project.id,
+            workspace_file_id=old_file.id,
+            project_path="inputs/project-input.txt",
+            version=1,
+        )
+    )
+    session.commit()
+
+    preview = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/retention/preview",
+        headers=_headers(owner.id),
+        json={"include_export_jobs": False, "include_artifacts": False},
+    )
+    assert preview.status_code == 200
+    candidates = {
+        candidate["resource_id"]: candidate for candidate in preview.json()["candidates"]
+    }
+    assert candidates[str(old_file.id)]["action"] == "manual_review"
+    assert candidates[str(old_file.id)]["reason"] == "file_referenced_by_active_project"
+    assert candidates[str(unbacked_file.id)]["action"] == "manual_review"
+    assert candidates[str(unbacked_file.id)]["reason"] == "file_not_backed_by_latest_archive"
+
+    applied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/exports/retention/apply",
+        headers=_headers(owner.id),
+        json={"include_export_jobs": False, "include_artifacts": False},
+    )
+    assert applied.status_code == 200
+    assert applied.json()["applied_counts"]["files"] == 0
+    session.refresh(old_file)
+    session.refresh(unbacked_file)
+    assert old_file.status == "active"
+    assert unbacked_file.status == "active"
 
 
 def test_workspace_retention_apply_blocks_without_successful_backup(tmp_path: Path) -> None:
@@ -2401,12 +2540,12 @@ def test_workspace_metadata_import_preview_rejects_unsupported_format_version(
             "source_id": export_payload["manifest"]["workspace_id"],
             "field": "format_version",
             "source_value": "workspace-export.v999",
-            "target_value": "workspace-export.v1",
+            "target_value": "workspace-export.v2",
             "strategy": "reject",
             "severity": "error",
             "message": (
                 "Workspace export format 'workspace-export.v999' is not supported; "
-                "expected 'workspace-export.v1'."
+                "expected 'workspace-export.v2'."
             ),
         }
     ]
@@ -3598,7 +3737,7 @@ def test_workspace_archive_import_rejects_missing_file_runtime_policy(tmp_path: 
     )
 
     assert response.status_code == 400
-    assert response.json()["error"]["message"] == "Workspace file sensitivity is invalid"
+    assert response.json()["error"]["message"] == "Workspace archive metadata checksum mismatch"
 
 
 def test_workspace_archive_import_restores_metadata_and_file_bytes(tmp_path: Path) -> None:
@@ -4008,7 +4147,7 @@ def test_workspace_archive_restore_drill_is_recorded_in_recovery_readiness(
     drill_body = drill.json()
     assert drill_body["workspace_id"] == str(workspace.id)
     assert drill_body["job_id"] == job_id
-    assert drill_body["import_preview"]["dry_run"] is True
+    assert drill_body["import_preview"]["dry_run"] is False
     assert drill_body["import_preview"]["source_workspace_id"] == str(workspace.id)
     assert drill_body["passed"] == (drill_body["required_resolution_count"] == 0)
     assert "storage_key" not in str(drill_body)
@@ -4164,6 +4303,19 @@ def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> N
         created_at=datetime.now(UTC),
     )
     session.add_all([old_file, completed_job])
+    session.flush()
+    completed_job.job_metadata = {
+        "format_version": "workspace-export.v2",
+        "object_inventory": [
+            {
+                "archive_name": f"files/{old_file.id}/old.txt",
+                "resource_id": str(old_file.id),
+                "status": "included",
+                "size_bytes": old_file.size_bytes,
+                "checksum_sha256": old_file.checksum_sha256,
+            }
+        ],
+    }
     session.commit()
     runner = WorkerRunner(
         queue=queue,
@@ -4378,6 +4530,7 @@ def test_workspace_archive_import_applies_metadata_dependency_resolutions(
     archive_bytes = BytesIO()
     with ZipFile(archive_bytes, mode="w", compression=ZIP_DEFLATED) as archive:
         archive.writestr("metadata.json", exported.content)
+        archive.writestr("object-inventory.json", "[]")
 
     imported = client.post(
         f"/api/v1/workspaces/{target_workspace.id}/exports/archive/import",
@@ -4412,6 +4565,115 @@ def test_workspace_archive_import_applies_metadata_dependency_resolutions(
     assert imported_task is not None
     assert imported_task.agent_team_id == target_team.id
     assert imported_task.runtime_space_id == target_space.id
+
+
+def test_workspace_export_import_round_trips_project_versions_and_memory_metadata(
+    tmp_path: Path,
+) -> None:
+    client, session = _client(tmp_path)
+    source_user, source_workspace = _seed_workspace(
+        session, email="source-project-memory@example.com", slug="source-project-memory"
+    )
+    target_user, target_workspace = _seed_workspace(
+        session, email="target-project-memory@example.com", slug="target-project-memory"
+    )
+    project = WorkspaceProject(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        name="Research Project",
+        slug="research-project",
+        description="portable project",
+        configuration={"mode": "research"},
+        configuration_version=1,
+    )
+    session.add(project)
+    session.flush()
+    session.add_all(
+        [
+            WorkspaceProjectConfigurationVersion(
+                workspace_id=source_workspace.id,
+                project_id=project.id,
+                version=1,
+                configuration={"mode": "research"},
+                checksum_sha256=sha256(b'{"mode":"research"}').hexdigest(),
+                created_by_user_id=source_user.id,
+                change_summary="Initial configuration",
+            ),
+            WorkspaceProjectOutput(
+                workspace_id=source_workspace.id,
+                project_id=project.id,
+                project_path="outputs/report",
+                artifact_type="report",
+                content_type="text/plain",
+                required=True,
+                max_bytes=100_000,
+            ),
+            WorkspaceMemoryConfiguration(
+                workspace_id=source_workspace.id,
+                embedding_enabled=False,
+                embedding_model="text-embedding-3-small",
+                embedding_dimensions=1536,
+                retrieval_policy={"limit": 5},
+                lifecycle_policy={"archive_after_days": 30},
+            ),
+        ]
+    )
+    memory = WorkspaceMemoryEntry(
+        workspace_id=source_workspace.id,
+        created_by_user_id=source_user.id,
+        memory_layer="semantic",
+        scope_type="workspace",
+        scope_id=str(source_workspace.id),
+        memory_key="research.preference",
+        entry_type="fact",
+        title="Research preference",
+        content="Prefer primary sources.",
+        content_fingerprint=memory_content_fingerprint(
+            "Research preference", "Prefer primary sources."
+        ),
+        embedding_status="not_applicable",
+    )
+    session.add(memory)
+    session.commit()
+
+    exported = client.post(
+        f"/api/v1/workspaces/{source_workspace.id}/exports/metadata",
+        headers=_headers(source_user.id),
+        json={"include_audit_events": False, "include_runs": False, "include_files": False},
+    )
+    assert exported.status_code == 200
+    payload = exported.json()
+    assert payload["manifest"]["format_version"] == "workspace-export.v2"
+    assert payload["manifest"]["payload_checksum_sha256"]
+    assert payload["projects"][0]["slug"] == "research-project"
+    assert payload["memory_entries"][0]["memory_key"] == "research.preference"
+    imported = client.post(
+        f"/api/v1/workspaces/{target_workspace.id}/exports/metadata/import",
+        headers=_headers(target_user.id),
+        json={"export": payload, "dry_run": False},
+    )
+    assert imported.status_code == 200
+    body = imported.json()
+    assert body["created_counts"]["projects"] == 1
+    assert body["created_counts"]["project_configuration_versions"] == 1
+    assert body["created_counts"]["project_outputs"] == 1
+    assert body["created_counts"]["memory_entries"] == 1
+    imported_project = session.scalar(
+        select(WorkspaceProject).where(
+            WorkspaceProject.workspace_id == target_workspace.id,
+            WorkspaceProject.slug == "imported-research-project",
+        )
+    )
+    imported_memory = session.scalar(
+        select(WorkspaceMemoryEntry).where(
+            WorkspaceMemoryEntry.workspace_id == target_workspace.id,
+            WorkspaceMemoryEntry.memory_key == "research.preference",
+        )
+    )
+    assert imported_project is not None
+    assert imported_memory is not None
+    assert imported_memory.scope_id == str(target_workspace.id)
+    assert imported_memory.embedding is None
 
 
 def _client(tmp_path: Path) -> tuple[TestClient, Session]:

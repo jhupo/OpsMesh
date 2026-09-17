@@ -1,10 +1,21 @@
 from datetime import datetime
 
 from backend.app.core.utils import stringify_or_none
+from backend.app.domains.agents.memory.models import (
+    WorkspaceMemoryConfiguration,
+    WorkspaceMemoryEntry,
+    WorkspaceMemoryVersion,
+)
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.skills.models import WorkspaceSkillInstall
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.domains.workspace.projects.models import (
+    WorkspaceProject,
+    WorkspaceProjectConfigurationVersion,
+    WorkspaceProjectFile,
+    WorkspaceProjectOutput,
+)
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
@@ -297,6 +308,141 @@ def _audit_payload(event: AuditEvent) -> dict[str, object]:
         "target_id": event.target_id,
         "metadata": event.audit_metadata,
         "created_at": _dt(event.created_at),
+    }
+
+
+def _project_payload(project: WorkspaceProject) -> dict[str, object]:
+    return {
+        "id": str(project.id),
+        "workspace_id": str(project.workspace_id),
+        "created_by_user_id": stringify_or_none(project.created_by_user_id),
+        "name": project.name,
+        "slug": project.slug,
+        "description": project.description,
+        "input_path": project.input_path,
+        "work_path": project.work_path,
+        "output_path": project.output_path,
+        "configuration": project.configuration,
+        "configuration_version": project.configuration_version,
+        "status": project.status,
+        "created_at": _dt(project.created_at),
+        "updated_at": _dt(project.updated_at),
+    }
+
+
+def _project_configuration_version_payload(
+    version: WorkspaceProjectConfigurationVersion,
+) -> dict[str, object]:
+    return {
+        "id": str(version.id),
+        "workspace_id": str(version.workspace_id),
+        "project_id": str(version.project_id),
+        "version": version.version,
+        "configuration": version.configuration,
+        "checksum_sha256": version.checksum_sha256,
+        "created_by_user_id": stringify_or_none(version.created_by_user_id),
+        "change_summary": version.change_summary,
+        "created_at": _dt(version.created_at),
+    }
+
+
+def _project_file_payload(binding: WorkspaceProjectFile) -> dict[str, object]:
+    return {
+        "id": str(binding.id),
+        "workspace_id": str(binding.workspace_id),
+        "project_id": str(binding.project_id),
+        "workspace_file_id": str(binding.workspace_file_id),
+        "supersedes_project_file_id": stringify_or_none(binding.supersedes_project_file_id),
+        "project_path": binding.project_path,
+        "version": binding.version,
+        "access_mode": binding.access_mode,
+        "status": binding.status,
+        "created_at": _dt(binding.created_at),
+        "updated_at": _dt(binding.updated_at),
+    }
+
+
+def _project_output_payload(output: WorkspaceProjectOutput) -> dict[str, object]:
+    return {
+        "id": str(output.id),
+        "workspace_id": str(output.workspace_id),
+        "project_id": str(output.project_id),
+        "project_path": output.project_path,
+        "artifact_type": output.artifact_type,
+        "content_type": output.content_type,
+        "required": output.required,
+        "max_bytes": output.max_bytes,
+        "status": output.status,
+        "created_at": _dt(output.created_at),
+        "updated_at": _dt(output.updated_at),
+    }
+
+
+def _memory_entry_payload(entry: WorkspaceMemoryEntry) -> dict[str, object]:
+    return {
+        "id": str(entry.id),
+        "workspace_id": str(entry.workspace_id),
+        "created_by_user_id": stringify_or_none(entry.created_by_user_id),
+        "created_by_agent_profile_id": stringify_or_none(entry.created_by_agent_profile_id),
+        "created_by_agent_run_id": stringify_or_none(entry.created_by_agent_run_id),
+        "source_type": entry.source_type,
+        "source_id": entry.source_id,
+        "memory_layer": entry.memory_layer,
+        "scope_type": entry.scope_type,
+        "scope_id": entry.scope_id,
+        "memory_key": entry.memory_key,
+        "entry_type": entry.entry_type,
+        "title": entry.title,
+        "content": entry.content,
+        "tags": entry.tags,
+        "visibility_scope": entry.visibility_scope,
+        "importance": entry.importance,
+        "status": entry.status,
+        "revision": entry.revision,
+        "content_fingerprint": entry.content_fingerprint,
+        "metadata": entry.memory_metadata,
+        "last_accessed_at": _dt_or_none(entry.last_accessed_at),
+        "expires_at": _dt_or_none(entry.expires_at),
+        "archived_at": _dt_or_none(entry.archived_at),
+        "access_count": entry.access_count,
+        "embedding_status": entry.embedding_status,
+        "embedding_generation": entry.embedding_generation,
+        "embedding_model": entry.embedding_model,
+    }
+
+
+def _memory_version_payload(version: WorkspaceMemoryVersion) -> dict[str, object]:
+    return {
+        "id": str(version.id),
+        "workspace_id": str(version.workspace_id),
+        "memory_entry_id": str(version.memory_entry_id),
+        "revision": version.revision,
+        "snapshot": version.snapshot,
+        "content_fingerprint": version.content_fingerprint,
+        "changed_by_user_id": stringify_or_none(version.changed_by_user_id),
+        "changed_by_agent_profile_id": stringify_or_none(version.changed_by_agent_profile_id),
+        "changed_by_agent_run_id": stringify_or_none(version.changed_by_agent_run_id),
+        "change_reason": version.change_reason,
+        "created_at": _dt(version.created_at),
+    }
+
+
+def _memory_configuration_payload(
+    configuration: WorkspaceMemoryConfiguration,
+) -> dict[str, object]:
+    return {
+        "id": str(configuration.id),
+        "workspace_id": str(configuration.workspace_id),
+        "embedding_enabled": configuration.embedding_enabled,
+        "embedding_model": configuration.embedding_model,
+        "embedding_dimensions": configuration.embedding_dimensions,
+        "retrieval_policy": configuration.retrieval_policy,
+        "lifecycle_policy": configuration.lifecycle_policy,
+        "version": configuration.version,
+        "updated_by_user_id": stringify_or_none(configuration.updated_by_user_id),
+        "credential_binding": "requires_manual_rebind",
+        "created_at": _dt(configuration.created_at),
+        "updated_at": _dt(configuration.updated_at),
     }
 
 

@@ -93,6 +93,13 @@ def _preview_collections(
         "tasks",
         "task_steps",
         "task_messages",
+        "projects",
+        "project_configuration_versions",
+        "project_files",
+        "project_outputs",
+        "memory_configurations",
+        "memory_entries",
+        "memory_versions",
         "files",
         "artifacts",
     ]

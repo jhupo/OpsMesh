@@ -1,6 +1,7 @@
 # 平台收口与生产化阶段计划
 
-状态：计划已冻结，尚未因本文档而宣称任何实现完成。
+状态：P1-7 已在当前 checkout 完成；P1-8 至 P1-11 仍在计划中。完成状态只由当前代码、迁移、
+定向流程和静态检查证明，不由本文档单独宣称。
 
 本文档是当前阶段的唯一执行计划。它把已有的 Agent、编排、运行时、能力、数据、运维和
 发布基础收敛成可上线、可恢复、可审计的产品闭环。实现时必须以代码、迁移和定向测试为
@@ -44,14 +45,16 @@
 
 ### 1.4 当前执行证据
 
-`P0-1` 至 `P0-6` 已在当前 checkout 完成代码合同收口和对应的定向验证；`P1-7` 至
-`P1-11` 仍未完成。此次收口建立了领域合同的唯一
+`P0-1` 至 `P0-6` 以及 `P1-7` 已在当前 checkout 完成代码合同收口和对应的定向验证；`P1-8`
+至 `P1-11` 仍未完成。此次收口建立了领域合同的唯一
 所有者、API 到领域/运行时的单向映射和可执行的反向依赖门禁；迁移 head 复核为
-`0090_mcp_execution_freshness`。当前证据命令及结果为：
+`0091_workspace_backup_evidence`。当前证据命令及结果为：
 
 - `pytest backend/tests/test_architecture.py`：51 passed；
 - P0-1 影响的能力、MCP、Marketplace、Agent 消息、Workspace 导入导出、Runtime space、
   Operations、Task 定向回归：全部通过；
+- `pytest backend/tests/test_workspace_export_api.py`：全部通过，包含 v2 项目/memory round-trip、
+  对象 checksum、篡改归档拒绝和 disposable restore drill；
 - `ruff check backend/app backend/tests/test_architecture.py`：通过；
 - `lint-imports --no-cache`：8 kept, 0 broken；
 - `git diff --check`：通过。
@@ -59,8 +62,8 @@
 P0-4 的代码合同已经收口；Docker/池/隔离的真实环境验收仍需在带 Docker daemon 的 release
 门禁中执行。本地本轮只执行静态、编译和导入检查，不把缺少 Docker daemon 的工作站结果冒充
 运行时环境验收。P0-5 已完成代码收口，真实双 SDK、审批恢复和取消演练仍需 release 门禁；
-P1-7 至 P1-11 仍保持未完成状态。当前迁移 head 已推进到
-`0090_mcp_execution_freshness`。
+P1-8 至 P1-11 仍保持未完成状态。当前迁移 head 已推进到
+`0091_workspace_backup_evidence`。
 
 `P0-2` 已在当前 checkout 完成配置、身份与租户安全收口。运行时 egress、模型 provider
 和 secret redaction 现在共享统一的 URL 形状校验与 host 提取规则：带 userinfo、fragment
@@ -73,7 +76,7 @@ authenticated context、workspace membership、role/capability grant 和 webhook
 - `pytest -q backend/tests/test_model_provider_service.py backend/tests/test_auth_api.py backend/tests/test_authorization.py backend/tests/test_webhooks.py`：通过；
 - `ruff check backend/app backend/tests/test_architecture.py`：通过；
 - `lint-imports --no-cache`：8 kept, 0 broken；
-- `alembic heads`：`0090_mcp_execution_freshness`（单 head）；
+- `alembic heads`：`0091_workspace_backup_evidence`（单 head）；
 - `git diff --check`：通过。
 
 `P0-3` 已在当前 checkout 完成 durable queue/worker recovery 收口。Redis 只作为队列投影；
@@ -333,23 +336,29 @@ stdio 和超额调用均 fail closed；每次允许/拒绝调用都有 run event
 
 建议提交：`platform-capability-and-mcp-production-closure`
 
-### P1-7 Workspace 数据生命周期与灾备
+### P1-7 Workspace 数据生命周期与灾备（已完成）
 
-目标：文件、artifact、memory、导出和备份在正常、失败、升级和恢复后都保持一致且可追溯。
+目标：文件、artifact、memory、项目版本、导出和备份在正常、失败、升级和恢复后都保持一致且可追溯。
 
 实现要点：
 
 - 复用 workspace storage、project I/O、archive/import/export、artifact version 和 memory
   index 边界；文件元数据、对象内容、运行时临时目录和审计证据不能混成一个存储源。
-- 导出包含版本、checksum、workspace scope、依赖关系和敏感字段策略；导入先 preview conflict，
-  再由显式 resolution map 应用，禁止静默覆盖或跨租户重绑定。
-- 备份包括数据库、配置和必要的对象存储；每份备份记录来源 release/schema、大小、hash、
-  保留期限和验证结果；恢复演练使用 disposable database/storage。
+- 导出使用 `workspace-export.v2`，包含 payload checksum、workspace scope、项目和三层 memory
+  元数据、依赖关系和敏感字段策略；文件/artifact 还包含独立 object inventory 与 checksum。导入
+  先验证 manifest/object checksum，再 preview conflict，由显式 resolution map 应用，禁止静默覆盖
+  或跨租户重绑定。embedding 向量和凭据引用不进入归档，导入后由 memory index 重建。
+- 备份包括数据库、配置和必要的对象存储；workspace archive job 记录来源 release/schema、大小、
+  archive/manifest hash、对象 inventory、验证状态和敏感字段策略，主机级 `BackupStore` 继续
+  记录完整 database/storage/config inventory；恢复演练创建 disposable workspace，真实导入并
+  校验关系、对象 checksum 和 artifact supersedes，随后清理临时数据。
 - retention 只作用于明确范围，默认要求最近一次成功备份；软删除、清理和失败都留 evidence。
-- 运行中任务、memory index、audit chain 和 artifact supersedes 关系在重启/恢复后可重建。
+- 运行队列由 durable run rehydration 重建，memory embedding 由 pending 状态重建，audit chain
+  保持独立，artifact supersedes/project version 关系随归档导入重映射。
 
-验收：导出/导入可 round-trip；损坏或篡改备份被拒绝；恢复后 workspace scope、artifact
-version、audit chain 和运行队列一致；保留策略不会删除未备份或仍被运行引用的数据。
+验收：v2 导出/导入可 round-trip 项目、文件、artifact 和 memory 元数据；损坏或篡改 manifest、
+object 或主机备份被拒绝；disposable restore drill 后 workspace scope、artifact version、审计
+证据和 durable queue 不受污染；保留策略不会删除未备份或仍被运行引用的数据。
 
 建议提交：`platform-workspace-lifecycle-and-recovery`
 
@@ -520,7 +529,8 @@ P1-8 evidence plane ───┼──> P1-9 release supply chain
 只有全部条件满足，才能把本阶段标为完成：
 
 - [ ] P0-1 到 P0-6 的合同、状态机、隔离和 SDK 委托均有代码、必要的流程证据或静态检查证据。
-- [ ] P1-7 到 P1-11 的数据恢复、证据平面、发布、托管更新和演练均有实际环境证据。
+- [ ] P1-8 到 P1-11 的证据平面、发布、托管更新和演练均有实际环境证据；P1-7 已有当前
+  checkout 的流程证据，但完整灾备主机验收仍属于 release gate。
 - [ ] 没有 API/Worker 宿主机执行用户或 Agent 控制代码，没有未授权的 host socket、网络或
   文件访问。
 - [ ] 所有状态转移、配额 reservation、审批、高风险拒绝、清理失败和恢复动作可审计、可

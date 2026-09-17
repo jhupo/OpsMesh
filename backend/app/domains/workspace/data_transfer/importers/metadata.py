@@ -13,11 +13,17 @@ from backend.app.domains.workspace.data_transfer.importers.agent import AgentMet
 from backend.app.domains.workspace.data_transfer.importers.context import (
     WorkspaceMetadataImportContext,
 )
+from backend.app.domains.workspace.data_transfer.importers.memory import (
+    WorkspaceMemoryMetadataImporter,
+)
 from backend.app.domains.workspace.data_transfer.importers.preview import (
     _import_preview_audit_metadata,
     _populate_import_preview,
     _preview_token_conflict,
     _unsupported_format_conflict,
+)
+from backend.app.domains.workspace.data_transfer.importers.projects import (
+    WorkspaceProjectMetadataImporter,
 )
 from backend.app.domains.workspace.data_transfer.importers.runtime_space import (
     RuntimeSpaceMetadataImporter,
@@ -39,6 +45,8 @@ def _metadata_preview_token(request: WorkspaceImportRequest) -> str:
         "import_tasks": request.import_tasks,
         "import_runtime_spaces": request.import_runtime_spaces,
         "import_skill_installs": request.import_skill_installs,
+        "import_memory": request.import_memory,
+        "import_projects": request.import_projects,
         "max_items_per_collection": request.max_items_per_collection,
         "name_prefix": request.name_prefix,
         "resolutions": request.resolutions,
@@ -70,6 +78,9 @@ class WorkspaceMetadataImportService:
             "runtime_spaces": {},
             "runtime_space_quotas": {},
             "skill_installs": {},
+            "projects": {},
+            "project_files": {},
+            "memory_entries": {},
         }
         created_counts = {
             "agents": 0,
@@ -81,6 +92,13 @@ class WorkspaceMetadataImportService:
             "runtime_spaces": 0,
             "runtime_space_quotas": 0,
             "skill_installs": 0,
+            "projects": 0,
+            "project_configuration_versions": 0,
+            "project_outputs": 0,
+            "project_files": 0,
+            "memory_configurations": 0,
+            "memory_entries": 0,
+            "memory_versions": 0,
         }
         skipped_counts = {
             "agents": 0,
@@ -92,6 +110,13 @@ class WorkspaceMetadataImportService:
             "runtime_spaces": 0,
             "runtime_space_quotas": 0,
             "skill_installs": 0,
+            "projects": 0,
+            "project_configuration_versions": 0,
+            "project_outputs": 0,
+            "project_files": 0,
+            "memory_configurations": 0,
+            "memory_entries": 0,
+            "memory_versions": 0,
         }
         warnings: list[str] = []
         conflict_plan: list[WorkspaceImportConflict] = []
@@ -150,6 +175,8 @@ class WorkspaceMetadataImportService:
         AgentMetadataImporter(self._session).import_agents(ctx)
         TeamMetadataImporter(self._session).import_teams(ctx)
         TaskMetadataImporter(self._session).import_tasks(ctx)
+        WorkspaceProjectMetadataImporter(self._session).import_projects(ctx)
+        WorkspaceMemoryMetadataImporter(self._session).import_memory(ctx)
 
         response = WorkspaceImportResponse(
             dry_run=request.dry_run,

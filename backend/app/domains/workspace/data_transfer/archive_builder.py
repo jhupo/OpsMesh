@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from io import BytesIO
 from uuid import UUID
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -37,6 +38,7 @@ class WorkspaceArchiveExportBuilder:
             workspace=workspace, user_id=user_id, request=request
         )
         skipped: list[str] = []
+        object_inventory: list[dict[str, object]] = []
         total_bytes = 0
         buffer = BytesIO()
         with ZipFile(buffer, mode="w", compression=ZIP_DEFLATED) as archive:
@@ -53,6 +55,7 @@ class WorkspaceArchiveExportBuilder:
                     request=request,
                     current_total=total_bytes,
                     skipped=skipped,
+                    object_inventory=object_inventory,
                 )
             if request.include_artifact_bytes:
                 total_bytes = self._write_rows(
@@ -63,9 +66,14 @@ class WorkspaceArchiveExportBuilder:
                     request=request,
                     current_total=total_bytes,
                     skipped=skipped,
+                    object_inventory=object_inventory,
                 )
             if skipped:
                 archive.writestr("skipped-objects.json", json.dumps(skipped, indent=2))
+            archive.writestr(
+                "object-inventory.json",
+                json.dumps(object_inventory, ensure_ascii=False, indent=2, sort_keys=True),
+            )
         AuditService(self._session).record_user_action(
             workspace_id=workspace.id,
             user_id=user_id,
@@ -84,6 +92,8 @@ class WorkspaceArchiveExportBuilder:
             content=buffer.getvalue(),
             skipped_objects=skipped,
             manifest_counts=metadata.manifest.counts,
+            manifest_checksum_sha256=metadata.manifest.payload_checksum_sha256,
+            object_inventory=object_inventory,
         )
 
     def _write_rows(
@@ -96,6 +106,7 @@ class WorkspaceArchiveExportBuilder:
         request: WorkspaceArchiveExportRequest,
         current_total: int,
         skipped: list[str],
+        object_inventory: list[dict[str, object]],
     ) -> int:
         total = current_total
         for row in rows:
@@ -103,12 +114,14 @@ class WorkspaceArchiveExportBuilder:
                 archive=archive,
                 storage=storage,
                 storage_key=row.storage_key,
+                expected_checksum=row.checksum_sha256,
                 archive_name=f"{prefix}/{row.id}/{safe_filename(row.filename)}",
                 size_bytes=row.size_bytes,
                 max_bytes_per_object=request.max_bytes_per_object,
                 max_total_bytes=request.max_total_bytes,
                 current_total=total,
                 skipped=skipped,
+                object_inventory=object_inventory,
             )
         return total
 
@@ -134,23 +147,54 @@ class WorkspaceArchiveExportBuilder:
         archive: ZipFile,
         storage: ObjectStorage,
         storage_key: str,
+        expected_checksum: str,
         archive_name: str,
         size_bytes: int,
         max_bytes_per_object: int,
         max_total_bytes: int,
         current_total: int,
         skipped: list[str],
+        object_inventory: list[dict[str, object]],
     ) -> int:
         if size_bytes > max_bytes_per_object:
             skipped.append(f"{archive_name}: object exceeds max_bytes_per_object")
+            object_inventory.append(
+                {"archive_name": archive_name, "status": "skipped", "reason": "object_too_large"}
+            )
             return current_total
         if current_total + size_bytes > max_total_bytes:
             skipped.append(f"{archive_name}: archive exceeds max_total_bytes")
+            object_inventory.append(
+                {"archive_name": archive_name, "status": "skipped", "reason": "archive_too_large"}
+            )
             return current_total
         try:
             content = storage.read(storage_key)
         except FileNotFoundError:
             skipped.append(f"{archive_name}: storage object missing")
+            object_inventory.append(
+                {"archive_name": archive_name, "status": "skipped", "reason": "object_missing"}
+            )
+            return current_total
+        actual_checksum = sha256(content).hexdigest()
+        if actual_checksum != expected_checksum:
+            skipped.append(f"{archive_name}: storage checksum mismatch")
+            object_inventory.append(
+                {
+                    "archive_name": archive_name,
+                    "status": "skipped",
+                    "reason": "storage_checksum_mismatch",
+                }
+            )
             return current_total
         archive.writestr(archive_name, content)
+        object_inventory.append(
+            {
+                "archive_name": archive_name,
+                "resource_id": archive_name.split("/", 2)[1],
+                "status": "included",
+                "size_bytes": len(content),
+                "checksum_sha256": actual_checksum,
+            }
+        )
         return current_total + len(content)

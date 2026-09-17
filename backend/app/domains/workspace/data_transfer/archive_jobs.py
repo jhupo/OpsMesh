@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import os
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from importlib.metadata import PackageNotFoundError, version
+from typing import cast
 from uuid import UUID
 
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.domains.workspace.data_transfer.archive_builder import (
@@ -36,6 +41,36 @@ from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
 
 
+def _installed_release() -> str | None:
+    try:
+        return version("opsmesh")
+    except PackageNotFoundError:
+        return None
+
+
+def _schema_revision(session: Session) -> str | None:
+    configured = os.environ.get("OPSMESH_SCHEMA_REVISION")
+    if configured:
+        return configured
+    try:
+        value = session.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    except SQLAlchemyError:
+        return None
+    return str(value) if value is not None else None
+
+
+def _retention_days(settings: dict[str, object]) -> int | None:
+    lifecycle = settings.get("data_lifecycle") if isinstance(settings, dict) else None
+    retention = lifecycle.get("retention") if isinstance(lifecycle, dict) else None
+    if not isinstance(retention, dict):
+        return None
+    for key in ("export_job_retention_days", "default_retention_days"):
+        value = retention.get(key)
+        if isinstance(value, int) and value > 0:
+            return value
+    return None
+
+
 class WorkspaceArchiveExportJobService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -56,6 +91,8 @@ class WorkspaceArchiveExportJobService:
             status=WorkspaceExportJobStatus.QUEUED.value,
             request=request.model_dump(mode="json"),
             job_metadata={},
+            source_release=_installed_release(),
+            source_schema_revision=_schema_revision(self._session),
         )
         self._session.add(export_job)
         self._session.flush()
@@ -128,12 +165,18 @@ class WorkspaceArchiveExportJobService:
         user_id: UUID,
         storage: ObjectStorage,
     ) -> dict[str, object]:
-        return WorkspaceArchiveIntegrityService(self._session).verify_job(
+        result = WorkspaceArchiveIntegrityService(self._session).verify_job(
             workspace_id=workspace_id,
             job_id=job_id,
             user_id=user_id,
             storage=storage,
         )
+        export_job = self._jobs.get(workspace_id=workspace_id, job_id=job_id)
+        if export_job is not None:
+            export_job.verification_status = "verified" if result["verified"] else "failed"
+            export_job.verified_at = cast(datetime, result["checked_at"])
+            self._session.commit()
+        return result
 
     def run_archive_restore_drill(
         self,
@@ -218,11 +261,22 @@ class WorkspaceArchiveExportJobService:
         export_job.content_type = result.content_type
         export_job.size_bytes = len(result.content)
         export_job.checksum_sha256 = sha256(result.content).hexdigest()
+        export_job.manifest_checksum_sha256 = result.manifest_checksum_sha256
+        export_job.verification_status = "unverified"
         export_job.completed_at = datetime.now(UTC)
+        retention_days = _retention_days(workspace.settings)
+        if retention_days is not None:
+            export_job.retention_until = export_job.completed_at + timedelta(days=retention_days)
         export_job.job_metadata = {
             **export_job.job_metadata,
             "manifest_counts": result.manifest_counts,
             "skipped_objects": result.skipped_objects,
+            "object_inventory": result.object_inventory,
+            "format_version": "workspace-export.v2",
+            "sensitive_fields_policy": "secrets-excluded-redacted",
+            "source_release": export_job.source_release,
+            "source_schema_revision": export_job.source_schema_revision,
+            "retention_days": retention_days,
         }
         AuditService(self._session).record_user_action(
             workspace_id=workspace.id,

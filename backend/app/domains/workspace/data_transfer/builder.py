@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.agents.memory.models import (
+    WorkspaceMemoryConfiguration,
+    WorkspaceMemoryEntry,
+    WorkspaceMemoryVersion,
+)
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.skills.models import WorkspaceSkillInstall
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
@@ -22,6 +29,13 @@ from backend.app.domains.workspace.data_transfer.serialization import (
     _artifact_payload,
     _audit_payload,
     _file_payload,
+    _memory_configuration_payload,
+    _memory_entry_payload,
+    _memory_version_payload,
+    _project_configuration_version_payload,
+    _project_file_payload,
+    _project_output_payload,
+    _project_payload,
     _run_event_payload,
     _run_payload,
     _runtime_space_payload,
@@ -33,6 +47,12 @@ from backend.app.domains.workspace.data_transfer.serialization import (
     _team_member_payload,
     _team_payload,
     _workspace_payload,
+)
+from backend.app.domains.workspace.projects.models import (
+    WorkspaceProject,
+    WorkspaceProjectConfigurationVersion,
+    WorkspaceProjectFile,
+    WorkspaceProjectOutput,
 )
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
@@ -58,6 +78,15 @@ class WorkspaceExportBuilder:
         payload = self._build_payload(workspace, request, included)
 
         counts = {key: len(value) for key, value in payload.items()}
+        workspace_payload = _workspace_payload(workspace)
+        payload_checksum = sha256(
+            json.dumps(
+                {"workspace": workspace_payload, "collections": payload},
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
         export = WorkspaceExportResponse(
             manifest=WorkspaceExportManifest(
                 workspace_id=workspace.id,
@@ -65,8 +94,21 @@ class WorkspaceExportBuilder:
                 format_version=SUPPORTED_WORKSPACE_EXPORT_FORMAT,
                 included_collections=included,
                 counts=counts,
+                payload_checksum_sha256=payload_checksum,
+                dependency_graph={
+                    "teams": ["agents"],
+                    "team_members": ["teams", "agents"],
+                    "tasks": ["agents", "teams"],
+                    "task_steps": ["tasks", "agents"],
+                    "task_messages": ["tasks", "runs"],
+                    "runs": ["tasks", "agents"],
+                    "project_configuration_versions": ["projects"],
+                    "project_files": ["projects", "files"],
+                    "project_outputs": ["projects"],
+                    "memory_versions": ["memory_entries"],
+                },
             ),
-            workspace=_workspace_payload(workspace),
+            workspace=workspace_payload,
             **payload,
         )
         AuditService(self._session).record_user_action(
@@ -105,6 +147,13 @@ class WorkspaceExportBuilder:
             "runtime_space_quotas": [],
             "skill_installs": [],
             "audit_events": [],
+            "projects": [],
+            "project_configuration_versions": [],
+            "project_files": [],
+            "project_outputs": [],
+            "memory_entries": [],
+            "memory_versions": [],
+            "memory_configurations": [],
         }
         collection_specs = (
             ("agents", "include_agents", (("agents", AgentProfile, _agent_payload),)),
@@ -155,6 +204,33 @@ class WorkspaceExportBuilder:
                 "audit_events",
                 "include_audit_events",
                 (("audit_events", AuditEvent, _audit_payload),),
+            ),
+            (
+                "projects",
+                "include_projects",
+                (
+                    ("projects", WorkspaceProject, _project_payload),
+                    (
+                        "project_configuration_versions",
+                        WorkspaceProjectConfigurationVersion,
+                        _project_configuration_version_payload,
+                    ),
+                    ("project_files", WorkspaceProjectFile, _project_file_payload),
+                    ("project_outputs", WorkspaceProjectOutput, _project_output_payload),
+                ),
+            ),
+            (
+                "memory",
+                "include_memory",
+                (
+                    ("memory_entries", WorkspaceMemoryEntry, _memory_entry_payload),
+                    ("memory_versions", WorkspaceMemoryVersion, _memory_version_payload),
+                    (
+                        "memory_configurations",
+                        WorkspaceMemoryConfiguration,
+                        _memory_configuration_payload,
+                    ),
+                ),
             ),
         )
         for collection, flag, rows in collection_specs:

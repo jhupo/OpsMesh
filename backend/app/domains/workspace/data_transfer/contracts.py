@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field, computed_field, field_serializer
 from backend.app.core.contracts import ORMModel
 from backend.app.core.security.redaction import redact_sensitive_payload
 
-SUPPORTED_WORKSPACE_EXPORT_FORMAT = "workspace-export.v1"
+SUPPORTED_WORKSPACE_EXPORT_FORMAT = "workspace-export.v2"
+WORKSPACE_EXPORT_SENSITIVE_FIELDS_POLICY = "secrets-excluded-redacted"
 
 
 class WorkspaceExportRequest(BaseModel):
@@ -18,6 +19,8 @@ class WorkspaceExportRequest(BaseModel):
     include_runtime_spaces: bool = True
     include_skill_installs: bool = True
     include_audit_events: bool = True
+    include_memory: bool = True
+    include_projects: bool = True
     max_items_per_collection: int = Field(default=500, ge=1, le=5_000)
 
 
@@ -34,6 +37,9 @@ class WorkspaceExportManifest(BaseModel):
     format_version: str
     included_collections: list[str]
     counts: dict[str, int]
+    payload_checksum_sha256: str
+    dependency_graph: dict[str, list[str]]
+    sensitive_fields_policy: str = WORKSPACE_EXPORT_SENSITIVE_FIELDS_POLICY
 
 
 class WorkspaceExportResponse(BaseModel):
@@ -53,6 +59,13 @@ class WorkspaceExportResponse(BaseModel):
     runtime_space_quotas: list[dict[str, object]] = Field(default_factory=list)
     skill_installs: list[dict[str, object]] = Field(default_factory=list)
     audit_events: list[dict[str, object]] = Field(default_factory=list)
+    projects: list[dict[str, object]] = Field(default_factory=list)
+    project_configuration_versions: list[dict[str, object]] = Field(default_factory=list)
+    project_files: list[dict[str, object]] = Field(default_factory=list)
+    project_outputs: list[dict[str, object]] = Field(default_factory=list)
+    memory_entries: list[dict[str, object]] = Field(default_factory=list)
+    memory_versions: list[dict[str, object]] = Field(default_factory=list)
+    memory_configurations: list[dict[str, object]] = Field(default_factory=list)
 
 
 class WorkspaceArchiveExportResult(BaseModel):
@@ -61,6 +74,8 @@ class WorkspaceArchiveExportResult(BaseModel):
     content: bytes
     skipped_objects: list[str] = Field(default_factory=list)
     manifest_counts: dict[str, int] = Field(default_factory=dict)
+    manifest_checksum_sha256: str | None = None
+    object_inventory: list[dict[str, object]] = Field(default_factory=list)
 
 
 class WorkspaceExportJobResponse(ORMModel):
@@ -79,6 +94,12 @@ class WorkspaceExportJobResponse(ORMModel):
     started_at: datetime | None
     completed_at: datetime | None
     job_metadata: dict[str, object]
+    source_release: str | None
+    source_schema_revision: str | None
+    retention_until: datetime | None
+    verification_status: str
+    verified_at: datetime | None
+    manifest_checksum_sha256: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -115,6 +136,8 @@ class WorkspaceImportRequest(BaseModel):
     import_tasks: bool = True
     import_runtime_spaces: bool = True
     import_skill_installs: bool = True
+    import_memory: bool = True
+    import_projects: bool = True
     name_prefix: str = Field(default="Imported ", max_length=80)
     max_items_per_collection: int = Field(default=500, ge=1, le=5_000)
     resolutions: dict[str, dict[str, object]] = Field(default_factory=dict)
@@ -127,6 +150,8 @@ class WorkspaceArchiveImportRequest(BaseModel):
     import_tasks: bool = True
     import_runtime_spaces: bool = True
     import_skill_installs: bool = True
+    import_memory: bool = True
+    import_projects: bool = True
     import_file_bytes: bool = True
     import_artifact_bytes: bool = True
     name_prefix: str = Field(default="Imported ", max_length=80)
@@ -142,6 +167,8 @@ class WorkspaceArchiveRestoreDrillRequest(BaseModel):
     import_tasks: bool = True
     import_runtime_spaces: bool = True
     import_skill_installs: bool = True
+    import_memory: bool = True
+    import_projects: bool = True
     import_file_bytes: bool = True
     import_artifact_bytes: bool = True
     name_prefix: str = Field(default="Restore Drill ", max_length=80)

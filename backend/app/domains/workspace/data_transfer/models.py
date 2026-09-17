@@ -48,3 +48,13 @@ class WorkspaceExportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default=dict,
     )
+    source_release: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source_schema_revision: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    retention_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verification_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unverified"
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    manifest_checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
