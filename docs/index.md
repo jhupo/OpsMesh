@@ -55,4 +55,8 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 - 源码目录、import owner 和删除路径以 `scripts/audit_app_layout.py` 以及架构测试为准。
 - 远程插件绑定已有能力，不在 API/Worker 动态导入第三方代码；托管插件进程仍须通过 Runtime 隔离边界。
 
-2026-09-18：自动化、画布配置合同和远程插件生命周期已接入现有后端；独立 `opsmesh-plugin-sdk` 提供外部连接器合同与签名能力。当前范围不包含钉钉适配器、Web 页面或自动部署外部插件服务。
+2026-09-18：自动化、画布配置合同和远程插件生命周期已接入现有后端；
+[独立 SDK 仓库](https://github.com/jhupo/opsmesh-plugin-sdk-python) 提供连接器合同与签名能力，
+本仓库已删除内置副本。外部插件目录、贡献与拉取方案见其
+[架构文档](https://github.com/jhupo/opsmesh-plugin-sdk-python/blob/master/docs/architecture.md)。
+当前不包含钉钉适配器、Web 页面、GitHub 插件拉取或自动部署外部插件服务。

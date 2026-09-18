@@ -1,82 +1,49 @@
 # Backend Architecture Gates
 
-Status: implemented, 2026-09-10. This is the quality-baseline stage after accepted rc9 delivery;
-it does not reopen deployment acceptance or introduce another release tag.
+状态：2026-09-18。架构规则由 pyproject.toml 的 Import Linter 配置执行，
+不使用断言目录名、源码字符串或类形状的 pytest 作为架构门禁。
 
-## Ownership changes
+## 当前规则
 
-`core.pagination.PageParams` is the single transport-independent pagination input for repositories,
-application services, and routes. HTTP query validation and response envelopes remain in
-`api.pagination`. All callers use the new owner directly; the former API import is not re-exported.
-Limits, offsets, response fields, authorization queries, and database behavior are unchanged.
-
-HTTP request context, security headers, and rate limiting now belong to `api.middleware`, composed
-by `main`. Shared core no longer imports HTTP error responses. The old core module is removed.
-
-## Enforced contracts
-
-| Contract | Enforcement |
+| 合同 | 静态约束 |
 | --- | --- |
-| HTTP transport ownership | Only API modules and the API entry point may directly import routes or middleware |
-| Shared infrastructure | Core, database, and Redis cannot reach API modules, including indirect imports |
-| Pagination input | No HTTP framework, API, or SQLAlchemy dependency |
-| Production code | No direct or indirect pytest dependency |
-| Docker SDK | Only the managed Docker adapter may directly import the SDK |
-| S3 SDK | Only the storage adapter may directly import Boto3 |
-| Agent runtime contract | No direct or indirect provider SDK or API dependency, including type-checking imports |
-| Domain/application boundary | Domain and runtime code cannot import `api.services`; project export/import services are domain-owned |
+| HTTP transport | 只有 API 和应用入口可以直接导入 routes/middleware |
+| Shared infrastructure | core 不能直接或间接依赖 API |
+| Pagination | 共享 PageParams 不依赖 HTTP/SQLAlchemy/API |
+| Production code | 不依赖 pytest |
+| Docker SDK | 只能由 Docker backend adapter 直接调用 |
+| S3 SDK | 只能由 storage adapter 直接调用 |
+| Agent runtime contract | 不依赖厂商 SDK 或 API，包含类型检查导入 |
+| Domain/application | domain/runtime 不导入 api.services |
 
-Configuration lives in `pyproject.toml`. There are no ignored-import exemptions or compatibility
-modules. Package markers in the runtime and domain packages ensure those modules are included in
-the static graph. A test requires every application Python directory to remain a regular package.
+HTTP 参数校验属于 api.pagination，共享分页输入属于 core.pagination，数据库查询由领域使用
+core.db.pagination。SDK 包的唯一源码在独立仓库，平台不再通过 mypy_path 指向本地副本。
 
-## Dependency decision
+## 校验
 
-Adopt [Import Linter](https://import-linter.readthedocs.io/en/stable/) as a **development-only**
-dependency (`>=2.11,<3`, locked to 2.15). Its BSD-licensed upstream implements static import-graph
-analysis through Grimp, with protected and forbidden contracts and support for the project's Python
-versions. No web UI extra is installed. There is no runtime service, credential, database, or network
-requirement to run the check, and production images/server dependency installs exclude it.
-
-Ruff remains responsible for local import style; it does not replace transitive architecture rules.
-A custom AST/regex dependency scanner was rejected because it would duplicate graph discovery,
-relative import resolution, indirect paths, and type-checking semantics. A general architecture
-framework or external service would add operational cost without helping these concrete contracts.
-OpsMesh owns the policy configuration and acceptance tests, not the graph algorithm.
-
-## Validation and operation
-
-```bash
+```sh
 uv sync --frozen --all-groups
+uv run ruff check backend/app scripts
+uv run mypy
 uv run lint-imports --no-cache
-uv run pytest backend/tests/test_architecture.py backend/tests/test_pagination.py
+git diff --check
 ```
 
-Backend CI checks every master push and pull request; the release gate runs the same command before
-the complete suite and artifact build. Violations fail the job without `continue-on-error`.
+CI/master 和 release tag 使用同一份 Import Linter 规则。
+Import Linter 是开发依赖，不进入生产镜像。规则位于配置中，无兼容模块或忽略导入豁免。
+运行时授权、恢复和跨租户隔离不能靠静态导入图证明，继续由产品流程测试覆盖。
 
-Tests invoke the installed upstream CLI on a temporary copy of actual application source. Eight
-intentional violations cover each rule, indirect imports, and type-checking-only imports. The real
-working tree is never modified by those negative tests. Pagination tests cover unchanged HTTP
-validation/defaults and scoped SQL pagination/counting; middleware behavior is covered by health,
-rate-limit, metrics, and telemetry tests. No schema or PostgreSQL-specific behavior changes here.
+## 测试清理范围
 
-## Explicit limits and next stage
+本次删除 10 个非产品流程测试文件：adapter_registries、agent_runtime_contracts、
+architecture、core_domain_models、database_models、pagination、runtime_event_messages、
+self_hosted_policy_values、shared_redaction、worker_dependencies（文件名前缀均为 test_）。
 
-Static imports cannot prove runtime authorization, prevent dynamic `importlib` lookups, or establish
-safe command execution by themselves. Existing tenant-denial and isolated-runtime tests remain
-required. Protected SDK contracts constrain direct SDK imports, not every product service calling
-an adapter through its public interface.
+它们直接检查注册表类型、dataclass/serializer/helper、表结构、构造器或目录布局，
+不构成从接受请求到执行和输出的产品流程。保留 user_orchestration、marketplace_api、
+agent_runtime_critical_e2e、agent_runtime_recovery_e2e、workspace_projects、workspace_export_api、
+tenant_isolation_matrix、worker_runner 等流程及其拒绝/恢复分支。
+此次没有宣称剩余每个历史测试都是完整端到端测试；包含混合场景的文件不整文件误删。
 
-Some application services still consume `api.schemas`, but workspace export/archive and import
-lifecycles now live under `domains/workspace/projects/{exports,imports}` and tenant administration
-services live under `domains/workspace/tenants`. They are callable by API, tenant lifecycle and
-worker composition without an API-service dependency. This stage does **not** assert universal
-domain independence, acyclic service dependencies, or complete DTO consolidation. Moving every
-transport model is a distinct architectural migration, not an ignored-import workaround.
-
-After this bounded gate, active work proceeds through the remaining runtime release gate and
-operator-hardening work in the [Platform Productionization Plan](platform-productionization-plan.md).
-Knowledge-source registration, asynchronous workspace-file and isolated URL ingestion, immutable
-source revisions, citation spans, and permission-aware citation retrieval are covered by the current
-knowledge service. The remaining release gate is deliberately tag-only and is validated in CI.
+后续新增测试只扩展已有产品流程；组织重构默认只跑静态、导入和构建检查。
+全量 pytest 仍仅在 release-tag 门禁执行。过期测试与文档可从 Git 历史恢复。

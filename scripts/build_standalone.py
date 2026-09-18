@@ -194,6 +194,9 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str) -> Path:
                 "--no-deps",
                 "--only-binary",
                 ":all:",
+                # The independent SDK is pinned to a hashed source archive until publication.
+                "--no-binary",
+                "opsmesh-plugin-sdk",
                 "--link-mode",
                 "copy",
                 "-r",

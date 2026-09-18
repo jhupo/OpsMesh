@@ -8,7 +8,7 @@
 
 ## 消息驱动协作（2026-09-18）
 
-本阶段实现的是通用消息接入和协作功能。外部插件在各自仓库实现渠道鉴权、收发和业务 API；本仓库只维护平台与独立 SDK，没有钉钉适配器或订单业务模块。
+本阶段实现的是通用消息接入和协作功能。外部插件在各自仓库实现渠道鉴权、收发和业务 API；本仓库维护平台，Python SDK 已迁至独立仓库，没有钉钉适配器或订单业务模块。
 
 自动化配置新增 `allowed_message_actions`，默认只有 `["start"]`，管理员必须明确开启续接和控制；`notify_progress` 默认 false，开启后发送任务状态及待审批信息。同一个 sender 在同一 automation、workspace 和 conversation 内才能引用自己的已接受事件。目标必须显式指定 `reply_to_event_id`，不会用“最近一条消息”猜测任务。
 
@@ -128,7 +128,16 @@ Redis 保留窗口沿用任务流的约 10,000 条事件，不承诺所有历史
 
 ## 插件 SDK 边界
 
-`plugin_sdk/` 是独立的轻量工作区包 `opsmesh-plugin-sdk`。外部连接器只依赖它，不导入 `backend` 源码。SDK 当前提供签名插件包、能力声明、`AutomationClient`、`IncomingMessage`、`AcceptedEvent`、`EventState`、`AutomationReply`、`AutomationDelivery`，以及原始验签和带作用域校验的回复解析。
+`opsmesh-plugin-sdk` 的源码唯一位于 [独立仓库](https://github.com/jhupo/opsmesh-plugin-sdk-python)。
+平台通过 pyproject.toml 中的完整提交归档依赖及 uv.lock 摘要安装；不再复制源码，
+也不依赖浮动 master。尚未发布 PyPI 版本，当前固定源码归档需要安装器构建 wheel。
+外部连接器只依赖 SDK，不导入 backend。SDK 提供签名插件包、能力声明、同步/异步客户端、
+结构化消息与回复、流式订阅、Webhook 验签及作用域校验。
+
+SDK 目录、外部插件贡献位置、插件发布资产与平台自动拉取的设计，唯一维护在独立仓库
+[架构与分发合同](https://github.com/jhupo/opsmesh-plugin-sdk-python/blob/master/docs/architecture.md)。
+当前平台安装来自请求或 Marketplace 内保存的签名包；尚未实现 GitHub URL 拉取、
+外部插件目录同步或托管 OCI 插件部署。SDK 下载和业务插件安装不是同一件事。
 
 SDK 只支持远程执行声明。插件不能被动态导入 API 或 worker 进程，也不能凭 manifest 自动获得权限。安装时校验签名与明确批准的权限集合，执行时复查插件状态、发布密钥、版本和绑定配置；能力原有的凭证、工作区授权与审批规则仍生效。
 

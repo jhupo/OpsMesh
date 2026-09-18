@@ -494,8 +494,8 @@ permissions, health checks, monitoring, updates, and rollback.
 - [Threat Model](docs/threat-model.md)
 - [Open-Source SDK Strategy](docs/open-source-sdk-strategy.md)
 - [Observability, Audit, and Cost Operations](docs/observability-audit-and-costs.md)
-- [Roadmap](docs/roadmap.md)
 - [Platform Productionization Plan](docs/platform-productionization-plan.md)
+- [Independent Plugin SDK](https://github.com/jhupo/opsmesh-plugin-sdk-python)
 - [Code Organization and Architecture Boundaries](docs/code-organization-audit.md)
 
 ## Contributing
@@ -509,8 +509,7 @@ Please report security issues through [SECURITY.md](SECURITY.md), not a public i
 ## License
 
 OpsMesh platform, operator and runtime are licensed under [LGPL-3.0-only](LICENSE),
-with the incorporated GPL terms in [COPYING](COPYING). The independent
-[Plugin SDK](plugin_sdk/) is licensed under [Apache-2.0](plugin_sdk/LICENSE).
+with the incorporated GPL terms in [COPYING](COPYING).
 Existing copyright and MIT permission notices are preserved in [NOTICE](NOTICE)
 and [LICENSE-MIT](LICENSE-MIT). See [licensing scope](docs/licensing.md)
 for commercial use and distribution obligations (updated 2026-09-18).

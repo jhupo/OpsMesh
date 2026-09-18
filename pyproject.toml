@@ -8,7 +8,7 @@ license-files = ["LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"]
 requires-python = ">=3.11.8"
 dependencies = [
     "opsmesh-operator[host]==0.1.0rc9",
-    "opsmesh-plugin-sdk==0.1.0",
+    "opsmesh-plugin-sdk @ https://github.com/jhupo/opsmesh-plugin-sdk-python/archive/c6567544a12757c9ced4b33ef4c788e85410f1ed.tar.gz",
     "alembic>=1.18.4",
     "anthropic>=1.4.0,<2.0.0",
     "boto3>=1.35.0,<2.0.0",
@@ -66,11 +66,10 @@ dev = [
 package = true
 
 [tool.uv.workspace]
-members = ["operator", "runtime", "plugin_sdk"]
+members = ["operator", "runtime"]
 
 [tool.uv.sources]
 opsmesh-operator = { workspace = true }
-opsmesh-plugin-sdk = { workspace = true }
 
 [tool.setuptools.packages.find]
 include = ["backend*"]
@@ -109,7 +108,7 @@ extra-standard-library = ["operator"]
 [tool.mypy]
 python_version = "3.11"
 platform = "linux"
-mypy_path = ["operator", "plugin_sdk"]
+mypy_path = ["operator"]
 plugins = ["pydantic.mypy"]
 strict = true
 warn_return_any = true

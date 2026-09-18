@@ -1,8 +1,8 @@
 OpsMesh
 Copyright (c) 2026 Amber Chiang
 
-The platform is distributed under LGPL-3.0-only. The separately licensed
-plugin_sdk package is distributed under Apache-2.0; see its LICENSE and NOTICE.
+The platform is distributed under LGPL-3.0-only.
+External dependencies retain their own license and attribution files.
 
 Portions of this work were previously distributed under the MIT License.
 The original copyright and permission notice is retained in LICENSE-MIT.

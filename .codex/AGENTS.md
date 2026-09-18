@@ -62,8 +62,8 @@ Before adding custom infrastructure code:
    the dependency changes an architectural boundary.
 4. Wrap third-party SDKs behind a small OpsMesh-owned protocol or adapter at the infrastructure
    boundary. Domain services must not depend on vendor-specific response objects.
-5. Add contract tests for success, timeout, cancellation, malformed responses, secret redaction,
-   tenant isolation, and provider/version behavior.
+5. Cover behavior changes through existing product-flow tests, including observable rejection,
+   recovery, tenant isolation and redaction. Do not add tests for individual adapters or helpers.
 6. Delete superseded custom code after migration. Do not leave two default implementations without
    a narrowly scoped migration step.
 
@@ -157,18 +157,20 @@ the OpsMesh control plane.
   administration, and external delivery integrations.
 - `backend/app/observability`: audit, cost, trace, and notification evidence.
 - `backend/migrations`: Alembic migrations.
-- `backend/tests`: unit and integration-style tests.
+- `backend/tests`: product-flow tests and retained release/security integration scenarios.
 - `deploy`: VPS/systemd and monitoring assets.
 - `docs`: architecture and operating documentation.
 
 ## Development Workflow
 
 1. Inspect the affected route, service, model, migration, worker path, and tests before editing.
-2. Establish the current test baseline. Do not attribute pre-existing failures to the new change.
+2. Inspect the affected flow and establish only its relevant baseline when behavior changes.
+   Organization-only changes use static/import/build checks; do not repeatedly run tests.
 3. State the invariant and ownership boundary the change affects.
 4. For a significant dependency, complete the open-source evaluation described above.
 5. Implement the smallest coherent change through the existing architecture.
-6. Add tests proportional to risk, including negative authorization and redaction cases.
+6. Extend an existing product flow only for changed behavior, including its authorization and
+   redaction branches. Do not add per-file, class, serializer, registry or helper tests.
 7. Run targeted checks for the affected modules. Expand checks only when the change crosses a
    documented boundary or has a concrete integration risk.
 8. Update README or architecture documents when behavior, boundaries, setup, or roadmap changes.
@@ -196,7 +198,8 @@ uv run mypy
 uv run pytest backend/tests/test_health.py
 ```
 
-Run focused pytest targets for the affected module or behavior. Non-essential full-suite tests are
+Run affected product-flow targets only when behavior or a cross-repository dependency changes.
+Do not run module-by-module tests for organization-only refactors. Non-essential full-suite tests are
 prohibited during normal development and pull requests. Expand to a small set of integration tests
 only when the changed boundary requires it. Run the complete `uv run pytest` suite only as a release
 gate triggered by pushing a release tag, before publishing any release artifacts, and report any
@@ -219,3 +222,12 @@ A change is complete only when:
 - the relevant quality checks pass or known baseline failures are explicitly reported;
 - documentation describes the behavior as current or planned accurately;
 - superseded custom code is removed after an SDK migration.
+
+## Independent plugin SDK
+
+The SDK source owner is https://github.com/jhupo/opsmesh-plugin-sdk-python.
+Do not restore plugin_sdk/ or add source-copy fallbacks. Pin the external package to immutable
+release content or a full commit and update uv.lock. Preserve dependencies' license metadata.
+Plugin business implementations live in their own repositories; platform download/installation
+never dynamically imports external code in API/Worker. Current remote manifests do not imply
+support for catalog synchronization, GitHub URL fetching or OCI plugin deployment.

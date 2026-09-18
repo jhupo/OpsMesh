@@ -1,7 +1,7 @@
 # 平台收口与生产化阶段计划
 
-状态（2026-09-17）：P1-8 已在当前 checkout 完成；P1-9 至 P1-11 仍在计划中。完成状态只由当前代码、迁移、
-定向流程和静态检查证明，不由本文档单独宣称。
+状态（2026-09-18）：本文保留生产化验收目标；既有历史通过数量不再作为当前 checkout 的证据。
+P1-9 至 P1-11 仍需正式 tag 与真实环境演练验收。插件接入现状单独见自动化与扩展合同。
 
 本文档是当前阶段的唯一执行计划。它把已有的 Agent、编排、运行时、能力、数据、运维和
 发布基础收敛成可上线、可恢复、可审计的产品闭环。实现时必须以代码、迁移和定向测试为
@@ -22,8 +22,8 @@
 
 ### 1.2 明确排除
 
-- 通用 Plugin Center、外部插件 SDK、插件热加载和示例连接器（例如消息平台连接器）不
-  属于本阶段；它们作为下一阶段单独立项。
+- 插件托管执行、外部目录拉取和示例连接器不属于生产化验收范围。
+  已有远程插件生命周期、Marketplace 安装与独立 SDK；不得再将这些已存在代码写成未立项。
 - 前端画布、计费结算、多地域控制面、Postgres 大版本迁移和滚动升级不属于本阶段。
 - 不为了“看起来完整”新增 LangChain、LlamaIndex、通用工作流框架或自制协议实现。
 - 不把用户/Agent 代码加载到 API 或 Worker 进程，不以动态 `import`、在线 `pip install`
@@ -43,67 +43,21 @@
 定向测试基线和未提交改动。历史 release 的通过不等于当前 `master` 已通过；当前 checkout
 必须重新验证。
 
-### 1.4 当前执行证据
+### 1.4 当前实现与验收证据
 
-`P0-1` 至 `P0-6`、`P1-7` 以及 `P1-8` 已在当前 checkout 完成代码合同收口和对应的定向验证；`P1-9`
-至 `P1-11` 仍未完成。此次收口建立了领域合同的唯一
-所有者、API 到领域/运行时的单向映射和可执行的反向依赖门禁；迁移 head 复核为
-`0092_observability_evidence_closure`。当前证据命令及结果为：
+API、持久化队列、运行时、数据生命周期和证据平面已有实现；版本状态以代码与迁移为准。
+2026-09-18 仓库迁移文件已到 0097_message_collaboration，早期 0092 快照不再代表当前版本。
+发布构建/签名/交付工作流已经存在，不代表当前 master 已完成真实环境生产验收。
 
-- `pytest backend/tests/test_architecture.py`：51 passed；
-- P0-1 影响的能力、MCP、Marketplace、Agent 消息、Workspace 导入导出、Runtime space、
-  Operations、Task 定向回归：全部通过；
-- `pytest backend/tests/test_workspace_export_api.py`：全部通过，包含 v2 项目/memory round-trip、
-  对象 checksum、篡改归档拒绝和 disposable restore drill；
-- `ruff check backend/app backend/tests/test_architecture.py`：通过；
-- `lint-imports --no-cache`：8 kept, 0 broken；
-- `git diff --check`：通过。
+- 静态架构门禁直接运行 Import Linter，不再使用依赖目录名字或源码字符串的 pytest。
+- SDK 源码已迁至独立仓库，平台安装固定提交及锁定摘要的外部依赖。
+- 自动化、消息续接、结构化流式输出和插件安装参见
+  [自动化与扩展合同](automation-and-extension-contracts.md)。
+- 任务、团队/项目、编排、授权、恢复、隔离和脱敏继续由现有流程测试验证。
+- Docker/池、双厂商 SDK、真实 PostgreSQL 及部署恢复的实际验收必须记录环境和 commit，
+  缺少服务时不能把静态检查或 mock 结果当作生产通过证据。
 
-P0-4 的代码合同已经收口；Docker/池/隔离的真实环境验收仍需在带 Docker daemon 的 release
-门禁中执行。本地本轮只执行静态、编译和导入检查，不把缺少 Docker daemon 的工作站结果冒充
-运行时环境验收。P0-5 已完成代码收口，真实双 SDK、审批恢复和取消演练仍需 release 门禁；
-P1-9 至 P1-11 仍保持未完成状态。当前迁移 head 已推进到
-`0092_observability_evidence_closure`。
-
-P1-8 的当前实现证据：
-
-- HTTP、Redis queue、Worker、Run event、Worker lease、Runtime event、MCP tool log、Audit event
-  和 Model usage record 共用 request/trace/span/task/run/worker/runtime correlation；即使关闭
-  OTel exporter，产品上下文仍会生成并写入 durable evidence。
-- Model usage record 按 `job_attempt + request_sequence` 幂等保存每次模型尝试，固定 pricing version、
-  metering status、attempt outcome 和 budget decision；失败与取消也留下 missing-usage 证据。
-- Audit integrity、unpriced/missing usage、预算预警/耗尽会生成 workspace notification，并在
-  operations control-plane 暴露有界摘要和审计、成本、MCP、runtime、queue、worker、approval、数据
-  生命周期的 drill-down 路径；原始 prompt、工具参数和凭据仍不进入摘要。
-- 成本、审计完整性、Telemetry、MCP observability 与 operations event 流程回归通过；Ruff、compile
-  和 import 检查通过。
-
-`P0-2` 已在当前 checkout 完成配置、身份与租户安全收口。运行时 egress、模型 provider
-和 secret redaction 现在共享统一的 URL 形状校验与 host 提取规则：带 userinfo、fragment
-或敏感 query 参数的 URL 在配置和调用边界直接拒绝；生产 release API 强制 HTTPS；S3/OTEL
-endpoint 也在启动校验；redacted summary、审计和 provider policy 不会回显 URL 凭据。现有
-authenticated context、workspace membership、role/capability grant 和 webhook 的权限回归
-继续作为身份边界证据。当前定向证据命令及结果为：
-
-- `pytest -q --basetemp=.pytest-tmp-p0-2 backend/tests/test_architecture.py backend/tests/test_config.py backend/tests/test_runtime_egress.py backend/tests/test_model_provider_base_url.py`：80 passed；
-- `pytest -q backend/tests/test_model_provider_service.py backend/tests/test_auth_api.py backend/tests/test_authorization.py backend/tests/test_webhooks.py`：通过；
-- `ruff check backend/app backend/tests/test_architecture.py`：通过；
-- `lint-imports --no-cache`：8 kept, 0 broken；
-- `alembic heads`：`0092_observability_evidence_closure`（单 head）；
-- `git diff --check`：通过。
-
-`P0-3` 已在当前 checkout 完成 durable queue/worker recovery 收口。Redis 只作为队列投影；
-AgentRun、WorkerLease 和既有领域调度记录作为 durable 状态，维护任务可重建缺失的队列项。
-claim、heartbeat、retry、dead-letter 和人工死信重放的关键转移使用原子 Redis 脚本；恢复
-入队会检查 queued/processing/retry 三类活动投影，不会因旧幂等键制造重复投递；WorkerLease
-对已完成/失败的 job 拒绝重复执行，Redis visibility timeout 会同步撤销对应的 Postgres
-lease。stale-run、queue-governance、dead-letter、worker runner 和 agent recovery 流程均有
-流程级证据：
-
-- `pytest -q backend/tests/test_redis_queue.py backend/tests/test_worker_runner.py backend/tests/test_agent_runtime_recovery_e2e.py`：通过；
-- `pytest -q backend/tests/test_operations_api.py -k stale`：通过；
-- `pytest -q backend/tests/test_operations_api.py -k queue_governance`：通过；
-- 受影响模块 Ruff 与 `git diff --check`：通过。
+删除原文的历史测试数量和过期测试命令，保留后文未完成的发布/交付/演练验收目标。
 
 ## 2. 目标架构与不变量
 
@@ -555,9 +509,9 @@ P1-8 evidence plane ───┼──> P1-9 release supply chain
 - [ ] 文档、runbook、操作 API 和告警字段与实际实现一致；过时的完成标记已更新或删除。
 - [ ] 每个功能点都有单独 commit；全量 pytest 只作为 release gate 运行并记录确切结果。
 
-## 9. 下一阶段接口（仅记录，不在本阶段实现）
+## 9. 插件边界与后续工作
 
-完成本阶段后，再单独启动 Plugin Center：外部仓库、版本化 manifest、独立 SDK/CLI、签名
-artifact、声明式/远程/MCP/OCI 组件、workspace 安装授权和无重启版本激活。Plugin Center
-必须复用本阶段已经收口的 Marketplace、Capability Catalog、Runtime Registry、Audit、Trace、
-Cost 和 Approval 合同，不得重新实现一套权限、运行时或发布系统。
+远程插件的签名 manifest、工作区安装授权、版本切换和独立 SDK 已有实现。
+尚未实现外部目录同步、受控远程拉取和托管 OCI 插件执行；设计唯一维护在
+[SDK 架构与分发合同](https://github.com/jhupo/opsmesh-plugin-sdk-python/blob/master/docs/architecture.md)。
+后续继续复用 Marketplace、Capability Catalog、Runtime、Audit 和审批，不另建权限或执行引擎。

@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | OpsMesh 平台、backend、部署及构建脚本 | LGPL-3.0-only | 根目录 `LICENSE`、`COPYING` |
 | `operator/`、`runtime/` 的独立 Python 包 | LGPL-3.0-only | 各包目录 `LICENSE`、`COPYING` |
-| `plugin_sdk/` 独立插件 SDK | Apache-2.0 | `plugin_sdk/LICENSE` |
+| 外部 opsmesh-plugin-sdk 依赖（不在本仓库维护） | Apache-2.0 | 独立仓库及安装包内的 LICENSE |
 
 未单独标注的本仓库内容采用平台许可。LGPL 指定第 3 版，不自动授权后续版本。
 LGPL 是 GPL 第 3 版附加权限的组合，分发时须同时保留 LGPL 和 GPL 正文。
@@ -35,4 +35,7 @@ LGPL 是 GPL 第 3 版附加权限的组合，分发时须同时保留 LGPL 和 
 各 Python 包的 `pyproject.toml` 声明独立的 SPDX 标识及许可文件，wheel 和 sdist
 随包包含正文、NOTICE 和历史 MIT 声明。独立 CLI/server 包在顶层保留平台许可文件，
 并保留已安装依赖的 dist-info；容器通过安装的包元数据携带对应许可证。
-SDK 将来迁往独立仓库时，须连同它的许可证、NOTICE 和历史 MIT 声明一起迁移。
+SDK 已迁往 [独立仓库](https://github.com/jhupo/opsmesh-plugin-sdk-python)，本仓库不再保留
+SDK 源码与 Apache 许可证副本。平台分发中实际包含的 SDK 安装包仍保留其自有许可证。
+LICENSE-MIT 是历史代码的归属与授权声明，不是本平台的新主许可证；MIT 原文要求在
+其代码的副本或实质部分保留版权和授权声明，因此不作为“过期文件”删除。
