@@ -8,7 +8,7 @@ license-files = ["LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"]
 requires-python = ">=3.11.8"
 dependencies = [
     "opsmesh-operator[host]==0.1.0rc9",
-    "opsmesh-plugin-sdk @ https://github.com/jhupo/opsmesh-plugin-sdk-python/archive/c6567544a12757c9ced4b33ef4c788e85410f1ed.tar.gz",
+    "opsmesh-plugin-sdk @ https://github.com/jhupo/opsmesh-plugin-sdk-python/archive/3baf379b9a732a882161a070b40d62c9988b50b7.tar.gz",
     "alembic>=1.18.4",
     "anthropic>=1.4.0,<2.0.0",
     "boto3>=1.35.0,<2.0.0",

@@ -27,6 +27,7 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 19. [Shared Domain Services](shared-domain-services.md)：跨领域服务的 owner 与复用规则。
 20. [MCP 日志分析员工流程示例](examples/mcp-log-analysis-workflow.md)：工具自动发现、员工/专家角色、结构化编排、审批与记忆。
 21. [自动化与远程插件](automation-and-extension-contracts.md)：结构化输入输出、SDK 实时订阅与工具状态、消息续接、人工控制、签名通知和插件生命周期（2026-09-18）。
+22. [插件分发与安装](plugin-distribution.md)：工作区批准的固定目录、后台校验下载、权限配置预览、显式安装与撤回（2026-09-18）。
 
 ## 架构与质量
 
@@ -57,6 +58,7 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 
 2026-09-18：自动化、画布配置合同和远程插件生命周期已接入现有后端；
 [独立 SDK 仓库](https://github.com/jhupo/opsmesh-plugin-sdk-python) 提供连接器合同与签名能力，
-本仓库已删除内置副本。外部插件目录、贡献与拉取方案见其
+本仓库已删除内置副本。外部插件贡献与发布合同见其
 [架构文档](https://github.com/jhupo/opsmesh-plugin-sdk-python/blob/master/docs/architecture.md)。
-当前不包含钉钉适配器、Web 页面、GitHub 插件拉取或自动部署外部插件服务。
+平台已有受控 HTTPS 目录和描述文件下载，详见 [分发合同](plugin-distribution.md)。
+当前不包含钉钉适配器、Web 页面、独立公共目录运营仓库或自动部署外部插件服务。

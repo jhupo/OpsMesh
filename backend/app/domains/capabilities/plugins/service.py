@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.db.errors import flush_or_raise_conflict
 from backend.app.core.errors import ConflictError, NotFoundError, PolicyDeniedError
 from backend.app.core.utils import payload_hash
+from backend.app.domains.access.models import User
 from backend.app.domains.access.permissions import WorkspaceAction, role_allows
 from backend.app.domains.capabilities.marketplace.models import WorkspaceMarketplaceInstall
 from backend.app.domains.capabilities.plugins.contracts import (
@@ -43,7 +44,7 @@ class PluginService:
     ) -> PluginTrustKey:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-        self._require_admin(workspace_id, user_id)
+        self.require_admin(workspace_id, user_id)
         try:
             Ed25519PublicKey.from_public_bytes(base64.b64decode(request.public_key, validate=True))
         except ValueError as exc:
@@ -58,7 +59,7 @@ class PluginService:
         return key
 
     def revoke_key(self, workspace_id: UUID, user_id: UUID, key_id: UUID) -> PluginTrustKey:
-        self._require_admin(workspace_id, user_id)
+        self.require_admin(workspace_id, user_id)
         key = self.session.scalar(
             select(PluginTrustKey)
             .where(
@@ -82,9 +83,7 @@ class PluginService:
         *,
         commit: bool = True,
     ) -> PluginInstall:
-        self._require_admin(workspace_id, user_id)
-        # Serialize first installation and release registration for this workspace.
-        self.session.scalar(select(Workspace).where(Workspace.id == workspace_id).with_for_update())
+        self.require_admin(workspace_id, user_id)
         package = request.package
         manifest = package.manifest
         reject_embedded_secrets(manifest.model_dump(mode="json"))
@@ -210,7 +209,7 @@ class PluginService:
     def action(
         self, workspace_id: UUID, user_id: UUID, install_id: UUID, request: PluginAction
     ) -> PluginInstall:
-        self._require_admin(workspace_id, user_id)
+        self.require_admin(workspace_id, user_id)
         install = self.require(workspace_id, install_id, lock=True)
         self._check_generation(install, request.expected_generation)
         if install.status == "uninstalled":
@@ -320,9 +319,14 @@ class PluginService:
         if expected != install.generation:
             raise ConflictError("Plugin installation changed; reload before modifying")
 
-    def _require_admin(self, workspace_id: UUID, user_id: UUID) -> None:
+    def require_admin(self, workspace_id: UUID, user_id: UUID) -> None:
+        # Use the audit writer's workspace-first lock order for every plugin mutation.
+        self.session.scalar(select(Workspace).where(Workspace.id == workspace_id).with_for_update())
         member = self.session.scalar(
-            select(WorkspaceMember).where(
+            select(WorkspaceMember)
+            .join(User, User.id == WorkspaceMember.user_id)
+            .where(
+                User.status == "active",
                 WorkspaceMember.workspace_id == workspace_id,
                 WorkspaceMember.user_id == user_id,
                 WorkspaceMember.status == "active",

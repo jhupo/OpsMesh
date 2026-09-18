@@ -134,10 +134,10 @@ Redis 保留窗口沿用任务流的约 10,000 条事件，不承诺所有历史
 外部连接器只依赖 SDK，不导入 backend。SDK 提供签名插件包、能力声明、同步/异步客户端、
 结构化消息与回复、流式订阅、Webhook 验签及作用域校验。
 
-SDK 目录、外部插件贡献位置、插件发布资产与平台自动拉取的设计，唯一维护在独立仓库
+SDK 目录、外部插件贡献位置和插件发布资产合同维护在独立仓库
 [架构与分发合同](https://github.com/jhupo/opsmesh-plugin-sdk-python/blob/master/docs/architecture.md)。
-当前平台安装来自请求或 Marketplace 内保存的签名包；尚未实现 GitHub URL 拉取、
-外部插件目录同步或托管 OCI 插件部署。SDK 下载和业务插件安装不是同一件事。
+平台还支持 [固定目录同步与受控下载](plugin-distribution.md)，仍调用同一个 PluginService。
+仅拉取签名 JSON；托管 OCI 插件部署未实现。SDK 下载和业务插件安装不是同一件事。
 
 SDK 只支持远程执行声明。插件不能被动态导入 API 或 worker 进程，也不能凭 manifest 自动获得权限。安装时校验签名与明确批准的权限集合，执行时复查插件状态、发布密钥、版本和绑定配置；能力原有的凭证、工作区授权与审批规则仍生效。
 

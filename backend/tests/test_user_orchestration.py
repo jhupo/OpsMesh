@@ -524,15 +524,33 @@ def test_orchestration_api_supports_draft_publish_edit_and_archive() -> None:
 
 
 @pytest.mark.parametrize("trigger_type", ["message", "schedule"])
-def test_configured_automation_admits_workflow_and_delivers_reply(trigger_type: str) -> None:
+def test_configured_automation_admits_workflow_and_delivers_reply(
+    trigger_type: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import base64
+    import hashlib
+    import socket
+    from datetime import UTC, datetime, timedelta
+    from uuid import uuid4
 
+    import httpx
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from opsmesh_plugin_sdk.contracts import PluginManifest
-    from opsmesh_plugin_sdk.packages import sign_package
+    from opsmesh_plugin_sdk.distribution import (
+        CatalogEntry,
+        PluginCatalog,
+        PluginReleaseDescriptor,
+        sign_release,
+    )
+    from opsmesh_plugin_sdk.packages import SignedPluginPackage, sign_package
+    from sqlalchemy.orm import sessionmaker
 
     from backend.app.core.config import get_settings
     from backend.app.core.security.secrets import SecretEncryptionService
+    from backend.app.domains.capabilities.plugins.downloads import PluginDownloadWorker
+    from backend.app.domains.capabilities.plugins.models import PluginDownload
+    from backend.app.domains.capabilities.plugins.transport import PluginHttpFetcher
     from backend.app.domains.integrations.automations import AutomationService
     from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
     from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
@@ -685,8 +703,159 @@ def test_configured_automation_admits_workflow_and_delivers_reply(trigger_type: 
         ).status_code
         == 400
     )
-    installed = client.post(f"{base}/plugins", headers=headers, json=installation)
+    remote_content: dict[str, bytes] = {}
+    catalog_entries: list[CatalogEntry] = []
+    source = None
+    redirect_to_private = False
+    original_resolve = socket.getaddrinfo
+
+    def resolve(host, port, *args, **kwargs):
+        if host == "plugins.example.test":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", port))]
+        return original_resolve(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+
+    def download(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "8.8.8.8"
+        assert request.headers["host"] == "plugins.example.test"
+        assert request.extensions["sni_hostname"] == "plugins.example.test"
+        if redirect_to_private:
+            return httpx.Response(302, headers={"location": "https://127.0.0.1/release.json"})
+        return httpx.Response(200, stream=httpx.ByteStream(remote_content[request.url.path]))
+
+    worker = PluginDownloadWorker(
+        sessionmaker(bind=session.get_bind(), expire_on_commit=False),
+        PluginHttpFetcher(httpx.MockTransport(download)),
+    )
+
+    def prepare_candidate(signed_package):
+        nonlocal source, redirect_to_private
+        descriptor = sign_release(
+            PluginReleaseDescriptor(
+                package=SignedPluginPackage.model_validate(signed_package),
+                platform_requires=">=0.1.0rc1,<1",
+                sdk_requires=">=0.2,<1",
+                license="Apache-2.0",
+                source_repository="https://github.com/example/connector",
+                source_commit="a" * 40,
+            ),
+            private.private_bytes_raw(),
+        )
+        version = descriptor.release.package.manifest.version
+        release_path = f"/{version}.json"
+        remote_content[release_path] = descriptor.model_dump_json().encode()
+        catalog_entries.append(
+            CatalogEntry(
+                plugin_key="order.connector",
+                version=version,
+                publisher_key_id="connector-publisher",
+                release_url="https://plugins.example.test" + release_path,
+                sha256=hashlib.sha256(remote_content[release_path]).hexdigest(),
+            )
+        )
+        remote_content["/catalog.json"] = (
+            PluginCatalog(entries=catalog_entries).model_dump_json().encode()
+        )
+        settings = {
+            "name": "Approved connectors",
+            "url": "https://plugins.example.test/catalog.json",
+            "sha256": hashlib.sha256(remote_content["/catalog.json"]).hexdigest(),
+            "allowed_hosts": ["plugins.example.test", "127.0.0.1"],
+        }
+        if source is None:
+            configured = client.post(f"{base}/plugins/sources", headers=headers, json=settings)
+            assert configured.status_code == 201, configured.text
+        else:
+            configured = client.put(
+                f"{base}/plugins/sources/{source['id']}",
+                headers=headers,
+                json={**settings, "expected_generation": source["generation"]},
+            )
+            assert configured.status_code == 200, configured.text
+        source = configured.json()
+        sync_url = f"{base}/plugins/sources/{source['id']}/sync"
+        queued = client.post(sync_url, headers=headers, json={"request_key": "sync-" + version})
+        assert queued.status_code == 202, queued.text
+        assert (
+            client.post(sync_url, headers=headers, json={"request_key": "sync-" + version}).json()[
+                "id"
+            ]
+            == queued.json()["id"]
+        )
+        # Recover a process that died after durable claim, before making its network request.
+        job = session.get(PluginDownload, UUID(queued.json()["id"]))
+        job.status, job.lease_token = "fetching", uuid4()
+        job.lease_until = datetime.now(UTC) - timedelta(seconds=1)
+        job.attempts = 1
+        session.commit()
+        assert worker.run_once()
+        status = client.get(f"{base}/plugins/downloads/{job.id}", headers=headers)
+        assert status.json()["status"] == "succeeded", status.text
+        candidates = client.get(f"{base}/plugins/candidates", headers=headers).json()["items"]
+        candidate = next(item for item in candidates if item["version"] == version)
+        candidate_path = f"{base}/plugins/candidates/{candidate['id']}"
+        foreign_read = client.post(
+            f"/api/v1/workspaces/{other_workspace.id}/plugins/candidates/{candidate['id']}/download",
+            headers=_api_headers(other_owner.id),
+            json={"request_key": "foreign"},
+        )
+        assert foreign_read.status_code == 404
+        queued = client.post(
+            candidate_path + "/download",
+            headers=headers,
+            json={"request_key": "release-" + version},
+        )
+        assert queued.status_code == 202, queued.text
+        # A corrupted asset fails without modifying installation; retry uses the same pinned intent.
+        job_url = f"{base}/plugins/downloads/{queued.json()['id']}"
+        redirect_to_private = True
+        assert worker.run_once()
+        assert client.get(job_url, headers=headers).json()["error_code"] == "non_public_address"
+        redirect_to_private = False
+        assert client.post(job_url + "/retry", headers=headers).status_code == 202
+        expected = remote_content[release_path]
+        remote_content[release_path] = b"corrupt asset"
+        assert worker.run_once()
+        assert client.get(job_url, headers=headers).json()["error_code"] == "checksum_mismatch"
+        active = client.get(f"{base}/plugins", headers=headers).json()["items"]
+        assert not active or active[0]["current_version"] == "1.0.0"
+        remote_content[release_path] = expected
+        assert client.post(job_url + "/retry", headers=headers).status_code == 202
+        assert worker.run_once()
+        status = client.get(job_url, headers=headers)
+        assert status.json()["status"] == "succeeded", status.text
+        return candidate_path
+
+    candidate_path = prepare_candidate(package)
+    preview = client.post(candidate_path + "/preview", headers=headers, json={"bindings": bindings})
+    assert preview.status_code == 200, preview.text
+    approval = {
+        "bindings": bindings,
+        "approved_permissions": ["messages.send"],
+        "preview_digest": preview.json()["preview_digest"],
+    }
+    assert (
+        client.post(
+            candidate_path + "/install",
+            headers=headers,
+            json={**approval, "preview_digest": "0" * 64},
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            candidate_path + "/install",
+            headers=headers,
+            json={**approval, "approved_permissions": []},
+        ).status_code
+        == 403
+    )
+    installed = client.post(candidate_path + "/install", headers=headers, json=approval)
     assert installed.status_code == 201, installed.text
+    assert (
+        client.post(candidate_path + "/install", headers=headers, json=approval).status_code == 409
+    )
     action_path = f"{base}/plugins/{installed.json()['id']}/actions"
     disabled = client.post(
         action_path, headers=headers, json={"action": "disable", "expected_generation": 1}
@@ -778,20 +947,62 @@ def test_configured_automation_admits_workflow_and_delivers_reply(trigger_type: 
         },
     )
     v2 = manifest.model_copy(update={"version": "2.0.0", "capabilities": manifest.capabilities[:1]})
+    candidate_path = prepare_candidate(
+        sign_package(v2, "connector-publisher", private.private_bytes_raw()).model_dump(mode="json")
+    )
+    next_bindings = {"reply": {"resource_id": subscription_v2.json()["id"]}}
+    preview = client.post(
+        candidate_path + "/preview", headers=headers, json={"bindings": next_bindings}
+    )
+    assert preview.status_code == 200, preview.text
     upgraded = client.post(
-        f"{base}/plugins",
+        candidate_path + "/install",
         headers=headers,
         json={
-            "package": sign_package(
-                v2, "connector-publisher", private.private_bytes_raw()
-            ).model_dump(mode="json"),
-            "bindings": {"reply": {"resource_id": subscription_v2.json()["id"]}},
+            "bindings": next_bindings,
+            "preview_digest": preview.json()["preview_digest"],
             "approved_permissions": ["messages.send"],
             "expected_generation": 3,
         },
     )
     assert upgraded.status_code == 201, upgraded.text
     assert upgraded.json()["current_version"] == "2.0.0"
+    # Withdrawing a catalog version blocks new installation, not the installed release or rollback.
+    catalog_entries[-1] = catalog_entries[-1].model_copy(update={"withdrawn": True})
+    remote_content["/catalog.json"] = (
+        PluginCatalog(entries=catalog_entries).model_dump_json().encode()
+    )
+    source_update = client.put(
+        f"{base}/plugins/sources/{source['id']}",
+        headers=headers,
+        json={
+            "name": source["name"],
+            "url": source["url"],
+            "sha256": hashlib.sha256(remote_content["/catalog.json"]).hexdigest(),
+            "allowed_hosts": source["allowed_hosts"],
+            "expected_generation": source["generation"],
+        },
+    )
+    assert source_update.status_code == 200, source_update.text
+    assert (
+        client.post(
+            f"{base}/plugins/sources/{source['id']}/sync",
+            headers=headers,
+            json={"request_key": "withdraw-version"},
+        ).status_code
+        == 202
+    )
+    assert worker.run_once()
+    assert (
+        client.post(
+            candidate_path + "/preview", headers=headers, json={"bindings": next_bindings}
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(f"{base}/plugins", headers=headers).json()["items"][0]["current_version"]
+        == "2.0.0"
+    )
     rollback = client.post(
         action_path,
         headers=headers,

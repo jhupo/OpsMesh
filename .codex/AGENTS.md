@@ -229,5 +229,7 @@ The SDK source owner is https://github.com/jhupo/opsmesh-plugin-sdk-python.
 Do not restore plugin_sdk/ or add source-copy fallbacks. Pin the external package to immutable
 release content or a full commit and update uv.lock. Preserve dependencies' license metadata.
 Plugin business implementations live in their own repositories; platform download/installation
-never dynamically imports external code in API/Worker. Current remote manifests do not imply
-support for catalog synchronization, GitHub URL fetching or OCI plugin deployment.
+never dynamically imports external code in API/Worker. Data-only catalog synchronization and
+pinned HTTPS downloads belong to the plugins domain; installation reuses PluginService.
+Catalogs cannot grant publisher trust or auto-approve upgrades. OCI deployment and external
+plugin process management are not implemented.

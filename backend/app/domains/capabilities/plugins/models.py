@@ -1,7 +1,10 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -98,3 +101,76 @@ class PluginBinding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     kind: Mapped[str] = mapped_column(String(32))
     resource_id: Mapped[UUID] = mapped_column()
     configuration: Mapped[dict[str, object]] = mapped_column(JSONB)
+
+
+class PluginSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "plugin_sources"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_plugin_source_name"),
+        UniqueConstraint("workspace_id", "id", name="uq_plugin_source_scope"),
+        CheckConstraint("generation > 0", name="generation"),
+    )
+    workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(120))
+    url: Mapped[str] = mapped_column(String(2048))
+    sha256: Mapped[str] = mapped_column(String(64))
+    allowed_hosts: Mapped[list[str]] = mapped_column(JSONB)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    synced_generation: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class PluginCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "plugin_candidates"
+    __table_args__ = (
+        UniqueConstraint("source_id", "plugin_key", "version", name="uq_plugin_candidate_version"),
+        UniqueConstraint("workspace_id", "source_id", "id", name="uq_plugin_candidate_scope"),
+        ForeignKeyConstraint(
+            ["workspace_id", "source_id"],
+            ["plugin_sources.workspace_id", "plugin_sources.id"],
+            ondelete="CASCADE",
+        ),
+    )
+    workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
+    source_id: Mapped[UUID] = mapped_column()
+    plugin_key: Mapped[str] = mapped_column(String(120))
+    version: Mapped[str] = mapped_column(String(64))
+    publisher_key_id: Mapped[str] = mapped_column(String(120))
+    url: Mapped[str] = mapped_column(String(2048))
+    sha256: Mapped[str] = mapped_column(String(64))
+    withdrawn: Mapped[bool] = mapped_column(Boolean, default=False)
+    verified_release: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+
+
+class PluginDownload(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "plugin_downloads"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "request_key", name="uq_plugin_download_request"),
+        ForeignKeyConstraint(
+            ["workspace_id", "source_id"],
+            ["plugin_sources.workspace_id", "plugin_sources.id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "source_id", "candidate_id"],
+            [
+                "plugin_candidates.workspace_id",
+                "plugin_candidates.source_id",
+                "plugin_candidates.id",
+            ],
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("status IN ('queued', 'fetching', 'succeeded', 'failed')", name="status"),
+        Index("ix_plugin_downloads_due", "status", "lease_until", "created_at"),
+    )
+    workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
+    source_id: Mapped[UUID] = mapped_column()
+    candidate_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    actor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    request_key: Mapped[str] = mapped_column(String(120))
+    source_generation: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lease_token: Mapped[UUID | None] = mapped_column(nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -12,6 +12,7 @@ from opsmesh_plugin_sdk.contracts import (
     IncomingMessage,
     PluginManifest,
 )
+from opsmesh_plugin_sdk.distribution import PluginCatalog, SignedPluginRelease
 from redis import Redis
 from sqlalchemy.orm import Session
 
@@ -51,6 +52,9 @@ def configuration_contracts(
         "stream_event": AutomationStreamEvent.model_json_schema(),
         "plugin_manifest": PluginManifest.model_json_schema(),
         "plugin_installation_supported": True,
+        "plugin_distribution_supported": True,
+        "plugin_catalog": PluginCatalog.model_json_schema(),
+        "plugin_release": SignedPluginRelease.model_json_schema(),
         "plugin_execution_modes": ["remote"],
     }
 

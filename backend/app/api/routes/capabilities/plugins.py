@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,23 +15,206 @@ from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.plugins.contracts import (
+    CandidateApproval,
+    CandidatePreviewRequest,
+    CandidatePreviewResponse,
+    CandidateResponse,
+    DownloadRequest,
+    DownloadResponse,
     PluginAction,
     PluginBindingResponse,
     PluginInstallRequest,
     PluginInstallResponse,
     PluginReleaseResponse,
+    SourceResponse,
+    SourceSettings,
+    SourceUpdate,
     TrustKeyCreate,
     TrustKeyResponse,
 )
+from backend.app.domains.capabilities.plugins.distribution import PluginDistributionService
 from backend.app.domains.capabilities.plugins.models import (
     PluginBinding,
+    PluginCandidate,
+    PluginDownload,
     PluginInstall,
     PluginRelease,
+    PluginSource,
     PluginTrustKey,
 )
 from backend.app.domains.capabilities.plugins.service import PluginService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/plugins", tags=["plugins"])
+
+
+@contextmanager
+def distribution_errors() -> Iterator[None]:
+    try:
+        yield
+    except DatabaseConflictError as exc:
+        raise HTTPException(409, exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid plugin distribution request") from exc
+
+
+@router.post("/sources", response_model=SourceResponse, status_code=201)
+def create_source(
+    request: SourceSettings,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    with distribution_errors():
+        return PluginDistributionService(session).configure(
+            context.workspace.id, context.user.user_id, request
+        )
+
+
+@router.put("/sources/{source_id}", response_model=SourceResponse)
+def update_source(
+    source_id: UUID,
+    request: SourceUpdate,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    with distribution_errors():
+        return PluginDistributionService(session).configure(
+            context.workspace.id, context.user.user_id, request, source_id
+        )
+
+
+@router.get("/sources", response_model=PageResponse[SourceResponse])
+def sources(
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    items, total = page_scalars(
+        session,
+        select(PluginSource)
+        .where(
+            PluginSource.workspace_id == context.workspace.id,
+        )
+        .order_by(PluginSource.created_at.desc(), PluginSource.id),
+        page,
+    )
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.post("/sources/{source_id}/sync", response_model=DownloadResponse, status_code=202)
+def sync_source(
+    source_id: UUID,
+    request: DownloadRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    with distribution_errors():
+        return PluginDistributionService(session).enqueue(
+            context.workspace.id, context.user.user_id, source_id, request.request_key
+        )
+
+
+@router.get("/candidates", response_model=PageResponse[CandidateResponse])
+def candidates(
+    source_id: UUID | None = None,
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    query = select(PluginCandidate).where(PluginCandidate.workspace_id == context.workspace.id)
+    if source_id is not None:
+        PluginDistributionService(session).source(context.workspace.id, source_id)
+        query = query.where(PluginCandidate.source_id == source_id)
+    items, total = page_scalars(
+        session, query.order_by(PluginCandidate.created_at.desc(), PluginCandidate.id), page
+    )
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.post(
+    "/candidates/{candidate_id}/download", response_model=DownloadResponse, status_code=202
+)
+def download_candidate(
+    candidate_id: UUID,
+    request: DownloadRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    with distribution_errors():
+        service = PluginDistributionService(session)
+        candidate = service.candidate(context.workspace.id, candidate_id)
+        return service.enqueue(
+            context.workspace.id,
+            context.user.user_id,
+            candidate.source_id,
+            request.request_key,
+            candidate_id,
+        )
+
+
+@router.get("/downloads", response_model=PageResponse[DownloadResponse])
+def downloads(
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    items, total = page_scalars(
+        session,
+        select(PluginDownload)
+        .where(
+            PluginDownload.workspace_id == context.workspace.id,
+        )
+        .order_by(PluginDownload.created_at.desc(), PluginDownload.id),
+        page,
+    )
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get("/downloads/{job_id}", response_model=DownloadResponse)
+def download_status(
+    job_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    return PluginDistributionService(session).job(context.workspace.id, job_id)
+
+
+@router.post("/downloads/{job_id}/retry", response_model=DownloadResponse, status_code=202)
+def retry_download(
+    job_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    return PluginDistributionService(session).retry(
+        context.workspace.id, context.user.user_id, job_id
+    )
+
+
+@router.post("/candidates/{candidate_id}/preview", response_model=CandidatePreviewResponse)
+def preview_candidate(
+    candidate_id: UUID,
+    request: CandidatePreviewRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    with distribution_errors():
+        return PluginDistributionService(session).preview(
+            context.workspace.id, context.user.user_id, candidate_id, request
+        )
+
+
+@router.post(
+    "/candidates/{candidate_id}/install", response_model=PluginInstallResponse, status_code=201
+)
+def install_candidate(
+    candidate_id: UUID,
+    request: CandidateApproval,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    with distribution_errors():
+        return PluginDistributionService(session).install(
+            context.workspace.id, context.user.user_id, candidate_id, request
+        )
 
 
 @router.get("", response_model=PageResponse[PluginInstallResponse])

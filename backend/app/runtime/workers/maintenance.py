@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.domains.agents.memory.embedding_scheduler import WorkspaceMemoryEmbeddingScheduler
 from backend.app.domains.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
+from backend.app.domains.capabilities.plugins.downloads import PluginDownloadWorker
 from backend.app.domains.integrations.automations import AutomationService
 from backend.app.domains.integrations.webhooks.scheduler import WebhookDeliveryScheduler
 from backend.app.domains.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
@@ -105,6 +106,7 @@ class WorkerMaintenanceService:
 
     def run(self) -> WorkerMaintenanceSummary:
         try:
+            PluginDownloadWorker(self._session_factory).run_once()
             self._queue.reclaim_due_retries(limit=self._config.recovery_batch_size)
             reclaimed_jobs = self._queue.reclaim_expired(limit=self._config.recovery_batch_size)
             with self._session_scope() as session:
@@ -163,11 +165,11 @@ class WorkerMaintenanceService:
                 limit=self._config.recovery_batch_size,
             )
         )
-        run_runtime_environments_cleaned, run_runtime_environments_failed = (
-            RuntimeCleanupService(session).cleanup_terminal_run_environments(
-                docker_client=self._runtime_docker_client,
-                limit=self._config.recovery_batch_size,
-            )
+        run_runtime_environments_cleaned, run_runtime_environments_failed = RuntimeCleanupService(
+            session
+        ).cleanup_terminal_run_environments(
+            docker_client=self._runtime_docker_client,
+            limit=self._config.recovery_batch_size,
         )
         lifecycle_summary = WorkspaceDataLifecycleService(session).run_scheduled_lifecycle(
             queue=self._queue,
