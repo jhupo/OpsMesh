@@ -25,6 +25,10 @@ from backend.app.core.pagination import PageParams
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction, WorkspaceRole
+from backend.app.domains.orchestration.workflows.definitions.authoring import (
+    WorkflowAuthoringContract,
+    authoring_contract,
+)
 from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
@@ -41,6 +45,13 @@ else:
     RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/orchestrations", tags=["orchestrations"])
+
+
+@router.get("/authoring-contract", response_model=WorkflowAuthoringContract)
+async def get_authoring_contract(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+) -> WorkflowAuthoringContract:
+    return authoring_contract()
 
 
 @router.get("", response_model=PageResponse[OrchestrationDefinitionResponse])

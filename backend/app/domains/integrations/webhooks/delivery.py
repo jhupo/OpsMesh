@@ -50,11 +50,14 @@ class WebhookDeliveryService:
         payload: dict[str, object],
         event_id: str | None = None,
         available_at: datetime | None = None,
+        subscription_id: UUID | None = None,
     ) -> list[WebhookDeliveryAttempt]:
         subscriptions = self._matching_subscriptions(
             workspace_id=workspace_id,
             event_type=event_type,
         )
+        if subscription_id is not None:
+            subscriptions = [item for item in subscriptions if item.id == subscription_id]
         now = datetime.now(UTC)
         delivery_event_id = event_id or str(uuid4())
         attempts = [

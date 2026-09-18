@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from backend.app.domains.orchestration.workflows.definitions.authoring import WorkflowEditorMetadata
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
 
 
@@ -18,6 +19,12 @@ class OrchestrationDefinitionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     description: str = Field(default="", max_length=2_000)
     nodes: list[WorkflowNode] = Field(min_length=1, max_length=128)
+    editor: WorkflowEditorMetadata = Field(default_factory=WorkflowEditorMetadata)
+
+    @model_validator(mode="after")
+    def validate_editor(self) -> OrchestrationDefinitionCreate:
+        self.editor.validate_nodes(self.nodes)
+        return self
 
 
 class OrchestrationEditScope(BaseModel):
@@ -54,6 +61,7 @@ class OrchestrationDefinitionUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=160)
     description: str | None = Field(default=None, max_length=2_000)
     nodes: list[WorkflowNode] | None = Field(default=None, min_length=1, max_length=128)
+    editor: WorkflowEditorMetadata | None = None
     edit_scope: OrchestrationEditScope | None = None
 
     @model_validator(mode="after")

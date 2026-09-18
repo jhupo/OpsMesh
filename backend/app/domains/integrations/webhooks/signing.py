@@ -1,7 +1,7 @@
-import hashlib
-import hmac
 import json
 import time
+
+from opsmesh_plugin_sdk.webhooks import signed_headers
 
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.security.secrets import SecretEncryptionService
@@ -15,29 +15,6 @@ def _canonical_json(payload: dict[str, object]) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
         "utf-8"
     )
-
-
-def _signed_headers(
-    *,
-    body: bytes,
-    secret: str,
-    timestamp: str,
-    event_id: str,
-    event_type: str,
-    delivery_attempt_id: str,
-) -> dict[str, str]:
-    signed_payload = b".".join(
-        [timestamp.encode("ascii"), event_id.encode("utf-8"), body]
-    )
-    digest = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
-    return {
-        "Content-Type": "application/json",
-        "X-OpsMesh-Event-Id": event_id,
-        "X-OpsMesh-Event-Type": event_type,
-        "X-OpsMesh-Timestamp": timestamp,
-        "X-OpsMesh-Delivery-Attempt-Id": delivery_attempt_id,
-        "X-OpsMesh-Signature": f"sha256={digest}",
-    }
 
 
 class WebhookDeliverySigner:
@@ -62,7 +39,7 @@ class WebhookDeliverySigner:
             }
         )
         timestamp = str(int(time.time()))
-        return body, _signed_headers(
+        return body, signed_headers(
             body=body,
             secret=self._signing_secret(subscription),
             timestamp=timestamp,

@@ -51,3 +51,5 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
   不与当前架构重复维护。
 - 源码目录、import owner 和删除路径以 `scripts/audit_app_layout.py` 以及架构测试为准。
 - Plugin Center 暂不作为可执行插件系统实现；后续必须复用 Capability Catalog、Runtime、Audit、Trace、Cost 和 Approval 合同。
+
+2026-09-18：后端已增加自动化触发与回复投递合同，以及独立的 `opsmesh-plugin-sdk`；Web 画布仍由后续前端阶段消费这些合同，插件安装执行生命周期仍未开放。

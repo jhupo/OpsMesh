@@ -12,6 +12,7 @@ _MODEL_MODULES = (
     "backend.app.domains.platform.updates.models",
     "backend.app.domains.access.models",
     "backend.app.domains.integrations.webhooks.models",
+    "backend.app.domains.integrations.automation_models",
     "backend.app.observability.audit.security_models",
     "backend.app.domains.agents.memory.models",
     "backend.app.domains.agents.messages.models",

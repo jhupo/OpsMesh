@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11.8"
 dependencies = [
     "opsmesh-operator[host]==0.1.0rc9",
+    "opsmesh-plugin-sdk==0.1.0",
     "alembic>=1.18.4",
     "anthropic>=1.4.0,<2.0.0",
     "boto3>=1.35.0,<2.0.0",
@@ -62,10 +63,11 @@ dev = [
 package = true
 
 [tool.uv.workspace]
-members = ["operator", "runtime"]
+members = ["operator", "runtime", "plugin_sdk"]
 
 [tool.uv.sources]
 opsmesh-operator = { workspace = true }
+opsmesh-plugin-sdk = { workspace = true }
 
 [tool.setuptools.packages.find]
 include = ["backend*"]
@@ -104,7 +106,7 @@ extra-standard-library = ["operator"]
 [tool.mypy]
 python_version = "3.11"
 platform = "linux"
-mypy_path = ["operator"]
+mypy_path = ["operator", "plugin_sdk"]
 plugins = ["pydantic.mypy"]
 strict = true
 warn_return_any = true

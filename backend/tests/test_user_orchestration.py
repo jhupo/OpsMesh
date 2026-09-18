@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
@@ -471,6 +472,7 @@ def test_orchestration_api_supports_draft_publish_edit_and_archive() -> None:
     payload = {
         "key": "review-flow",
         "name": "Review flow",
+        "editor": {"positions": {"review": {"x": 100, "y": 200}}},
         "nodes": [
             {
                 "package_id": "review",
@@ -507,12 +509,109 @@ def test_orchestration_api_supports_draft_publish_edit_and_archive() -> None:
     assert history.json()["total"] == 1
     assert revision.status_code == 200
     assert revision.json()["name"] == "Review flow"
+    assert revision.json()["definition"]["editor"]["positions"]["review"]["x"] == 100
+    assert edited.json()["definition"]["editor"] == created.json()["definition"]["editor"]
+    contract = client.get(f"{path}/authoring-contract", headers=headers)
+    assert contract.status_code == 200
+    assert "input_bindings" in contract.json()["node_schema"]["properties"]
     assert edited.status_code == 200
     assert edited.json()["version"] == 2
     assert edited.json()["status"] == "draft"
     assert archived.status_code == 200
     assert archived.json()["status"] == "archived"
     assert session.query(Task).count() == 0
+
+
+@pytest.mark.parametrize("trigger_type", ["message", "schedule"])
+def test_configured_automation_admits_workflow_and_delivers_reply(trigger_type: str) -> None:
+    from backend.app.domains.integrations.automations import AutomationService
+    from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
+    from backend.app.domains.integrations.webhooks.models import WebhookDeliveryAttempt
+    from backend.tests.test_webhooks import _RecordingHttpClient
+    from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
+    from backend.app.core.config import get_settings
+    from backend.app.core.security.secrets import SecretEncryptionService
+
+    client, session = _api_client()
+    owner, workspace = _seed_api_workspace(session, "automation@example.com", "automation")
+    headers = _api_headers(owner.id)
+    base = f"/api/v1/workspaces/{workspace.id}"
+    agent = client.post(f"{base}/agents", headers=headers, json={
+        "name": "Team leader", "role": "project_manager",
+    })
+    assert agent.status_code == 201, agent.text
+    team = client.post(f"{base}/teams", headers=headers, json={
+        "name": "Automation team", "manager_agent_profile_id": agent.json()["id"],
+    })
+    assert team.status_code == 201, team.text
+    workflow = client.post(f"{base}/orchestrations", headers=headers, json={
+        "key": "automation-flow", "name": "Automation flow",
+        "nodes": [
+            {"package_id": "start", "title": "Start", "node_type": "start"},
+            {"package_id": "end", "title": "End", "node_type": "end", "depends_on": ["start"]},
+        ],
+    })
+    assert workflow.status_code == 201, workflow.text
+    assert client.post(
+        f"{base}/orchestrations/{workflow.json()['id']}/publish", headers=headers,
+    ).status_code == 200
+    subscription = client.post(f"{base}/webhook-subscriptions", headers=headers, json={
+        "name": "Connector replies", "target_url": "https://hooks.example.test/replies",
+        "event_types": ["automation.reply"], "signing_secret": "connector-signing-secret",
+    })
+    assert subscription.status_code == 201, subscription.text
+    config = {
+        "name": "Order assistance", "trigger_type": trigger_type,
+        "orchestration_definition_id": workflow.json()["id"], "orchestration_version": 1,
+        "agent_team_id": team.json()["id"], "reply_subscription_id": subscription.json()["id"],
+    }
+    if trigger_type == "message":
+        config["allowed_senders"] = ["employee-1"]
+    else:
+        config["schedule_type"] = "one_shot"
+        config["schedule_config"] = {"run_at": "2026-01-01T00:00:00Z"}
+    created = client.post(f"{base}/automations", headers=headers, json=config)
+    assert created.status_code == 201, created.text
+    path = f"{base}/automations/{created.json()['id']}/events"
+    if trigger_type == "message":
+        message = {
+            "event_id": "message-1", "conversation_id": "conversation-1",
+            "sender_id": "employee-1", "occurred_at": "2026-09-18T00:00:00Z",
+            "text": "Check order 123", "data": {"order_id": "123"},
+        }
+        accepted = client.post(path, headers=headers, json=message)
+        assert accepted.status_code == 202, accepted.text
+        duplicate = client.post(path, headers=headers, json=message)
+        assert duplicate.json()["id"] == accepted.json()["id"]
+        assert client.post(path, headers=headers, json={**message, "text": "Changed"}).status_code == 400
+        assert client.post(path, headers=headers, json={
+            **message, "event_id": "denied", "sender_id": "untrusted",
+        }).status_code == 400
+
+    AutomationService(session).maintain()
+    events = client.get(path, headers=headers).json()
+    assert len(events) == 1
+    assert events[0]["status"] == "reply_pending", events
+    task = session.get(Task, UUID(events[0]["task_id"]))
+    assert task is not None and task.status == "completed"
+    assert task.orchestration_version == 1
+    AutomationService(session).maintain()
+    assert session.query(Task).count() == 1
+    assert session.query(WebhookDeliveryAttempt).count() == 1
+    transport = _RecordingHttpClient(WebhookHttpResponse(status_code=200, body="ok", headers={}))
+    settings = client.app.dependency_overrides[get_settings]()
+    delivery = WebhookDeliveryService(
+        session,
+        SecretEncryptionService(
+            secret=settings.credential_encryption_secret, key_id=settings.credential_encryption_key_id,
+        ),
+        transport,
+    ).deliver(workspace_id=workspace.id, delivery_attempt_id=UUID(events[0]["reply_delivery_id"]))
+    assert delivery.status == "succeeded"
+    assert len(transport.calls) == 1
+    assert str(task.id).encode() in transport.calls[0]["body"]
+    AutomationService(session).maintain()
+    assert client.get(path, headers=headers).json()[0]["status"] == "completed"
 
 
 def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> None:

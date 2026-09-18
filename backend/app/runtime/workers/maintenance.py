@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.domains.agents.memory.embedding_scheduler import WorkspaceMemoryEmbeddingScheduler
 from backend.app.domains.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
+from backend.app.domains.integrations.automations import AutomationService
 from backend.app.domains.integrations.webhooks.scheduler import WebhookDeliveryScheduler
 from backend.app.domains.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
 from backend.app.domains.orchestration.runs.control import RunControlService
@@ -192,6 +193,7 @@ class WorkerMaintenanceService:
             queue=self._queue,
             limit=self._config.recovery_batch_size,
         )
+        AutomationService(session).maintain(limit=self._config.recovery_batch_size)
         audit_integrity = AuditIntegrityService(session).run_due(
             interval_seconds=(
                 self._settings.audit_integrity_check_interval_seconds

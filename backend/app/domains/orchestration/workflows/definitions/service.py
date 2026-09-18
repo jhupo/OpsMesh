@@ -13,6 +13,7 @@ from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
 from backend.app.domains.orchestration.models import OrchestrationDefinition, OrchestrationRevision
+from backend.app.domains.orchestration.workflows.definitions.authoring import WorkflowEditorMetadata
 from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
@@ -87,7 +88,10 @@ class OrchestrationDefinitionService:
             key=request.key,
             name=request.name,
             description=request.description,
-            definition={"definition_version": 1, "nodes": nodes},
+            definition={
+                "definition_version": 1, "nodes": nodes,
+                "editor": request.editor.model_dump(mode="json"),
+            },
             version=1,
             status="draft",
         )
@@ -158,6 +162,13 @@ class OrchestrationDefinitionService:
             )
         next_nodes = request.nodes if request.nodes is not None else self._stored_nodes(definition)
         serialized_nodes = self._validate_nodes(workspace_id, next_nodes)
+        editor = request.editor or WorkflowEditorMetadata.model_validate(
+            definition.definition["editor"]
+        )
+        try:
+            editor.validate_nodes(next_nodes)
+        except ValueError as exc:
+            raise OrchestrationDefinitionError(str(exc)) from exc
         self._enforce_edit_scope(
             before=self._stored_nodes(definition),
             after=next_nodes,
@@ -172,6 +183,7 @@ class OrchestrationDefinitionService:
         definition.definition = {
             "definition_version": 1,
             "nodes": serialized_nodes,
+            "editor": editor.model_dump(mode="json"),
         }
         definition.version = before_version + 1
         definition.status = "draft"

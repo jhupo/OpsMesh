@@ -240,7 +240,8 @@ class OrchestrationDefinitionApplicationService:
                     code="orchestration_agent_unavailable",
                 )
             package = node.model_dump(mode="json", by_alias=True, exclude_none=True)
-            package["assigned_agent_profile_id"] = str(assigned_id)
+            if assigned_id is not None:
+                package["assigned_agent_profile_id"] = str(assigned_id)
             packages.append(package)
         planner_id = task.owner_agent_profile_id or team.manager_agent_profile_id
         return {

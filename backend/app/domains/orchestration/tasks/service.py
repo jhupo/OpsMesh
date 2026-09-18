@@ -73,6 +73,23 @@ class WorkspaceTaskService:
         self._session.refresh(task)
         return task
 
+    def create_automation_task(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        command: TaskCreateCommand,
+    ) -> Task:
+        """Persist admission in the caller's inbox transaction; queue recovery dispatches it."""
+        task, _ = self._create_task(
+            workspace_id=workspace_id,
+            created_by_user_id=user_id,
+            created_by_agent_run_id=None,
+            command=command,
+            queue=None,
+        )
+        return task
+
     def create_subworkflow_task(
         self,
         *,
