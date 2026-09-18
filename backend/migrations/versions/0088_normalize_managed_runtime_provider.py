@@ -12,6 +12,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Alembic records this revision after upgrade returns. Its identifier exceeds
+    # the default 32-character bookkeeping column, including on a fresh install.
+    op.alter_column("alembic_version", "version_num", type_=sa.String(128))
     op.execute(
         sa.text(
             "UPDATE workspace_runtimes "
