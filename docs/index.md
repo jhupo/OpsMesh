@@ -36,6 +36,8 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 
 ## 发布与生产化
 
+- [许可证与分发边界](licensing.md)：平台 LGPL-3.0-only、独立插件 SDK Apache-2.0，以及历史 MIT 声明保留规则（2026-09-18）。
+
 23. [Platform Productionization Plan](platform-productionization-plan.md)：当前平台收口、可靠性和运维阶段。
 24. [Release Delivery Plan](release-delivery-plan.md)：tag 门禁、构建、签名、发布和公共下载验证。
 25. [Standalone Distributions](standalone-distributions.md)：CLI 与 server bundle 的构建和验证。

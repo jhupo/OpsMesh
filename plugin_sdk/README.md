@@ -2,6 +2,11 @@
 
 Status: remote connector contracts and signed manifests, 2026-09-18.
 
+License: [Apache-2.0](LICENSE), independently of the platform's LGPL-3.0-only
+license. Commercial and closed-source plugins may use this SDK subject to its
+license terms. Retain [NOTICE](NOTICE) and [LICENSE-MIT](LICENSE-MIT) when
+redistributing applicable code; dependencies retain their own licenses.
+
 This independent Python package does not import the OpsMesh backend. It provides:
 
 - `contracts`: message ingress, remote plugin manifests and capability declarations.

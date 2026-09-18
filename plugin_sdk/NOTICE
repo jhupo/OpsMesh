@@ -1,0 +1,7 @@
+OpsMesh Plugin SDK
+Copyright (c) 2026 Amber Chiang
+
+This package is distributed under Apache-2.0, independently of the platform's
+LGPL-3.0-only license. Portions were previously distributed under MIT; the
+original copyright and permission notice is preserved in LICENSE-MIT.
+Third-party dependencies retain their respective licenses.

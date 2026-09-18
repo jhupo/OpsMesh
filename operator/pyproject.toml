@@ -1,5 +1,7 @@
 [project]
 name = "opsmesh-operator"
+license = "LGPL-3.0-only"
+license-files = ["LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"]
 version = "0.1.0rc9"
 description = "OpsMesh installation, release verification and host operations."
 requires-python = ">=3.11.8"
@@ -12,7 +14,7 @@ host = ["docker>=7.2.0,<8.0.0", "python-dotenv>=1.1.0,<2.0.0", "psycopg[binary]>
 opsmesh = "opsmesh_operator.cli:main"
 
 [build-system]
-requires = ["setuptools>=69.0"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

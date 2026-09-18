@@ -3,6 +3,8 @@ name = "opsmesh"
 version = "0.1.0rc9"
 description = "Run AI agent teams with control, isolation, and auditability."
 readme = "README.md"
+license = "LGPL-3.0-only"
+license-files = ["LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"]
 requires-python = ">=3.11.8"
 dependencies = [
     "opsmesh-operator[host]==0.1.0rc9",
@@ -42,7 +44,7 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["setuptools>=69.0"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [dependency-groups]

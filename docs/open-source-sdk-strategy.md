@@ -22,7 +22,8 @@ audit evidence around the SDK call.
 An SDK is not adopted only because it reduces line count. Evaluate:
 
 - protocol and feature coverage;
-- license compatibility with the MIT-licensed project;
+- license compatibility with the LGPL-3.0-only platform and, for SDK dependencies,
+  the independently Apache-2.0-licensed plugin SDK;
 - maintenance activity and security response;
 - Python 3.11+ support, async support, and typing quality;
 - predictable timeout, cancellation, retry, and error semantics;

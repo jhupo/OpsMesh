@@ -214,6 +214,8 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str) -> Path:
             )
             copy_server_assets(bundle)
             shutil.copy2(requirements, bundle / "requirements.lock.txt")
+        for name in ("LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"):
+            shutil.copy2(ROOT / name, bundle / name)
         # Preserve the installed distribution licenses alongside the native executable.
         site = Path(
             subprocess.check_output(

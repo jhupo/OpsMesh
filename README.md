@@ -508,4 +508,9 @@ Please report security issues through [SECURITY.md](SECURITY.md), not a public i
 
 ## License
 
-OpsMesh is available under the [MIT License](LICENSE).
+OpsMesh platform, operator and runtime are licensed under [LGPL-3.0-only](LICENSE),
+with the incorporated GPL terms in [COPYING](COPYING). The independent
+[Plugin SDK](plugin_sdk/) is licensed under [Apache-2.0](plugin_sdk/LICENSE).
+Existing copyright and MIT permission notices are preserved in [NOTICE](NOTICE)
+and [LICENSE-MIT](LICENSE-MIT). See [licensing scope](docs/licensing.md)
+for commercial use and distribution obligations (updated 2026-09-18).
