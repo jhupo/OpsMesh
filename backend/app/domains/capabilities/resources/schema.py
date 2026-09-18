@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
+from referencing import Registry
+from referencing.exceptions import Unresolvable
 
 from backend.app.core.security.redaction import (
     is_sensitive_payload_key,
@@ -49,7 +51,9 @@ def validate_json_value(
 ) -> None:
     """Validate any JSON value against a JSON Schema, including scalar outputs."""
     try:
-        Draft202012Validator(schema).validate(value)
+        Draft202012Validator(schema, registry=Registry()).validate(value)
+    except Unresolvable as exc:
+        raise ValueError(f"Invalid {label}: schema reference cannot be resolved locally") from exc
     except ValidationError as exc:
         path = ".".join(str(item) for item in exc.absolute_path)
         suffix = f" at {path}" if path else ""

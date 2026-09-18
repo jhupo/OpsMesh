@@ -195,7 +195,7 @@ class MarketplaceListingResponse(TimestampedModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def executable(self) -> bool:
-        return self.listing_type != "plugin"
+        return self.status in {"active", "public"}
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -231,7 +231,7 @@ class WorkspaceMarketplaceInstallResponse(TimestampedModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def executable(self) -> bool:
-        return self.listing_type != "plugin" and self.installed_resource_id is not None
+        return self.status == "active" and self.installed_resource_id is not None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

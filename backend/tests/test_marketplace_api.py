@@ -1,9 +1,13 @@
+import base64
 from collections.abc import Generator
 from uuid import UUID
 
 import fakeredis
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
+from opsmesh_plugin_sdk.contracts import CapabilityDeclaration, PluginManifest
+from opsmesh_plugin_sdk.packages import sign_package
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -44,6 +48,58 @@ from backend.app.main import create_app
 TOKEN = "test-token"
 
 
+def _plugin_package(version: str = "1.0.0") -> dict[str, object]:
+    return sign_package(
+        PluginManifest(
+            key="example.connector",
+            version=version,
+            name="Example Connector",
+            capabilities=[
+                CapabilityDeclaration(
+                    key="mcp",
+                    kind="mcp_server",
+                    title="Remote tools",
+                    required_permissions=["mcp.call"],
+                )
+            ],
+        ),
+        publisher_key_id="example-key",
+        private_key=bytes([7] * 32),
+    ).model_dump(mode="json")
+
+
+def _plugin_install_config(
+    client: TestClient,
+    session: Session,
+    user: User,
+    workspace: Workspace,
+) -> dict[str, object]:
+    key = Ed25519PrivateKey.from_private_bytes(bytes([7] * 32))
+    trusted = client.post(
+        f"/api/v1/workspaces/{workspace.id}/plugins/trust-keys",
+        headers=_headers(user.id),
+        json={
+            "key_id": "example-key",
+            "plugin_key": "example.connector",
+            "public_key": base64.b64encode(key.public_key().public_bytes_raw()).decode(),
+        },
+    )
+    assert trusted.status_code == 201
+    server = McpServer(
+        workspace_id=workspace.id,
+        name="Remote connector",
+        server_type="streamable_http",
+        connection={"url": "https://mcp.example.test/rpc"},
+        visibility="private",
+    )
+    session.add(server)
+    session.commit()
+    return {
+        "bindings": {"mcp": {"resource_id": str(server.id)}},
+        "approved_permissions": ["mcp.call"],
+    }
+
+
 @pytest.fixture(autouse=True)
 def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
@@ -79,11 +135,7 @@ def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
             "version": "1.2.0",
             "visibility": "public",
             "tags": ["productivity", "linear"],
-            "manifest": {
-                "entrypoint": "plugin.py",
-                "permissions": ["tasks.write"],
-                "api_key": "plugin-secret",
-            },
+            "manifest": _plugin_package("1.2.0"),
             "metadata": {"homepage": "https://plugins.example.test/linear"},
         },
     )
@@ -94,7 +146,7 @@ def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
     assert created.json()["status"] == "pending_approval"
     assert created.json()["executable"] is False
     assert created.json()["execution_mode"] == "metadata_only"
-    assert created.json()["manifest"]["api_key"] == "[redacted]"
+    assert created.json()["manifest"]["manifest"]["execution"] == "remote"
 
     approvals = client.get(
         f"/api/v1/workspaces/{publisher_workspace.id}/approvals",
@@ -114,27 +166,24 @@ def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
     assert market.status_code == 200
     assert market.json()["total"] == 1
     assert market.json()["items"][0]["id"] == listing_id
-    assert market.json()["items"][0]["executable"] is False
-    assert market.json()["items"][0]["execution_mode"] == "metadata_only"
-    assert "plugin-secret" not in str(market.json())
+    assert market.json()["items"][0]["executable"] is True
+    assert market.json()["items"][0]["execution_mode"] == "provisioned_resource"
 
     installed = client.post(
         f"/api/v1/workspaces/{buyer_workspace.id}/marketplace-listings/{listing_id}/install",
         headers=_headers(buyer.id),
-        json={"config": {"enabled": True, "token": "buyer-secret"}},
+        json={"config": _plugin_install_config(client, session, buyer, buyer_workspace)},
     )
 
     assert installed.status_code == 201
     installed_body = installed.json()
     assert installed_body["workspace_id"] == str(buyer_workspace.id)
     assert installed_body["listing_type"] == "plugin"
-    assert installed_body["installed_resource_id"] is None
-    assert installed_body["executable"] is False
-    assert installed_body["execution_mode"] == "metadata_only"
+    assert installed_body["installed_resource_id"] is not None
+    assert installed_body["executable"] is True
+    assert installed_body["execution_mode"] == "provisioned_resource"
     assert installed_body["installed_name"] == "Linear Sync"
-    assert installed_body["installed_manifest"]["api_key"] == "[redacted]"
-    assert installed_body["config"]["token"] == "[redacted]"
-    assert "buyer-secret" not in str(installed_body)
+    assert installed_body["installed_manifest"]["manifest"]["key"] == "example.connector"
 
     installs = client.get(
         f"/api/v1/workspaces/{buyer_workspace.id}/marketplace-installs?listing_type=plugin",
@@ -143,9 +192,26 @@ def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
     assert installs.status_code == 200
     assert installs.json()["total"] == 1
     assert installs.json()["items"][0]["id"] == installed_body["id"]
-    assert installs.json()["items"][0]["executable"] is False
+    assert installs.json()["items"][0]["executable"] is True
     assert session.query(MarketplaceListing).count() == 1
     assert session.query(WorkspaceMarketplaceInstall).count() == 1
+
+    plugin_id = installed_body["installed_resource_id"]
+    removed = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/plugins/{plugin_id}/actions",
+        headers=_headers(buyer.id),
+        json={"action": "uninstall", "expected_generation": 1},
+    )
+    assert removed.status_code == 200
+    assert removed.json()["status"] == "uninstalled"
+    resource_id = installed_body["config"]["bindings"]["mcp"]["resource_id"]
+    denied_discovery = client.post(
+        f"/api/v1/workspaces/{buyer_workspace.id}/capabilities/mcp-servers/{resource_id}/discover",
+        headers=_headers(buyer.id),
+        json={},
+    )
+    assert denied_discovery.status_code == 403
+    assert denied_discovery.json()["error"]["code"] == "plugin_unavailable"
 
 
 def test_private_plugin_listing_is_workspace_scoped() -> None:
@@ -160,7 +226,7 @@ def test_private_plugin_listing_is_workspace_scoped() -> None:
             "listing_type": "plugin",
             "name": "Internal Deploy Guard",
             "visibility": "private",
-            "manifest": {"entrypoint": "guard.py"},
+            "manifest": _plugin_package(),
         },
     )
 
@@ -178,7 +244,7 @@ def test_private_plugin_listing_is_workspace_scoped() -> None:
     owner_install = client.post(
         f"/api/v1/workspaces/{owner_workspace.id}/marketplace-listings/{listing_id}/install",
         headers=_headers(owner.id),
-        json={},
+        json={"config": _plugin_install_config(client, session, owner, owner_workspace)},
     )
 
     assert public_market.status_code == 200
@@ -214,7 +280,7 @@ def test_private_plugin_listing_skips_resource_review_by_default(monkeypatch) ->
             "listing_type": "plugin",
             "name": "Private Shell Plugin",
             "visibility": "private",
-            "manifest": {"permissions": ["shell", "production"]},
+            "manifest": _plugin_package(),
         },
     )
 
@@ -252,7 +318,7 @@ def test_private_plugin_review_can_be_enabled_per_workspace(monkeypatch) -> None
             "listing_type": "plugin",
             "name": "Reviewed Private Plugin",
             "visibility": "private",
-            "manifest": {"permissions": ["shell", "production"]},
+            "manifest": _plugin_package(),
         },
     )
 
@@ -516,7 +582,7 @@ def test_public_plugin_listing_requires_resource_review_before_market_visibility
             "listing_type": "plugin",
             "name": "Production Shell Plugin",
             "visibility": "public",
-            "manifest": {"permissions": ["shell", "production"]},
+            "manifest": _plugin_package(),
         },
     )
     market_before = client.get("/api/v1/marketplace?listing_type=plugin")

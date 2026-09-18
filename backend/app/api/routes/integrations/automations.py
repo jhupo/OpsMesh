@@ -26,7 +26,8 @@ def configuration_contracts(
         "automation": AutomationConfiguration.model_json_schema(),
         "message": IncomingMessage.model_json_schema(),
         "plugin_manifest": PluginManifest.model_json_schema(),
-        "plugin_installation_supported": False,
+        "plugin_installation_supported": True,
+        "plugin_execution_modes": ["remote"],
     }
 
 

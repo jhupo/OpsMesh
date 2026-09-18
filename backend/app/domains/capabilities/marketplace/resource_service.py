@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from opsmesh_plugin_sdk.packages import SignedPluginPackage
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,7 @@ from backend.app.domains.capabilities.marketplace.resource_installer import (
     MarketplaceResourceInstaller,
 )
 from backend.app.domains.capabilities.mcp.models import McpServer
+from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
 from backend.app.domains.capabilities.skills.models import Skill
 from backend.app.domains.workspace.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.domains.workspace.reviews.models import ResourceReview
@@ -74,6 +76,11 @@ class MarketplaceService:
         owner_user_id: UUID,
         data: MarketplaceListingCreateRequest,
     ) -> MarketplaceListing:
+        if data.listing_type == "plugin":
+            package = SignedPluginPackage.model_validate(data.manifest)
+            reject_embedded_secrets(package.manifest.model_dump(mode="json"))
+            if package.manifest.version != data.version:
+                raise ValueError("Listing version must match signed plugin package")
         review = self._review_listing(workspace_id, data)
         status = listing_status(data.status, data.visibility, review.required)
         listing = MarketplaceListing(
@@ -237,13 +244,9 @@ class MarketplaceService:
                 "installed_resource_id": str(installed_resource_id)
                 if installed_resource_id is not None
                 else None,
-                "executable": (
-                    listing.listing_type != "plugin" and installed_resource_id is not None
-                ),
+                "executable": (installed_resource_id is not None),
                 "execution_mode": (
-                    "provisioned_resource"
-                    if listing.listing_type != "plugin" and installed_resource_id is not None
-                    else "metadata_only"
+                    "provisioned_resource" if installed_resource_id is not None else "metadata_only"
                 ),
             },
         )

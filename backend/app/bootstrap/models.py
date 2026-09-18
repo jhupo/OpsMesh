@@ -20,6 +20,7 @@ _MODEL_MODULES = (
     "backend.app.domains.agents.providers.models",
     "backend.app.domains.agents.sessions.models",
     "backend.app.domains.capabilities.marketplace.models",
+    "backend.app.domains.capabilities.plugins.models",
     "backend.app.domains.capabilities.catalog.models",
     "backend.app.domains.capabilities.mcp.models",
     "backend.app.domains.capabilities.resources.models",

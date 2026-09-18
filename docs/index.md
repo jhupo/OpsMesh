@@ -2,7 +2,7 @@
 
 OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已经包含 Workspace 隔离、访问
 控制、Agent SDK 适配、任务与团队编排、能力/MCP、隔离运行时、Worker、审计、成本和发布
-运维能力。前端与 Plugin Center 仍是后续独立阶段，不属于当前 backend 实现。
+运维能力。远程插件生命周期已进入后端；前端画布和平台托管插件进程仍未实现。
 
 ## 当前实现
 
@@ -26,6 +26,7 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 18. [Adapter Boundaries](adapter-boundaries.md)：MCP、Provider health 和 runtime backend registry 的 adapter 合同。
 19. [Shared Domain Services](shared-domain-services.md)：跨领域服务的 owner 与复用规则。
 20. [MCP 日志分析员工流程示例](examples/mcp-log-analysis-workflow.md)：工具自动发现、员工/专家角色、结构化编排、审批与记忆。
+21. [自动化与远程插件](automation-and-extension-contracts.md)：画布合同、签名 SDK、信任、安装、版本切换、执行门禁和卸载依赖（2026-09-18）。
 
 ## 架构与质量
 
@@ -50,6 +51,6 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 - 设计/计划文档只保留仍然影响源码边界的内容；完成后的阶段清单和临时发布记录应删除，
   不与当前架构重复维护。
 - 源码目录、import owner 和删除路径以 `scripts/audit_app_layout.py` 以及架构测试为准。
-- Plugin Center 暂不作为可执行插件系统实现；后续必须复用 Capability Catalog、Runtime、Audit、Trace、Cost 和 Approval 合同。
+- 远程插件绑定已有能力，不在 API/Worker 动态导入第三方代码；托管插件进程仍须通过 Runtime 隔离边界。
 
-2026-09-18：后端已增加自动化触发与回复投递合同，以及独立的 `opsmesh-plugin-sdk`；Web 画布仍由后续前端阶段消费这些合同，插件安装执行生命周期仍未开放。
+2026-09-18：自动化、画布配置合同和远程插件生命周期已接入现有后端；独立 `opsmesh-plugin-sdk` 提供外部连接器合同与签名能力。当前范围不包含钉钉适配器、Web 页面或自动部署外部插件服务。

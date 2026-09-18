@@ -250,8 +250,6 @@ class ResourcePolicyReviewBuilder:
         scanner.scan_mapping("manifest", manifest)
         if visibility == "public":
             scanner.add("medium", "plugin.public_visibility")
-        for permission in _list_from_manifest(manifest, "permissions"):
-            scanner.scan_text("permission", permission)
         return self._review(
             workspace_id=workspace_id,
             resource_type="plugin",

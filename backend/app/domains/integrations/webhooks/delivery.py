@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.security.rate_limits import FixedWindowRateLimiter
 from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.capabilities.plugins.policy import plugin_resource_available
 from backend.app.domains.integrations.webhooks.delivery_state import WebhookDeliveryStateRecorder
 from backend.app.domains.integrations.webhooks.http_client import (
     HttpxWebhookHttpClient,
@@ -101,7 +102,16 @@ class WebhookDeliveryService:
     def deliver(self, *, workspace_id: UUID, delivery_attempt_id: UUID) -> WebhookDeliveryAttempt:
         attempt = self._attempt(workspace_id=workspace_id, delivery_attempt_id=delivery_attempt_id)
         subscription = self._subscription(workspace_id=workspace_id, attempt=attempt)
-        if subscription is None or subscription.status != "active":
+        if (
+            subscription is None
+            or subscription.status != "active"
+            or not plugin_resource_available(
+                self._session,
+                workspace_id,
+                "reply_channel",
+                subscription.id,
+            )
+        ):
             self._state.mark_dead_lettered(
                 attempt,
                 error="Webhook subscription is disabled or missing",

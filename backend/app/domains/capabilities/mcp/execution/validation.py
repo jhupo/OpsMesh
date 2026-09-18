@@ -23,6 +23,7 @@ from backend.app.domains.capabilities.mcp.models import (
     McpToolAllowlist,
 )
 from backend.app.domains.capabilities.mcp.policy import mcp_health_check_stale
+from backend.app.domains.capabilities.plugins.policy import plugin_resource_available
 from backend.app.domains.capabilities.resources.schema import validate_parameters
 from backend.app.domains.capabilities.tools.contracts import ToolResourceNotFoundError
 from backend.app.domains.orchestration.runs.models import (
@@ -68,6 +69,10 @@ class McpExecutionValidator:
             ),
         )
         _, server = self._resolve_allowed_tool(prepared_request, descriptor)
+        if not plugin_resource_available(
+            self.session, request.workspace_id, "mcp_server", server.id
+        ):
+            self._block(request, "plugin_unavailable", mcp_server_id=server.id)
         self._require_server_health(prepared_request, server)
         credentials = self._resolve_credentials(prepared_request, descriptor, server)
         return ValidatedMcpExecution(

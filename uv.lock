@@ -1698,6 +1698,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "python-json-logger" },
     { name = "redis" },
+    { name = "referencing" },
     { name = "requests" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1752,6 +1753,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.10.0,<3.0.0" },
     { name = "python-json-logger", specifier = ">=3.3.0,<4.0.0" },
     { name = "redis", specifier = ">=7.4.0" },
+    { name = "referencing", specifier = ">=0.37.0,<1.0.0" },
     { name = "requests", specifier = ">=2.32.0,<3.0.0" },
     { name = "sqlalchemy", specifier = ">=2.0.49" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35.0,<1.0.0" },
@@ -1815,11 +1817,18 @@ dependencies = [
     { name = "pydantic" },
 ]
 
+[package.optional-dependencies]
+signing = [
+    { name = "cryptography" },
+]
+
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", marker = "extra == 'signing'", specifier = ">=48" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "pydantic", specifier = ">=2.10,<3" },
 ]
+provides-extras = ["signing"]
 
 [[package]]
 name = "opsmesh-runtime"

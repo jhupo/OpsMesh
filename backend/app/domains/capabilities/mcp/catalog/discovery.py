@@ -27,6 +27,7 @@ from backend.app.domains.capabilities.mcp.transport.remote import (
     validate_mcp_auth_headers,
     validate_mcp_url,
 )
+from backend.app.domains.capabilities.plugins.policy import require_plugin_resource
 from backend.app.domains.capabilities.resources.schema import (
     normalize_object_schema,
     reject_embedded_secrets,
@@ -72,6 +73,7 @@ class McpToolDiscoveryService:
         )
         if server is None:
             raise McpDiscoveryError("MCP server not found or inactive")
+        require_plugin_resource(self._session, workspace_id, "mcp_server", server_id)
         configuration_version = server.configuration_version
         try:
             if normalized_server_type(server) not in {"streamable_http", "sse", "hosted"}:

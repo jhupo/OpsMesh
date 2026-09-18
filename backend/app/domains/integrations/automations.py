@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.utils import payload_hash
 from backend.app.domains.access.permissions import WorkspaceAction, role_allows
+from backend.app.domains.capabilities.plugins.policy import (
+    plugin_resource_available,
+    require_plugin_resource,
+)
 from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
 from backend.app.domains.integrations.automation_contracts import (
     AutomationConfiguration,
@@ -39,7 +43,11 @@ class AutomationService:
         self._session = session
 
     def list_automations(
-        self, workspace_id: UUID, *, limit: int = 50, offset: int = 0,
+        self,
+        workspace_id: UUID,
+        *,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[Automation]:
         return list(
             self._session.scalars(
@@ -114,6 +122,7 @@ class AutomationService:
     ) -> AutomationEvent:
         item = self.require(workspace_id, automation_id)
         config = AutomationConfiguration.model_validate(item.configuration)
+        require_plugin_resource(self._session, workspace_id, "message_trigger", item.id)
         reject_embedded_secrets(message.data)
         reject_embedded_secrets(message.text)
         if item.status != "active" or config.trigger_type != "message":
@@ -206,7 +215,9 @@ class AutomationService:
                 AutomationEvent.status.in_(["reply_pending", "reply_failed"]),
                 WebhookDeliveryAttempt.workspace_id == AutomationEvent.workspace_id,
                 WebhookDeliveryAttempt.status.in_(["succeeded", "dead_lettered"]),
-            ).order_by(AutomationEvent.updated_at).limit(limit)
+            )
+            .order_by(AutomationEvent.updated_at)
+            .limit(limit)
             .with_for_update(skip_locked=True, of=AutomationEvent)
         ).all()
         for event, delivery in pairs:
@@ -262,6 +273,13 @@ class AutomationService:
                 with self._session.begin_nested():
                     item = self.require(event.workspace_id, event.automation_id)
                     if item.status != "active":
+                        continue
+                    if not plugin_resource_available(
+                        self._session,
+                        event.workspace_id,
+                        "message_trigger",
+                        item.id,
+                    ):
                         continue
                     self._require_live_principal(item)
                     config = AutomationConfiguration.model_validate(event.configuration)

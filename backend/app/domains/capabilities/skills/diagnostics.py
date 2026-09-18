@@ -23,6 +23,7 @@ from backend.app.domains.capabilities.mcp.models import (
     McpServer,
     McpToolAllowlist,
 )
+from backend.app.domains.capabilities.plugins.policy import plugin_resource_available
 from backend.app.domains.capabilities.skills.availability import (
     WorkspaceSkillToolAvailability,
     skill_tool_availability,
@@ -65,6 +66,8 @@ class SkillToolDiagnosticsService:
             required_tools,
         )
         blocked_reasons: list[str] = []
+        if not plugin_resource_available(self._session, workspace_id, "skill", install_id):
+            blocked_reasons.append("plugin_unavailable")
         if install.status != "active":
             blocked_reasons.append("skill_install_disabled")
         missing_tools = [item.tool_name for item in tool_availability if not item.available]

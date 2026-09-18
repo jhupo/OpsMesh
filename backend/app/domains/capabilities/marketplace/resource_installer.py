@@ -13,6 +13,8 @@ from backend.app.domains.capabilities.marketplace.listing_payloads import (
 )
 from backend.app.domains.capabilities.marketplace.models import MarketplaceListing
 from backend.app.domains.capabilities.mcp.catalog.servers import McpServerService
+from backend.app.domains.capabilities.plugins.contracts import PluginInstallRequest
+from backend.app.domains.capabilities.plugins.service import PluginService
 from backend.app.domains.capabilities.skills.models import (
     Skill,
     WorkspaceSkillInstall,
@@ -67,7 +69,16 @@ class MarketplaceResourceInstaller:
                 )
             return server.id
         if listing.listing_type == "plugin":
-            return None
+            return (
+                PluginService(self._session)
+                .install(
+                    workspace_id,
+                    user_id,
+                    PluginInstallRequest.model_validate({**config, "package": listing.manifest}),
+                    commit=False,
+                )
+                .id
+            )
         raise ValueError(f"Unsupported marketplace listing type: {listing.listing_type}")
 
     def _install_skill_listing(

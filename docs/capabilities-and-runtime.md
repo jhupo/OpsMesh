@@ -293,9 +293,11 @@ MCP metadata:
 - installed workspace
 - health status
 
-Marketplace plugin listings remain metadata-only in this phase. Their API representation is
-explicitly `executable=false` with `execution_mode=metadata_only`; Marketplace does not dynamically
-import or activate plugin code in the API or Worker process.
+As of 2026-09-18, Marketplace plugin listings carry signed remote manifests. Installation uses
+workspace trust keys and explicit permission approval to bind existing remote capabilities.
+Disablement, publisher-key revocation and release retirement deny subsequent execution.
+Marketplace never imports plugin code into API or Worker processes. See
+[remote plugin lifecycle](automation-and-extension-contracts.md) for scope and version semantics.
 
 MCP access is granted to agents by workspace policy.
 

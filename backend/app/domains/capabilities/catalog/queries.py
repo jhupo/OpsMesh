@@ -21,6 +21,7 @@ from backend.app.domains.capabilities.mcp.catalog.rules import (
 )
 from backend.app.domains.capabilities.mcp.catalog.servers import McpServerService
 from backend.app.domains.capabilities.mcp.models import McpCredentialReference
+from backend.app.domains.capabilities.plugins.policy import plugin_resource_available
 from backend.app.domains.capabilities.resources.service import CapabilityResourceService
 
 
@@ -62,6 +63,8 @@ class WorkspaceCapabilityCatalogService:
         ]
         stale_after = timedelta(seconds=self._settings.mcp_health_check_stale_after_seconds)
         for allow, server in mcp_tools:
+            if not plugin_resource_available(self._session, workspace_id, "mcp_server", server.id):
+                continue
             eligible_credentials = [
                 credential
                 for credential in credentials

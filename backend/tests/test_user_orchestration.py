@@ -12,6 +12,9 @@ from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, Ta
 from backend.app.domains.orchestration.tasks.observation.execution import (
     TaskExecutionDiagnosticsService,
 )
+from backend.app.domains.orchestration.workflows.definitions.application import (
+    OrchestrationDefinitionApplicationService,
+)
 from backend.app.domains.orchestration.workflows.definitions.commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
@@ -20,9 +23,6 @@ from backend.app.domains.orchestration.workflows.definitions.commands import (
 from backend.app.domains.orchestration.workflows.definitions.conditions import (
     evaluate_task_step_condition,
     validate_condition,
-)
-from backend.app.domains.orchestration.workflows.definitions.application import (
-    OrchestrationDefinitionApplicationService,
 )
 from backend.app.domains.orchestration.workflows.definitions.contracts import (
     WorkflowCondition,
@@ -524,46 +524,80 @@ def test_orchestration_api_supports_draft_publish_edit_and_archive() -> None:
 
 @pytest.mark.parametrize("trigger_type", ["message", "schedule"])
 def test_configured_automation_admits_workflow_and_delivers_reply(trigger_type: str) -> None:
-    from backend.app.domains.integrations.automations import AutomationService
-    from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
-    from backend.app.domains.integrations.webhooks.models import WebhookDeliveryAttempt
-    from backend.tests.test_webhooks import _RecordingHttpClient
-    from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
+    import base64
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from opsmesh_plugin_sdk.contracts import PluginManifest
+    from opsmesh_plugin_sdk.packages import sign_package
+
     from backend.app.core.config import get_settings
     from backend.app.core.security.secrets import SecretEncryptionService
+    from backend.app.domains.integrations.automations import AutomationService
+    from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
+    from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
+    from backend.app.domains.integrations.webhooks.models import WebhookDeliveryAttempt
+    from backend.tests.test_webhooks import _RecordingHttpClient
 
     client, session = _api_client()
     owner, workspace = _seed_api_workspace(session, "automation@example.com", "automation")
     headers = _api_headers(owner.id)
     base = f"/api/v1/workspaces/{workspace.id}"
-    agent = client.post(f"{base}/agents", headers=headers, json={
-        "name": "Team leader", "role": "project_manager",
-    })
+    agent = client.post(
+        f"{base}/agents",
+        headers=headers,
+        json={
+            "name": "Team leader",
+            "role": "project_manager",
+        },
+    )
     assert agent.status_code == 201, agent.text
-    team = client.post(f"{base}/teams", headers=headers, json={
-        "name": "Automation team", "manager_agent_profile_id": agent.json()["id"],
-    })
+    team = client.post(
+        f"{base}/teams",
+        headers=headers,
+        json={
+            "name": "Automation team",
+            "manager_agent_profile_id": agent.json()["id"],
+        },
+    )
     assert team.status_code == 201, team.text
-    workflow = client.post(f"{base}/orchestrations", headers=headers, json={
-        "key": "automation-flow", "name": "Automation flow",
-        "nodes": [
-            {"package_id": "start", "title": "Start", "node_type": "start"},
-            {"package_id": "end", "title": "End", "node_type": "end", "depends_on": ["start"]},
-        ],
-    })
+    workflow = client.post(
+        f"{base}/orchestrations",
+        headers=headers,
+        json={
+            "key": "automation-flow",
+            "name": "Automation flow",
+            "nodes": [
+                {"package_id": "start", "title": "Start", "node_type": "start"},
+                {"package_id": "end", "title": "End", "node_type": "end", "depends_on": ["start"]},
+            ],
+        },
+    )
     assert workflow.status_code == 201, workflow.text
-    assert client.post(
-        f"{base}/orchestrations/{workflow.json()['id']}/publish", headers=headers,
-    ).status_code == 200
-    subscription = client.post(f"{base}/webhook-subscriptions", headers=headers, json={
-        "name": "Connector replies", "target_url": "https://hooks.example.test/replies",
-        "event_types": ["automation.reply"], "signing_secret": "connector-signing-secret",
-    })
+    assert (
+        client.post(
+            f"{base}/orchestrations/{workflow.json()['id']}/publish",
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    subscription = client.post(
+        f"{base}/webhook-subscriptions",
+        headers=headers,
+        json={
+            "name": "Connector replies",
+            "target_url": "https://hooks.example.test/replies",
+            "event_types": ["automation.reply"],
+            "signing_secret": "connector-signing-secret",
+        },
+    )
     assert subscription.status_code == 201, subscription.text
     config = {
-        "name": "Order assistance", "trigger_type": trigger_type,
-        "orchestration_definition_id": workflow.json()["id"], "orchestration_version": 1,
-        "agent_team_id": team.json()["id"], "reply_subscription_id": subscription.json()["id"],
+        "name": "Order assistance",
+        "trigger_type": trigger_type,
+        "orchestration_definition_id": workflow.json()["id"],
+        "orchestration_version": 1,
+        "agent_team_id": team.json()["id"],
+        "reply_subscription_id": subscription.json()["id"],
     }
     if trigger_type == "message":
         config["allowed_senders"] = ["employee-1"]
@@ -573,20 +607,132 @@ def test_configured_automation_admits_workflow_and_delivers_reply(trigger_type: 
     created = client.post(f"{base}/automations", headers=headers, json=config)
     assert created.status_code == 201, created.text
     path = f"{base}/automations/{created.json()['id']}/events"
+    private = Ed25519PrivateKey.generate()
+    publisher = client.post(
+        f"{base}/plugins/trust-keys",
+        headers=headers,
+        json={
+            "key_id": "connector-publisher",
+            "plugin_key": "order.connector",
+            "public_key": base64.b64encode(private.public_key().public_bytes_raw()).decode(),
+        },
+    )
+    assert publisher.status_code == 201, publisher.text
+    capabilities = [
+        {
+            "key": "reply",
+            "kind": "reply_channel",
+            "title": "Reply",
+            "required_permissions": ["messages.send"],
+        }
+    ]
+    bindings = {"reply": {"resource_id": subscription.json()["id"]}}
+    if trigger_type == "message":
+        capabilities.append({"key": "receive", "kind": "message_trigger", "title": "Receive"})
+        bindings["receive"] = {"resource_id": created.json()["id"]}
+    manifest = PluginManifest.model_validate(
+        {
+            "key": "order.connector",
+            "version": "1.0.0",
+            "name": "Order connector",
+            "capabilities": capabilities,
+        }
+    )
+    package = sign_package(manifest, "connector-publisher", private.private_bytes_raw()).model_dump(
+        mode="json"
+    )
+    installation = {
+        "package": package,
+        "bindings": bindings,
+        "approved_permissions": ["messages.send"],
+    }
+    invalid = {**package, "signature": base64.b64encode(bytes(64)).decode()}
+    assert (
+        client.post(
+            f"{base}/plugins", headers=headers, json={**installation, "package": invalid}
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            f"{base}/plugins", headers=headers, json={**installation, "approved_permissions": []}
+        ).status_code
+        == 403
+    )
+    other_owner, other_workspace = _seed_api_workspace(
+        session, "other-plugin@example.com", "other-plugin"
+    )
+    foreign = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/webhook-subscriptions",
+        headers=_api_headers(other_owner.id),
+        json={
+            "name": "Foreign",
+            "target_url": "https://hooks.example.test/foreign",
+            "event_types": ["automation.reply"],
+            "signing_secret": "foreign-signing-secret",
+        },
+    )
+    assert foreign.status_code == 201
+    assert (
+        client.post(
+            f"{base}/plugins",
+            headers=headers,
+            json={
+                **installation,
+                "bindings": {**bindings, "reply": {"resource_id": foreign.json()["id"]}},
+            },
+        ).status_code
+        == 400
+    )
+    installed = client.post(f"{base}/plugins", headers=headers, json=installation)
+    assert installed.status_code == 201, installed.text
+    action_path = f"{base}/plugins/{installed.json()['id']}/actions"
+    disabled = client.post(
+        action_path, headers=headers, json={"action": "disable", "expected_generation": 1}
+    )
+    assert disabled.status_code == 200, disabled.text
     if trigger_type == "message":
         message = {
-            "event_id": "message-1", "conversation_id": "conversation-1",
-            "sender_id": "employee-1", "occurred_at": "2026-09-18T00:00:00Z",
-            "text": "Check order 123", "data": {"order_id": "123"},
+            "event_id": "message-1",
+            "conversation_id": "conversation-1",
+            "sender_id": "employee-1",
+            "occurred_at": "2026-09-18T00:00:00Z",
+            "text": "Check order 123",
+            "data": {"order_id": "123"},
         }
+        assert client.post(path, headers=headers, json=message).status_code == 403
+        enabled = client.post(
+            action_path, headers=headers, json={"action": "enable", "expected_generation": 2}
+        )
+        assert enabled.status_code == 200, enabled.text
         accepted = client.post(path, headers=headers, json=message)
         assert accepted.status_code == 202, accepted.text
         duplicate = client.post(path, headers=headers, json=message)
         assert duplicate.json()["id"] == accepted.json()["id"]
-        assert client.post(path, headers=headers, json={**message, "text": "Changed"}).status_code == 400
-        assert client.post(path, headers=headers, json={
-            **message, "event_id": "denied", "sender_id": "untrusted",
-        }).status_code == 400
+        assert (
+            client.post(path, headers=headers, json={**message, "text": "Changed"}).status_code
+            == 400
+        )
+        assert (
+            client.post(
+                path,
+                headers=headers,
+                json={
+                    **message,
+                    "event_id": "denied",
+                    "sender_id": "untrusted",
+                },
+            ).status_code
+            == 400
+        )
+
+    if trigger_type == "schedule":
+        assert (
+            client.post(
+                action_path, headers=headers, json={"action": "enable", "expected_generation": 2}
+            ).status_code
+            == 200
+        )
 
     AutomationService(session).maintain()
     events = client.get(path, headers=headers).json()
@@ -600,18 +746,106 @@ def test_configured_automation_admits_workflow_and_delivers_reply(trigger_type: 
     assert session.query(WebhookDeliveryAttempt).count() == 1
     transport = _RecordingHttpClient(WebhookHttpResponse(status_code=200, body="ok", headers={}))
     settings = client.app.dependency_overrides[get_settings]()
-    delivery = WebhookDeliveryService(
+    delivery_service = WebhookDeliveryService(
         session,
         SecretEncryptionService(
-            secret=settings.credential_encryption_secret, key_id=settings.credential_encryption_key_id,
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
         ),
         transport,
-    ).deliver(workspace_id=workspace.id, delivery_attempt_id=UUID(events[0]["reply_delivery_id"]))
+    )
+    delivery = delivery_service.deliver(
+        workspace_id=workspace.id, delivery_attempt_id=UUID(events[0]["reply_delivery_id"])
+    )
     assert delivery.status == "succeeded"
     assert len(transport.calls) == 1
     assert str(task.id).encode() in transport.calls[0]["body"]
     AutomationService(session).maintain()
     assert client.get(path, headers=headers).json()[0]["status"] == "completed"
+    blocked = client.post(
+        action_path, headers=headers, json={"action": "uninstall", "expected_generation": 3}
+    )
+    assert blocked.status_code == 409
+    subscription_v2 = client.post(
+        f"{base}/webhook-subscriptions",
+        headers=headers,
+        json={
+            "name": "Connector replies v2",
+            "target_url": "https://hooks.example.test/v2",
+            "event_types": ["automation.reply"],
+            "signing_secret": "connector-signing-secret-v2",
+        },
+    )
+    v2 = manifest.model_copy(update={"version": "2.0.0", "capabilities": manifest.capabilities[:1]})
+    upgraded = client.post(
+        f"{base}/plugins",
+        headers=headers,
+        json={
+            "package": sign_package(
+                v2, "connector-publisher", private.private_bytes_raw()
+            ).model_dump(mode="json"),
+            "bindings": {"reply": {"resource_id": subscription_v2.json()["id"]}},
+            "approved_permissions": ["messages.send"],
+            "expected_generation": 3,
+        },
+    )
+    assert upgraded.status_code == 201, upgraded.text
+    assert upgraded.json()["current_version"] == "2.0.0"
+    rollback = client.post(
+        action_path,
+        headers=headers,
+        json={
+            "action": "switch_version",
+            "version": "1.0.0",
+            "expected_generation": 4,
+        },
+    )
+    assert rollback.status_code == 200, rollback.text
+    retired = client.post(
+        action_path,
+        headers=headers,
+        json={
+            "action": "retire_version",
+            "version": "2.0.0",
+            "expected_generation": 5,
+        },
+    )
+    assert retired.status_code == 200, retired.text
+    pending_reply = delivery_service.enqueue_event(
+        workspace_id=workspace.id,
+        event_type="automation.reply",
+        payload={"task_id": str(task.id)},
+        subscription_id=UUID(subscription.json()["id"]),
+    )[0]
+    session.commit()
+    revoked = client.post(
+        f"{base}/plugins/trust-keys/{publisher.json()['id']}/revoke", headers=headers
+    )
+    assert revoked.status_code == 200
+    denied_reply = delivery_service.deliver(
+        workspace_id=workspace.id,
+        delivery_attempt_id=pending_reply.id,
+    )
+    assert denied_reply.status == "dead_lettered"
+    assert len(transport.calls) == 1
+    assert (
+        client.post(
+            action_path,
+            headers=headers,
+            json={
+                "action": "enable",
+                "expected_generation": 6,
+            },
+        ).status_code
+        == 403
+    )
+    if trigger_type == "message":
+        assert (
+            client.post(
+                path, headers=headers, json={**message, "event_id": "after-revoke"}
+            ).status_code
+            == 403
+        )
 
 
 def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> None:
@@ -694,6 +928,7 @@ def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> Non
             user.id,
             allow_locked_edits=True,
         )
+
 
 def test_api_locked_edit_rejection_is_recorded_in_audit_chain() -> None:
     client, session = _api_client()

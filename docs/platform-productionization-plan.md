@@ -320,8 +320,8 @@ SDK/模型错误保留可诊断事件但不泄露 secret；恢复不会修改已
 执行前再次校验实时 active 状态、版本、workspace、health 和凭据绑定，配置重连、凭据轮换或
 禁用后，旧 Run 均 fail closed。调用的完成、失败、等待审批、自托管等待和策略拒绝同时写入
 Run event、调用日志和 WORM audit，并以 `agent_run_id + trace_id + span_id` 关联模型成本与链路。
-Marketplace 的 plugin listing/install 明确返回 `executable=false` 和
-`execution_mode=metadata_only`，不会被当作已安装的运行时资源。
+2026-09-18 后续阶段已接入签名远程插件安装；生命周期和限制以
+[自动化与扩展合同](automation-and-extension-contracts.md) 为准。旧元数据插件不会自动获得执行权限。
 
 本地定向证据：MCP 授权到执行/证据输出、MCP 健康拒绝、官方 SSE 调用和 Marketplace
 plugin 安装四条既有产品流程通过；受影响模块 Ruff、mypy、compile、架构/导入边界、单
@@ -341,8 +341,8 @@ Alembic head 和 `git diff --check` 通过。
   绑定的 runtime/self-hosted job，不能由 API/Worker 直接 spawn。
 - MCP server/tool health、credential readiness、connection reconfiguration、rotation、
   stale blocking、调用超时/大小限制、工具审计和成本/trace 关联必须统一走既有边界。
-- `Marketplace` 只负责发现、审核和安装已有资源；本阶段不实现 `plugin` 可执行包、外部
-  SDK 或热激活。现有 plugin listing 若尚未有 runtime resource，必须明确标为非执行资源。
+- `Marketplace` 负责发现、审核和安装；远程插件通过后续扩展合同绑定已有资源，
+  不动态导入第三方 Python，不将未安装的元数据声明当成执行授权。
 
 验收：禁用 server/credential/tool、过期 health、错误参数、跨 workspace grant、无 runtime
 stdio 和超额调用均 fail closed；每次允许/拒绝调用都有 run event、audit 和可追踪 correlation。

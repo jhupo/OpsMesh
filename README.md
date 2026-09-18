@@ -236,8 +236,10 @@ sequenceDiagram
 - MCP execution over isolated stdio plus SDK-backed Streamable HTTP and SSE, with frozen
   server/tool/credential versions, health and quota enforcement, and correlated Run/audit/trace
   evidence.
-- Public and private marketplace resources with review, installation, version, and provenance data;
-  plugin listings remain explicitly metadata-only and non-executable until a later Plugin Center.
+- Public and private marketplace resources with review, installation, version, and provenance data.
+  Signed remote plugins bind workspace MCP, skills, message automations and reply subscriptions;
+  trust revocation, disablement and version retirement gate execution. See the
+  [remote plugin lifecycle](docs/automation-and-extension-contracts.md) (2026-09-18).
 - Run authorization snapshots that freeze the capabilities allowed for a concrete execution.
 
 ### Isolated execution

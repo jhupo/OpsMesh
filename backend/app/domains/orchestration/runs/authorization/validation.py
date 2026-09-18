@@ -19,6 +19,7 @@ from backend.app.domains.capabilities.mcp.models import (
     McpServer,
     McpToolAllowlist,
 )
+from backend.app.domains.capabilities.plugins.policy import require_plugin_resource
 from backend.app.domains.capabilities.resources.models import CapabilityResource
 from backend.app.domains.capabilities.skills.models import WorkspaceSkillInstall
 from backend.app.domains.orchestration.runs.authorization.policy import (
@@ -178,6 +179,14 @@ class RunAuthorizationService:
             resource_grants_for_snapshot(snapshot),
             lock=lock_resources,
         )
+        skills = snapshot.get("installed_skills", [])
+        if not isinstance(skills, list):
+            raise ValueError("Invalid installed skill snapshot")
+        for skill in skills:
+            install_id = uuid_or_none(skill.get("install_id")) if isinstance(skill, dict) else None
+            if install_id is None:
+                raise ValueError("Invalid installed skill reference")
+            require_plugin_resource(self.session, run.workspace_id, "skill", install_id)
 
     def record_runtime_denial(
         self,
@@ -330,6 +339,7 @@ class RunAuthorizationService:
             install = by_id.get(install_id)
             if install is None:
                 continue
+            require_plugin_resource(self.session, workspace_id, "skill", install.id)
             installed_capability_keys = list(install.installed_capability_keys)
             matched_mcp_tools = [
                 tool
