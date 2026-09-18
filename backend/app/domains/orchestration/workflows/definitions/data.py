@@ -41,6 +41,13 @@ def resolve_workflow_inputs(
     except ValidationError as exc:
         raise WorkflowDataBindingError("Workflow input binding is invalid") from exc
 
+    return resolve_workflow_bindings(session, task, bindings)
+
+
+def resolve_workflow_bindings(
+    session: Session, task: Task, bindings: dict[str, WorkflowDataBinding]
+) -> dict[str, object]:
+    """Use the same scope, redaction and limits for node inputs and external output bindings."""
     steps = session.scalars(
         select(TaskStep).where(
             TaskStep.workspace_id == task.workspace_id,

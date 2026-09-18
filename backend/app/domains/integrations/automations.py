@@ -22,7 +22,11 @@ from backend.app.domains.integrations.automation_contracts import (
 )
 from backend.app.domains.integrations.automation_conversations import (
     AutomationConversationService,
-    bounded_output,
+)
+from backend.app.domains.integrations.automation_io import (
+    external_output,
+    message_instruction,
+    model_message,
 )
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
 from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
@@ -106,6 +110,16 @@ class AutomationService:
         item = self.require(workspace_id, automation_id)
         if item.version != request.expected_version:
             raise ValueError("Automation version changed; reload before editing")
+        previous = AutomationConfiguration.model_validate(item.configuration)
+        contract_fields = {"input_schema", "output_schema", "model_input_fields", "output_binding"}
+        if (
+            previous.model_dump(include=contract_fields)
+            != request.configuration.model_dump(include=contract_fields)
+            and request.configuration.contract_version <= previous.contract_version
+        ):
+            raise ValueError("Changing message contracts requires a higher contract_version")
+        if request.configuration.contract_version < previous.contract_version:
+            raise ValueError("Message contract versions cannot move backwards")
         self._validate_targets(workspace_id, request.configuration)
         item.configuration = request.configuration.model_dump(mode="json")
         item.status = request.status
@@ -138,6 +152,9 @@ class AutomationService:
             raise ValueError("Sender is not authorized for this automation")
         if message.action not in config.allowed_message_actions:
             raise ValueError("Message action is not enabled for this automation")
+        model_message(config, message)
+        if message.action in {"follow_up", "add_instruction"}:
+            message_instruction(config, message)
         AutomationConversationService(self._session).target(item, message)
         event = self._accept(
             item,
@@ -149,16 +166,18 @@ class AutomationService:
         return event
 
     def event_state(self, workspace_id: UUID, automation_id: UUID, event_id: UUID) -> EventState:
-        self.require(workspace_id, automation_id)
         conversations = AutomationConversationService(self._session)
         event = conversations.require_event(workspace_id, automation_id, event_id)
         task = conversations.task(event)
+        output = external_output(self._session, event, task)
         return EventState(
             event=AcceptedEvent.model_validate(event),
             task_status=task.status if task else None,
-            output=bounded_output(
-                event.result_payload or (task.final_output if task else {}) or {}
-            ),
+            output=output.value,
+            output_error=output.error,
+            contract_version=AutomationConfiguration.model_validate(
+                event.configuration
+            ).contract_version,
             pending_actions=conversations.pending_actions(event),
             notification_sequence=event.notification_sequence,
         )
@@ -355,7 +374,9 @@ class AutomationService:
                             orchestration_version=config.orchestration_version,
                             input={
                                 **config.input_defaults,
-                                "event": event.input_payload,
+                                "event": model_message(config, message)
+                                if config.trigger_type == "message"
+                                else event.input_payload,
                                 "previous_context": previous_context,
                             },
                             generic_state={"automation_event_id": str(event.id)},
@@ -416,7 +437,10 @@ class AutomationService:
             if not complete and not config.notify_progress:
                 continue
             actions = AutomationConversationService(self._session).pending_actions(event)
+            output = external_output(self._session, event, task)
             payload = AutomationReply(
+                contract_version=config.contract_version,
+                error_code=output.error,
                 sequence=event.notification_sequence + 1,
                 automation_id=item.id,
                 event_id=event.id,
@@ -426,7 +450,7 @@ class AutomationService:
                 if "sender_id" in event.input_payload
                 else None,
                 task_id=task.id,
-                status=task.status,
+                status="output_rejected" if output.error else task.status,
                 kind=(
                     "control_applied"
                     if event.status == "control_applied"
@@ -436,13 +460,7 @@ class AutomationService:
                     if actions
                     else "progress"
                 ),
-                output=bounded_output(
-                    event.result_payload
-                    if event.status == "control_applied"
-                    else task.final_output or {}
-                    if terminal
-                    else {}
-                ),
+                output=output.value,
                 pending_actions=actions,
             ).model_dump(mode="json")
             fingerprint = payload_hash(
@@ -472,17 +490,23 @@ class AutomationService:
     def _validate_targets(self, workspace_id: UUID, config: AutomationConfiguration) -> None:
         definitions = OrchestrationDefinitionService(self._session)
         definition = definitions.get_definition(workspace_id, config.orchestration_definition_id)
-        if (
-            definition is None
-            or definition.status == "archived"
-            or definitions.get_revision(
-                workspace_id,
-                config.orchestration_definition_id,
-                config.orchestration_version,
-            )
-            is None
-        ):
+        revision = definitions.get_revision(
+            workspace_id, config.orchestration_definition_id, config.orchestration_version
+        )
+        if definition is None or definition.status == "archived" or revision is None:
             raise ValueError("Automation requires a retained published workflow revision")
+        nodes = revision.definition.get("nodes", [])
+        agent_nodes = (
+            {
+                node.get("package_id")
+                for node in nodes
+                if isinstance(node, dict) and node.get("node_type", "agent") == "agent"
+            }
+            if isinstance(nodes, list)
+            else set()
+        )
+        if not set(config.stream_output_nodes) <= agent_nodes:
+            raise ValueError("Stream output nodes must name agents in the published workflow")
         if (
             self._session.scalar(
                 select(AgentTeam.id).where(

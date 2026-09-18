@@ -27,13 +27,90 @@
 
 `AutomationClient.state(event_id)` 对应 `GET /automations/{id}/events/{event_id}`，返回事件状态、任务状态、有界结果及待审批 ID/类型/风险，不暴露审批密文或私有凭证。该接口要求现有 workspace READ 权限；它面向可信连接器，不是让渠道终端用户直接持有平台令牌。
 
-`automation.reply` 的 data 是 SDK `AutomationReply`：kind 为 result、progress、action_required 或 control_applied，包含 conversation_id、sender_id、source_event_id、task_id 和单调 sequence。结果与续接上下文上限为 32,000 个 ASCII JSON 字符，超出返回 preview 和 truncated；完整产物继续走现有工作区授权接口。通知是状态变化提示，不是 token 级流式输出。
+`automation.reply` 的 data 是 SDK `AutomationReply`：kind 为 result、progress、action_required 或 control_applied，包含 conversation_id、sender_id、source_event_id、task_id、contract_version 和单调 sequence。最终业务结果上限为 32,000 个 ASCII JSON 字符，超限或不符合 Schema 时返回空 output 和 output_contract_rejected，不将截断对象伪装成合法业务结果；完整产物继续走现有工作区授权接口。Webhook 通知仍是状态变化提示，实时预览走下述订阅接口。
 
 外部接收方调用 `parse_automation_delivery`，先验签，再核对 workspace/automation，按 envelope.id 持久化去重，并用 event_id + sequence 忽略迟到通知。平台采用至少一次投递；已成功/死信的重复 worker job 不重复发送，真实网络请求发出后连接中断仍可能重试，因此不能宣称跨系统 exactly-once。明确重放继续使用既有 Webhook 重放接口。
 
 回复入队和真正发送前都检查自动化主体权限及发送者授权，投递还检查插件状态。撤销后未发出的消息进入死信，已发出的消息无法收回。通知中的 pending_actions 仅提示用户通过现有审批 API/UI 处理，不把聊天 sender_id 当成平台审批身份。
 
 ## 通用配置示例与复用边界
+
+### 结构化输入输出与模型可见范围（2026-09-18）
+
+自动化配置拥有 `contract_version`、`input_schema`、`output_schema`、`model_input_fields` 和可选的 `output_binding`。Schema 使用现有 JSON Schema 2020-12 校验器；引用只在本地解析，不远程加载。更改 Schema、模型字段投影或结果绑定必须提高 contract_version；已接受事件继续使用其冻结的合同。版本不符或输入不合法时在入站返回 400，不创建任务。
+
+`IncomingMessage.data` 保存插件提交的业务对象，start/follow_up/add_instruction 按 input_schema 校验。text 可省略，文字和 data 至少有一项非空；pause/resume/cancel 不要求重复提交业务数据。整个消息上限 64,000 UTF-8 字节，追加指令的文字与可见 data 合计不得超过 4,000 字符。
+
+插件校验真实渠道身份后填写 sender_id。用户名、级别等可以放在 data.user，但它们只是外部声明，不授予平台权限。`model_input_fields` 是 data 顶层字段的白名单，默认空；Task.input.event 仅含 event_id、text 和白名单 data，不把完整渠道身份与路由信息塞进模型上下文。路由字段由消息收件箱保存。允许一个对象字段意味着允许其整个子树，需进一步分隔隐私字段时应在外部输入合同中分开声明。
+
+`output_binding` 复用工作流数据绑定，例如 `steps.summarize.output.structured_output.value`。省略时校验整个 Task.final_output。绑定取值沿用 16 KiB 单值限制；输出脱敏后再校验 output_schema。任务失败/取消不输出半成品；控制操作回执使用固定控制结构，不套用业务结果 Schema。输出校验失败不改写已完成的任务，但 state.output_error、Webhook error_code 及 output.rejected 明确说明拒绝交付。
+
+例如，给下方通用编排模板对应的自动化加入这些字段（其余 team、workflow、sender 和回复配置仍必需）：
+
+```json
+{
+  "contract_version": 2,
+  "input_schema": {
+    "type": "object",
+    "required": ["question", "user"],
+    "properties": {
+      "question": {"type": "string", "minLength": 1},
+      "user": {
+        "type": "object",
+        "required": ["id", "name", "level"],
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "level": {"type": "string", "enum": ["standard", "vip"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false
+  },
+  "model_input_fields": ["question"],
+  "output_schema": {
+    "type": "object",
+    "required": ["title", "content"],
+    "properties": {"title": {"type": "string"}, "content": {"type": "string"}},
+    "additionalProperties": false
+  },
+  "output_binding": {"reference": "steps.summarize.output.structured_output.value"},
+  "stream_output_nodes": ["summarize"],
+  "stream_tool_events": true
+}
+```
+
+插件提交同版本的 IncomingMessage，data 为 `{ "question": "请分析这次问题", "user": { "id": "u-1", "name": "张三", "level": "vip" } }`；sender_id 应来自渠道已验证身份。本例 user 仅用于平台收件记录，模型只看到 question。通用模板存在后续人工确认节点，因此流式总结仍是待确认预览，不能在审批前当成正式结论。
+
+### SDK 实时订阅
+
+`GET /api/v1/workspaces/{workspace_id}/automations/{automation_id}/events/{event_id}/stream?cursor=0-0`
+返回 `application/x-ndjson`，每行一个 `AutomationStreamEvent`。SDK `AsyncAutomationClient.events` 使用 HTTPX 的流读取和标准 JSON 校验；无需复制后端或新增 SSE 解析器。原有任务 SSE 接口保留其工作区观察用途，连接器应使用经过消息作用域过滤的新接口。
+
+| 事件 | 插件处理 |
+| --- | --- |
+| state | 更新任务状态、最终业务对象、待审批信息 |
+| output.reset | 新的运行尝试，重置对应 run 的预览 |
+| output.text | 替换该 attempt 的预览文本；provisional=true，并非已校验的最终 JSON |
+| tool.started/completed/failed/waiting | 按 call_id 更新工具进度；只含名称、ID、状态 |
+| approval.required | 显示等待确认；通过现有审批 API 处理 |
+| output.completed/output.rejected | 接收已校验结果，或处理拒绝交付 |
+| task.failed/task.cancelled | 显示失败/取消，清除未确认预览 |
+| checkpoint | 保存已消费游标，无需向终端用户展示 |
+| stream.reset | 游标已不在保留窗口，清除预览并采用返回的权威状态，再处理保留事件 |
+| stream.reconnect | 正常连接轮换；SDK 自动携带游标重连 |
+| stream.completed/stream.revoked | 停止订阅；后者表示实时授权已撤销 |
+
+只有 `stream_output_nodes` 明确列出的已发布 agent 节点才向插件公开文本；默认空。`stream_tool_events` 默认 false。配置可见性在每次读取时按“事件冻结配置与当前配置的交集”执行。订阅要求自动化创建主体的身份，并反复校验主体、发送者与插件状态；终端用户不应获得平台凭证。
+
+Worker 将 SDK 片段即时送入现有 Redis TaskEventBus，不再等完整模型结果才提供预览。普通工具与直接 tool/mcp 节点经过同一个实时观察适配器；SDK 原生工具使用既有生命周期钩子，无法提供 call_id 的原生钩子会返回 null，不能保证所有厂商原生工具的字段完全一致。事件不公开工具原始参数、结果、推理内容或供应商原始事件。
+
+文本使用可替换的累计预览，约每 100 ms 最多发一次，结束时刷新尾部；上限 32,000 字符，超出标记 truncated。累计文本复用现有脱敏规则，模型预览并非完整输出审核；配置了阻断型输出 guardrail 的 Run 不公开文本预览，最终仍需通过 guardrail 与业务 Schema。涉及保密审核的流程应仅流工具状态和最终结果。
+
+Redis 保留窗口沿用任务流的约 10,000 条事件，不承诺所有历史片段永久保存。Postgres 继续保存最终任务状态与结果。网络断开由调用方处理 HTTPX 异常并使用已持久化 cursor 重订阅；SDK 不静默吞错。保留窗口失效发送 stream.reset，Redis 不可用则连接失败，不伪装为空流。每个连接最多约 55 秒后轮换；once=true 只读取一批用于轮询。插件必须先处理事件再保存 cursor，按 attempt_id/sequence 去重，并以最终结果覆盖预览。
+
+配置保存在现有 JSON 配置与事件快照中，本次无需新建执行表或迁移。外部插件自行决定更新卡片、合并文本或发送最终消息，本仓库不实现具体渠道。
 
 [message-collaboration.workflow.json](examples/message-collaboration.workflow.json) 是现有编排创建接口的请求模板：专家分析 → 知识检索 → 领导整合 → 人工确认 → 长期记忆。它不包含业务 HTTP 地址或外部插件代码。使用前必须配置 specialist、project_manager 和独立的 memory_curator 员工、团队成员关系、模型、工具授权与记忆资源范围，再将模板提交到编排创建接口并发布。memory_curator 专用 profile 持有写权限，分析与总结员工只持有必要的读权限。
 

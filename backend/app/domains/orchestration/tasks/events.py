@@ -142,6 +142,12 @@ class RedisTaskEventBus:
         prefix = self.key_prefix.strip(":")
         return f"{prefix}:workspace:{workspace_id}:task:{task_id}:events"
 
+    def contains_cursor(self, workspace_id: UUID, task_id: UUID, cursor: str) -> bool:
+        """An absent nonzero cursor means retention expired or Redis lost its stream."""
+        return bool(
+            self.redis.xrange(self._stream_key(workspace_id, task_id), cursor, cursor, count=1)
+        )
+
 
 def _event_from_fields(*, stream_id: str, fields: dict[str, str]) -> TaskEvent:
     payload = _decode_payload(fields.get("payload"))

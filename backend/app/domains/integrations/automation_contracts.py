@@ -9,7 +9,11 @@ from uuid import UUID
 from opsmesh_plugin_sdk.contracts import MessageAction
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
+from backend.app.domains.capabilities.resources.schema import (
+    reject_embedded_secrets,
+    validate_json_schema,
+)
+from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowDataBinding
 from backend.app.runtime.workers.scheduling.calendar import next_run_at
 
 
@@ -32,9 +36,23 @@ class AutomationConfiguration(BaseModel):
         default=["start"], min_length=1, max_length=6
     )
     notify_progress: bool = False
+    contract_version: int = Field(default=1, ge=1)
+    input_schema: dict[str, object] = Field(default={"type": "object"})
+    output_schema: dict[str, object] = Field(default={"type": "object"})
+    model_input_fields: list[str] = Field(default_factory=list, max_length=64)
+    output_binding: WorkflowDataBinding | None = None
+    stream_output_nodes: list[str] = Field(default_factory=list, max_length=128)
+    stream_tool_events: bool = False
 
     @model_validator(mode="after")
     def validate_configuration(self) -> AutomationConfiguration:
+        for schema in (self.input_schema, self.output_schema):
+            validate_json_schema(schema)
+            if schema.get("type") != "object":
+                raise ValueError("Automation input/output schemas must declare object type")
+        for names in (self.model_input_fields, self.stream_output_nodes):
+            if len(set(names)) != len(names) or any(not name.strip() for name in names):
+                raise ValueError("Projection fields and stream nodes must be unique nonempty names")
         reject_embedded_secrets(self.input_defaults)
         if len(set(self.allowed_message_actions)) != len(self.allowed_message_actions):
             raise ValueError("Message actions must be unique")

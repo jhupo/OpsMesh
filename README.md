@@ -242,6 +242,8 @@ sequenceDiagram
   [remote plugin lifecycle](docs/automation-and-extension-contracts.md) (2026-09-18).
 - Message-driven collaboration through the independent connector SDK: explicit follow-ups,
   task pause/resume/cancel, scoped state queries, progress/approval notifications and signed replies.
+  Versioned input/output JSON Schemas, explicit model-visible fields, and an async NDJSON
+  subscription expose live text previews and safe tool status with replay cursors (2026-09-18).
   External channel plugins stay in their own repositories; no channel business logic is embedded.
 - Run authorization snapshots that freeze the capabilities allowed for a concrete execution.
 

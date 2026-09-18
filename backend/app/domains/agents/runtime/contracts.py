@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
@@ -372,6 +373,7 @@ class AgentRunRequest:
     output_schema: AgentRuntimeOutputSchema | None = None
     guardrails: AgentRuntimeGuardrails | None = None
     stream: bool = False
+    event_sink: Callable[[AgentRuntimeStreamEvent], None] | None = None
     cancellation: AgentRuntimeCancellation | None = None
     sandbox: SandboxBinding | None = None
 

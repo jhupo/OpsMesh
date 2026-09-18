@@ -45,11 +45,13 @@ from backend.app.domains.orchestration.runs.authorization.policy import (
 from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.lifecycle import RunLifecycleService
+from backend.app.domains.orchestration.runs.live_events import LiveToolExecutor, RunLivePublisher
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.runs.runtime_event_messages import (
     RunRuntimeEventMessageMapper,
 )
 from backend.app.domains.orchestration.runs.state import RunStatus
+from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.domains.orchestration.workflows.definitions.data import resolve_workflow_inputs
@@ -549,6 +551,18 @@ class RunExecutionService:
                 tool_call_id,
                 direct_approval,
             )
+        if self.queue is not None and run.task_id is not None:
+            tool_executor = LiveToolExecutor(
+                tool_executor,
+                RunLivePublisher(
+                    RedisTaskEventBus(self.queue.redis, self._settings().redis_key_prefix),
+                    run.workspace_id,
+                    run.task_id,
+                    run.id,
+                    step.id,
+                    step.work_package_id,
+                ),
+            )
         result = await tool_executor.execute_tool(
             context=context,
             tool_name=tool_name,
@@ -665,6 +679,9 @@ class RunExecutionService:
             request_builder=self._request_builder(),
             events=self._events(),
             mark_run_failed=self._lifecycle().mark_run_failed,
+            event_bus=RedisTaskEventBus(self.queue.redis, self._settings().redis_key_prefix)
+            if self.queue
+            else None,
         )
 
     def _request_builder(self) -> RunRequestBuilder:

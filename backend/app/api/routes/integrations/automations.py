@@ -1,25 +1,40 @@
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from opsmesh_plugin_sdk.contracts import (
     AcceptedEvent,
     AutomationReply,
+    AutomationStreamEvent,
     EventState,
     IncomingMessage,
     PluginManifest,
 )
+from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
+from backend.app.api.dependencies.redis import get_redis_client
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
+from backend.app.domains.access.errors import AuthorizationError
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.integrations.automation_contracts import (
     AutomationConfiguration,
     AutomationResponse,
     AutomationUpdate,
 )
+from backend.app.domains.integrations.automation_stream import AutomationStreamService
 from backend.app.domains.integrations.automations import AutomationService
+from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
+
+if TYPE_CHECKING:
+    RedisClient = Redis[str]
+else:
+    RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/automations", tags=["automations"])
 
@@ -33,6 +48,7 @@ def configuration_contracts(
         "message": IncomingMessage.model_json_schema(),
         "reply": AutomationReply.model_json_schema(),
         "event_state": EventState.model_json_schema(),
+        "stream_event": AutomationStreamEvent.model_json_schema(),
         "plugin_manifest": PluginManifest.model_json_schema(),
         "plugin_installation_supported": True,
         "plugin_execution_modes": ["remote"],
@@ -133,3 +149,41 @@ def event_state(
         return AutomationService(session).event_state(context.workspace.id, automation_id, event_id)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/{automation_id}/events/{event_id}/stream")
+async def stream_event(
+    automation_id: UUID,
+    event_id: UUID,
+    cursor: str = Query(default="0-0", pattern=r"^\d{1,20}-\d{1,20}$"),
+    once: bool = False,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+    redis: RedisClient = Depends(get_redis_client),
+    settings: Settings = Depends(get_settings),
+) -> StreamingResponse:
+    service = AutomationStreamService(session)
+    try:
+        service.authorize(context.workspace.id, automation_id, event_id, context.user)
+    except (ValueError, AuthorizationError) as exc:
+        raise HTTPException(403, "Message stream unavailable") from exc
+    workspace_id, user = context.workspace.id, context.user
+    session.rollback()
+
+    async def frames() -> AsyncIterator[str]:
+        async for frame in service.frames(
+            bus=RedisTaskEventBus(redis, settings.redis_key_prefix),
+            workspace_id=workspace_id,
+            automation_id=automation_id,
+            event_id=event_id,
+            user=user,
+            cursor=cursor,
+            once=once,
+        ):
+            yield frame.model_dump_json() + "\n"
+
+    return StreamingResponse(
+        frames(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

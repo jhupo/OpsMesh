@@ -327,6 +327,15 @@ Rules:
 - raw provider payloads are optional and should be controlled by debug policy
 - stream events use the same redaction rules and carry a monotonic product-owned sequence
 
+Live connector delivery (2026-09-18): `AgentRunRequest.event_sink` receives mapped stream
+events during SDK execution. Worker requests attach a provider-neutral publisher to the existing
+Redis task event bus; their text previews are no longer buffered until the model returns.
+Lifecycle evidence and authoritative final results retain their existing Postgres owners.
+The external automation subscription filters public node IDs and emits bounded, replaceable text
+previews plus tool status. It supports retained cursors and explicit replay-gap resets, not
+permanent storage of every token. Blocking output guardrails suppress text previews. See
+[automation contracts](automation-and-extension-contracts.md) for schemas and SDK subscription.
+
 ## Approval Contract
 
 When a tool or action requires approval:

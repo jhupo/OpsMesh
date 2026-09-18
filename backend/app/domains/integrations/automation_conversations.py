@@ -1,6 +1,5 @@
 """Scoped message routing; task execution and controls remain owned by orchestration."""
 
-import json
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -8,7 +7,8 @@ from opsmesh_plugin_sdk.contracts import IncomingMessage, PendingAction
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
+from backend.app.domains.integrations.automation_io import external_output, message_instruction
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.tasks.contracts import TaskControlActionRequest
@@ -21,14 +21,6 @@ from backend.app.domains.orchestration.tasks.state import TERMINAL_TASK_STATUSES
 class MessageDispatch:
     handled: bool = False
     previous_context: dict[str, object] = field(default_factory=dict)
-
-
-def bounded_output(output: dict[str, object]) -> dict[str, object]:
-    safe = redact_sensitive_payload(output)
-    encoded = json.dumps(safe, ensure_ascii=True)
-    if len(encoded) <= 32_000:
-        return safe
-    return {"preview": encoded[:32_000], "truncated": True}
 
 
 class AutomationConversationService:
@@ -103,7 +95,7 @@ class AutomationConversationService:
                     "event_id": str(target.id),
                     "task_id": str(task.id),
                     "status": task.status,
-                    "output": bounded_output(task.final_output or {}),
+                    "output": external_output(self.session, target, task).value,
                 }
             )
         if terminal:
@@ -115,7 +107,11 @@ class AutomationConversationService:
             actor_user_id=item.created_by_user_id,
             request=TaskControlActionRequest(
                 action=action,
-                instruction=message.text if action == "add_instruction" else None,
+                instruction=message_instruction(
+                    AutomationConfiguration.model_validate(event.configuration), message
+                )
+                if action == "add_instruction"
+                else None,
                 reason="automation_message",
                 enqueue=action == "resume",
                 metadata={"automation_event_id": str(event.id), "sender_id": message.sender_id},

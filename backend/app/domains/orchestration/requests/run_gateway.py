@@ -1,7 +1,8 @@
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from opentelemetry.trace import SpanKind
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
@@ -20,7 +21,10 @@ from backend.app.domains.orchestration.requests.provider_audit import ModelProvi
 from backend.app.domains.orchestration.requests.provider_routing import ModelProviderRoutingService
 from backend.app.domains.orchestration.requests.request_approval import ModelRequestApprovalService
 from backend.app.domains.orchestration.runs.events import RunEventRecorder
+from backend.app.domains.orchestration.runs.live_events import LiveToolExecutor, RunLivePublisher
 from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.domains.orchestration.tasks.events import TaskEventBus
+from backend.app.domains.orchestration.tasks.models import TaskStep
 from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
 from backend.app.observability.telemetry.trace_context import current_trace_context, telemetry_span
 from backend.app.runtime.workers.contracts import JobPayload
@@ -36,6 +40,7 @@ class ModelRunGateway:
     request_builder: RunRequestBuilder
     events: RunEventRecorder
     mark_run_failed: MarkRunFailed
+    event_bus: TaskEventBus | None = None
 
     async def run_with_provider_fallback(
         self,
@@ -119,6 +124,36 @@ class ModelRunGateway:
         *,
         fallback_selected: bool,
     ) -> AgentRunResult:
+        if self.event_bus is not None and run.task_id is not None:
+            step = (
+                self.session.scalar(
+                    select(TaskStep).where(
+                        TaskStep.workspace_id == run.workspace_id,
+                        TaskStep.task_id == run.task_id,
+                        TaskStep.id == run.task_step_id,
+                    )
+                )
+                if run.task_step_id
+                else None
+            )
+            publisher = RunLivePublisher(
+                self.event_bus,
+                run.workspace_id,
+                run.task_id,
+                run.id,
+                run.task_step_id,
+                step.work_package_id if step else None,
+                allow_text=not bool(
+                    request.guardrails and any(rule.blocking for rule in request.guardrails.output)
+                ),
+            )
+            request = replace(
+                request,
+                event_sink=publisher,
+                tool_executor=LiveToolExecutor(request.tool_executor, publisher)
+                if request.tool_executor
+                else None,
+            )
         routing = self.routing()
         audit = self.audit()
         costs = CostAccountingService(self.session)

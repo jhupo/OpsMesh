@@ -37,7 +37,7 @@ class AuthorizationService:
         self._session = session
 
     def authenticate_user(self, user_id: UUID) -> AuthenticatedUser:
-        user = self._session.get(User, user_id)
+        user = self._session.get(User, user_id, populate_existing=True)
         if user is None or user.status != "active":
             raise AuthenticationError("Authenticated user was not found or is inactive")
         return AuthenticatedUser.from_model(user)
@@ -251,12 +251,28 @@ class AuthorizationService:
         return user
 
     def authenticate_user_token(self, raw_token: str, settings: Settings) -> AuthenticatedUser:
-        now = datetime.now(UTC)
         token = self._session.scalar(
             select(UserAPIToken).where(
                 UserAPIToken.token_hash == self.hash_user_token(raw_token, settings),
             )
         )
+        return self._authenticated_token(token, record_use=True)
+
+    def refresh_authenticated_user(self, current: AuthenticatedUser) -> AuthenticatedUser:
+        """Recheck subscriptions without retaining credentials or writing token usage."""
+        if current.token_id is None:
+            return self.authenticate_user(current.user_id)
+        token = self._session.scalar(
+            select(UserAPIToken)
+            .where(UserAPIToken.id == current.token_id, UserAPIToken.user_id == current.user_id)
+            .execution_options(populate_existing=True)
+        )
+        return self._authenticated_token(token, record_use=False)
+
+    def _authenticated_token(
+        self, token: UserAPIToken | None, *, record_use: bool
+    ) -> AuthenticatedUser:
+        now = datetime.now(UTC)
         if token is None:
             raise AuthenticationError("Invalid or inactive user token")
         if token.status != "active" or token.revoked_at is not None:
@@ -264,11 +280,12 @@ class AuthorizationService:
         expires_at = datetime_or_none(token.expires_at)
         if expires_at is not None and expires_at <= now:
             raise AuthenticationError("Invalid or inactive user token")
-        user = self._session.get(User, token.user_id)
+        user = self._session.get(User, token.user_id, populate_existing=True)
         if user is None or user.status != "active":
             raise AuthenticationError("Invalid or inactive user token")
-        token.last_used_at = now
-        self._session.flush()
+        if record_use:
+            token.last_used_at = now
+            self._session.flush()
         scopes = dict(token.scopes) if isinstance(token.scopes, dict) else None
         return AuthenticatedUser.from_model(
             user,

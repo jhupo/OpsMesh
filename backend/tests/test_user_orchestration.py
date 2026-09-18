@@ -1103,6 +1103,261 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     assert len(transport.calls) == 1
 
 
+@pytest.mark.parametrize("valid_output", [True, False])
+def test_structured_messages_stream_before_model_completion_and_replay(
+    monkeypatch: pytest.MonkeyPatch, valid_output: bool
+) -> None:
+    import asyncio
+    from datetime import UTC, datetime
+
+    import httpx
+    from opsmesh_plugin_sdk.client import AsyncAutomationClient, AutomationClient
+    from opsmesh_plugin_sdk.contracts import IncomingMessage
+
+    from backend.app.api.dependencies.redis import get_redis_client
+    from backend.app.core.config import get_settings
+    from backend.app.domains.agents.runtime.contracts import (
+        AgentRunResult,
+        AgentRuntimeStructuredOutput,
+    )
+    from backend.app.domains.agents.runtime.observer import AgentRuntimeExecutionObserver
+    from backend.app.domains.integrations.automations import AutomationService
+    from backend.app.domains.workspace.reviews.model_request import (
+        ModelRequestReview,
+        ModelRequestReviewService,
+    )
+    from backend.app.domains.workspace.reviews.models import ResourceReview
+    from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
+    from backend.app.runtime.workers.contracts import JobPayload, JobType
+    from backend.tests.test_webhooks import _queue
+    from backend.tests.test_worker_run_execution import (
+        _run_agent_sync,
+        _seed_default_model_provider,
+    )
+
+    client, session = _api_client()
+    owner, workspace = _seed_api_workspace(session, "stream@example.com", "stream")
+    monkeypatch.setattr(
+        ModelRequestReviewService,
+        "review_request",
+        lambda self, **kwargs: ModelRequestReview(
+            required=False, risk_level="low", reasons=[], signals={}
+        ),
+    )
+    monkeypatch.setattr(
+        ResourcePolicyReviewBuilder,
+        "review_tool_execution",
+        lambda self, **kwargs: ResourceReview(
+            required=False, risk_level="low", reasons=[], signals={}
+        ),
+    )
+    client.app.state.settings.credential_encryption_secret = (
+        "change-me-credential-encryption-secret"
+    )
+    _seed_default_model_provider(session, workspace_id=workspace.id, user_id=owner.id)
+    queue = _queue()
+    client.app.dependency_overrides[get_redis_client] = lambda: queue.redis
+    headers = _api_headers(owner.id)
+    client.headers.update(headers)
+    client.base_url = "http://testserver/api/v1/"
+    base = f"workspaces/{workspace.id}"
+    agent = client.post(
+        f"{base}/agents",
+        json={
+            "name": "Public responder",
+            "role": "project_manager",
+            "runtime_policy": {"execution_mode": "none"},
+            "tool_policy": {"allowed_tools": ["get_agent_inbox"]},
+        },
+    )
+    assert agent.status_code == 201, agent.text
+    team = client.post(
+        f"{base}/teams",
+        json={
+            "name": "Stream team",
+            "manager_agent_profile_id": agent.json()["id"],
+        },
+    )
+    assert team.status_code == 201, team.text
+    output_schema = {
+        "type": "object",
+        "required": ["answer"],
+        "properties": {"answer": {"type": "string"}},
+        "additionalProperties": False,
+    }
+    workflow = client.post(
+        f"{base}/orchestrations",
+        json={
+            "key": "public-response",
+            "name": "Public response",
+            "nodes": [
+                {
+                    "package_id": "answer",
+                    "title": "Answer",
+                    "node_type": "agent",
+                    "required_role": "project_manager",
+                    "assigned_agent_profile_id": agent.json()["id"],
+                    "required_tools": ["get_agent_inbox"],
+                    "output_schema": output_schema,
+                },
+                {"package_id": "end", "title": "End", "node_type": "end", "depends_on": ["answer"]},
+            ],
+        },
+    )
+    assert workflow.status_code == 201, workflow.text
+    assert client.post(f"{base}/orchestrations/{workflow.json()['id']}/publish").status_code == 200
+    config = {
+        "name": "Structured stream",
+        "trigger_type": "message",
+        "allowed_senders": ["user-1"],
+        "agent_team_id": team.json()["id"],
+        "orchestration_definition_id": workflow.json()["id"],
+        "orchestration_version": 1,
+        "contract_version": 2,
+        "input_schema": {
+            "type": "object",
+            "required": ["question", "user"],
+            "properties": {"question": {"type": "string"}, "user": {"type": "object"}},
+            "additionalProperties": False,
+        },
+        "model_input_fields": ["question"],
+        "output_schema": output_schema
+        if valid_output
+        else {
+            "type": "object",
+            "required": ["answer"],
+            "properties": {"answer": {"type": "integer"}},
+        },
+        "output_binding": {"reference": "steps.answer.output.structured_output.value"},
+        "stream_output_nodes": ["answer"],
+        "stream_tool_events": True,
+    }
+    created = client.post(f"{base}/automations", json=config)
+    assert created.status_code == 201, created.text
+    automation_id = UUID(created.json()["id"])
+    sdk = AutomationClient(client, workspace.id, automation_id)
+    message = IncomingMessage(
+        event_id="structured-1",
+        conversation_id="thread-1",
+        sender_id="user-1",
+        occurred_at=datetime.now(UTC),
+        contract_version=2,
+        data={"question": "What is the result?", "user": {"name": "private-name", "level": "vip"}},
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        sdk.submit(message.model_copy(update={"contract_version": 1}))
+    with pytest.raises(httpx.HTTPStatusError):
+        sdk.submit(message.model_copy(update={"data": {"question": 123}}))
+    accepted = sdk.submit(message)
+    service = AutomationService(session)
+    service.maintain()
+    task_id = sdk.state(accepted.id).event.task_id
+    task = session.get(Task, task_id)
+    assert task.input["event"]["data"] == {"question": "What is the result?"}
+    observed = []
+
+    async def read_stream(cursor: str = "0-0") -> list:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=client.app),
+            base_url="http://testserver/api/v1/",
+            headers=headers,
+        ) as http:
+            subscriber = AsyncAutomationClient(http, workspace.id, automation_id)
+            return [
+                frame async for frame in subscriber.events(accepted.id, cursor=cursor, once=True)
+            ]
+
+    class StreamingModel:
+        async def run(self, request):
+            assert "private-name" not in request.input_text
+            assert request.event_sink is not None
+            observer = AgentRuntimeExecutionObserver(request)
+            observer.start()
+            observer.stream("output.text.delta", delta="Working on your question")
+            before = await read_stream()
+            assert any(frame.kind == "output.text" for frame in before)
+            assert not any(frame.kind == "stream.completed" for frame in before)
+            observed.extend(before)
+            result = await request.tool_executor.execute_tool(
+                context=request.context,
+                tool_name="get_agent_inbox",
+                arguments={},
+                tool_call_id="inbox-1",
+            )
+            assert result.status == "completed", result
+            observer.stream("output.text.delta", delta=". Finished.")
+            answer = AgentRunResult(
+                final_output='{"answer":"Done"}',
+                structured_output=AgentRuntimeStructuredOutput(
+                    value={"answer": "Done"}, validated=True
+                ),
+            )
+            observer.finish(answer)
+            return answer
+
+    run = session.scalar(
+        select(AgentRun).where(AgentRun.task_id == task_id, AgentRun.status == "queued")
+    )
+    assert run is not None
+    settings = client.app.dependency_overrides[get_settings]()
+    executed = _run_agent_sync(
+        session,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=owner.id,
+            idempotency_key=f"stream:{run.id}",
+        ),
+        agent_runner=StreamingModel(),
+        settings=settings,
+        queue=queue,
+    )
+    assert executed.status == "completed", executed.error
+    service.maintain()
+    frames = asyncio.run(read_stream(observed[-1].cursor))
+    assert any(
+        frame.kind == "tool.started" and frame.data["call_id"] == "inbox-1" for frame in frames
+    )
+    assert any(frame.kind == "tool.completed" for frame in frames)
+    state = next(frame for frame in frames if frame.kind == "state")
+    assert state.data["output"] == ({"answer": "Done"} if valid_output else {}), state
+    assert state.data["output_error"] == (None if valid_output else "output_contract_rejected")
+    assert any(
+        frame.kind == ("output.completed" if valid_output else "output.rejected")
+        for frame in frames
+    )
+    assert frames[-1].kind == "stream.completed"
+    assert all("arguments" not in frame.data and "result" not in frame.data for frame in frames)
+    assert not any(
+        frame.kind in {"output.text", "output.reset"}
+        for frame in asyncio.run(read_stream(frames[-1].cursor))
+    )
+    reset = asyncio.run(read_stream("1-0"))
+    assert reset[0].kind == "stream.reset"
+    foreign_owner, foreign_workspace = _seed_api_workspace(
+        session, "stream-other@example.com", "stream-other"
+    )
+    denied = client.get(
+        f"workspaces/{foreign_workspace.id}/automations/{automation_id}/events/{accepted.id}/stream",
+        headers=_api_headers(foreign_owner.id),
+        params={"once": True},
+    )
+    assert denied.status_code == 403
+    # A subscriber must be authorized again when it reconnects.
+    updated = client.put(
+        f"{base}/automations/{automation_id}",
+        json={
+            "expected_version": 1,
+            "status": "active",
+            "configuration": {**config, "allowed_senders": ["other"]},
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(read_stream())
+
+
 def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
