@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from backend.app.core.db.base import Base
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
+from backend.app.domains.access.resource_queries import require_resource_row, resource_query_scope
+from backend.app.domains.access.resources import ResourceAction
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.extensions.contracts import (
     DomainItemCreateRequest,
@@ -78,14 +80,21 @@ class DomainTaskService:
         statement = statement.order_by(DomainItem.order_index.asc(), DomainItem.created_at.asc())
         return self._page(statement, page)
 
-    def task_view(self, workspace_id: UUID, task_id: UUID) -> tuple[
-        Task,
-        DomainProject | None,
-        list[DomainItem],
-        list[ReviewComment],
-        list[RevisionRequest],
-    ] | None:
-        task = self._session.get(Task, task_id)
+    def task_view(
+        self, workspace_id: UUID, task_id: UUID
+    ) -> (
+        tuple[
+            Task,
+            DomainProject | None,
+            list[DomainItem],
+            list[ReviewComment],
+            list[RevisionRequest],
+        ]
+        | None
+    ):
+        task = self._session.scalar(
+            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+        )
         if task is None or task.workspace_id != workspace_id:
             return None
         items = self._session.scalars(
@@ -115,7 +124,9 @@ class DomainTaskService:
         author_user_id: UUID,
         data: ReviewCommentCreateRequest,
     ) -> ReviewComment | None:
-        task = self._session.get(Task, task_id)
+        task = self._session.scalar(
+            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+        )
         if task is None or task.workspace_id != workspace_id:
             return None
         if data.domain_item_id is not None:
@@ -140,7 +151,9 @@ class DomainTaskService:
         requested_by_user_id: UUID,
         data: RevisionRequestCreateRequest,
     ) -> RevisionRequest | None:
-        task = self._session.get(Task, task_id)
+        task = self._session.scalar(
+            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+        )
         if task is None or task.workspace_id != workspace_id:
             return None
         if data.domain_item_id is not None:
@@ -182,11 +195,18 @@ class DomainTaskService:
             self._ensure_workspace_row("domain_items", workspace_id, data.parent_item_id)
 
     def _ensure_domain_item(self, workspace_id: UUID, item_id: UUID, task_id: UUID) -> None:
-        item = self._session.get(DomainItem, item_id)
+        item = self._session.scalar(
+            select(DomainItem).where(
+                DomainItem.workspace_id == workspace_id, DomainItem.id == item_id
+            )
+        )
         if item is None or item.workspace_id != workspace_id or item.task_id != task_id:
             raise ValueError("Domain item does not belong to the task")
 
     def _ensure_workspace_row(self, table_name: str, workspace_id: UUID, row_id: UUID) -> None:
+        scope = resource_query_scope(self._session)
+        if scope is not None:
+            require_resource_row(self._session, scope, table_name, row_id, ResourceAction.READ)
         table = Base.metadata.tables[table_name]
         exists = self._session.scalar(
             select(func.count())

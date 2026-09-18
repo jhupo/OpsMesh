@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
+from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutionBinding
 from backend.app.domains.capabilities.catalog.effective import (
@@ -201,7 +202,10 @@ def test_stdio_tool_requires_concrete_authorized_runtime() -> None:
     session.flush()
     catalog = (
         EffectiveCapabilityCatalogService(session)
-        .resolve(workspace_id=workspace.id, agent_profile_id=profile.id)
+        .resolve(
+            workspace_id=workspace.id, agent_profile_id=profile.id,
+            user=AuthorizationService(session).authenticate_user(user.id),
+        )
         .model_dump(mode="json")
     )
 

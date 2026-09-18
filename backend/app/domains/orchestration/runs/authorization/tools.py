@@ -10,6 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.utils import dict_or_empty, string_list, uuid_or_none
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.policy import (
     is_anthropic_provider,
@@ -140,6 +146,10 @@ class AgentToolAuthorizationSnapshotService:
                 .resolve(
                     workspace_id=task.workspace_id,
                     agent_profile_id=target.id,
+                    user=ExecutionIdentityService(self.session).restore(
+                        task.workspace_id,
+                        task.execution_identity,
+                    ),
                     team_id=team.id,
                 )
                 .model_dump(mode="json")
@@ -258,6 +268,13 @@ def _hydrate_level(
         workspace_id = uuid_or_none(target.get("workspace_id"))
         if profile_id is None or workspace_id != root_context.workspace_id:
             raise ValueError("Authorization snapshot agent tool target is invalid")
+        user = ExecutionIdentityService(session).for_run(workspace_id, root_context.run_id)
+        ResourceAuthorizationService(session, user).require(
+            workspace_id,
+            ResourceKind.AGENT,
+            profile_id,
+            ResourceAction.INVOKE,
+        )
         if profile_id in path:
             raise ValueError("Authorization snapshot agent tool graph contains a cycle")
         active_profile = session.scalar(

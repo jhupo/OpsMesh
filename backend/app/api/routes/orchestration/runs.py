@@ -13,6 +13,7 @@ from backend.app.core.db.session import get_db_session
 from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.access.resources import ResourceAction
 from backend.app.domains.orchestration.runs.contracts import (
     AgentRunProjectIOStateResponse,
     AgentRunProjectSnapshotResponse,
@@ -105,7 +106,12 @@ async def get_run_project_io_state(
 @router.post("/runs/{agent_run_id}/cancel", response_model=AgentRunResponse)
 async def cancel_run(
     agent_run_id: UUID,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    context: WorkspaceContext = Depends(
+        workspace_dependency(
+            WorkspaceAction.WRITE,
+            resource_action=ResourceAction.CONTROL,
+        )
+    ),
     session: Session = Depends(get_db_session),
 ) -> AgentRunResponse:
     try:
@@ -131,7 +137,12 @@ async def cancel_run(
 )
 async def retry_run(
     agent_run_id: UUID,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    context: WorkspaceContext = Depends(
+        workspace_dependency(
+            WorkspaceAction.WRITE,
+            resource_action=ResourceAction.INVOKE,
+        )
+    ),
     session: Session = Depends(get_db_session),
     queue: RedisQueue = Depends(get_worker_queue),
 ) -> AgentRunResponse:

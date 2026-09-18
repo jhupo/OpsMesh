@@ -8,6 +8,8 @@ from sqlalchemy import Engine, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus
 
@@ -47,6 +49,11 @@ class DatabaseRunCancellation:
                     AgentRun.id == self.run_id,
                 )
             )
+            try:
+                ExecutionIdentityService(session).for_run(self.workspace_id, self.run_id)
+            except ResourceAccessDenied:
+                self._cancelled.set()
+                return True
         if status is None or status == RunStatus.CANCELLED.value:
             self._cancelled.set()
             return True

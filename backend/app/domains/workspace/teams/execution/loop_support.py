@@ -7,6 +7,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resources import ResourceAccessDenied
+from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam as _AgentTeamModel
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.observability.audit.service import AuditService
@@ -20,6 +23,7 @@ TEAM_RUNTIME_DEFAULT_LOOP_INTERVAL_SECONDS = 300
 
 def enqueue_team_execution_loop_job(
     *,
+    session: Session,
     queue: RedisQueue,
     workspace_id: UUID,
     team_id: UUID,
@@ -28,12 +32,33 @@ def enqueue_team_execution_loop_job(
     priority: int = 0,
     routing: dict[str, object] | None = None,
 ) -> bool:
+    if requested_by_user_id is None:
+        raise ResourceAccessDenied()
+    identities = ExecutionIdentityService(session)
+    task_id = (routing or {}).get("task_id")
+    if task_id is not None:
+        task = session.scalar(
+            select(Task).where(
+                Task.workspace_id == workspace_id,
+                Task.id == UUID(str(task_id)),
+                Task.agent_team_id == team_id,
+            )
+        )
+        if task is None:
+            raise ResourceAccessDenied()
+        identity = task.execution_identity
+        user = identities.restore(workspace_id, identity)
+        if user.user_id != requested_by_user_id:
+            raise ResourceAccessDenied()
+    else:
+        identity = identities.capture(workspace_id, requested_by_user_id)
     return queue.enqueue(
         JobPayload(
             workspace_id=workspace_id,
             job_type=JobType.TEAM_EXECUTION_LOOP,
             resource_id=team_id,
             requested_by_user_id=requested_by_user_id,
+            execution_identity=identity,
             idempotency_key=f"team.execution_loop:{workspace_id}:{team_id}:{idempotency_suffix}",
             priority=priority,
             routing=routing or {},

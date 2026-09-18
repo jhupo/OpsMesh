@@ -30,6 +30,7 @@ from backend.app.core.pagination import PageParams
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.access.resources import ResourceAction
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
@@ -165,7 +166,12 @@ async def list_task_handoff_queue(
 @router.post("/tasks/{task_id}/cancel", response_model=TaskResponse)
 async def cancel_task(
     task_id: UUID,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    context: WorkspaceContext = Depends(
+        workspace_dependency(
+            WorkspaceAction.WRITE,
+            resource_action=ResourceAction.CONTROL,
+        )
+    ),
     session: Session = Depends(get_db_session),
 ) -> TaskResponse:
     try:

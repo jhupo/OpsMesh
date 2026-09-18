@@ -1,3 +1,14 @@
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resource_queries import (
+    ResourceQueryScope,
+    bind_resource_queries,
+    unbind_resource_queries,
+)
+from backend.app.domains.access.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoopService
 from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.environment.service import RuntimeControlService
@@ -10,8 +21,26 @@ class TeamExecutionLoopJobHandler:
         self._context = context
 
     def handle(self, job: JobPayload) -> None:
-        if job.requested_by_user_id is None:
-            raise ValueError("Team execution loop jobs require requested_by_user_id")
+        session = self._context.session
+        user = ExecutionIdentityService(session).restore(job.workspace_id, job.execution_identity)
+        ResourceAuthorizationService(session, user).require(
+            job.workspace_id, ResourceKind.TEAM, job.resource_id, ResourceAction.CONTROL
+        )
+        bind_resource_queries(
+            session,
+            ResourceQueryScope(
+                job.workspace_id,
+                user,
+                mutation_action=ResourceAction.CONTROL,
+            ),
+        )
+        try:
+            self._run(job.model_copy(update={"requested_by_user_id": user.user_id}))
+        finally:
+            unbind_resource_queries(session)
+
+    def _run(self, job: JobPayload) -> None:
+        assert job.requested_by_user_id is not None
         TeamExecutionLoopService(self._context.session).run_iteration(
             workspace_id=job.workspace_id,
             team_id=job.resource_id,

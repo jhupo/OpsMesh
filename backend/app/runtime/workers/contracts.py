@@ -39,6 +39,7 @@ class JobPayload(BaseModel):
     idempotency_key: str
     requested_by_user_id: UUID | None = None
     requested_by_agent_run_id: UUID | None = None
+    execution_identity: dict[str, object] | None = None
     routing: dict[str, object] = Field(default_factory=dict)
     priority: int = 0
     attempt: int = 0

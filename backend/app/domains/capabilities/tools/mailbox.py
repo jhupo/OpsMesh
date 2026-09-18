@@ -33,14 +33,19 @@ class AgentMailboxProductTools:
     def _sender_agent_profile_id(self, context: ToolContext) -> UUID:
         if context.agent_run_id is None:
             raise ToolResourceNotFoundError("Agent run is not available")
-        run = self._session.get(AgentRun, context.agent_run_id)
-        if (
-            run is None
-            or run.workspace_id != context.workspace_id
-            or run.agent_profile_id is None
-        ):
+        run = self._session.scalar(
+            select(AgentRun).where(
+                AgentRun.workspace_id == context.workspace_id, AgentRun.id == context.agent_run_id
+            )
+        )
+        if run is None or run.workspace_id != context.workspace_id or run.agent_profile_id is None:
             raise ToolResourceNotFoundError("Agent run is not bound to an agent profile")
-        agent = self._session.get(AgentProfile, run.agent_profile_id)
+        agent = self._session.scalar(
+            select(AgentProfile).where(
+                AgentProfile.workspace_id == context.workspace_id,
+                AgentProfile.id == run.agent_profile_id,
+            )
+        )
         if agent is None or agent.workspace_id != context.workspace_id:
             raise ToolResourceNotFoundError("Agent not found in workspace")
         return run.agent_profile_id
@@ -152,8 +157,7 @@ class AgentMailboxProductTools:
         return {
             **inbox,
             "latest_messages": [
-                agent_message_payload(message)
-                for message in inbox["latest_messages"]
+                agent_message_payload(message) for message in inbox["latest_messages"]
             ],
         }
 
@@ -166,7 +170,11 @@ class AgentMailboxProductTools:
         context.require_tool("mark_agent_message_read")
         self._events.append(context, "tool.called", "mark_agent_message_read")
         agent_profile_id = self._sender_agent_profile_id(context)
-        message = self._session.get(AgentMessage, message_id)
+        message = self._session.scalar(
+            select(AgentMessage).where(
+                AgentMessage.workspace_id == context.workspace_id, AgentMessage.id == message_id
+            )
+        )
         if (
             message is None
             or message.workspace_id != context.workspace_id
@@ -202,7 +210,12 @@ class AgentMailboxProductTools:
         context: ToolContext,
         thread_id: UUID,
     ) -> AgentMessageThread:
-        thread = self._session.get(AgentMessageThread, thread_id)
+        thread = self._session.scalar(
+            select(AgentMessageThread).where(
+                AgentMessageThread.workspace_id == context.workspace_id,
+                AgentMessageThread.id == thread_id,
+            )
+        )
         if thread is None or thread.workspace_id != context.workspace_id:
             raise ToolResourceNotFoundError("Agent message thread not found")
         return thread
@@ -215,8 +228,18 @@ class AgentMailboxProductTools:
         recipient_agent_profile_id: UUID,
         thread: AgentMessageThread | None,
     ) -> None:
-        sender = self._session.get(AgentProfile, sender_agent_profile_id)
-        recipient = self._session.get(AgentProfile, recipient_agent_profile_id)
+        sender = self._session.scalar(
+            select(AgentProfile).where(
+                AgentProfile.workspace_id == context.workspace_id,
+                AgentProfile.id == sender_agent_profile_id,
+            )
+        )
+        recipient = self._session.scalar(
+            select(AgentProfile).where(
+                AgentProfile.workspace_id == context.workspace_id,
+                AgentProfile.id == recipient_agent_profile_id,
+            )
+        )
         if (
             sender is None
             or recipient is None
@@ -242,7 +265,9 @@ class AgentMailboxProductTools:
             raise ToolResourceNotFoundError("Agent not found in thread team")
         if task_id is None:
             return
-        task = self._session.get(Task, task_id)
+        task = self._session.scalar(
+            select(Task).where(Task.workspace_id == context.workspace_id, Task.id == task_id)
+        )
         if task is None or task.workspace_id != context.workspace_id:
             raise ToolResourceNotFoundError("Task not found")
         if task.agent_team_id is None:
@@ -300,6 +325,7 @@ class AgentMailboxProductTools:
         )
         return participant is not None
 
+
 def agent_mailbox_scope(context: ToolContext) -> dict[str, UUID | None]:
     metadata = context.metadata if isinstance(context.metadata, dict) else {}
     raw_scope = metadata.get("agent_mailbox")
@@ -311,6 +337,7 @@ def agent_mailbox_scope(context: ToolContext) -> dict[str, UUID | None]:
         "task_id": optional_uuid_from_metadata(scope.get("task_id")),
     }
 
+
 def message_matches_mailbox_scope(context: ToolContext, message: AgentMessage) -> bool:
     scope = agent_mailbox_scope(context)
     if scope["thread_id"] is not None:
@@ -318,6 +345,7 @@ def message_matches_mailbox_scope(context: ToolContext, message: AgentMessage) -
     if scope["task_id"] is not None:
         return message.task_id == scope["task_id"]
     return True
+
 
 def agent_message_thread_payload(thread: AgentMessageThread) -> dict[str, object]:
     return {
@@ -330,6 +358,7 @@ def agent_message_thread_payload(thread: AgentMessageThread) -> dict[str, object
         "created_at": thread.created_at.isoformat(),
         "updated_at": thread.updated_at.isoformat(),
     }
+
 
 def agent_message_payload(message: AgentMessage) -> dict[str, object]:
     return AgentMessageResponse.model_validate(message).model_dump(mode="json")

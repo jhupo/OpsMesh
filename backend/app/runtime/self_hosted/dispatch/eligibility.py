@@ -7,6 +7,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.utils import positive_int_or_none, string_list
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.orchestration.runs.authorization.runtime import (
     RunRuntimeAuthorizationService,
 )
@@ -69,10 +71,14 @@ class SelfHostedWorkerEligibilityService:
         return bool(self.job_policy_decision(auth, run).allowed)
 
     def require_run_authorized(self, run: AgentRun, *, full: bool = False) -> None:
+        try:
+            ExecutionIdentityService(self._session).for_run(run.workspace_id, run.id)
+        except ResourceAccessDenied as exc:
+            raise ValueError("Run initiating user is no longer authorized") from exc
         run_input = run.input if isinstance(run.input, dict) else {}
         snapshot = run_input.get("authorization_snapshot")
         if not isinstance(snapshot, dict):
-            return
+            raise ValueError("Run authorization snapshot is required")
         task = self._session.get(Task, run.task_id) if run.task_id is not None else None
         if task is not None and task.workspace_id != run.workspace_id:
             task = None
@@ -95,6 +101,7 @@ class SelfHostedWorkerEligibilityService:
         if run is None:
             return False
         try:
+            self.require_run_authorized(run)
             self.require_verified_isolation(auth, run)
         except ValueError:
             return False

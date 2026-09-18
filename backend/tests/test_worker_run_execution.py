@@ -174,16 +174,16 @@ class ExplodingAgentRunner:
 
 
 def test_task_start_creates_queued_run_and_worker_completes_injected_runner() -> None:
+    from backend.app.domains.orchestration.tasks.service import (
+        TaskCreateCommand,
+        WorkspaceTaskService,
+    )
+
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(
-        workspace_id=workspace.id,
-        created_by_user_id=user.id,
-        title="Draft report",
-        status=TaskStatus.QUEUED.value,
+    task = WorkspaceTaskService(session).create_task(
+        workspace.id, user.id, TaskCreateCommand(title="Draft report"),
     )
-    session.add(task)
-    session.flush()
 
     queue = RedisQueue(
         redis=fakeredis.FakeRedis(decode_responses=True),
@@ -263,6 +263,29 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     ).all()
     assert working_entries
     assert {entry.status for entry in working_entries} == {"expired"}
+
+    # Permission changes after admission must reject the queued work before any model call.
+    revoked_task = WorkspaceTaskService(session).create_task(
+        workspace.id, user.id, TaskCreateCommand(title="Revoked queued work"), queue=queue,
+    )
+    member = session.scalar(select(WorkspaceMember).where(
+        WorkspaceMember.workspace_id == workspace.id, WorkspaceMember.user_id == user.id,
+    ))
+    member.status = "disabled"
+    session.commit()
+
+    class ForbiddenRunner:
+        async def run(self, request):
+            raise AssertionError("Revoked principal must never reach the model")
+
+    assert consume_once(queue, WorkerJobHandler(session, queue, agent_runner=ForbiddenRunner()).handle)
+    session.refresh(revoked_task)
+    assert revoked_task.status == TaskStatus.FAILED.value
+    rejected_run = session.scalar(select(AgentRun).where(AgentRun.task_id == revoked_task.id))
+    assert rejected_run.status == RunStatus.FAILED.value
+    assert session.scalar(select(RunEvent.id).where(
+        RunEvent.agent_run_id == rejected_run.id, RunEvent.event_type == "authorization.revoked",
+    )) is not None
 
 
 def test_worker_persists_interrupted_sdk_state_for_resume() -> None:

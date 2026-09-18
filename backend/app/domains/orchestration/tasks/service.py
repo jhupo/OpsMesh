@@ -1,5 +1,6 @@
 """Workspace-scoped task creation, admission, and retrieval."""
 
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -8,6 +9,17 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resource_queries import (
+    execution_resource_queries,
+    resource_query_scope,
+)
+from backend.app.domains.access.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.models import Task
@@ -79,6 +91,7 @@ class WorkspaceTaskService:
         workspace_id: UUID,
         user_id: UUID,
         command: TaskCreateCommand,
+        execution_identity: dict[str, object],
     ) -> Task:
         """Persist admission in the caller's inbox transaction; queue recovery dispatches it."""
         task, _ = self._create_task(
@@ -87,6 +100,7 @@ class WorkspaceTaskService:
             created_by_agent_run_id=None,
             command=command,
             queue=None,
+            initiating_identity=execution_identity,
         )
         return task
 
@@ -138,6 +152,68 @@ class WorkspaceTaskService:
         created_by_agent_run_id: UUID | None,
         command: TaskCreateCommand,
         queue: RedisQueue | None,
+        initiating_identity: dict[str, object] | None = None,
+    ) -> tuple[Task, AgentRun | None]:
+        identities = ExecutionIdentityService(self._session)
+        identity: dict[str, object] | None
+        if initiating_identity is not None:
+            identity = initiating_identity
+            if str(created_by_user_id) != identity.get("user_id"):
+                raise ResourceAccessDenied()
+        elif created_by_user_id is not None:
+            identity = identities.capture(workspace_id, created_by_user_id)
+        elif created_by_agent_run_id is not None:
+            parent = self._session.scalar(
+                select(Task)
+                .join(
+                    AgentRun,
+                    AgentRun.task_id == Task.id,
+                )
+                .where(
+                    Task.workspace_id == workspace_id,
+                    AgentRun.workspace_id == workspace_id,
+                    AgentRun.id == created_by_agent_run_id,
+                )
+            )
+            if parent is None:
+                raise ResourceAccessDenied()
+            identity = parent.execution_identity
+        else:
+            raise ResourceAccessDenied()
+        user = identities.restore(workspace_id, identity)
+        access = ResourceAuthorizationService(self._session, user)
+        for kind, identifier, action in (
+            (ResourceKind.TEAM, command.agent_team_id, ResourceAction.INVOKE),
+            (ResourceKind.PROJECT, command.workspace_project_id, ResourceAction.INVOKE),
+            (ResourceKind.WORKFLOW, command.orchestration_definition_id, ResourceAction.INVOKE),
+            (ResourceKind.RUNTIME_SPACE, command.runtime_space_id, ResourceAction.INVOKE),
+        ):
+            if identifier is not None:
+                access.require(workspace_id, kind, identifier, action)
+        scope = resource_query_scope(self._session)
+        with (
+            execution_resource_queries(self._session, workspace_id, user)
+            if scope is None
+            else nullcontext()
+        ):
+            return self._materialize_task(
+                workspace_id=workspace_id,
+                created_by_user_id=created_by_user_id,
+                created_by_agent_run_id=created_by_agent_run_id,
+                command=command,
+                queue=queue,
+                identity=identity,
+            )
+
+    def _materialize_task(
+        self,
+        *,
+        workspace_id: UUID,
+        created_by_user_id: UUID | None,
+        created_by_agent_run_id: UUID | None,
+        command: TaskCreateCommand,
+        queue: RedisQueue | None,
+        identity: dict[str, object] | None,
     ) -> tuple[Task, AgentRun | None]:
         payload = _task_payload(command)
         runtime_spaces = RuntimeSpaceService(self._session)
@@ -160,10 +236,18 @@ class WorkspaceTaskService:
                 runtime_spaces=runtime_spaces,
             )
 
+        resolved_runtime = _uuid_or_none(payload.get("runtime_space_id"))
+        if resolved_runtime is not None:
+            user = ExecutionIdentityService(self._session).restore(workspace_id, identity)
+            ResourceAuthorizationService(self._session, user).require(
+                workspace_id, ResourceKind.RUNTIME_SPACE, resolved_runtime, ResourceAction.INVOKE
+            )
+
         task = Task(
             workspace_id=workspace_id,
             created_by_user_id=created_by_user_id,
             created_by_agent_run_id=created_by_agent_run_id,
+            execution_identity=identity,
             **payload,
         )
         self._session.add(task)

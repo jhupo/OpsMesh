@@ -29,6 +29,7 @@ ALLOWED_TASK_TRANSITIONS: dict[TaskStatus, set[TaskStatus]] = {
         TaskStatus.PLANNING,
         TaskStatus.RUNNING,
         TaskStatus.BLOCKED,
+        TaskStatus.FAILED,
         TaskStatus.CANCELLED,
     },
     TaskStatus.PLANNING: {

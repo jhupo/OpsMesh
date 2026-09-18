@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 else:
     RedisClient = Redis
 
+
 def _team_runtime_limits(request: AgentTeamRuntimeEnsureRequest) -> RuntimeLimits | None:
     if request.limits is None:
         return None
@@ -47,6 +48,7 @@ def _team_runtime_limits(request: AgentTeamRuntimeEnsureRequest) -> RuntimeLimit
 
 
 def _enqueue_team_runtime_control(
+    session: Session,
     queue: RedisQueue,
     context: WorkspaceContext,
     team_id: UUID,
@@ -54,6 +56,7 @@ def _enqueue_team_runtime_control(
     action: str,
 ) -> None:
     enqueue_team_execution_loop_job(
+        session=session,
         queue=queue,
         workspace_id=context.workspace.id,
         team_id=team_id,

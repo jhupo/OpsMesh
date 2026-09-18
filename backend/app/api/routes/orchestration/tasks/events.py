@@ -31,6 +31,12 @@ from backend.app.core.db.session import get_db_session
 from backend.app.core.pagination import PageParams
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.access.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.domains.orchestration.tasks.events import TaskEventBus
 from backend.app.domains.orchestration.tasks.feedback import TaskFeedbackService
 from backend.app.domains.orchestration.tasks.observation.live_status import TaskLiveStatusService
@@ -138,6 +144,17 @@ async def stream_task_events(
         last_emit_at = asyncio.get_running_loop().time()
         snapshot = initial
         while True:
+            try:
+                ResourceAuthorizationService(session, context.user).require(
+                    context.workspace.id,
+                    ResourceKind.TASK,
+                    task_id,
+                    ResourceAction.READ,
+                )
+            except ResourceAccessDenied:
+                session.rollback()
+                yield _sse_event("stream.revoked", {})
+                return
             messages = _snapshot_messages(snapshot)
             if messages:
                 cursor = max(_message_sequence(message, cursor) for message in messages)
@@ -166,6 +183,17 @@ async def stream_task_events(
                 wait_seconds=0 if stop_after_bus_drain else poll_seconds,
             )
             for task_event in bus_events:
+                try:
+                    ResourceAuthorizationService(session, context.user).require(
+                        context.workspace.id,
+                        ResourceKind.TASK,
+                        task_id,
+                        ResourceAction.READ,
+                    )
+                except ResourceAccessDenied:
+                    session.rollback()
+                    yield _sse_event("stream.revoked", {})
+                    return
                 bus_cursor = task_event.id
                 yield _sse_event("task.event", _task_event_stream_payload(task_event, cursor))
                 last_emit_at = asyncio.get_running_loop().time()

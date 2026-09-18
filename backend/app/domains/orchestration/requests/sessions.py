@@ -5,6 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.utils import uuid_or_none
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.sessions.models import (
     PersistentAgentSession,
@@ -77,6 +79,7 @@ class RunRequestSessionService:
             AgentRun.agent_profile_id == run.agent_profile_id,
             AgentRun.status == RunStatus.COMPLETED.value,
             AgentRun.output.is_not(None),
+            AgentRun.session_key == session_ref.session_key,
         )
         if session_ref.scope_type == "task_agent":
             task_id = uuid_or_none(session_ref.scope_id.split(":", 1)[0])
@@ -123,17 +126,24 @@ class RunRequestSessionService:
         task: Task | None,
         profile: AgentProfile,
     ) -> PersistentAgentSessionRef:
-        if task is not None and task.agent_team_id is not None:
+        if task is None:
+            raise ResourceAccessDenied()
+        user = ExecutionIdentityService(self.session).restore(
+            run.workspace_id,
+            task.execution_identity,
+        )
+        if task.agent_team_id is not None:
             scope_type = "team_agent"
             scope_id = f"{task.agent_team_id}:{profile.id}"
-        elif task is not None:
+        else:
             scope_type = "task_agent"
             scope_id = f"{task.id}:{profile.id}"
-        else:
-            scope_type = "workspace_agent"
-            scope_id = str(profile.id)
+        key = f"{run.workspace_id}:{user.user_id}:{scope_type}:{scope_id}"
+        if run.session_key is not None and run.session_key != key:
+            raise ResourceAccessDenied()
+        run.session_key = key
         return PersistentAgentSessionRef(
-            session_key=f"{run.workspace_id}:{scope_type}:{scope_id}",
+            session_key=key,
             workspace_id=run.workspace_id,
             scope_type=scope_type,
             scope_id=scope_id,

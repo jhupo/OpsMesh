@@ -15,7 +15,10 @@ from backend.app.domains.access.errors import AuthorizationError
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.capabilities.plugins.policy import require_plugin_resource
-from backend.app.domains.integrations.automation_authorization import require_automation_principal
+from backend.app.domains.integrations.automation_authorization import (
+    require_automation_principal,
+    require_event_principal,
+)
 from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
 from backend.app.domains.integrations.automations import AutomationService
@@ -54,6 +57,7 @@ class AutomationStreamService:
         if item.status != "active" or item.created_by_user_id != refreshed.user_id:
             raise ValueError("Message stream unavailable")
         require_automation_principal(self.session, item)
+        require_event_principal(self.session, item, event)
         require_plugin_resource(self.session, workspace_id, "message_trigger", item.id)
         live = AutomationConfiguration.model_validate(item.configuration)
         config = AutomationConfiguration.model_validate(event.configuration)

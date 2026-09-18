@@ -9,6 +9,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_text_fragments
+from backend.app.domains.access.resource_queries import resource_query_scope
+from backend.app.domains.access.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.domains.agents.memory.configuration import initial_embedding_status
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
@@ -115,6 +121,7 @@ class AgentSemanticMemoryService:
             entry.source_id = str(entry.id)
             self._record_version(entry, command)
             return entry
+        self._require_update(existing)
         candidate = _semantic_snapshot_values(
             knowledge_type=knowledge_type,
             title=title,
@@ -174,6 +181,7 @@ class AgentSemanticMemoryService:
         if locked_entry is None:
             raise ValueError("Only semantic memory can be version-archived")
         entry = locked_entry
+        self._require_update(entry)
         if entry.revision != expected_revision:
             raise SemanticMemoryConflictError(
                 f"Semantic memory revision is {entry.revision}, not {expected_revision}"
@@ -283,11 +291,20 @@ class AgentSemanticMemoryService:
             if command.scope_id != command.workspace_id:
                 raise ValueError("Workspace memory scope must reference the current workspace")
         elif scope_type == "team":
-            team = self._session.get(AgentTeam, command.scope_id)
+            team = self._session.scalar(
+                select(AgentTeam).where(
+                    AgentTeam.workspace_id == command.workspace_id, AgentTeam.id == command.scope_id
+                )
+            )
             if team is None or team.workspace_id != command.workspace_id:
                 raise ValueError("Semantic memory team scope was not found in the workspace")
         else:
-            profile = self._session.get(AgentProfile, command.scope_id)
+            profile = self._session.scalar(
+                select(AgentProfile).where(
+                    AgentProfile.workspace_id == command.workspace_id,
+                    AgentProfile.id == command.scope_id,
+                )
+            )
             if profile is None or profile.workspace_id != command.workspace_id:
                 raise ValueError("Semantic memory agent scope was not found in the workspace")
         self._validate_actor_scope(command)
@@ -295,13 +312,30 @@ class AgentSemanticMemoryService:
 
     def _validate_actor_scope(self, command: SemanticMemoryUpsert) -> None:
         if command.changed_by_agent_profile_id is not None:
-            profile = self._session.get(AgentProfile, command.changed_by_agent_profile_id)
+            profile = self._session.scalar(
+                select(AgentProfile).where(
+                    AgentProfile.workspace_id == command.workspace_id,
+                    AgentProfile.id == command.changed_by_agent_profile_id,
+                )
+            )
             if profile is None or profile.workspace_id != command.workspace_id:
                 raise ValueError("Semantic memory actor agent is outside the workspace")
         if command.changed_by_agent_run_id is not None:
-            run = self._session.get(AgentRun, command.changed_by_agent_run_id)
+            run = self._session.scalar(
+                select(AgentRun).where(
+                    AgentRun.workspace_id == command.workspace_id,
+                    AgentRun.id == command.changed_by_agent_run_id,
+                )
+            )
             if run is None or run.workspace_id != command.workspace_id:
                 raise ValueError("Semantic memory actor run is outside the workspace")
+
+    def _require_update(self, entry: WorkspaceMemoryEntry) -> None:
+        scope = resource_query_scope(self._session)
+        if scope is not None:
+            ResourceAuthorizationService(self._session, scope.user).require(
+                entry.workspace_id, ResourceKind.MEMORY, entry.id, ResourceAction.UPDATE
+            )
 
     def _record_version(
         self,

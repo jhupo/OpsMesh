@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DomainError
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.utils import payload_hash
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.capabilities.plugins.policy import (
     plugin_resource_available,
     require_plugin_resource,
@@ -29,6 +30,7 @@ from backend.app.domains.integrations.automation_io import (
     model_message,
 )
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
+from backend.app.domains.integrations.identities import ExternalIdentityService
 from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
 from backend.app.domains.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
@@ -92,6 +94,10 @@ class AutomationService:
             workspace_id=workspace_id,
             created_by_user_id=user_id,
             configuration=config.model_dump(mode="json"),
+            execution_identity=ExecutionIdentityService(self._session).capture(
+                workspace_id,
+                user_id,
+            ),
             next_due_at=self._next_due(config),
         )
         self._session.add(item)
@@ -153,6 +159,7 @@ class AutomationService:
         if message.action not in config.allowed_message_actions:
             raise ValueError("Message action is not enabled for this automation")
         model_message(config, message)
+        identity = ExternalIdentityService(self._session).resolve(item, message.sender_id)
         if message.action in {"follow_up", "add_instruction"}:
             message_instruction(config, message)
         AutomationConversationService(self._session).target(item, message)
@@ -161,6 +168,7 @@ class AutomationService:
             external_id=message.event_id,
             conversation_id=message.conversation_id,
             payload=message.model_dump(mode="json"),
+            execution_identity=identity,
         )
         self._session.commit()
         return event
@@ -168,6 +176,11 @@ class AutomationService:
     def event_state(self, workspace_id: UUID, automation_id: UUID, event_id: UUID) -> EventState:
         conversations = AutomationConversationService(self._session)
         event = conversations.require_event(workspace_id, automation_id, event_id)
+        from backend.app.domains.integrations.automation_authorization import (
+            require_event_principal,
+        )
+
+        require_event_principal(self._session, self.require(workspace_id, automation_id), event)
         task = conversations.task(event)
         output = external_output(self._session, event, task)
         return EventState(
@@ -211,8 +224,10 @@ class AutomationService:
         external_id: str,
         conversation_id: str,
         payload: dict[str, object],
+        execution_identity: dict[str, object] | None,
     ) -> AutomationEvent:
         checksum = payload_hash(payload)
+        ExecutionIdentityService(self._session).restore(item.workspace_id, execution_identity)
         existing = self._session.scalar(
             select(AutomationEvent).where(
                 AutomationEvent.workspace_id == item.workspace_id,
@@ -223,6 +238,8 @@ class AutomationService:
         if existing is not None:
             if existing.content_hash != checksum:
                 raise ValueError("Event ID was already used for different content")
+            if existing.execution_identity != execution_identity:
+                raise ValueError("Event ID belongs to a different accepted identity")
             return existing
         event = AutomationEvent(
             workspace_id=item.workspace_id,
@@ -232,6 +249,7 @@ class AutomationService:
             content_hash=checksum,
             configuration=dict(item.configuration),
             input_payload=payload,
+            execution_identity=execution_identity,
         )
         self._session.add(event)
         self._session.flush()
@@ -281,6 +299,19 @@ class AutomationService:
             .with_for_update(skip_locked=True)
         ).all()
         for item in items:
+            try:
+                require_automation_principal(self._session, item)
+            except (DomainError, ValueError):
+                item.status = "paused"
+                item.next_due_at = None
+                AuditService(self._session).record_system_action(
+                    workspace_id=item.workspace_id,
+                    action="automation.authorization_revoked",
+                    target_type="automation",
+                    target_id=item.id,
+                    metadata={},
+                )
+                continue
             config = AutomationConfiguration.model_validate(item.configuration)
             due = utc_datetime(item.next_due_at)
             self._accept(
@@ -288,6 +319,7 @@ class AutomationService:
                 external_id=f"schedule:{due.isoformat()}",
                 conversation_id=f"schedule:{item.id}",
                 payload={"scheduled_at": due.isoformat()},
+                execution_identity=item.execution_identity,
             )
             item.next_due_at = (
                 None
@@ -331,9 +363,19 @@ class AutomationService:
                         continue
                     require_automation_principal(self._session, item)
                     config = AutomationConfiguration.model_validate(event.configuration)
+                    principal = ExecutionIdentityService(self._session).restore(
+                        event.workspace_id,
+                        event.execution_identity,
+                    )
                     previous_context: dict[str, object] = {}
                     if config.trigger_type == "message":
                         message = IncomingMessage.model_validate(event.input_payload)
+                        live_identity = ExternalIdentityService(self._session).resolve(
+                            item,
+                            message.sender_id,
+                        )
+                        if live_identity != event.execution_identity:
+                            raise ValueError("Message identity binding was changed")
                         live_config = AutomationConfiguration.model_validate(item.configuration)
                         if (
                             message.sender_id not in live_config.allowed_senders
@@ -365,7 +407,8 @@ class AutomationService:
                     self._validate_targets(event.workspace_id, config)
                     task = WorkspaceTaskService(self._session).create_automation_task(
                         workspace_id=event.workspace_id,
-                        user_id=item.created_by_user_id,
+                        user_id=principal.user_id,
+                        execution_identity=event.execution_identity or {},
                         command=TaskCreateCommand(
                             title=config.name,
                             agent_team_id=config.agent_team_id,

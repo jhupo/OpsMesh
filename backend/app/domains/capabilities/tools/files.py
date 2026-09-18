@@ -93,12 +93,12 @@ class WorkspaceFileProductTools:
         allowed_file_ids: set[UUID] | None = None,
     ) -> WorkspaceFile:
         context.require_tool("read_workspace_file")
-        file = self._session.get(WorkspaceFile, file_id)
-        if (
-            file is None
-            or file.workspace_id != context.workspace_id
-            or file.status != "active"
-        ):
+        file = self._session.scalar(
+            select(WorkspaceFile).where(
+                WorkspaceFile.workspace_id == context.workspace_id, WorkspaceFile.id == file_id
+            )
+        )
+        if file is None or file.workspace_id != context.workspace_id or file.status != "active":
             raise ToolResourceNotFoundError("Workspace file not found")
         if allowed_file_ids is not None and file.id not in allowed_file_ids:
             raise ToolResourceNotFoundError("Workspace file not found in authorized resource scope")
@@ -142,8 +142,7 @@ class WorkspaceFileProductTools:
             size_bytes=len(content),
             checksum_sha256=checksum,
             storage_key=(
-                f"workspaces/{context.workspace_id}/artifacts/{artifact_id}/"
-                f"{sanitized_filename}"
+                f"workspaces/{context.workspace_id}/artifacts/{artifact_id}/{sanitized_filename}"
             ),
             created_at=datetime.now(UTC),
         )
@@ -152,12 +151,21 @@ class WorkspaceFileProductTools:
 
     def _artifact_binding(self, context: ToolContext) -> dict[str, object]:
         run = (
-            self._session.get(AgentRun, context.agent_run_id)
+            self._session.scalar(
+                select(AgentRun).where(
+                    AgentRun.workspace_id == context.workspace_id,
+                    AgentRun.id == context.agent_run_id,
+                )
+            )
             if context.agent_run_id is not None
             else None
         )
         step = (
-            self._session.get(TaskStep, run.task_step_id)
+            self._session.scalar(
+                select(TaskStep).where(
+                    TaskStep.workspace_id == context.workspace_id, TaskStep.id == run.task_step_id
+                )
+            )
             if run is not None and run.task_step_id is not None
             else None
         )
@@ -189,6 +197,7 @@ class WorkspaceFileProductTools:
             )
             .order_by(Artifact.version.desc(), Artifact.created_at.desc())
         )
+
 
 def _visible_to_agent_runtime(file: WorkspaceFile) -> bool:
     try:

@@ -626,6 +626,35 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
     created = client.post(f"{base}/automations", headers=headers, json=config)
     assert created.status_code == 201, created.text
     path = f"{base}/automations/{created.json()['id']}/events"
+    if trigger_type == "message":
+        from backend.app.domains.access.models import User
+        from backend.app.domains.workspace.tenants.models import WorkspaceMember
+
+        employee = User(email="message-user@example.com", display_name="Message user")
+        session.add(employee)
+        session.flush()
+        session.add(
+            WorkspaceMember(workspace_id=workspace.id, user_id=employee.id, role="operator")
+        )
+        session.commit()
+        for kind, response in (
+            ("agent", agent),
+            ("team", team),
+            ("workflow", workflow),
+            ("automation", created),
+        ):
+            granted = client.put(
+                f"{base}/access/{kind}/{response.json()['id']}/grants/{employee.id}",
+                headers=headers,
+                json={"actions": ["read", "invoke"]},
+            )
+            assert granted.status_code == 200, granted.text
+        bound = client.put(
+            f"{base}/automations/{created.json()['id']}/identities/employee-1",
+            headers=headers,
+            json={"user_id": str(employee.id)},
+        )
+        assert bound.status_code == 200, bound.text
     private = Ed25519PrivateKey.generate()
     publisher = client.post(
         f"{base}/plugins/trust-keys",
@@ -910,6 +939,9 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
     assert events[0]["status"] == "reply_pending", events
     task = session.get(Task, UUID(events[0]["task_id"]))
     assert task is not None and task.status == "completed"
+    if trigger_type == "message":
+        assert task.created_by_user_id == employee.id
+        assert task.execution_identity["user_id"] == str(employee.id)
     assert task.orchestration_version == 1
     AutomationService(session).maintain()
     assert session.query(Task).count() == 1
@@ -1154,6 +1186,12 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     created = client.post(f"{base}/automations", json=config)
     assert created.status_code == 201, created.text
     automation_id = UUID(created.json()["id"])
+    for sender in ("member-1", "member-2"):
+        bound = client.put(
+            f"{base}/automations/{automation_id}/identities/{sender}",
+            json={"user_id": str(owner.id)},
+        )
+        assert bound.status_code == 200, bound.text
     sdk = AutomationClient(client, workspace.id, automation_id)
     message = IncomingMessage(
         event_id="first",
@@ -1327,6 +1365,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
 
     from backend.app.api.dependencies.redis import get_redis_client
     from backend.app.core.config import get_settings
+    from backend.app.domains.access.models import User
     from backend.app.domains.agents.runtime.contracts import (
         AgentRunResult,
         AgentRuntimeStructuredOutput,
@@ -1339,6 +1378,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     )
     from backend.app.domains.workspace.reviews.models import ResourceReview
     from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
+    from backend.app.domains.workspace.tenants.models import WorkspaceMember
     from backend.app.runtime.workers.contracts import JobPayload, JobType
     from backend.tests.test_webhooks import _queue
     from backend.tests.test_worker_run_execution import (
@@ -1446,6 +1486,27 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     created = client.post(f"{base}/automations", json=config)
     assert created.status_code == 201, created.text
     automation_id = UUID(created.json()["id"])
+    employee = User(email="stream-employee@example.com", display_name="Stream employee")
+    session.add(employee)
+    session.flush()
+    session.add(WorkspaceMember(workspace_id=workspace.id, user_id=employee.id, role="operator"))
+    session.commit()
+    for kind, identifier in (
+        ("agent", agent.json()["id"]),
+        ("team", team.json()["id"]),
+        ("workflow", workflow.json()["id"]),
+        ("automation", str(automation_id)),
+    ):
+        shared = client.put(
+            f"{base}/access/{kind}/{identifier}/grants/{employee.id}",
+            json={"actions": ["read", "invoke"]},
+        )
+        assert shared.status_code == 200, shared.text
+    bound = client.put(
+        f"{base}/automations/{automation_id}/identities/user-1",
+        json={"user_id": str(employee.id)},
+    )
+    assert bound.status_code == 200, bound.text
     sdk = AutomationClient(client, workspace.id, automation_id)
     message = IncomingMessage(
         event_id="structured-1",
@@ -1480,6 +1541,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
 
     class StreamingModel:
         async def run(self, request):
+            assert request.context.user_id == employee.id
             assert "private-name" not in request.input_text
             assert request.event_sink is not None
             observer = AgentRuntimeExecutionObserver(request)
@@ -1525,6 +1587,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         queue=queue,
     )
     assert executed.status == "completed", executed.error
+    assert str(employee.id) in executed.session_key
     service.maintain()
     frames = asyncio.run(read_stream(observed[-1].cursor))
     assert any(
@@ -1556,6 +1619,11 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     )
     assert denied.status_code == 403
     # A subscriber must be authorized again when it reconnects.
+    grant_url = f"{base}/access/automation/{automation_id}/grants/{employee.id}"
+    assert client.put(grant_url, json={"actions": ["read"]}).status_code == 200
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(read_stream())
+    assert client.put(grant_url, json={"actions": ["read", "invoke"]}).status_code == 200
     updated = client.put(
         f"{base}/automations/{automation_id}",
         json={

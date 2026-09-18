@@ -7,6 +7,12 @@ from opsmesh_plugin_sdk.contracts import IncomingMessage, PendingAction
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
 from backend.app.domains.integrations.automation_io import external_output, message_instruction
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
@@ -88,6 +94,12 @@ class AutomationConversationService:
             if target.status == "pending":
                 return MessageDispatch(handled=True)
             raise ValueError("Target message has no task")
+        principal = ExecutionIdentityService(self.session).restore(
+            item.workspace_id,
+            event.execution_identity,
+        )
+        access = ResourceAuthorizationService(self.session, principal)
+        access.require(item.workspace_id, ResourceKind.TASK, task.id, ResourceAction.READ)
         terminal = task.status in {status.value for status in TERMINAL_TASK_STATUSES}
         if terminal and message.action == "follow_up":
             return MessageDispatch(
@@ -101,10 +113,11 @@ class AutomationConversationService:
         if terminal:
             raise ValueError("Terminal tasks require a follow_up message to start new work")
         action = "add_instruction" if message.action == "follow_up" else message.action
+        access.require(item.workspace_id, ResourceKind.TASK, task.id, ResourceAction.CONTROL)
         result = TaskControlService(self.session).apply_action(
             workspace_id=item.workspace_id,
             task_id=task.id,
-            actor_user_id=item.created_by_user_id,
+            actor_user_id=principal.user_id,
             request=TaskControlActionRequest(
                 action=action,
                 instruction=message_instruction(

@@ -36,6 +36,7 @@ else:
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 
+
 @router.get("/teams/{team_id}/runtime", response_model=AgentTeamRuntimeResponse)
 async def get_team_runtime(
     team_id: UUID,
@@ -73,7 +74,7 @@ async def start_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(queue, context, team_id, request, "start")
+    _enqueue_team_runtime_control(session, queue, context, team_id, request, "start")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -99,7 +100,7 @@ async def pause_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(queue, context, team_id, request, "pause")
+    _enqueue_team_runtime_control(session, queue, context, team_id, request, "pause")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -125,7 +126,7 @@ async def resume_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(queue, context, team_id, request, "resume")
+    _enqueue_team_runtime_control(session, queue, context, team_id, request, "resume")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -151,7 +152,7 @@ async def stop_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(queue, context, team_id, request, "stop")
+    _enqueue_team_runtime_control(session, queue, context, team_id, request, "stop")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -221,7 +222,7 @@ async def ensure_team_runtime(
         raise HTTPException(status_code=code, detail=message) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(queue, context, team_id, request, "ensure")
+    _enqueue_team_runtime_control(session, queue, context, team_id, request, "ensure")
     return AgentTeamRuntimeResponse.model_validate(state)
 
 
@@ -247,6 +248,5 @@ async def continue_team_runtime(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    _enqueue_team_runtime_control(queue, context, team_id, request, "continue")
+    _enqueue_team_runtime_control(session, queue, context, team_id, request, "continue")
     return AgentTeamRuntimeResponse.model_validate(state)
-

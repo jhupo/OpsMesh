@@ -60,7 +60,9 @@ def expect_optional_uuid(
 def authorized_task_for_run(session: Session, run: AgentRun) -> Task | None:
     if run.task_id is None:
         return None
-    task = session.get(Task, run.task_id)
+    task = session.scalar(
+        select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
+    )
     if task is None:
         raise ValueError("Run task not found")
     if task.workspace_id != run.workspace_id:
@@ -71,7 +73,11 @@ def authorized_task_for_run(session: Session, run: AgentRun) -> Task | None:
 def authorized_profile_for_run(session: Session, run: AgentRun) -> AgentProfile | None:
     if run.agent_profile_id is None:
         return None
-    profile = session.get(AgentProfile, run.agent_profile_id)
+    profile = session.scalar(
+        select(AgentProfile).where(
+            AgentProfile.workspace_id == run.workspace_id, AgentProfile.id == run.agent_profile_id
+        )
+    )
     if profile is None:
         raise ValueError("Run agent profile not found")
     if profile.workspace_id != run.workspace_id:
@@ -274,13 +280,19 @@ class RunAuthorizationService:
     def step_context_for_run(self, run: AgentRun) -> dict[str, object]:
         if run.task_step_id is None:
             return {}
-        step = self.session.get(TaskStep, run.task_step_id)
+        step = self.session.scalar(
+            select(TaskStep).where(
+                TaskStep.workspace_id == run.workspace_id, TaskStep.id == run.task_step_id
+            )
+        )
         if step is None or step.workspace_id != run.workspace_id:
             raise ValueError("Run task step workspace mismatch")
         if run.task_id is not None and step.task_id != run.task_id:
             raise ValueError("Run task step does not belong to run task")
         if run.task_id is not None:
-            task = self.session.get(Task, run.task_id)
+            task = self.session.scalar(
+                select(Task).where(Task.workspace_id == run.workspace_id, Task.id == run.task_id)
+            )
             if task is None or task.workspace_id != run.workspace_id:
                 raise ValueError("Run task workspace mismatch")
             if not task_owner_can_execute_step(task, step):

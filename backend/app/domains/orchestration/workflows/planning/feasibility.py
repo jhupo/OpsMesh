@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DomainError
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.snapshots import ModelProviderResolutionService
 from backend.app.domains.capabilities.catalog.contracts import EffectiveCapabilityCatalogResponse
@@ -252,6 +253,10 @@ class PlanFeasibilityService:
             return EffectiveCapabilityCatalogService(self._session).resolve(
                 workspace_id=task.workspace_id,
                 agent_profile_id=profile.id,
+                user=ExecutionIdentityService(self._session).restore(
+                    task.workspace_id,
+                    task.execution_identity,
+                ),
                 team_id=task.agent_team_id,
             )
         except (DomainError, ValueError):

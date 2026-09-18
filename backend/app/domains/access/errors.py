@@ -12,4 +12,3 @@ class AuthenticationError(AuthorizationError):
 
 class PermissionDeniedError(AuthorizationError):
     pass
-

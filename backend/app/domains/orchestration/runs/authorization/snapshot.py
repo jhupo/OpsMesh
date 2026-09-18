@@ -14,6 +14,7 @@ from backend.app.core.utils import (
     positive_int_or_default,
     uuid_or_none,
 )
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.metadata import budget_is_exhausted
 from backend.app.domains.agents.providers.model_api import (
@@ -119,6 +120,10 @@ class RunAuthorizationSnapshotService:
         effective_catalog = EffectiveCapabilityCatalogService(self.session).resolve(
             workspace_id=task.workspace_id,
             agent_profile_id=profile.id,
+            user=ExecutionIdentityService(self.session).restore(
+                task.workspace_id,
+                task.execution_identity,
+            ),
             team_id=task.agent_team_id,
         )
         if is_agent_planning_step(step):
@@ -282,9 +287,7 @@ class RunAuthorizationSnapshotService:
         retry_codes = raw_policy.get("retry_error_codes")
         frozen: dict[str, object] = {
             "enabled": True,
-            "retry_error_codes": [
-                item for item in retry_codes if isinstance(item, str) and item
-            ]
+            "retry_error_codes": [item for item in retry_codes if isinstance(item, str) and item]
             if isinstance(retry_codes, list)
             else [],
             "candidates": [],
@@ -301,9 +304,7 @@ class RunAuthorizationSnapshotService:
             if credential_id is None or model is None:
                 continue
             agent_settings = (
-                {"model_api": candidate.get("model_api")}
-                if "model_api" in candidate
-                else {}
+                {"model_api": candidate.get("model_api")} if "model_api" in candidate else {}
             )
             try:
                 provider = self.model_provider_snapshot(

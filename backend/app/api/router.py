@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from backend.app.api.routes.access.auth import router as auth_router
+from backend.app.api.routes.access.resources import router as resource_access_router
 from backend.app.api.routes.agents.messages import router as agent_messages_router
 from backend.app.api.routes.agents.profiles import router as workspace_agents_router
 from backend.app.api.routes.agents.provider_capabilities import (
@@ -38,6 +39,7 @@ api_router = APIRouter()
 api_router.include_router(admin_router)
 api_router.include_router(health_router, tags=["health"])
 api_router.include_router(auth_router)
+api_router.include_router(resource_access_router)
 api_router.include_router(metrics_router, tags=["metrics"])
 api_router.include_router(workspaces_router)
 api_router.include_router(marketplace_router)

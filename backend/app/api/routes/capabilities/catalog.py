@@ -74,6 +74,7 @@ async def get_effective_agent_capability_catalog(
     return EffectiveCapabilityCatalogService(session).resolve(
         workspace_id=context.workspace.id,
         agent_profile_id=agent_profile_id,
+        user=context.user,
         team_id=team_id,
     )
 

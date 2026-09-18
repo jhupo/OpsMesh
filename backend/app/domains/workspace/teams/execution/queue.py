@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.workspace.teams.execution.loop_support import (
     TEAM_EXECUTION_LOOP_WINDOW_SECONDS,
     enqueue_team_execution_loop_job,
@@ -141,6 +142,7 @@ class TeamExecutionLoopQueueService:
             skipped_reasons=skipped_reasons,
         )
 
+
 class TeamExecutionLoopQueueDispatcher:
     """Enqueue unique team execution loop candidates and record scheduler scans."""
 
@@ -165,11 +167,16 @@ class TeamExecutionLoopQueueDispatcher:
             if team_key in seen:
                 continue
             seen.add(team_key)
-            accepted = self._enqueue_candidate(
-                queue=queue,
-                candidate=candidate,
-                window=window,
-            )
+            try:
+                accepted = self._enqueue_candidate(
+                    queue=queue,
+                    candidate=candidate,
+                    window=window,
+                )
+            except ResourceAccessDenied:
+                skipped += 1
+                _increment_skip_reason(skipped_reasons, "authorization_revoked")
+                continue
             if accepted:
                 enqueued += 1
                 self._record_enqueued_runtime_scan(candidate, generated_at, window)
@@ -189,6 +196,7 @@ class TeamExecutionLoopQueueDispatcher:
         window: int,
     ) -> bool:
         return enqueue_team_execution_loop_job(
+            session=self._session,
             queue=queue,
             workspace_id=candidate["workspace_id"],
             team_id=candidate["team_id"],

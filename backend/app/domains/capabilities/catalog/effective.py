@@ -9,7 +9,15 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.db.base import Base
 from backend.app.core.errors import DomainError, NotFoundError
+from backend.app.domains.access.context import AuthenticatedUser
+from backend.app.domains.access.resources import (
+    RESOURCE_TABLES,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityPolicyScope,
@@ -47,8 +55,11 @@ class EffectiveCapabilityCatalogService:
         *,
         workspace_id: UUID,
         agent_profile_id: UUID,
+        user: AuthenticatedUser,
         team_id: UUID | None = None,
     ) -> EffectiveCapabilityCatalogResponse:
+        access = ResourceAuthorizationService(self._session, user)
+        access.require(workspace_id, ResourceKind.AGENT, agent_profile_id, ResourceAction.INVOKE)
         profile = self._active_profile(workspace_id, agent_profile_id)
         team, member, _policy, scopes = self._team_context(
             workspace_id=workspace_id,
@@ -71,6 +82,21 @@ class EffectiveCapabilityCatalogService:
             scopes=scopes,
             denied=denied,
         )
+        resource_ids = self._permitted_ids(access, workspace_id, ResourceKind.CAPABILITY)
+        server_ids = self._permitted_ids(access, workspace_id, ResourceKind.MCP_SERVER)
+        tool_ids = self._permitted_ids(access, workspace_id, ResourceKind.MCP_TOOL)
+        effective_resources = [
+            item for item in effective_resources if item.resource.id in resource_ids
+        ]
+        effective_tools = [
+            item
+            for item in effective_tools
+            if item.descriptor.source != "mcp"
+            or (
+                item.descriptor.mcp_server_id in server_ids
+                and item.descriptor.mcp_tool_allowlist_id in tool_ids
+            )
+        ]
         executable_tools = self._filter_tools_by_resources(
             effective_tools,
             effective_resources,
@@ -84,6 +110,22 @@ class EffectiveCapabilityCatalogService:
             tools=executable_tools,
             resources=effective_resources,
             denied=denied,
+        )
+
+    def _permitted_ids(
+        self,
+        access: ResourceAuthorizationService,
+        workspace_id: UUID,
+        kind: ResourceKind,
+    ) -> set[UUID]:
+        table = Base.metadata.tables[RESOURCE_TABLES[kind]]
+        return set(
+            self._session.scalars(
+                select(table.c.id).where(
+                    table.c.workspace_id == workspace_id,
+                    access.predicate(workspace_id, kind, table.c.id, ResourceAction.INVOKE),
+                )
+            )
         )
 
     def _active_profile(self, workspace_id: UUID, agent_profile_id: UUID) -> AgentProfile:

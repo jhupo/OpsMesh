@@ -84,7 +84,11 @@ class WorkspaceFileService:
         file_id: UUID,
         user_id: UUID | None = None,
     ) -> tuple[WorkspaceFile, bytes]:
-        file = self._session.get(WorkspaceFile, file_id)
+        file = self._session.scalar(
+            select(WorkspaceFile).where(
+                WorkspaceFile.workspace_id == workspace_id, WorkspaceFile.id == file_id
+            )
+        )
         if file is None or file.workspace_id != workspace_id or file.status != "active":
             raise FileNotFoundError("Workspace file not found")
         self._record_access(
@@ -155,7 +159,9 @@ class WorkspaceFileService:
         task_id: UUID,
         work_package_id: str,
     ) -> list[Artifact]:
-        task = self._session.get(Task, task_id)
+        task = self._session.scalar(
+            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+        )
         if task is None or task.workspace_id != workspace_id:
             return []
         return list(
@@ -176,7 +182,9 @@ class WorkspaceFileService:
         workspace_id: UUID,
         task_id: UUID,
     ) -> tuple[Task | None, list[str], list[Artifact]]:
-        task = self._session.get(Task, task_id)
+        task = self._session.scalar(
+            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+        )
         if task is None or task.workspace_id != workspace_id:
             return None, [], []
 
@@ -203,7 +211,11 @@ class WorkspaceFileService:
         artifact_id: UUID,
         user_id: UUID | None = None,
     ) -> tuple[Artifact, bytes]:
-        artifact = self._session.get(Artifact, artifact_id)
+        artifact = self._session.scalar(
+            select(Artifact).where(
+                Artifact.workspace_id == workspace_id, Artifact.id == artifact_id
+            )
+        )
         if artifact is None or artifact.workspace_id != workspace_id:
             raise FileNotFoundError("Artifact not found")
         self._record_access(

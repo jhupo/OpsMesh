@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from hmac import compare_digest
 from uuid import UUID
 
@@ -11,6 +11,13 @@ from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import AuthenticatedUser, WorkspaceContext
 from backend.app.domains.access.errors import AuthenticationError, PermissionDeniedError
 from backend.app.domains.access.permissions import AccountAction, WorkspaceAction
+from backend.app.domains.access.resource_queries import (
+    ResourceQueryScope,
+    bind_resource_queries,
+    require_resource_row,
+    unbind_resource_queries,
+)
+from backend.app.domains.access.resources import ResourceAccessDenied, ResourceAction
 from backend.app.domains.access.service import AuthorizationService
 from backend.app.observability.audit.security_events import SecurityAuditService
 from backend.app.observability.telemetry.request_context import set_log_context
@@ -19,6 +26,26 @@ AUTHORIZATION_HEADER = Header(default=None)
 SETTINGS_DEPENDENCY = Depends(get_settings)
 USER_ID_HEADER = Header(default=None, alias="X-User-ID")
 DB_SESSION_DEPENDENCY = Depends(get_db_session)
+
+_RESOURCE_PATHS = {
+    "agent_id": "agent_profiles",
+    "agent_profile_id": "agent_profiles",
+    "team_id": "agent_teams",
+    "project_id": "workspace_projects",
+    "task_id": "tasks",
+    "agent_run_id": "agent_runs",
+    "run_id": "agent_runs",
+    "approval_id": "approvals",
+    "memory_entry_id": "workspace_memory_entries",
+    "file_id": "workspace_files",
+    "artifact_id": "artifacts",
+    "mcp_server_id": "mcp_servers",
+    "allowlist_id": "mcp_tool_allowlist",
+    "definition_id": "orchestration_definitions",
+    "automation_id": "automations",
+    "workspace_runtime_id": "workspace_runtimes",
+    "runtime_space_id": "runtime_spaces",
+}
 
 
 async def require_internal_token(
@@ -70,8 +97,8 @@ async def get_current_user(
                 )
                 metadata: dict[str, object] = {"has_authorization_header": True}
                 if action == "auth.user_token.rejected":
-                    metadata["token_fingerprint"] = (
-                        AuthorizationService.fingerprint_user_token(token)
+                    metadata["token_fingerprint"] = AuthorizationService.fingerprint_user_token(
+                        token
                     )
                 _record_auth_failure(
                     session=session,
@@ -128,13 +155,17 @@ async def get_current_user(
 CURRENT_USER_DEPENDENCY = Depends(get_current_user)
 
 
-def workspace_dependency(action: WorkspaceAction) -> Callable[..., object]:
+def workspace_dependency(
+    action: WorkspaceAction,
+    *,
+    resource_action: ResourceAction = ResourceAction.UPDATE,
+) -> Callable[..., object]:
     async def require_workspace_context(
         request: Request,
         workspace_id: UUID,
         current_user: AuthenticatedUser = CURRENT_USER_DEPENDENCY,
         session: Session = DB_SESSION_DEPENDENCY,
-    ) -> WorkspaceContext:
+    ) -> AsyncIterator[WorkspaceContext]:
         try:
             context = AuthorizationService(session).require_workspace(
                 user_id=current_user.user_id,
@@ -146,7 +177,37 @@ def workspace_dependency(action: WorkspaceAction) -> Callable[..., object]:
                 user_id=current_user.user_id,
                 workspace_id=context.workspace.id,
             )
-            return context
+            scope = ResourceQueryScope(
+                workspace_id=workspace_id,
+                user=current_user,
+                mutation_action=(
+                    ResourceAction.APPROVE
+                    if action == WorkspaceAction.APPROVE
+                    else ResourceAction.CONTROL
+                    if action == WorkspaceAction.OPERATE
+                    else resource_action
+                ),
+            )
+            operation = (
+                ResourceAction.READ
+                if action == WorkspaceAction.READ
+                else ResourceAction.DELETE
+                if request.method == "DELETE"
+                else scope.mutation_action
+            )
+            for name, table in _RESOURCE_PATHS.items():
+                raw_id = request.path_params.get(name)
+                if raw_id is not None:
+                    try:
+                        identifier = UUID(str(raw_id))
+                    except ValueError as exc:
+                        raise HTTPException(status_code=422, detail="Invalid resource ID") from exc
+                    require_resource_row(session, scope, table, identifier, operation)
+            bind_resource_queries(session, scope)
+            try:
+                yield context
+            finally:
+                unbind_resource_queries(session)
         except PermissionDeniedError as exc:
             SecurityAuditService(session).record_request_event(
                 request_context=security_request_context(request),
@@ -160,6 +221,20 @@ def workspace_dependency(action: WorkspaceAction) -> Callable[..., object]:
             )
             session.commit()
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.message) from exc
+        except ResourceAccessDenied:
+            session.rollback()
+            SecurityAuditService(session).record_request_event(
+                request_context=security_request_context(request),
+                action="auth.resource.rejected",
+                outcome="denied",
+                severity="warning",
+                reason="Resource permission does not allow this action",
+                workspace_id=workspace_id,
+                user_id=current_user.user_id,
+                metadata={"required_action": action.value},
+            )
+            session.commit()
+            raise
 
     return require_workspace_context
 

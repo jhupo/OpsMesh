@@ -67,6 +67,13 @@ matches the deployment proxy chain. Production configuration requires gateway ra
 
 ## Required Authorization Rule
 
+The multi-user resource authorization contract is implemented on 2026-09-18: workspace roles and
+API-token scopes are upper bounds, new resources are private by default, and per-user grants are
+checked for each action. Queries filter visibility before pagination; background runs carry the
+initiating user/token ceiling and recheck live authority. Channel senders require administrator
+bindings. See [multi-user authorization](multi-user-authorization.md) for actions, APIs, data
+inheritance, revocation and migration behavior.
+
 Application code must never authorize access by resource ID alone.
 
 Bad:

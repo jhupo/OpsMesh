@@ -27,9 +27,12 @@ from backend.app.domains.integrations.automation_contracts import (
     AutomationConfiguration,
     AutomationResponse,
     AutomationUpdate,
+    ExternalIdentityRequest,
+    ExternalIdentityResponse,
 )
 from backend.app.domains.integrations.automation_stream import AutomationStreamService
 from backend.app.domains.integrations.automations import AutomationService
+from backend.app.domains.integrations.identities import ExternalIdentityService
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
 
 if TYPE_CHECKING:
@@ -121,6 +124,28 @@ def receive_message(
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@router.put("/{automation_id}/identities/{sender_id}", response_model=ExternalIdentityResponse)
+def set_external_identity(
+    automation_id: UUID,
+    sender_id: str,
+    request: ExternalIdentityRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> ExternalIdentityResponse:
+    if not sender_id or len(sender_id) > 160:
+        raise HTTPException(422, "Sender ID must contain between 1 and 160 characters")
+    binding = ExternalIdentityService(session).set_binding(
+        workspace_id=context.workspace.id,
+        automation_id=automation_id,
+        sender_id=sender_id,
+        user_id=request.user_id,
+        active=request.active,
+        actor=context.user,
+    )
+    session.commit()
+    return ExternalIdentityResponse.model_validate(binding)
 
 
 @router.get("/{automation_id}/events", response_model=list[AcceptedEvent])

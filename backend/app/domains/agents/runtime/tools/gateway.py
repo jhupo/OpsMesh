@@ -8,6 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.utils import string_list
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.domains.agents.memory.authorization import (
     memory_read_scopes,
     memory_write_scopes,
@@ -58,6 +65,30 @@ class AgentToolGateway:
         if len(matches) != 1:
             raise ToolGatewayDenied("tool_manifest_ambiguous", "Tool manifest entry is ambiguous")
         definition = matches[0]
+        try:
+            user = ExecutionIdentityService(self._session).for_run(
+                context.workspace_id,
+                context.run_id,
+            )
+            if context.user_id != user.user_id:
+                raise ResourceAccessDenied()
+            access = ResourceAuthorizationService(self._session, user)
+            if definition.mcp_server_id is not None:
+                access.require(
+                    context.workspace_id,
+                    ResourceKind.MCP_SERVER,
+                    definition.mcp_server_id,
+                    ResourceAction.INVOKE,
+                )
+            if definition.mcp_tool_allowlist_id is not None:
+                access.require(
+                    context.workspace_id,
+                    ResourceKind.MCP_TOOL,
+                    definition.mcp_tool_allowlist_id,
+                    ResourceAction.INVOKE,
+                )
+        except ResourceAccessDenied as exc:
+            raise ToolGatewayDenied("user_access_revoked", "User cannot invoke this tool") from exc
         merged = dict(definition.parameters)
         for field, value in arguments.items():
             if field in definition.locked_parameters and merged.get(field) != value:
@@ -71,6 +102,32 @@ class AgentToolGateway:
         except ValueError as exc:
             raise ToolGatewayDenied("tool_arguments_invalid", str(exc)) from exc
         grants = self._relevant_resource_grants(context, definition)
+        try:
+            for grant in grants:
+                access.require(
+                    context.workspace_id,
+                    ResourceKind.CAPABILITY,
+                    grant.resource_id,
+                    ResourceAction.INVOKE,
+                )
+            if definition.name == "send_agent_message":
+                access.require(
+                    context.workspace_id,
+                    ResourceKind.AGENT,
+                    UUID(str(merged.get("recipient_agent_profile_id"))),
+                    ResourceAction.INVOKE,
+                )
+            if definition.name in {"archive_semantic_memory", "get_knowledge_citations"}:
+                access.require(
+                    context.workspace_id,
+                    ResourceKind.MEMORY,
+                    UUID(str(merged.get("memory_entry_id"))),
+                    ResourceAction.UPDATE
+                    if definition.name == "archive_semantic_memory"
+                    else ResourceAction.READ,
+                )
+        except (ResourceAccessDenied, ValueError) as exc:
+            raise ToolGatewayDenied("user_resource_denied", "User cannot access tool data") from exc
         self._require_active_resources(context.workspace_id, grants)
         self._require_product_resource_scope(context, definition, grants, merged)
         return PreparedToolCall(
@@ -86,7 +143,11 @@ class AgentToolGateway:
         tool_name: str,
         denial: ToolGatewayDenied,
     ) -> None:
-        run = self._session.get(AgentRun, context.run_id)
+        run = self._session.scalar(
+            select(AgentRun).where(
+                AgentRun.workspace_id == context.workspace_id, AgentRun.id == context.run_id
+            )
+        )
         if run is not None and run.workspace_id == context.workspace_id:
             RunEventRecorder(self._session).append_event(
                 run,
@@ -224,7 +285,12 @@ class AgentToolGateway:
                     "semantic_memory_id_invalid",
                     "Semantic memory ID is invalid",
                 ) from exc
-            entry = self._session.get(WorkspaceMemoryEntry, memory_entry_id)
+            entry = self._session.scalar(
+                select(WorkspaceMemoryEntry).where(
+                    WorkspaceMemoryEntry.workspace_id == context.workspace_id,
+                    WorkspaceMemoryEntry.id == memory_entry_id,
+                )
+            )
             if (
                 entry is None
                 or entry.workspace_id != context.workspace_id

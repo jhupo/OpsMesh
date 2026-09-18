@@ -178,10 +178,9 @@ class AgentEpisodicMemoryService:
             policy=policy,
             memory_key=f"task-message:{message.id}",
             entry_type=f"task_{category}",
-            title=(
-                f"{category.replace('_', ' ').title()}: "
-                f"{redact_text_fragments(task.title)}"
-            )[:240],
+            title=(f"{category.replace('_', ' ').title()}: {redact_text_fragments(task.title)}")[
+                :240
+            ],
             content=redact_text_fragments(message.body) or message.message_type,
             source_type="task_message",
             source_id=str(message.id),
@@ -301,9 +300,7 @@ class AgentEpisodicMemoryService:
             provenance["run"] = {
                 "id": str(run.id),
                 "status": run.status,
-                "task_step_id": str(run.task_step_id)
-                if run.task_step_id is not None
-                else None,
+                "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
                 "completed_at": run.completed_at.isoformat() if run.completed_at else None,
             }
         if profile is not None:
@@ -343,7 +340,11 @@ class AgentEpisodicMemoryService:
     def _profile(self, workspace_id: UUID, profile_id: UUID | None) -> AgentProfile | None:
         if profile_id is None:
             return None
-        profile = self._session.get(AgentProfile, profile_id)
+        profile = self._session.scalar(
+            select(AgentProfile).where(
+                AgentProfile.workspace_id == workspace_id, AgentProfile.id == profile_id
+            )
+        )
         if profile is None or profile.workspace_id != workspace_id:
             return None
         return profile
@@ -351,7 +352,9 @@ class AgentEpisodicMemoryService:
     def _task(self, workspace_id: UUID, task_id: UUID | None) -> Task | None:
         if task_id is None:
             return None
-        task = self._session.get(Task, task_id)
+        task = self._session.scalar(
+            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+        )
         if task is None or task.workspace_id != workspace_id:
             return None
         return task
@@ -359,7 +362,9 @@ class AgentEpisodicMemoryService:
     def _run(self, workspace_id: UUID, run_id: UUID | None) -> AgentRun | None:
         if run_id is None:
             return None
-        run = self._session.get(AgentRun, run_id)
+        run = self._session.scalar(
+            select(AgentRun).where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id)
+        )
         if run is None or run.workspace_id != workspace_id:
             return None
         return run

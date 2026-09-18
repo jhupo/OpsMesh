@@ -259,6 +259,40 @@ def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
     actions = {item["action"] for item in audit.json()["items"]}
     assert {"agent.created", "team.created", "task.created"} <= actions
 
+    # A second human in the same tenant does not inherit the owner's resources.
+    session.add(WorkspaceMember(workspace_id=workspace.id, user_id=viewer.id, role="operator"))
+    session.commit()
+    base = f"/api/v1/workspaces/{workspace.id}"
+    agent_id = created_agent.json()["id"]
+    for collection in ("agents", "teams", "tasks"):
+        hidden = client.get(f"{base}/{collection}", headers=_headers(viewer.id))
+        assert hidden.status_code == 200
+        assert hidden.json()["total"] == 0
+    assert client.get(f"{base}/agents/{agent_id}", headers=_headers(viewer.id)).status_code == 403
+    grants_url = f"{base}/access/agent/{agent_id}/grants/{viewer.id}"
+    shared = client.put(grants_url, headers=_headers(owner.id), json={"actions": ["read"]})
+    assert shared.status_code == 200, shared.text
+    visible = client.get(f"{base}/agents", headers=_headers(viewer.id))
+    assert visible.json()["total"] == 1
+    assert client.get(f"{base}/agents/{agent_id}", headers=_headers(viewer.id)).status_code == 200
+    permissions = client.get(
+        f"{base}/access/agent/{agent_id}/permissions",
+        headers=_headers(viewer.id),
+    )
+    assert permissions.json()["actions"] == ["read"]
+    denied_edit = client.patch(
+        f"{base}/agents/{agent_id}",
+        headers=_headers(viewer.id),
+        json={"name": "Stolen"},
+    )
+    assert denied_edit.status_code == 403, denied_edit.text
+    denied_share = client.put(grants_url, headers=_headers(viewer.id), json={"actions": ["update"]})
+    assert denied_share.status_code == 403
+    assert (
+        client.put(grants_url, headers=_headers(owner.id), json={"actions": []}).status_code == 200
+    )
+    assert client.get(f"{base}/agents", headers=_headers(viewer.id)).json()["total"] == 0
+
 
 def test_workspace_operator_read_models_are_reachable_through_the_api() -> None:
     client, session = _client()
@@ -2341,7 +2375,7 @@ def test_team_execution_loop_enqueue_queues_job_idempotently() -> None:
     assert duplicate.json()["status"] == "skipped"
     assert duplicate.json()["queued"] is False
     assert forbidden.status_code == 403
-    assert missing.status_code == 404
+    assert missing.status_code == 403
 
     jobs = queue.peek()
     assert len(jobs) == 1
@@ -5434,7 +5468,8 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     assert created_runtime.connection_status == "offline"
     assert created_runtime.capabilities["team_runtime"]["team_id"] == str(team.id)
     create_job = next(
-        job for job in queue.peek(limit=100)
+        job
+        for job in queue.peek(limit=100)
         if job.resource_id == created_runtime.id and job.routing.get("action") == "create"
     )
     assert create_job.routing["execution_mode"] == created_runtime.execution_mode
@@ -6398,7 +6433,7 @@ def test_create_task_matches_requested_work_packages_to_team_members() -> None:
                         "required_role": "frontend_engineer",
                         "required_skills": ["react"],
                     },
-                ]
+                ],
             },
         },
     )
@@ -6553,7 +6588,7 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery(
                         "required_skills": ["analysis"],
                         "depends_on": ["market-research"],
                     },
-                ]
+                ],
             },
         },
     )
@@ -6682,7 +6717,7 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
                         "title": "Build UI duplicate",
                         "required_role": "frontend_engineer",
                     },
-                ]
+                ],
             },
         },
     )
@@ -6701,7 +6736,7 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
                         "required_role": "frontend_engineer",
                         "required_skills": ["react"],
                     }
-                ]
+                ],
             },
         },
     )
@@ -6853,7 +6888,7 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
                         "title": "Frontend Build",
                         "required_role": "frontend_engineer",
                     }
-                ]
+                ],
             },
         },
     )
@@ -6883,7 +6918,7 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
                         "title": "Frontend Build V2",
                         "required_role": "frontend_engineer",
                     }
-                ]
+                ],
             },
         },
     )
@@ -7009,18 +7044,24 @@ def test_mutate_task_plan_endpoint_adds_future_work_and_audits() -> None:
     assert any(
         package["package_id"] == "follow-up" for package in task.project_plan["work_packages"]
     )
-    assert session.scalar(
-        select(TaskStep).where(
-            TaskStep.task_id == task.id,
-            TaskStep.work_package_id == "follow-up",
+    assert (
+        session.scalar(
+            select(TaskStep).where(
+                TaskStep.task_id == task.id,
+                TaskStep.work_package_id == "follow-up",
+            )
         )
-    ) is not None
-    assert session.scalar(
-        select(AuditEvent).where(
-            AuditEvent.workspace_id == workspace.id,
-            AuditEvent.action == "task.plan_mutated",
+        is not None
+    )
+    assert (
+        session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.workspace_id == workspace.id,
+                AuditEvent.action == "task.plan_mutated",
+            )
         )
-    ) is not None
+        is not None
+    )
 
 
 def test_create_task_rejects_foreign_team_reference() -> None:
@@ -7252,8 +7293,7 @@ def test_model_provider_capabilities_are_listed_without_secrets() -> None:
     runtime_by_provider = {item["provider"]: item for item in runtimes.json()}
     assert set(runtime_by_provider) == {"anthropic", "openai-compatible"}
     claude_features = {
-        feature["name"]: feature
-        for feature in runtime_by_provider["anthropic"]["features"]
+        feature["name"]: feature for feature in runtime_by_provider["anthropic"]["features"]
     }
     assert claude_features["tools"]["supported"] is True
     assert claude_features["cancellation"]["supported"] is True

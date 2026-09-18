@@ -73,6 +73,7 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     input: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    execution_identity: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     generic_state: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     domain_state: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     team_snapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)

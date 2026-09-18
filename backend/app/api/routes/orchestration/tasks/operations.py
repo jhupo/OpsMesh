@@ -37,6 +37,7 @@ from backend.app.api.schemas.orchestration.tasks.timeline import (
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.access.resources import ResourceAction
 from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
@@ -112,7 +113,9 @@ async def create_task_correction(
 async def apply_task_control_action(
     task_id: UUID,
     request: TaskControlActionRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    context: WorkspaceContext = Depends(
+        workspace_dependency(WorkspaceAction.OPERATE, resource_action=ResourceAction.CONTROL)
+    ),
     session: Session = Depends(get_db_session),
     queue: RedisQueue = Depends(get_worker_queue),
 ) -> TaskControlActionResponse:
@@ -250,7 +253,9 @@ async def get_task_timeline(
 async def apply_task_operator_action(
     task_id: UUID,
     request: TaskOperatorActionRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    context: WorkspaceContext = Depends(
+        workspace_dependency(WorkspaceAction.OPERATE, resource_action=ResourceAction.CONTROL)
+    ),
     session: Session = Depends(get_db_session),
 ) -> TaskOperatorActionResponse:
     try:

@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resource_queries import execution_resource_queries
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
@@ -19,6 +21,11 @@ class TaskPlanJobHandler:
         task = self._task(job)
         if task is None:
             return
+        user = ExecutionIdentityService(self._context.session).for_task(task.workspace_id, task.id)
+        with execution_resource_queries(self._context.session, task.workspace_id, user):
+            self._plan(task, job.model_copy(update={"requested_by_user_id": user.user_id}))
+
+    def _plan(self, task: Task, job: JobPayload) -> None:
 
         revisions = self._queued_revisions(task)
         planner = RevisionRequestPlanner(self._context.session)

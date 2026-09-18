@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.domains.access.models import User
+from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeContext,
@@ -67,6 +68,7 @@ def test_effective_catalog_hides_product_tool_without_required_resource() -> Non
     session.commit()
 
     without_resource = EffectiveCapabilityCatalogService(session).resolve(
+        user=AuthorizationService(session).authenticate_user(user.id),
         workspace_id=workspace.id,
         agent_profile_id=profile.id,
     )
@@ -90,6 +92,7 @@ def test_effective_catalog_hides_product_tool_without_required_resource() -> Non
     session.commit()
 
     with_resource = EffectiveCapabilityCatalogService(session).resolve(
+        user=AuthorizationService(session).authenticate_user(user.id),
         workspace_id=workspace.id,
         agent_profile_id=profile.id,
     )

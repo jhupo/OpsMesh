@@ -10,6 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.domains.capabilities.catalog.contracts import CapabilityToolDescriptor
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.domains.capabilities.mcp.catalog.rules import (
@@ -68,7 +75,18 @@ class McpExecutionValidator:
                 locked=locked,
             ),
         )
-        _, server = self._resolve_allowed_tool(prepared_request, descriptor)
+        allow, server = self._resolve_allowed_tool(prepared_request, descriptor)
+        try:
+            user = ExecutionIdentityService(self.session).for_run(request.workspace_id, run.id)
+            ResourceAuthorizationService(self.session, user).require_many(
+                request.workspace_id,
+                [
+                    (ResourceKind.MCP_SERVER, server.id, ResourceAction.INVOKE),
+                    (ResourceKind.MCP_TOOL, allow.id, ResourceAction.INVOKE),
+                ],
+            )
+        except ResourceAccessDenied:
+            self._block(request, "user_access_revoked", mcp_server_id=server.id)
         if not plugin_resource_available(
             self.session, request.workspace_id, "mcp_server", server.id
         ):
@@ -85,7 +103,12 @@ class McpExecutionValidator:
         )
 
     def _require_run(self, workspace_id: UUID, run_id: UUID) -> AgentRun:
-        run = self.session.get(AgentRun, run_id)
+        run = self.session.scalar(
+            select(AgentRun).where(
+                AgentRun.workspace_id == workspace_id,
+                AgentRun.id == run_id,
+            )
+        )
         if run is None or run.workspace_id != workspace_id:
             raise ToolResourceNotFoundError("Agent run not found")
         return run

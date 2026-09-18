@@ -50,6 +50,7 @@ else:
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 
+
 @router.post(
     "/teams/{team_id}/command-center/actions/apply",
     response_model=AgentTeamCommandCenterApplyResponse,
@@ -57,7 +58,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
 async def apply_team_command_center_actions(
     team_id: UUID,
     request: AgentTeamCommandCenterApplyRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
     queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
@@ -128,7 +129,7 @@ def _require_command_center_runtime_permission(
 async def enqueue_team_execution_loop(
     team_id: UUID,
     request: AgentTeamExecutionLoopEnqueueRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
     queue: RedisQueue = Depends(get_worker_queue),
 ) -> AgentTeamExecutionLoopEnqueueResponse:
@@ -137,6 +138,7 @@ async def enqueue_team_execution_loop(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
 
     queued = enqueue_team_execution_loop_job(
+        session=session,
         queue=queue,
         workspace_id=context.workspace.id,
         team_id=team_id,
@@ -167,7 +169,7 @@ async def enqueue_team_execution_loop(
 async def run_team_execution_loop_iteration(
     team_id: UUID,
     request: AgentTeamExecutionLoopRunRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
     queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
@@ -233,7 +235,7 @@ def _require_execution_loop_runtime_permission(
 async def finalize_team_execution_loop_tasks(
     team_id: UUID,
     request: AgentTeamExecutionLoopFinalizeRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> AgentTeamExecutionLoopFinalizeResponse:
     response = TeamExecutionLoopService(session).finalize_ready_tasks(
@@ -255,7 +257,7 @@ async def finalize_team_execution_loop_tasks(
 async def apply_team_operator_action(
     team_id: UUID,
     request: AgentTeamOperatorActionRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
 ) -> AgentTeamOperatorActionResponse:
     try:

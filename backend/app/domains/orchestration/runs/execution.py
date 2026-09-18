@@ -11,6 +11,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.utils import payload_hash
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resource_queries import (
+    execution_resource_queries,
+    unbind_resource_queries,
+)
+from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
@@ -106,11 +112,44 @@ class RunExecutionService:
         self.settings = self.settings or get_settings()
 
     async def run_agent(self, job: JobPayload) -> AgentRun:
-        run = self.session.get(AgentRun, job.resource_id)
+        run = self.session.scalar(
+            select(AgentRun).where(
+                AgentRun.workspace_id == job.workspace_id,
+                AgentRun.id == job.resource_id,
+            )
+        )
         if run is None:
             raise ValueError("Agent run not found")
         if run.workspace_id != job.workspace_id:
             raise ValueError("Agent run workspace mismatch")
+        if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
+            return run
+
+        try:
+            user = ExecutionIdentityService(self.session).for_run(run.workspace_id, run.id)
+            with execution_resource_queries(self.session, run.workspace_id, user):
+                return await self._run_authorized_agent(
+                    run, job.model_copy(update={"requested_by_user_id": user.user_id}),
+                )
+        except ResourceAccessDenied as exc:
+            return self._reject_authorization(run, exc)
+
+    def _reject_authorization(self, run: AgentRun, exc: ResourceAccessDenied) -> AgentRun:
+        # Discard uncommitted output and terminate through trusted lifecycle code. Revoked
+        # visibility must not prevent releasing reservations or settling the owning task.
+        unbind_resource_queries(self.session)
+        self.session.rollback()
+        self.session.refresh(run)
+        if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
+            return run
+        self._events().append_event(
+            run, "authorization.revoked", "Execution principal no longer authorized", {},
+        )
+        self._lifecycle().mark_run_failed(run, exc)
+        self._commit_and_refresh(run)
+        return run
+
+    async def _run_authorized_agent(self, run: AgentRun, job: JobPayload) -> AgentRun:
 
         with self._lock_for_run(run) as acquired:
             if not acquired:
@@ -183,6 +222,7 @@ class RunExecutionService:
         result: AgentRuntimeToolResult,
         job: JobPayload,
     ) -> AgentRun:
+        ExecutionIdentityService(self.session).for_run(run.workspace_id, run.id)
         if result.status == "waiting_approval":
             self._lifecycle().mark_run_waiting_approval(run)
         elif result.status == "waiting_subworkflow":
@@ -227,12 +267,14 @@ class RunExecutionService:
             return self._complete_timeout(run)
         except AgentRuntimeCancelledError:
             return self._complete_cancellation(run, request)
+        ExecutionIdentityService(self.session).for_run(run.workspace_id, run.id)
         if result is None or self._run_cancelled_after_model_result(run):
             self._commit_and_refresh(run)
             return run
         return self._persist_model_result(run, request, job, result)
 
     def _complete_timeout(self, run: AgentRun) -> AgentRun:
+        unbind_resource_queries(self.session)
         timeout_seconds = self._runtime_timeout_seconds(run)
         timeout_error = AgentRuntimePolicyError(
             code="runtime_wall_time_exceeded",
@@ -259,6 +301,7 @@ class RunExecutionService:
         return run
 
     def _complete_cancellation(self, run: AgentRun, request: AgentRunRequest) -> AgentRun:
+        unbind_resource_queries(self.session)
         self.session.refresh(run)
         if RunStatus(run.status) not in TERMINAL_RUN_STATUSES:
             self._lifecycle().mark_run_cancelled(run, completed_at=datetime.now(UTC))

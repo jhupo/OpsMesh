@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.secrets import SecretEncryptionService
@@ -90,9 +91,7 @@ class WorkspaceMemoryProductTools:
                 continue
             metadata = result.get("metadata")
             memory_entry_id = (
-                _parse_uuid(metadata.get("memory_entry_id"))
-                if isinstance(metadata, dict)
-                else None
+                _parse_uuid(metadata.get("memory_entry_id")) if isinstance(metadata, dict) else None
             )
             if memory_entry_id is not None:
                 result["citations"] = [
@@ -254,7 +253,11 @@ class WorkspaceMemoryProductTools:
     def _run_for_context(self, context: ToolContext) -> AgentRun | None:
         if context.agent_run_id is None:
             return None
-        run = self._session.get(AgentRun, context.agent_run_id)
+        run = self._session.scalar(
+            select(AgentRun).where(
+                AgentRun.workspace_id == context.workspace_id, AgentRun.id == context.agent_run_id
+            )
+        )
         if run is None or run.workspace_id != context.workspace_id:
             return None
         return run
@@ -265,6 +268,7 @@ class WorkspaceMemoryProductTools:
         memory_policy = snapshot.get("memory_policy") if isinstance(snapshot, dict) else {}
         if not semantic_memory_policy(memory_policy).write_enabled:
             raise ValueError("Semantic memory writes are disabled for this agent run")
+
 
 def _require_memory_write(
     *,

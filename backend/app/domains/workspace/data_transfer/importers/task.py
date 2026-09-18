@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.data_transfer.importers.context import (
@@ -85,6 +86,9 @@ class TaskMetadataImporter:
             task = Task(
                 workspace_id=ctx.workspace.id,
                 created_by_user_id=ctx.user_id,
+                execution_identity=ExecutionIdentityService(self._session).capture(
+                    ctx.workspace.id, ctx.user_id
+                ),
                 agent_team_id=_uuid_or_none(team_id),
                 runtime_space_id=_uuid_or_none(runtime_space_id),
                 domain_type=_string_field(item, "domain_type", "general"),
@@ -291,6 +295,9 @@ class TaskMetadataImporter:
         )
 
     def _task_exists(self, workspace_id: UUID, title: str) -> bool:
-        return self._session.scalar(
-            select(Task.id).where(Task.workspace_id == workspace_id, Task.title == title)
-        ) is not None
+        return (
+            self._session.scalar(
+                select(Task.id).where(Task.workspace_id == workspace_id, Task.title == title)
+            )
+            is not None
+        )

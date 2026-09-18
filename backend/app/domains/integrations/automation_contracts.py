@@ -17,6 +17,20 @@ from backend.app.domains.orchestration.workflows.definitions.contracts import Wo
 from backend.app.runtime.workers.scheduling.calendar import next_run_at
 
 
+class ExternalIdentityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_id: UUID
+    active: bool = True
+
+
+class ExternalIdentityResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    automation_id: UUID
+    sender_id: str
+    user_id: UUID
+    status: str
+
+
 class AutomationConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
