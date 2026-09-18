@@ -1,11 +1,58 @@
 from datetime import timedelta
 from urllib.parse import urlparse
+from uuid import UUID
 
+from backend.app.core.security.egress import validate_url_shape
 from backend.app.domains.capabilities.mcp.catalog.catalog import McpCatalogTool
-from backend.app.domains.capabilities.mcp.models import McpServer
+from backend.app.domains.capabilities.mcp.models import McpCredentialReference, McpServer
 from backend.app.domains.capabilities.mcp.policy import mcp_health_check_stale
+from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
 
 REMOTE_SERVER_TYPES = {"streamable_http", "sse"}
+MCP_AUTH_METHODS = {
+    "none",
+    "static_header",
+    "bearer_token",
+    "credential_ref",
+}
+
+
+def normalize_connection(server_type: str, value: dict[str, object]) -> dict[str, object]:
+    """Normalize transport/auth metadata without accepting secret-bearing headers."""
+
+    connection = dict(value)
+    reject_embedded_secrets(connection, path="connection")
+    normalized_type = server_type.lower().strip()
+    if normalized_type in REMOTE_SERVER_TYPES or normalized_type == "hosted":
+        url = connection.get("url") or connection.get("endpoint")
+        if not isinstance(url, str) or not url.lower().startswith(("http://", "https://")):
+            raise ValueError("Remote MCP server requires an http(s) url")
+        validate_url_shape(url, allowed_schemes=frozenset({"http", "https"}))
+        transport = str(
+            connection.get("transport")
+            or ("streamable_http" if normalized_type == "hosted" else normalized_type)
+        ).lower().strip()
+        if transport not in REMOTE_SERVER_TYPES:
+            raise ValueError("Remote MCP server transport must be streamable_http or sse")
+        auth_method = str(
+            connection.get("auth_method")
+            or (
+                "credential_ref"
+                if normalized_type == "hosted" or connection.get("requires_credentials") is True
+                else "none"
+            )
+        ).lower().strip()
+        if auth_method not in MCP_AUTH_METHODS:
+            raise ValueError("MCP auth_method is unsupported")
+        configured_requirement = connection.get("requires_credentials")
+        if isinstance(configured_requirement, bool) and configured_requirement != (
+            auth_method != "none"
+        ):
+            raise ValueError("MCP auth_method conflicts with requires_credentials")
+        connection["transport"] = transport
+        connection["auth_method"] = auth_method
+        connection["requires_credentials"] = auth_method != "none"
+    return connection
 
 
 def credential_status(
@@ -28,6 +75,29 @@ def requires_credentials(server: McpServer) -> bool:
     if isinstance(configured, bool):
         return configured
     return normalized_server_type(server) == "hosted"
+
+
+def selected_remote_credentials(
+    server: McpServer,
+    credentials: list[McpCredentialReference],
+) -> list[McpCredentialReference]:
+    if not requires_credentials(server):
+        return []
+    eligible = [
+        item
+        for item in credentials
+        if item.workspace_id == server.workspace_id
+        and item.status == "active"
+        and item.mcp_server_id in (None, server.id)
+    ]
+    bound_id = server.connection.get("credential_reference_id")
+    if bound_id is not None:
+        try:
+            parsed_id = UUID(str(bound_id))
+        except ValueError:
+            return []
+        return [item for item in eligible if item.id == parsed_id]
+    return eligible if len(eligible) == 1 else []
 
 
 def execution_mode(server: McpServer) -> str:
@@ -73,6 +143,8 @@ def mcp_server_execution_blockers(
     server_type = normalized_server_type(server)
     if server.status != "active":
         reasons.append("server_inactive")
+    if server.discovery_version > 0 and server.discovery_status != "succeeded":
+        reasons.append("discovery_unready")
     if server.health_status != "healthy":
         reasons.append(
             "server_unhealthy" if server.health_status == "unhealthy" else "server_health_unready"
@@ -106,6 +178,9 @@ def connection_summary(server: McpServer) -> dict[str, object]:
     transport = connection.get("transport")
     if isinstance(transport, str) and transport:
         summary["transport"] = transport
+    auth_method = connection.get("auth_method")
+    if isinstance(auth_method, str) and auth_method:
+        summary["auth_method"] = auth_method
     url = connection.get("url") or connection.get("endpoint")
     if isinstance(url, str) and url:
         parsed = urlparse(url)

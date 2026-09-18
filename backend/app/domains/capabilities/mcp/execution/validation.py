@@ -243,6 +243,8 @@ class McpExecutionValidator:
         return arguments
 
     def _require_server_health(self, request: McpExecutionRequest, server: McpServer) -> None:
+        if server.discovery_version > 0 and server.discovery_status != "succeeded":
+            self._block(request, "mcp_discovery_unready", mcp_server_id=server.id)
         if server.health_status != "healthy":
             reason = (
                 "mcp_server_unhealthy"

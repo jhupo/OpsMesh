@@ -24,6 +24,8 @@ from backend.app.domains.capabilities.mcp.catalog.rules import (
     credential_status,
     execution_mode,
     mcp_blocked_reasons,
+    requires_credentials,
+    selected_remote_credentials,
 )
 from backend.app.domains.capabilities.mcp.models import (
     McpCredentialReference,
@@ -61,10 +63,11 @@ class McpCatalogService:
             server_ids,
             allowed_names=allowed_names,
         )
-        credential_counts, workspace_credential_count = self._credential_counts_for_servers(
-            workspace_id,
-            server_ids,
-        )
+        (
+            credential_counts,
+            workspace_credential_count,
+            credentials,
+        ) = self._credential_counts_for_servers(workspace_id, server_ids)
         usage_by_server_tool = self._mcp_usage_by_server_tool(workspace_id, server_ids)
         hourly_limit_counts = self._mcp_call_limit_counts(
             workspace_id,
@@ -83,6 +86,7 @@ class McpCatalogService:
                 tools_by_server.get(server.id, []),
                 credential_counts.get(server.id, 0),
                 workspace_credential_count,
+                credentials,
                 rollup_mcp_usage(server.id, usage_by_server_tool),
             )
             for server in servers
@@ -192,7 +196,7 @@ class McpCatalogService:
         self,
         workspace_id: UUID,
         server_ids: list[UUID],
-    ) -> tuple[dict[UUID, int], int]:
+    ) -> tuple[dict[UUID, int], int, list[McpCredentialReference]]:
         credentials = self._session.scalars(
             select(McpCredentialReference).where(
                 McpCredentialReference.workspace_id == workspace_id,
@@ -211,7 +215,7 @@ class McpCatalogService:
                 continue
             if credential.mcp_server_id in credential_counts:
                 credential_counts[credential.mcp_server_id] += 1
-        return credential_counts, workspace_credential_count
+        return credential_counts, workspace_credential_count, list(credentials)
 
     def _catalog_entry(
         self,
@@ -219,8 +223,17 @@ class McpCatalogService:
         tools: list[McpCatalogTool],
         credential_count: int,
         workspace_credential_count: int,
+        credentials: list[McpCredentialReference],
         usage: McpCatalogUsage,
     ) -> McpCatalogServer:
+        if server.server_type in {"streamable_http", "sse", "hosted"}:
+            selected = selected_remote_credentials(server, credentials)
+            if requires_credentials(server):
+                credential_count = sum(item.mcp_server_id == server.id for item in selected)
+                workspace_credential_count = sum(item.mcp_server_id is None for item in selected)
+            else:
+                credential_count = 0
+                workspace_credential_count = 0
         status = credential_status(
             server,
             credential_count=credential_count,

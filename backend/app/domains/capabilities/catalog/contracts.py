@@ -199,9 +199,11 @@ class CapabilityToolDescriptor(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    title: str = ""
     source: Literal["product", "mcp"]
     description: str
     input_schema: dict[str, object]
+    output_schema: dict[str, object] = Field(default_factory=dict)
     requires_approval: bool
     risk_level: str
     capability_key: str | None = None

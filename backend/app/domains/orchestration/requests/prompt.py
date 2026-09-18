@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.tools.executor import PRODUCT_TOOL_NAMES
 from backend.app.domains.orchestration.requests.context_budget import (
     ContextFragment,
@@ -18,7 +19,7 @@ from backend.app.domains.orchestration.workflows.definitions.graph import (
     is_pm_summary_step,
 )
 from backend.app.domains.orchestration.workflows.planning.agent_plan import is_agent_planning_step
-from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 
 
@@ -254,6 +255,32 @@ class RunRequestPromptRenderer:
             f"- Team: {team.name} ({team.team_type})",
             f"- Runtime: {runtime_status}",
         ]
+        if run.agent_profile_id is not None:
+            profile = self.session.scalar(
+                select(AgentProfile).where(
+                    AgentProfile.workspace_id == run.workspace_id,
+                    AgentProfile.id == run.agent_profile_id,
+                )
+            )
+            if profile is not None:
+                lines.append(f"- Agent role: {profile.role}")
+        member = self.session.scalar(
+            select(AgentTeamMember).where(
+                AgentTeamMember.workspace_id == run.workspace_id,
+                AgentTeamMember.agent_team_id == team.id,
+                AgentTeamMember.agent_profile_id == run.agent_profile_id,
+                AgentTeamMember.status == "active",
+            )
+        )
+        if member is not None:
+            lines.append(f"- Team assignment: {member.team_role}")
+            if member.department:
+                lines.append(f"- Department: {member.department}")
+            if member.position_title:
+                lines.append(f"- Position: {member.position_title}")
+            responsibilities = runtime_text_list(member.responsibilities)
+            if responsibilities:
+                lines.append("- Responsibilities: " + "; ".join(responsibilities))
         mailbox_tools = mailbox_tool_names(allowed_tools)
         if mailbox_tools:
             lines.append(

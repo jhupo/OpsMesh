@@ -45,6 +45,8 @@ class McpCredentialService:
         data: McpCredentialReferenceCreateRequest,
         actor_user_id: UUID | None = None,
     ) -> McpCredentialReference:
+        if data.secret_payload is None and data.provider in {"hosted", "static_header"}:
+            raise ValueError("Remote MCP headers must use encrypted secret_payload")
         server = None
         if data.mcp_server_id is not None:
             server = require_mcp_server(self._session, workspace_id, data.mcp_server_id)
@@ -199,6 +201,8 @@ class McpCredentialService:
             next_external_ref = (data.external_ref or "").strip()
             if not next_provider or not next_external_ref:
                 raise ValueError("External credential rotation requires provider and external_ref")
+            if next_provider in {"hosted", "static_header"}:
+                raise ValueError("Remote MCP headers must use encrypted secret_payload")
             encrypted = None
         server_visibility = self._credential_server_visibility(workspace_id, credential)
         review = ResourcePolicyReviewBuilder(

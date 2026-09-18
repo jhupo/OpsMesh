@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.core.utils import payload_hash
 from backend.app.domains.capabilities.catalog.contracts import CapabilityToolDescriptor
 from backend.app.domains.capabilities.mcp.execution.contracts import (
     McpExecutionRequest,
@@ -13,7 +14,6 @@ from backend.app.domains.capabilities.mcp.execution.events import (
     McpExecutionNotifier,
     McpToolCallLogService,
 )
-from backend.app.domains.capabilities.mcp.execution.payloads import payload_hash
 from backend.app.domains.capabilities.mcp.models import McpServer
 from backend.app.domains.orchestration.approvals.policy import ApprovalPolicyDecision
 from backend.app.domains.orchestration.approvals.service import ApprovalService

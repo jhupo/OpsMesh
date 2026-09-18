@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, field_serializer
+from pydantic import BaseModel, Field, field_serializer
 
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
@@ -10,8 +10,10 @@ class McpToolDescriptor(BaseModel):
     server_id: UUID
     server_name: str
     tool_name: str
+    title: str = ""
     description: str
     input_schema: dict[str, object]
+    output_schema: dict[str, object] = Field(default_factory=dict)
     capability_key: str | None
     requires_approval: bool
     risk_level: str
@@ -44,14 +46,20 @@ class McpCatalogToolPolicySummaryResponse(BaseModel):
 class McpCatalogToolResponse(BaseModel):
     id: UUID
     tool_name: str
+    title: str = ""
     description: str
     input_schema: dict[str, object]
+    output_schema: dict[str, object] = Field(default_factory=dict)
     capability_key: str | None
     requires_approval: bool
     risk_level: str
     policy: dict[str, object]
     policy_summary: McpCatalogToolPolicySummaryResponse
     status: str
+    discovery_source: str = "manual"
+    discovery_status: str = "manual"
+    discovery_checksum: str | None = None
+    discovered_at: datetime | None = None
     usage: McpCatalogUsageResponse
 
     @field_serializer("policy")
@@ -68,6 +76,11 @@ class McpCatalogServerResponse(BaseModel):
     health_status: str
     last_health_check_at: datetime | None
     last_error: str | None
+    discovery_status: str = "never"
+    discovery_version: int = 0
+    discovered_at: datetime | None = None
+    discovery_checksum: str | None = None
+    discovery_error: str | None = None
     execution_mode: str
     executable: bool
     blocked_reasons: list[str]
@@ -82,4 +95,8 @@ class McpCatalogServerResponse(BaseModel):
 
     @field_serializer("last_error")
     def _serialize_last_error(self, value: str | None) -> str | None:
+        return redact_sensitive_text(value) if value is not None else None
+
+    @field_serializer("discovery_error")
+    def _serialize_discovery_error(self, value: str | None) -> str | None:
         return redact_sensitive_text(value) if value is not None else None

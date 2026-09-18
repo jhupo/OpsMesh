@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,6 +28,11 @@ class McpServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     health_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     last_health_check_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    discovery_status: Mapped[str] = mapped_column(String(32), nullable=False, default="never")
+    discovery_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    discovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    discovery_checksum: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    discovery_error: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class McpToolAllowlist(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -46,14 +51,20 @@ class McpToolAllowlist(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     tool_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    title: Mapped[str] = mapped_column(String(240), nullable=False, default="")
     description: Mapped[str] = mapped_column(String(2_000), nullable=False, default="")
     input_schema: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    output_schema: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     capability_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
     requires_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     risk_level: Mapped[str] = mapped_column(String(32), nullable=False, default="low")
     policy: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     configuration_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    discovery_source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    discovery_status: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    discovery_checksum: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    discovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class McpCredentialReference(UUIDPrimaryKeyMixin, TimestampMixin, Base):

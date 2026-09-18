@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
 from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.core.utils import canonical_payload, payload_hash
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.governance.agent_policy import agent_allowed_mcp_tool_names
 from backend.app.domains.capabilities.mcp.execution.contracts import (
@@ -18,10 +19,8 @@ from backend.app.domains.capabilities.mcp.execution.contracts import (
     snapshot_audit_metadata,
 )
 from backend.app.domains.capabilities.mcp.execution.payloads import (
-    canonical_payload,
     error_code,
     hash_from_payload,
-    payload_hash,
     response_hash_from_payload,
 )
 from backend.app.domains.capabilities.mcp.execution.payloads import (

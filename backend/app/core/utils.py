@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import overload
 from uuid import UUID
+
+
+def canonical_payload(payload: dict[str, object]) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def payload_hash(payload: dict[str, object]) -> str:
+    return sha256(canonical_payload(payload).encode("utf-8")).hexdigest()
 
 
 def dict_or_empty(value: object) -> dict[str, object]:

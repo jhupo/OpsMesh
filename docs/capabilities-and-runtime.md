@@ -316,6 +316,20 @@ reimplement MCP framing or JSON-RPC parsing. The runtime image or connector must
 MCP Python SDK and return a serialized SDK `CallToolResult`; the API and worker hosts never execute
 user-controlled stdio processes.
 
+As of 2026-09-18, remote MCP servers also support explicit tool discovery through the SDK's
+paginated `ClientSession.list_tools()`. The server connection stores URL, transport, and a declared
+`auth_method` (`none`, `static_header`, `bearer_token`, or generic `credential_ref`); HTTP
+authorization headers must be stored in encrypted workspace-scoped credential payloads, never in
+`external_ref` or the server connection. A credentialed discovery selects exactly one eligible credential and binds
+that reference for subsequent execution; an unauthenticated server never forwards workspace
+credentials. Discovery records titles, descriptions, input/output schemas and a checksum,
+but never authorizes the tool by itself. A manager enables each discovered tool through the existing
+resource-review path; new and changed tools default to medium risk and per-call approval. Changed
+or removed declarations revoke active discovered tools and increment
+their configuration versions, invalidating old Run snapshots. OAuth client-credentials and
+authorization-code flows are not yet implemented; those modes are rejected rather than treated as
+working bearer-token integrations. See the [log-analysis workflow example](examples/mcp-log-analysis-workflow.md).
+
 Docker stdio credentials use hosted encrypted payloads with an `env` string mapping. The worker
 decrypts them only at invocation and streams the request through `docker exec` stdin, so raw values
 are not stored in runtime command records or process arguments. Self-hosted stdio credentials use

@@ -10,7 +10,6 @@ from backend.app.domains.capabilities.mcp.models import McpServer
 MCP_LIMIT_COUNTED_STATUSES = (
     "completed",
     "failed",
-    "waiting_approval",
     "waiting_self_hosted",
 )
 

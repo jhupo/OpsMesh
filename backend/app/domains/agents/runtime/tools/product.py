@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.core.security.redaction import redact_sensitive_text
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.core.utils import string_list
+from backend.app.core.utils import payload_hash, string_list
 from backend.app.domains.agents.memory.authorization import (
     memory_read_scopes,
     memory_write_scopes,
@@ -220,6 +220,7 @@ class ProductToolExecutor:
         self._request_approval(
             context=context,
             tool_name=tool_name,
+            arguments=arguments,
             execution_review=policy_decision,
         )
         return AgentRuntimeToolResult(
@@ -241,6 +242,7 @@ class ProductToolExecutor:
         *,
         context: AgentRuntimeContext,
         tool_name: str,
+        arguments: dict[str, object],
         execution_review: ApprovalPolicyDecision,
     ) -> None:
         ApprovalService(self._session).create_approval(
@@ -255,6 +257,7 @@ class ProductToolExecutor:
             risk_level=execution_review.risk_level,
             payload={
                 "tool_name": tool_name,
+                "arguments_sha256": payload_hash(arguments),
                 "reason": "product_tool_execution_review_requires_approval",
                 "execution_review": execution_review.approval_payload(),
             },

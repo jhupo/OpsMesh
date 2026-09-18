@@ -62,6 +62,20 @@ class ResourceReviewDecisionService:
         )
         if target is None:
             return
+        if isinstance(target, McpServer | McpToolAllowlist | McpCredentialReference):
+            snapshot = payload.get("snapshot")
+            if (
+                not isinstance(snapshot, dict)
+                or snapshot.get("configuration_version") != target.configuration_version
+                or target.status != "pending_approval"
+            ):
+                raise ValueError("MCP resource changed after review was requested")
+            if (
+                isinstance(target, McpToolAllowlist)
+                and target.discovery_source == "mcp"
+                and snapshot.get("discovery_checksum") != target.discovery_checksum
+            ):
+                raise ValueError("Discovered MCP tool changed after review was requested")
         next_status = review_target_next_status(target, status)
         target.status = next_status
         AuditService(self._session).record_user_action(

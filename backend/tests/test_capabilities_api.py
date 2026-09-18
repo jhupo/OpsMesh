@@ -828,7 +828,7 @@ def test_mcp_server_connection_update_resets_health_and_records_redacted_audit()
     updated = client.patch(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server_id}",
         headers=_headers(owner.id),
-        json={"connection": {"url": "https://new.example.test/mcp?token=secret"}},
+        json={"connection": {"url": "https://new.example.test/mcp"}},
     )
 
     assert updated.status_code == 200
@@ -988,7 +988,7 @@ def test_mcp_credentials_can_be_listed_filtered_and_disabled() -> None:
     assert "missing_required_credentials" in catalog.json()["items"][0]["blocked_reasons"]
 
 
-def test_mcp_server_response_redacts_connection_secrets_and_url_details() -> None:
+def test_mcp_server_rejects_inline_secrets_and_redacts_connection_details() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
 
@@ -1006,6 +1006,19 @@ def test_mcp_server_response_redacts_connection_secrets_and_url_details() -> Non
             },
         },
     )
+    assert created.status_code == 400
+    assert "secret-token" not in str(created.json())
+    assert "sk-secret" not in str(created.json())
+
+    created = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "remote-tools",
+            "server_type": "streamable_http",
+            "connection": {"url": "https://mcp.example.test/private/rpc"},
+        },
+    )
     listed = client.get(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(owner.id),
@@ -1017,9 +1030,9 @@ def test_mcp_server_response_redacts_connection_secrets_and_url_details() -> Non
     assert created.json()["connection"] == {
         "url_configured": True,
         "url_host": "mcp.example.test",
-        "headers": "[redacted]",
-        "nested": {"api_key": "[redacted]"},
         "transport": "streamable_http",
+        "auth_method": "none",
+        "requires_credentials": False,
     }
     assert listed.status_code == 200
     assert listed.json()["items"][0]["connection"]["url_host"] == "mcp.example.test"
@@ -1142,10 +1155,12 @@ def test_mcp_catalog_summarizes_tools_credentials_and_agent_scope() -> None:
     assert by_name["image-tools"]["execution_mode"] == "hosted"
     assert by_name["image-tools"]["credential_status"] == "server_configured"
     assert by_name["image-tools"]["credential_count"] == 1
-    assert by_name["image-tools"]["executable"] is True
+    assert by_name["image-tools"]["executable"] is False
+    assert "server_health_unready" in by_name["image-tools"]["blocked_reasons"]
     assert by_name["image-tools"]["connection_summary"] == {
         "requires_credentials": True,
         "transport": "streamable_http",
+        "auth_method": "credential_ref",
         "remote_host": "mcp.example.test",
         "has_remote_url": True,
         "has_stdio_command": False,
@@ -1194,6 +1209,103 @@ def test_mcp_catalog_flags_missing_required_credentials() -> None:
     assert body["credential_status"] == "missing_required"
     assert body["executable"] is False
     assert "missing_required_credentials" in body["blocked_reasons"]
+
+
+def test_remote_mcp_discovery_requires_enablement_and_revokes_changed_tools(monkeypatch) -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+    server = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
+        headers=_headers(owner.id),
+        json={
+            "name": "log-data",
+            "server_type": "streamable_http",
+            "connection": {
+                "url": "https://mcp.example.test/rpc",
+                "auth_method": "bearer_token",
+            },
+        },
+    )
+    assert server.status_code == 201
+    server_id = server.json()["id"]
+    credential = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
+        headers=_headers(owner.id),
+        json={
+            "mcp_server_id": server_id,
+            "name": "log-data-token",
+            "provider": "hosted",
+            "secret_payload": {"bearer_token": "secret-token"},
+        },
+    )
+    assert credential.status_code == 201
+
+    description = "Fetch bounded service logs"
+
+    async def list_tools(**kwargs):  # noqa: ANN003, ANN202
+        assert kwargs["headers"]["authorization"] == "Bearer secret-token"
+        return [{
+            "name": "fetch_logs",
+            "title": "Fetch logs",
+            "description": description,
+            "inputSchema": {
+                "type": "object",
+                "properties": {"service": {"type": "string"}},
+                "required": ["service"],
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {"records": {"type": "array"}},
+            },
+        }]
+
+    monkeypatch.setattr(
+        "backend.app.domains.capabilities.mcp.catalog.discovery.list_remote_mcp_tools_async",
+        list_tools,
+    )
+    base = f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server_id}"
+    discovered = client.post(f"{base}/discover", headers=_headers(owner.id), json={})
+    assert discovered.status_code == 200
+    assert discovered.json()["added_tools"] == ["fetch_logs"]
+    assert "secret-token" not in str(discovered.json())
+    tools = client.get(f"{base}/discovered-tools", headers=_headers(owner.id))
+    assert tools.status_code == 200
+    assert tools.json()[0]["status"] == "discovered"
+    assert tools.json()[0]["requires_approval"] is True
+    assert tools.json()[0]["risk_level"] == "medium"
+    tool_id = tools.json()[0]["id"]
+    assert tools.json()[0]["output_schema"]["properties"]["records"]["type"] == "array"
+    foreign = client.get(
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers/"
+        f"{server_id}/discovered-tools",
+        headers=_headers(other.id),
+    )
+    assert foreign.status_code == 404
+    before_enable = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tools",
+        headers=_headers(owner.id),
+    )
+    assert before_enable.json() == []
+
+    enabled = client.post(f"{base}/tools/{tool_id}/enable", headers=_headers(owner.id))
+    assert enabled.status_code == 200
+    assert enabled.json()["status"] == "active"
+    allowed = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tools",
+        headers=_headers(owner.id),
+    )
+    assert [tool["tool_name"] for tool in allowed.json()] == ["fetch_logs"]
+
+    description = "Fetch bounded service logs with cursor"
+    changed = client.post(f"{base}/discover", headers=_headers(owner.id), json={})
+    assert changed.status_code == 200
+    assert changed.json()["changed_tools"] == ["fetch_logs"]
+    after_change = client.get(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tools",
+        headers=_headers(owner.id),
+    )
+    assert after_change.json() == []
 
 
 def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
@@ -1360,8 +1472,7 @@ def test_workspace_capability_governance_can_refresh_stale_mcp_health_checks() -
             "name": "refreshable-remote-tools",
             "server_type": "streamable_http",
             "connection": {
-                "url": "https://mcp.example.test/private/rpc?token=hidden",
-                "headers": {"Authorization": "Bearer hidden"},
+                "url": "https://mcp.example.test/private/rpc",
             },
         },
     )
@@ -1418,6 +1529,8 @@ def test_workspace_capability_governance_can_refresh_stale_mcp_health_checks() -
     assert dry_body["results"][0]["health_status"] == "healthy"
     assert dry_body["results"][0]["connection"] == {
         "requires_credentials": False,
+        "transport": "streamable_http",
+        "auth_method": "none",
         "remote_host": "mcp.example.test",
         "has_remote_url": True,
         "has_stdio_command": False,
@@ -2177,7 +2290,7 @@ def test_agent_tool_policy_diagnostics_explain_skill_and_mcp_effective_access() 
             "server_type": "hosted",
             "connection": {
                 "transport": "streamable_http",
-                "url": "https://mcp.example.test/private?token=hidden",
+                "url": "https://mcp.example.test/private",
             },
         },
     )
@@ -2288,7 +2401,7 @@ def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
             "server_type": "hosted",
             "connection": {
                 "transport": "streamable_http",
-                "url": "https://mcp.example.test/private?token=hidden",
+                "url": "https://mcp.example.test/private",
                 "requires_credentials": True,
             },
         },
@@ -2408,11 +2521,18 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
             "server_type": "hosted",
             "connection": {
                 "transport": "streamable_http",
-                "url": "https://mcp.example.test/private?token=hidden",
+                "url": "https://mcp.example.test/private",
                 "requires_credentials": True,
             },
         },
     )
+    checked = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/health-check",
+        headers=_headers(owner.id),
+        json={"health_status": "healthy"},
+    )
+    assert checked.status_code == 200
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{server.json()['id']}/tools",
@@ -2546,7 +2666,7 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
             "name": "image-tools",
             "server_type": "hosted",
             "status": "active",
-            "health_status": "unknown",
+            "health_status": "healthy",
             "execution_mode": "hosted",
             "executable": False,
             "credential_status": "missing_required",
@@ -2603,7 +2723,7 @@ def test_workspace_capability_governance_actions_apply_safe_quarantine() -> None
         json={
             "name": "broken-http",
             "server_type": "streamable_http",
-            "connection": {"headers": {"Authorization": "Bearer hidden-server-token"}},
+            "connection": {"url": "https://mcp.example.test/broken"},
         },
     )
     safe_repairable_server = client.post(
@@ -2614,11 +2734,15 @@ def test_workspace_capability_governance_actions_apply_safe_quarantine() -> None
             "server_type": "hosted",
             "connection": {
                 "transport": "streamable_http",
-                "url": "https://mcp.example.test/private?token=hidden",
+                "url": "https://mcp.example.test/private",
                 "requires_credentials": True,
             },
         },
     )
+    stored_broken_server = session.get(McpServer, UUID(broken_server.json()["id"]))
+    assert stored_broken_server is not None
+    stored_broken_server.connection = {}
+    session.commit()
     broken_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{broken_server.json()['id']}/tools",
@@ -2742,8 +2866,7 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
             "name": "image-tools",
             "server_type": "streamable_http",
             "connection": {
-                "url": "https://mcp.example.test/private?token=hidden",
-                "headers": {"Authorization": "Bearer hidden"},
+                "url": "https://mcp.example.test/private",
             },
         },
     )
@@ -2753,6 +2876,13 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
         headers=_headers(owner.id),
         json={"tool_name": "generate_image"},
     )
+    checked = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/health-check",
+        headers=_headers(owner.id),
+        json={"health_status": "healthy"},
+    )
+    assert checked.status_code == 200
     agent = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
         headers=_headers(owner.id),
@@ -2862,8 +2992,7 @@ def test_workspace_capability_governance_reenables_disabled_mcp_tools() -> None:
             "name": "image-tools",
             "server_type": "streamable_http",
             "connection": {
-                "url": "https://mcp.example.test/private?token=hidden",
-                "headers": {"Authorization": "Bearer hidden"},
+                "url": "https://mcp.example.test/private",
             },
         },
     )
@@ -2873,6 +3002,13 @@ def test_workspace_capability_governance_reenables_disabled_mcp_tools() -> None:
         headers=_headers(owner.id),
         json={"tool_name": "generate_image", "risk_level": "low"},
     )
+    checked = client.post(
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
+        f"{server.json()['id']}/health-check",
+        headers=_headers(owner.id),
+        json={"health_status": "healthy"},
+    )
+    assert checked.status_code == 200
     disabled = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}"
         f"/tools/{allowed.json()['id']}/disable",

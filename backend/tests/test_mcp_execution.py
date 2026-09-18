@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.models import User
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.domains.capabilities.mcp.execution.contracts import (
@@ -840,8 +841,12 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
         workspace_id=workspace.id,
         mcp_server_id=server.id,
         name="api-key",
-        provider="static_header",
-        external_ref="x-api-key: test-secret",
+        provider="hosted",
+        external_ref="",
+        encrypted_secret_payload=SecretEncryptionService(
+            secret="test-credential-secret", key_id="test"
+        ).encrypt_payload({"headers": {"x-api-key": "test-secret"}}).ciphertext,
+        encryption_key_id="test",
         scopes=["images.write"],
     )
     session.add(credential)
@@ -858,7 +863,14 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
     )
 
     result = asyncio.run(
-        McpToolExecutionService(session, McpAdapterResolver()).execute(
+        McpToolExecutionService(
+            session,
+            McpAdapterResolver(
+                secret_service=SecretEncryptionService(
+                    secret="test-credential-secret", key_id="test"
+                )
+            ),
+        ).execute(
             McpExecutionRequest(
                 workspace_id=workspace.id,
                 agent_run_id=run.id,

@@ -31,6 +31,24 @@ class McpServerHealthCheckRequest(BaseModel):
     error_code: str | None = Field(default=None, max_length=120)
 
 
+class McpServerDiscoveryRequest(BaseModel):
+    credential_id: UUID | None = None
+
+
+class McpServerDiscoveryResponse(BaseModel):
+    workspace_id: UUID
+    mcp_server_id: UUID
+    status: str
+    discovery_version: int
+    discovered_at: datetime | None
+    discovery_checksum: str | None
+    tool_count: int
+    added_tools: list[str] = Field(default_factory=list)
+    changed_tools: list[str] = Field(default_factory=list)
+    removed_tools: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
 class McpServerResponse(TimestampedModel):
     workspace_id: UUID
     name: str
@@ -42,6 +60,11 @@ class McpServerResponse(TimestampedModel):
     health_status: str
     last_health_check_at: datetime | None
     last_error: str | None
+    discovery_status: str
+    discovery_version: int
+    discovered_at: datetime | None
+    discovery_checksum: str | None
+    discovery_error: str | None
 
     @field_serializer("connection")
     def _serialize_connection(self, connection: dict[str, object]) -> dict[str, object]:
@@ -51,11 +74,17 @@ class McpServerResponse(TimestampedModel):
     def _serialize_last_error(self, value: str | None) -> str | None:
         return redact_sensitive_text(value) if value is not None else None
 
+    @field_serializer("discovery_error")
+    def _serialize_discovery_error(self, value: str | None) -> str | None:
+        return redact_sensitive_text(value) if value is not None else None
+
 
 class McpToolAllowRequest(BaseModel):
     tool_name: str = Field(min_length=1, max_length=160)
+    title: str = Field(default="", max_length=240)
     description: str = Field(default="", max_length=2_000)
     input_schema: dict[str, object] = Field(default_factory=dict)
+    output_schema: dict[str, object] = Field(default_factory=dict)
     capability_key: str | None = Field(default=None, max_length=120)
     requires_approval: bool = False
     risk_level: str = Field(default="low", max_length=32)
@@ -64,8 +93,10 @@ class McpToolAllowRequest(BaseModel):
 
 class McpToolAllowUpdateRequest(BaseModel):
     tool_name: str | None = Field(default=None, min_length=1, max_length=160)
+    title: str | None = Field(default=None, max_length=240)
     description: str | None = Field(default=None, max_length=2_000)
     input_schema: dict[str, object] | None = None
+    output_schema: dict[str, object] | None = None
     capability_key: str | None = Field(default=None, max_length=120)
     requires_approval: bool | None = None
     risk_level: str | None = Field(default=None, max_length=32)
@@ -89,14 +120,20 @@ class McpToolAllowResponse(TimestampedModel):
     workspace_id: UUID
     mcp_server_id: UUID
     tool_name: str
+    title: str
     description: str
     input_schema: dict[str, object]
+    output_schema: dict[str, object]
     capability_key: str | None
     requires_approval: bool
     risk_level: str
     policy: dict[str, object]
     status: str
     configuration_version: int
+    discovery_source: str
+    discovery_status: str
+    discovery_checksum: str | None
+    discovered_at: datetime | None
 
     @field_serializer("policy")
     def _serialize_policy(self, value: dict[str, object]) -> dict[str, object]:

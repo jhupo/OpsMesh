@@ -494,14 +494,18 @@ def tool_definitions_for_snapshot(
         name = descriptor.get("name")
         source = descriptor.get("source")
         description = descriptor.get("description")
+        title = descriptor.get("title")
         input_schema = descriptor.get("input_schema")
+        output_schema = descriptor.get("output_schema")
         parameters = item.get("parameters")
         locked_parameters = item.get("locked_parameters")
         if (
             not isinstance(name, str)
             or not isinstance(source, str)
             or not isinstance(description, str)
+            or not isinstance(title, str)
             or not isinstance(input_schema, dict)
+            or not isinstance(output_schema, dict)
             or not isinstance(parameters, dict)
             or not isinstance(locked_parameters, list)
             or not all(isinstance(field, str) for field in locked_parameters)
@@ -513,6 +517,8 @@ def tool_definitions_for_snapshot(
                 source=source,
                 description=description,
                 input_schema=dict(input_schema),
+                title=title,
+                output_schema=dict(output_schema),
                 parameters=dict(parameters),
                 locked_parameters=tuple(locked_parameters),
                 requires_approval=descriptor.get("requires_approval") is True,

@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     readiness_worker_check_enabled: bool = Field(default=False)
     readiness_worker_stale_after_seconds: int = Field(default=300, ge=60)
     mcp_health_check_stale_after_seconds: int = Field(default=24 * 60 * 60, ge=1)
+    mcp_tool_timeout_seconds: int = Field(default=30, ge=1, le=300)
     blocking_thread_pool_workers: int = Field(
         default=_RESOURCE_RECOMMENDATION.blocking_thread_pool_workers,
         ge=1,
@@ -232,6 +233,7 @@ class Settings(BaseSettings):
             "mcp_health_check_stale_after_seconds": (
                 self.mcp_health_check_stale_after_seconds
             ),
+            "mcp_tool_timeout_seconds": self.mcp_tool_timeout_seconds,
             "blocking_thread_pool_workers": self.blocking_thread_pool_workers,
             "tracing_enabled": self.tracing_enabled,
             "otel_logs_enabled": self.otel_logs_enabled,

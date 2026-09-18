@@ -6,6 +6,7 @@ from time import monotonic
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_text
+from backend.app.core.utils import canonical_payload, payload_hash
 from backend.app.domains.capabilities.mcp.execution.contracts import (
     McpExecutionError,
     McpExecutionPending,
@@ -17,7 +18,6 @@ from backend.app.domains.capabilities.mcp.execution.events import (
     McpExecutionNotifier,
     McpToolCallLogService,
 )
-from backend.app.domains.capabilities.mcp.execution.payloads import canonical_payload, payload_hash
 from backend.app.domains.capabilities.mcp.execution.policy import McpExecutionPolicy
 from backend.app.domains.capabilities.mcp.models import (
     McpCredentialReference,

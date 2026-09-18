@@ -4,17 +4,20 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import TracebackType
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.utils import payload_hash
 from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
     AgentRuntimeExecutor,
+    AgentRuntimeStructuredOutput,
     AgentRuntimeToolExecutor,
     AgentRuntimeToolResult,
 )
@@ -23,10 +26,15 @@ from backend.app.domains.agents.runtime.errors import (
     AgentRuntimePolicyError,
 )
 from backend.app.domains.agents.runtime.state import AgentRunStateStore
+from backend.app.domains.agents.runtime.tools.gateway import AgentToolGateway
 from backend.app.domains.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,
 )
-from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
+from backend.app.domains.orchestration.approvals.models import Approval
+from backend.app.domains.orchestration.approvals.pending_tools import (
+    PendingToolInvocationRequest,
+    PendingToolInvocationService,
+)
 from backend.app.domains.orchestration.approvals.service import ApprovalService
 from backend.app.domains.orchestration.approvals.waiting import ApprovalWaitingService
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
@@ -178,10 +186,17 @@ class RunExecutionService:
         elif result.status == "waiting_subworkflow":
             self._lifecycle().mark_run_waiting_subworkflow(run)
         elif result.status == "completed":
+            output = result.output or {}
             self._lifecycle().mark_run_completed(
                 run,
                 AgentRunResult(
-                    final_output=json.dumps(result.output or {}, ensure_ascii=False, default=str),
+                    final_output=json.dumps(output, ensure_ascii=False, default=str),
+                    raw_output=output,
+                    structured_output=AgentRuntimeStructuredOutput(
+                        value=output,
+                        schema_name="direct_tool_result",
+                        validated=False,
+                    ),
                 ),
                 job.requested_by_user_id,
             )
@@ -190,6 +205,11 @@ class RunExecutionService:
                 run,
                 ValueError(str((result.error or {}).get("message", "Tool failed"))),
             )
+        if result.status in {"completed", "failed"} and self._node_type(run) in {"tool", "mcp"}:
+            PendingToolInvocationService(
+                self.session,
+                self._request_builder().secret_service(),
+            ).mark_decisions_consumed(workspace_id=run.workspace_id, run_id=run.id)
         self._commit_and_refresh(run)
         return run
 
@@ -486,12 +506,145 @@ class RunExecutionService:
             context = request.context
         if tool_executor is None:
             raise ValueError("Direct tool node has no authorized tool executor")
-        return await tool_executor.execute_tool(
+        direct_approval = self._direct_tool_approval(run, tool_name)
+        approval_status = direct_approval.status if direct_approval is not None else None
+        tool_call_id = f"direct:{run.task_step_id}:{tool_name}"
+        approved_arguments = (
+            self._approved_direct_arguments(context, tool_name, arguments, direct_approval)
+            if direct_approval is not None
+            else None
+        )
+        if approval_status == "pending" and direct_approval is not None:
+            assert approved_arguments is not None
+            self._bind_direct_approval(
+                run,
+                step.id,
+                tool_name,
+                node_type,
+                approved_arguments,
+                tool_call_id,
+                direct_approval,
+            )
+            return AgentRuntimeToolResult(
+                status="waiting_approval",
+                metadata={"node_type": node_type, "tool_name": tool_name},
+            )
+        if approval_status == "rejected":
+            return AgentRuntimeToolResult(
+                status="failed",
+                error={
+                    "code": "tool_approval_rejected",
+                    "message": "Direct tool execution was rejected",
+                },
+                metadata={"node_type": node_type, "tool_name": tool_name},
+            )
+        if approval_status == "approved" and direct_approval is not None:
+            assert approved_arguments is not None
+            self._bind_direct_approval(
+                run,
+                step.id,
+                tool_name,
+                node_type,
+                approved_arguments,
+                tool_call_id,
+                direct_approval,
+            )
+        result = await tool_executor.execute_tool(
             context=context,
             tool_name=tool_name,
             arguments=arguments,
-            approval_granted=False,
+            tool_call_id=tool_call_id,
+            approval_granted=approval_status == "approved",
         )
+        if result.status == "waiting_approval":
+            direct_approval = self._direct_tool_approval(run, tool_name)
+            if direct_approval is None or direct_approval.status != "pending":
+                raise ValueError("Direct tool approval was not persisted")
+            approved_arguments = self._approved_direct_arguments(
+                context, tool_name, arguments, direct_approval
+            )
+            self._bind_direct_approval(
+                run,
+                step.id,
+                tool_name,
+                node_type,
+                approved_arguments,
+                tool_call_id,
+                direct_approval,
+            )
+        return result
+
+    def _approved_direct_arguments(
+        self,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        arguments: dict[str, object],
+        approval: Approval,
+    ) -> dict[str, object]:
+        prepared = AgentToolGateway(self.session).prepare(
+            context=context,
+            tool_name=tool_name,
+            arguments=arguments,
+        )
+        payload = approval.payload if isinstance(approval.payload, dict) else {}
+        if payload.get("arguments_sha256") != payload_hash(prepared.arguments):
+            raise ValueError("Direct tool arguments changed after approval was requested")
+        return prepared.arguments
+
+    def _bind_direct_approval(
+        self,
+        run: AgentRun,
+        step_id: UUID,
+        tool_name: str,
+        node_type: str,
+        arguments: dict[str, object],
+        tool_call_id: str,
+        approval: Approval,
+    ) -> None:
+        pending = PendingToolInvocationService(
+            self.session,
+            self._request_builder().secret_service(),
+        )
+        invocation = pending.create_or_get(
+            PendingToolInvocationRequest(
+                workspace_id=run.workspace_id,
+                task_id=run.task_id,
+                agent_run_id=run.id,
+                approval_id=approval.id,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                tool_kind=node_type,
+                arguments=arguments,
+                policy_decision={"source": "workflow.direct_tool"},
+                idempotency_key=f"direct:{run.id}:{step_id}",
+            )
+        )
+        if approval.status == "approved" and invocation.status == "pending":
+            pending.record_decision(
+                workspace_id=run.workspace_id,
+                approval_id=approval.id,
+                status="approved",
+            )
+
+    def _direct_tool_approval(self, run: AgentRun, tool_name: str) -> Approval | None:
+        approvals = self.session.scalars(
+            select(Approval)
+            .where(
+                Approval.workspace_id == run.workspace_id,
+                Approval.agent_run_id == run.id,
+                Approval.approval_type.in_(("product.tool", "mcp.tool")),
+            )
+            .order_by(Approval.created_at.desc(), Approval.id.desc())
+        )
+        has_prior_tool_approval = False
+        for approval in approvals:
+            has_prior_tool_approval = True
+            payload = approval.payload
+            if isinstance(payload, dict) and payload.get("tool_name") == tool_name:
+                return approval
+        if has_prior_tool_approval:
+            raise ValueError("Direct tool changed after approval was requested")
+        return None
 
     def _node_type(self, run: AgentRun) -> str | None:
         if run.task_step_id is None:

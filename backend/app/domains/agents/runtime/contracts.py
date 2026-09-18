@@ -191,6 +191,8 @@ class AgentRuntimeToolDefinition:
     source: str
     description: str
     input_schema: dict[str, object]
+    title: str = ""
+    output_schema: dict[str, object] = field(default_factory=dict)
     parameters: dict[str, object] = field(default_factory=dict)
     locked_parameters: tuple[str, ...] = ()
     requires_approval: bool = False

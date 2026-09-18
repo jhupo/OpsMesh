@@ -25,6 +25,7 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 17. [Open-source SDK Strategy](open-source-sdk-strategy.md)：官方 SDK 采用边界和禁止重复造轮子的规则。
 18. [Adapter Boundaries](adapter-boundaries.md)：MCP、Provider health 和 runtime backend registry 的 adapter 合同。
 19. [Shared Domain Services](shared-domain-services.md)：跨领域服务的 owner 与复用规则。
+20. [MCP 日志分析员工流程示例](examples/mcp-log-analysis-workflow.md)：工具自动发现、员工/专家角色、结构化编排、审批与记忆。
 
 ## 架构与质量
 

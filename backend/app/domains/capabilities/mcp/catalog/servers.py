@@ -18,7 +18,10 @@ from backend.app.domains.capabilities.mcp.catalog.contracts import (
     McpToolAllowRequest,
     McpToolAllowUpdateRequest,
 )
-from backend.app.domains.capabilities.mcp.catalog.rules import connection_summary
+from backend.app.domains.capabilities.mcp.catalog.rules import (
+    connection_summary,
+    normalize_connection,
+)
 from backend.app.domains.capabilities.mcp.catalog.service import McpCatalogService
 from backend.app.domains.capabilities.mcp.models import (
     McpServer,
@@ -31,6 +34,7 @@ from backend.app.domains.capabilities.mcp.policy import (
 from backend.app.domains.capabilities.resources.schema import (
     normalize_object_schema,
     reject_embedded_secrets,
+    validate_json_schema,
 )
 from backend.app.domains.workspace.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.domains.workspace.reviews.policy import (
@@ -60,16 +64,18 @@ class McpServerService:
         *,
         commit: bool = True,
     ) -> McpServer:
+        normalized_connection = normalize_connection(data.server_type, data.connection)
+        normalized_data = data.model_copy(update={"connection": normalized_connection})
         review = ResourcePolicyReviewBuilder(self._session, self._settings).review_mcp_server(
             workspace_id=workspace_id,
-            server_type=data.server_type,
-            connection=data.connection,
-            visibility=data.visibility,
+            server_type=normalized_data.server_type,
+            connection=normalized_data.connection,
+            visibility=normalized_data.visibility,
         )
         server = McpServer(
             workspace_id=workspace_id,
             status=RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE,
-            **data.model_dump(),
+            **normalized_data.model_dump(),
         )
         self._session.add(server)
         flush_or_raise_conflict(self._session, "MCP server name already exists")
@@ -131,7 +137,11 @@ class McpServerService:
         if data.connection is None and data.visibility is None:
             raise ValueError("Provide connection or visibility to update MCP server")
 
-        next_connection = data.connection if data.connection is not None else server.connection
+        next_connection = (
+            normalize_connection(server.server_type, data.connection)
+            if data.connection is not None
+            else server.connection
+        )
         next_visibility = data.visibility or server.visibility
         review = ResourcePolicyReviewBuilder(self._session, self._settings).review_mcp_server(
             workspace_id=workspace_id,
@@ -143,7 +153,7 @@ class McpServerService:
         previous_visibility = server.visibility
         connection_changed = data.connection is not None
         if data.connection is not None:
-            server.connection = dict(data.connection)
+            server.connection = dict(next_connection)
         if data.visibility is not None:
             server.visibility = data.visibility
         server.configuration_version += 1
@@ -151,6 +161,21 @@ class McpServerService:
             server.health_status = "unknown"
             server.last_health_check_at = None
             server.last_error = None
+            if server.discovery_version > 0:
+                server.discovery_status = "stale"
+                server.discovery_error = None
+                discovered_tools = self._session.scalars(
+                    select(McpToolAllowlist).where(
+                        McpToolAllowlist.workspace_id == workspace_id,
+                        McpToolAllowlist.mcp_server_id == server.id,
+                        McpToolAllowlist.discovery_source == "mcp",
+                    )
+                )
+                for tool in discovered_tools:
+                    if tool.status in {"active", "pending_approval"}:
+                        tool.status = "discovered"
+                        tool.discovery_status = "stale"
+                        tool.configuration_version += 1
         if review.required:
             server.status = RESOURCE_STATUS_PENDING_APPROVAL
             ResourceReviewApprovalService(self._session).request_resource_review(
@@ -199,6 +224,24 @@ class McpServerService:
     def list_mcp_servers(self, workspace_id: UUID, page: PageParams) -> tuple[list[McpServer], int]:
         return self._catalog().list_mcp_servers(workspace_id, page)
 
+    def discovered_mcp_tools(
+        self,
+        workspace_id: UUID,
+        mcp_server_id: UUID,
+    ) -> list[McpToolAllowlist]:
+        require_mcp_server(self._session, workspace_id, mcp_server_id)
+        return list(
+            self._session.scalars(
+                select(McpToolAllowlist)
+                .where(
+                    McpToolAllowlist.workspace_id == workspace_id,
+                    McpToolAllowlist.mcp_server_id == mcp_server_id,
+                    McpToolAllowlist.discovery_source == "mcp",
+                )
+                .order_by(McpToolAllowlist.tool_name.asc())
+            )
+        )
+
     def allow_mcp_tool(
         self,
         workspace_id: UUID,
@@ -211,7 +254,10 @@ class McpServerService:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
         try:
             normalized_schema = normalize_object_schema(data.input_schema)
+            normalized_output_schema = dict(data.output_schema)
+            validate_json_schema(normalized_output_schema)
             reject_embedded_secrets(normalized_schema, path="input_schema")
+            reject_embedded_secrets(normalized_output_schema, path="output_schema")
             reject_embedded_secrets(data.policy, path="policy")
         except ValueError as exc:
             raise DomainError(
@@ -219,7 +265,12 @@ class McpServerService:
                 code="mcp_tool_schema_invalid",
                 status_code=422,
             ) from exc
-        normalized_data = data.model_copy(update={"input_schema": normalized_schema})
+        normalized_data = data.model_copy(
+            update={
+                "input_schema": normalized_schema,
+                "output_schema": normalized_output_schema,
+            }
+        )
         review = ResourcePolicyReviewBuilder(
             self._session,
             self._settings,
@@ -260,6 +311,7 @@ class McpServerService:
                     "policy": dict(allow.policy),
                     "status": allow.status,
                     "configuration_version": allow.configuration_version,
+                    "discovery_checksum": allow.discovery_checksum,
                 },
             )
         if actor_user_id is not None:
@@ -284,6 +336,96 @@ class McpServerService:
             self._session.refresh(allow)
         return allow
 
+    def enable_discovered_mcp_tool(
+        self,
+        workspace_id: UUID,
+        mcp_server_id: UUID,
+        allowlist_id: UUID,
+        actor_user_id: UUID | None = None,
+    ) -> McpToolAllowlist:
+        server = require_mcp_server(self._session, workspace_id, mcp_server_id)
+        allow = self._session.scalar(
+            select(McpToolAllowlist)
+            .where(
+                McpToolAllowlist.workspace_id == workspace_id,
+                McpToolAllowlist.mcp_server_id == mcp_server_id,
+                McpToolAllowlist.id == allowlist_id,
+                McpToolAllowlist.discovery_source == "mcp",
+            )
+            .with_for_update()
+        )
+        if allow is None:
+            raise ValueError("Discovered MCP tool not found")
+        if server.status != "active" or server.discovery_status != "succeeded":
+            raise DomainError(
+                "MCP server must be active and rediscovered before tools can be enabled",
+                code="mcp_discovery_stale",
+                status_code=409,
+            )
+        if allow.discovery_status == "removed":
+            raise DomainError(
+                "Removed MCP tool cannot be enabled",
+                code="mcp_tool_removed",
+                status_code=409,
+            )
+        if allow.status in {"active", "pending_approval"}:
+            return allow
+        review = ResourcePolicyReviewBuilder(
+            self._session,
+            self._settings,
+        ).review_mcp_tool_allowlist(
+            workspace_id=workspace_id,
+            visibility=server.visibility,
+            tool_name=allow.tool_name,
+            requires_approval=allow.requires_approval,
+            risk_level=allow.risk_level,
+            policy=allow.policy,
+        )
+        allow.status = (
+            RESOURCE_STATUS_PENDING_APPROVAL if review.required else RESOURCE_STATUS_ACTIVE
+        )
+        allow.discovery_status = "current"
+        allow.configuration_version += 1
+        if review.required:
+            ResourceReviewApprovalService(self._session).request_resource_review(
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                approval_type=REVIEW_TYPE_MCP_TOOL_ALLOWLIST,
+                target_type="mcp_tool_allowlist",
+                target_id=allow.id,
+                target_name=allow.tool_name,
+                review=review,
+                snapshot={
+                    "id": str(allow.id),
+                    "mcp_server_id": str(allow.mcp_server_id),
+                    "tool_name": allow.tool_name,
+                    "title": allow.title,
+                    "description": allow.description,
+                    "input_schema": dict(allow.input_schema),
+                    "output_schema": dict(allow.output_schema),
+                    "status": allow.status,
+                    "configuration_version": allow.configuration_version,
+                    "discovery_checksum": allow.discovery_checksum,
+                },
+            )
+        if actor_user_id is not None:
+            AuditService(self._session).record_user_action(
+                workspace_id=workspace_id,
+                user_id=actor_user_id,
+                action="mcp_tool.enable_requested" if review.required else "mcp_tool.enabled",
+                target_type="mcp_tool_allowlist",
+                target_id=allow.id,
+                metadata={
+                    "mcp_server_id": str(mcp_server_id),
+                    "tool_name": allow.tool_name,
+                    "discovery_checksum": allow.discovery_checksum,
+                    "review_required": review.required,
+                },
+            )
+        commit_or_raise_conflict(self._session, "MCP tool is already allowed for this server")
+        self._session.refresh(allow)
+        return allow
+
     def update_mcp_tool(
         self,
         workspace_id: UUID,
@@ -305,13 +447,34 @@ class McpServerService:
         if allow is None:
             raise ValueError("MCP tool allowlist entry not found")
         changes = data.model_dump(exclude_unset=True)
+        if allow.discovery_source == "mcp":
+            if server.discovery_status != "succeeded" or allow.discovery_status in {
+                "stale", "removed"
+            }:
+                raise DomainError(
+                    "Rediscover the MCP server before editing this tool",
+                    code="mcp_discovery_stale",
+                    status_code=409,
+                )
+            if {"tool_name", "input_schema", "output_schema"} & changes.keys():
+                raise DomainError(
+                    "Discovered MCP tool name and schemas are owned by the remote server",
+                    code="mcp_discovery_metadata_read_only",
+                    status_code=409,
+                )
         next_input_schema = (
             data.input_schema if data.input_schema is not None else allow.input_schema
+        )
+        next_output_schema = (
+            data.output_schema if data.output_schema is not None else allow.output_schema
         )
         next_policy = data.policy if data.policy is not None else allow.policy
         try:
             normalized_schema = normalize_object_schema(next_input_schema)
+            normalized_output_schema = dict(next_output_schema)
+            validate_json_schema(normalized_output_schema)
             reject_embedded_secrets(normalized_schema, path="input_schema")
+            reject_embedded_secrets(normalized_output_schema, path="output_schema")
             reject_embedded_secrets(next_policy, path="policy")
         except ValueError as exc:
             raise DomainError(str(exc), code="mcp_tool_schema_invalid", status_code=422) from exc
@@ -345,6 +508,7 @@ class McpServerService:
         for field_name, value in changes.items():
             setattr(allow, field_name, value)
         allow.input_schema = normalized_schema
+        allow.output_schema = normalized_output_schema
         allow.policy = dict(next_policy)
         allow.configuration_version += 1
         if review.required:
@@ -369,6 +533,7 @@ class McpServerService:
                     "policy": dict(allow.policy),
                     "status": allow.status,
                     "configuration_version": allow.configuration_version,
+                    "discovery_checksum": allow.discovery_checksum,
                 },
             )
         if actor_user_id is not None:

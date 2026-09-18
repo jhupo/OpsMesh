@@ -17,6 +17,7 @@ from backend.app.domains.capabilities.catalog.product_tools import PRODUCT_TOOL_
 from backend.app.domains.capabilities.mcp.catalog.rules import (
     mcp_server_execution_blockers,
     requires_credentials,
+    selected_remote_credentials,
 )
 from backend.app.domains.capabilities.mcp.catalog.servers import McpServerService
 from backend.app.domains.capabilities.mcp.models import McpCredentialReference
@@ -47,9 +48,11 @@ class WorkspaceCapabilityCatalogService:
         tools = [
             CapabilityToolDescriptor(
                 name=definition.name,
+                title="",
                 source="product",
                 description=definition.description,
                 input_schema=definition.input_schema,
+                output_schema={},
                 requires_approval=definition.requires_approval,
                 risk_level=definition.risk_level,
                 required_resource_type=definition.required_resource_type,
@@ -65,12 +68,16 @@ class WorkspaceCapabilityCatalogService:
                 if credential.mcp_server_id in (None, server.id)
             ]
             credentials_required = requires_credentials(server)
+            if server.server_type in {"streamable_http", "sse", "hosted"}:
+                eligible_credentials = selected_remote_credentials(server, eligible_credentials)
             tools.append(
                 CapabilityToolDescriptor(
                     name=allow.tool_name,
+                    title=allow.title,
                     source="mcp",
                     description=allow.description,
                     input_schema=allow.input_schema,
+                    output_schema=allow.output_schema,
                     requires_approval=allow.requires_approval,
                     risk_level=allow.risk_level,
                     capability_key=allow.capability_key,
