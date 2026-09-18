@@ -6,6 +6,43 @@
 
 自动化不创建第二套执行引擎，也不创建永久占用的 Agent 或容器。等待消息和周期到期时只保存 Postgres 状态，执行和投递仍由现有 worker 负责。
 
+## 消息驱动协作（2026-09-18）
+
+本阶段实现的是通用消息接入和协作功能。外部插件在各自仓库实现渠道鉴权、收发和业务 API；本仓库只维护平台与独立 SDK，没有钉钉适配器或订单业务模块。
+
+自动化配置新增 `allowed_message_actions`，默认只有 `["start"]`，管理员必须明确开启续接和控制；`notify_progress` 默认 false，开启后发送任务状态及待审批信息。同一个 sender 在同一 automation、workspace 和 conversation 内才能引用自己的已接受事件。目标必须显式指定 `reply_to_event_id`，不会用“最近一条消息”猜测任务。
+
+| IncomingMessage.action | reply_to_event_id | 行为 |
+| --- | --- | --- |
+| start | 不提供 | 新建任务；已有同会话任务时按 queue/skip 策略处理 |
+| follow_up | 必须 | 原任务未结束则追加指令；结束后新建任务，input.previous_context 携带前次任务 ID、状态与有界脱敏结果 |
+| add_instruction | 必须 | 追加到原任务消息记录，供后续运行构造上下文；不重写已发出的模型请求 |
+| pause | 必须 | 人工接管：暂停任务、取消当前 Run 及其待审批项 |
+| resume | 必须 | 解除人工暂停，生成新的持久化待执行 Run；由既有队列恢复机制派发 |
+| cancel | 必须 | 取消原任务及运行；终态任务不会被自动重开 |
+
+“人工接管”目前是暂停、补充指令、恢复的任务控制，不是实时人工坐席系统；“续接”复用任务上下文，不共享不同用户的厂商会话。缺少信息时可由员工给出补问结果，用户通过 follow_up 继续；没有新增另一套对话引擎或自动理解控制命令的模型。
+
+`external_event_id`（SDK 的 event_id）在 automation 内唯一。相同消息重试返回相同事件；相同 ID 换内容会拒绝。控制动作、任务状态和事件消费在同一个数据库事务内落地，重试不会重复追加指令。消息派发、回复准备按 checked_at 轮转，暂停或等待的旧事件不会长期占满扫描批次。
+
+`AutomationClient.state(event_id)` 对应 `GET /automations/{id}/events/{event_id}`，返回事件状态、任务状态、有界结果及待审批 ID/类型/风险，不暴露审批密文或私有凭证。该接口要求现有 workspace READ 权限；它面向可信连接器，不是让渠道终端用户直接持有平台令牌。
+
+`automation.reply` 的 data 是 SDK `AutomationReply`：kind 为 result、progress、action_required 或 control_applied，包含 conversation_id、sender_id、source_event_id、task_id 和单调 sequence。结果与续接上下文上限为 32,000 个 ASCII JSON 字符，超出返回 preview 和 truncated；完整产物继续走现有工作区授权接口。通知是状态变化提示，不是 token 级流式输出。
+
+外部接收方调用 `parse_automation_delivery`，先验签，再核对 workspace/automation，按 envelope.id 持久化去重，并用 event_id + sequence 忽略迟到通知。平台采用至少一次投递；已成功/死信的重复 worker job 不重复发送，真实网络请求发出后连接中断仍可能重试，因此不能宣称跨系统 exactly-once。明确重放继续使用既有 Webhook 重放接口。
+
+回复入队和真正发送前都检查自动化主体权限及发送者授权，投递还检查插件状态。撤销后未发出的消息进入死信，已发出的消息无法收回。通知中的 pending_actions 仅提示用户通过现有审批 API/UI 处理，不把聊天 sender_id 当成平台审批身份。
+
+## 通用配置示例与复用边界
+
+[message-collaboration.workflow.json](examples/message-collaboration.workflow.json) 是现有编排创建接口的请求模板：专家分析 → 知识检索 → 领导整合 → 人工确认 → 长期记忆。它不包含业务 HTTP 地址或外部插件代码。使用前必须配置 specialist、project_manager 和独立的 memory_curator 员工、团队成员关系、模型、工具授权与记忆资源范围，再将模板提交到编排创建接口并发布。memory_curator 专用 profile 持有写权限，分析与总结员工只持有必要的读权限。
+
+工具 `search_workspace_memory` 和 `upsert_semantic_memory` 已有实现；必须给对应员工授权读/写资源，并在自动化 input_defaults 中提供 `memory_scope_id`（本例为当前工作区 UUID）。只配置工具名不授予数据权限。分析与总结员工不要开放记忆写工具；只有确认节点之后的直接工具节点使用写权限。若员工与写节点共享同一 profile，须通过既有工具审批策略强制记忆写审批，不能把 prompt 当作写入权限边界。
+
+若需 MCP 数据，可在分析之前用画布合同插入 mcp 节点，绑定工具中心已发现并批准的 server/allowlist ID，通过 input_bindings 将结果传给专家；外部 MCP 服务自身不属于本仓库。原有角色分配、结构化输出、条件判断、审批、知识引用和三层记忆继续复用，不增加重复节点执行器。
+
+迁移 `0097_message_collaboration` 保存控制结果、通知序号、指纹及扫描时间。已在既有产品流程文件中验证 SDK 消息入站、团队/编排、待审批、人工控制、续接和签名回复；不以单点测试替代完整流程。真实 PostgreSQL 锁竞争、升级/降级与真实模型/渠道联网仍需独立环境验证。
+
 ## Web 画布合同
 
 `GET /api/v1/workspaces/{workspace_id}/orchestrations/authoring-contract` 返回节点 JSON Schema、编辑器元数据 Schema、节点类型、选择器和数据绑定字段。创建或修改编排时，`editor.positions`、`viewport` 和 `zoom` 只保存布局，不参与执行语义；`definition.nodes` 是唯一的执行定义。发布后工作流版本不可变，任务引用具体版本。
@@ -14,7 +51,7 @@
 
 ## 插件 SDK 边界
 
-`plugin_sdk/` 是独立的轻量工作区包 `opsmesh-plugin-sdk`。外部连接器只依赖它，不导入 `backend` 源码。SDK 当前提供 `PluginManifest`、能力声明、`AutomationClient`、`verify_delivery`、`IncomingMessage` 和 `AcceptedEvent`。
+`plugin_sdk/` 是独立的轻量工作区包 `opsmesh-plugin-sdk`。外部连接器只依赖它，不导入 `backend` 源码。SDK 当前提供签名插件包、能力声明、`AutomationClient`、`IncomingMessage`、`AcceptedEvent`、`EventState`、`AutomationReply`、`AutomationDelivery`，以及原始验签和带作用域校验的回复解析。
 
 SDK 只支持远程执行声明。插件不能被动态导入 API 或 worker 进程，也不能凭 manifest 自动获得权限。安装时校验签名与明确批准的权限集合，执行时复查插件状态、发布密钥、版本和绑定配置；能力原有的凭证、工作区授权与审批规则仍生效。
 

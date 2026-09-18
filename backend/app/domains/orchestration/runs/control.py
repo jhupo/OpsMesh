@@ -51,6 +51,7 @@ class RunControlService:
         workspace_id: UUID,
         task_id: UUID,
         actor_user_id: UUID,
+        commit: bool = True,
     ) -> Task | None:
         task = self.session.scalar(
             select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
@@ -96,7 +97,8 @@ class RunControlService:
                 "cancelled_approvals": cancelled_approvals,
             },
         )
-        self.session.commit()
+        if commit:
+            self.session.commit()
         self.session.refresh(task)
         return task
 

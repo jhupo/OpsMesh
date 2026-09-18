@@ -49,6 +49,18 @@ class AgentToolApprovalLifecycleService:
             }:
                 invocation.status = "cancelled"
                 invocation.completed_at = decided_at
+        for approval in self._session.scalars(
+            select(Approval).where(
+                Approval.workspace_id == workspace_id,
+                Approval.agent_run_id == run_id,
+                Approval.status == "pending",
+            )
+        ):
+            approval.status = "cancelled"
+            approval.decided_by_user_id = actor_user_id
+            approval.decision_reason = "run_cancelled"
+            approval.decided_at = decided_at
+            cancelled += 1
         self._mark_snapshot(workspace_id=workspace_id, run_id=run_id, status="cancelled")
         self._session.flush()
         return cancelled
@@ -127,7 +139,9 @@ class AgentToolApprovalLifecycleService:
                     PendingToolInvocation.workspace_id == workspace_id,
                     PendingToolInvocation.agent_run_id == run_id,
                 )
-            ).tuples().all()
+            )
+            .tuples()
+            .all()
         )
 
     def _mark_snapshot(

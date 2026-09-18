@@ -3,21 +3,26 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from opsmesh_plugin_sdk.contracts import IncomingMessage
+from opsmesh_plugin_sdk.contracts import AcceptedEvent, AutomationReply, EventState, IncomingMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.errors import DomainError
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.utils import payload_hash
-from backend.app.domains.access.permissions import WorkspaceAction, role_allows
 from backend.app.domains.capabilities.plugins.policy import (
     plugin_resource_available,
     require_plugin_resource,
 )
 from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
+from backend.app.domains.integrations.automation_authorization import require_automation_principal
 from backend.app.domains.integrations.automation_contracts import (
     AutomationConfiguration,
     AutomationUpdate,
+)
+from backend.app.domains.integrations.automation_conversations import (
+    AutomationConversationService,
+    bounded_output,
 )
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
 from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
@@ -33,7 +38,6 @@ from backend.app.domains.orchestration.workflows.definitions.service import (
 )
 from backend.app.domains.workspace.projects.models import WorkspaceProject
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.scheduling.calendar import next_run_at, utc_datetime
 
@@ -129,9 +133,12 @@ class AutomationService:
             raise ValueError("Message automation is not active")
         if user_id != item.created_by_user_id:
             raise ValueError("Message ingress requires the automation's configured principal")
-        self._require_live_principal(item)
+        require_automation_principal(self._session, item)
         if message.sender_id not in config.allowed_senders:
             raise ValueError("Sender is not authorized for this automation")
+        if message.action not in config.allowed_message_actions:
+            raise ValueError("Message action is not enabled for this automation")
+        AutomationConversationService(self._session).target(item, message)
         event = self._accept(
             item,
             external_id=message.event_id,
@@ -140,6 +147,21 @@ class AutomationService:
         )
         self._session.commit()
         return event
+
+    def event_state(self, workspace_id: UUID, automation_id: UUID, event_id: UUID) -> EventState:
+        self.require(workspace_id, automation_id)
+        conversations = AutomationConversationService(self._session)
+        event = conversations.require_event(workspace_id, automation_id, event_id)
+        task = conversations.task(event)
+        return EventState(
+            event=AcceptedEvent.model_validate(event),
+            task_status=task.status if task else None,
+            output=bounded_output(
+                event.result_payload or (task.final_output if task else {}) or {}
+            ),
+            pending_actions=conversations.pending_actions(event),
+            notification_sequence=event.notification_sequence,
+        )
 
     def events(
         self,
@@ -215,6 +237,8 @@ class AutomationService:
                 AutomationEvent.status.in_(["reply_pending", "reply_failed"]),
                 WebhookDeliveryAttempt.workspace_id == AutomationEvent.workspace_id,
                 WebhookDeliveryAttempt.status.in_(["succeeded", "dead_lettered"]),
+                (AutomationEvent.status == "reply_pending")
+                | (WebhookDeliveryAttempt.status == "succeeded"),
             )
             .order_by(AutomationEvent.updated_at)
             .limit(limit)
@@ -264,11 +288,16 @@ class AutomationService:
             .where(
                 AutomationEvent.status == "pending",
             )
-            .order_by(AutomationEvent.created_at, AutomationEvent.id)
+            .order_by(
+                AutomationEvent.checked_at.asc().nullsfirst(),
+                AutomationEvent.created_at,
+                AutomationEvent.id,
+            )
             .limit(limit)
             .with_for_update(skip_locked=True)
         ).all()
         for event in events:
+            event.checked_at = datetime.now(UTC)
             try:
                 with self._session.begin_nested():
                     item = self.require(event.workspace_id, event.automation_id)
@@ -281,8 +310,23 @@ class AutomationService:
                         item.id,
                     ):
                         continue
-                    self._require_live_principal(item)
+                    require_automation_principal(self._session, item)
                     config = AutomationConfiguration.model_validate(event.configuration)
+                    previous_context: dict[str, object] = {}
+                    if config.trigger_type == "message":
+                        message = IncomingMessage.model_validate(event.input_payload)
+                        live_config = AutomationConfiguration.model_validate(item.configuration)
+                        if (
+                            message.sender_id not in live_config.allowed_senders
+                            or message.action not in live_config.allowed_message_actions
+                        ):
+                            raise ValueError("Message permission was revoked")
+                        routed = AutomationConversationService(self._session).dispatch(
+                            item, event, message
+                        )
+                        if routed.handled:
+                            continue
+                        previous_context = routed.previous_context
                     active_task = self._session.scalar(
                         select(Task.id)
                         .join(AutomationEvent, AutomationEvent.task_id == Task.id)
@@ -309,13 +353,17 @@ class AutomationService:
                             workspace_project_id=config.workspace_project_id,
                             orchestration_definition_id=config.orchestration_definition_id,
                             orchestration_version=config.orchestration_version,
-                            input={**config.input_defaults, "event": event.input_payload},
+                            input={
+                                **config.input_defaults,
+                                "event": event.input_payload,
+                                "previous_context": previous_context,
+                            },
                             generic_state={"automation_event_id": str(event.id)},
                         ),
                     )
                     event.task_id = task.id
                     event.status = "dispatched"
-            except ValueError:
+            except (ValueError, DomainError):
                 event.status = "rejected"
                 event.error_code = "automation_admission_rejected"
                 AuditService(self._session).record_system_action(
@@ -332,51 +380,93 @@ class AutomationService:
             select(AutomationEvent, Task)
             .join(Task, Task.id == AutomationEvent.task_id)
             .where(
-                AutomationEvent.status == "dispatched",
+                AutomationEvent.status.in_(["dispatched", "control_applied"]),
                 Task.workspace_id == AutomationEvent.workspace_id,
-                Task.status.in_([status.value for status in TERMINAL_TASK_STATUSES]),
             )
-            .order_by(AutomationEvent.created_at)
+            .order_by(AutomationEvent.checked_at.asc().nullsfirst(), AutomationEvent.created_at)
             .limit(limit)
             .with_for_update(skip_locked=True, of=AutomationEvent)
         ).all()
         for event, task in pairs:
+            event.checked_at = datetime.now(UTC)
             item = self.require(event.workspace_id, event.automation_id)
             if item.status != "active":
                 continue
             try:
-                self._require_live_principal(item)
+                require_automation_principal(self._session, item)
             except ValueError:
                 event.status = "rejected"
                 event.error_code = "automation_principal_revoked"
                 continue
             config = AutomationConfiguration.model_validate(event.configuration)
+            live_config = AutomationConfiguration.model_validate(item.configuration)
+            if (
+                config.trigger_type == "message"
+                and event.input_payload.get("sender_id") not in live_config.allowed_senders
+            ):
+                event.status = "rejected"
+                event.error_code = "automation_sender_revoked"
+                continue
+            terminal = task.status in {status.value for status in TERMINAL_TASK_STATUSES}
+            complete = terminal or event.status == "control_applied"
             if config.reply_subscription_id is None:
-                event.status = "completed"
+                if complete:
+                    event.status = "completed"
+                continue
+            if not complete and not config.notify_progress:
+                continue
+            actions = AutomationConversationService(self._session).pending_actions(event)
+            payload = AutomationReply(
+                sequence=event.notification_sequence + 1,
+                automation_id=item.id,
+                event_id=event.id,
+                conversation_id=event.conversation_id,
+                source_event_id=event.external_event_id,
+                sender_id=str(event.input_payload["sender_id"])
+                if "sender_id" in event.input_payload
+                else None,
+                task_id=task.id,
+                status=task.status,
+                kind=(
+                    "control_applied"
+                    if event.status == "control_applied"
+                    else "result"
+                    if terminal
+                    else "action_required"
+                    if actions
+                    else "progress"
+                ),
+                output=bounded_output(
+                    event.result_payload
+                    if event.status == "control_applied"
+                    else task.final_output or {}
+                    if terminal
+                    else {}
+                ),
+                pending_actions=actions,
+            ).model_dump(mode="json")
+            fingerprint = payload_hash(
+                {key: value for key, value in payload.items() if key != "sequence"}
+            )
+            if not complete and fingerprint == event.progress_fingerprint:
                 continue
             attempts = WebhookDeliveryService(self._session).enqueue_event(
                 workspace_id=event.workspace_id,
                 event_type="automation.reply",
-                event_id=str(event.id),
+                event_id=f"{event.id}:{event.notification_sequence + 1}",
                 subscription_id=config.reply_subscription_id,
-                payload=redact_sensitive_payload(
-                    {
-                        "automation_id": str(item.id),
-                        "event_id": str(event.id),
-                        "conversation_id": event.conversation_id,
-                        "source_event_id": event.external_event_id,
-                        "task_id": str(task.id),
-                        "status": task.status,
-                        "output": task.final_output,
-                    }
-                ),
+                payload=redact_sensitive_payload(payload),
             )
             if not attempts:
                 event.status = "rejected"
                 event.error_code = "reply_subscription_unavailable"
-            else:
+            elif complete:
+                event.notification_sequence += 1
                 event.reply_delivery_id = attempts[0].id
                 event.status = "reply_pending"
+            else:
+                event.notification_sequence += 1
+                event.progress_fingerprint = fingerprint
         self._session.commit()
 
     def _validate_targets(self, workspace_id: UUID, config: AutomationConfiguration) -> None:
@@ -428,20 +518,6 @@ class AutomationService:
                 subscription.event_types
             ):
                 raise ValueError("Reply subscription must accept automation.reply")
-
-    def _require_live_principal(self, item: Automation) -> None:
-        member = self._session.scalar(
-            select(WorkspaceMember)
-            .join(Workspace)
-            .where(
-                WorkspaceMember.workspace_id == item.workspace_id,
-                WorkspaceMember.user_id == item.created_by_user_id,
-                WorkspaceMember.status == "active",
-                Workspace.status == "active",
-            )
-        )
-        if member is None or not role_allows(member.role, WorkspaceAction.WRITE):
-            raise ValueError("Automation principal no longer has workspace write access")
 
     @staticmethod
     def _next_due(config: AutomationConfiguration) -> datetime | None:

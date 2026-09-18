@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import UTC
 
 from opsmesh_plugin_sdk.webhooks import signed_headers
 
@@ -35,7 +36,9 @@ class WebhookDeliverySigner:
                 "delivery_attempt_id": str(attempt.id),
                 "attempt": attempt.attempt_count,
                 "data": redact_sensitive_payload(attempt.payload),
-                "created_at": attempt.created_at.isoformat(),
+                "created_at": attempt.created_at.replace(tzinfo=UTC).isoformat()
+                if attempt.created_at.tzinfo is None
+                else attempt.created_at.isoformat(),
             }
         )
         timestamp = str(int(time.time()))

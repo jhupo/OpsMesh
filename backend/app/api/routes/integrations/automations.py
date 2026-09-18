@@ -1,7 +1,13 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from opsmesh_plugin_sdk.contracts import AcceptedEvent, IncomingMessage, PluginManifest
+from opsmesh_plugin_sdk.contracts import (
+    AcceptedEvent,
+    AutomationReply,
+    EventState,
+    IncomingMessage,
+    PluginManifest,
+)
 from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
@@ -25,6 +31,8 @@ def configuration_contracts(
     return {
         "automation": AutomationConfiguration.model_json_schema(),
         "message": IncomingMessage.model_json_schema(),
+        "reply": AutomationReply.model_json_schema(),
+        "event_state": EventState.model_json_schema(),
         "plugin_manifest": PluginManifest.model_json_schema(),
         "plugin_installation_supported": True,
         "plugin_execution_modes": ["remote"],
@@ -39,7 +47,9 @@ def list_automations(
     session: Session = Depends(get_db_session),
 ) -> object:
     return AutomationService(session).list_automations(
-        context.workspace.id, limit=limit, offset=offset,
+        context.workspace.id,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -108,5 +118,18 @@ def list_events(
             limit=limit,
             offset=offset,
         )
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/{automation_id}/events/{event_id}", response_model=EventState)
+def event_state(
+    automation_id: UUID,
+    event_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> EventState:
+    try:
+        return AutomationService(session).event_state(context.workspace.id, automation_id, event_id)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc

@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
+MessageAction = Literal["start", "follow_up", "add_instruction", "pause", "resume", "cancel"]
+
 
 class IncomingMessage(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -17,6 +19,16 @@ class IncomingMessage(BaseModel):
     occurred_at: AwareDatetime
     text: str = Field(min_length=1, max_length=16_000)
     data: dict[str, object] = Field(default_factory=dict, max_length=64)
+    action: MessageAction = "start"
+    reply_to_event_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_target(self) -> IncomingMessage:
+        if (self.action == "start") != (self.reply_to_event_id is None):
+            raise ValueError("Only start messages omit reply_to_event_id")
+        if self.action in {"follow_up", "add_instruction"} and len(self.text) > 4000:
+            raise ValueError("Follow-up instructions are limited to 4000 characters")
+        return self
 
 
 class CapabilityDeclaration(BaseModel):
@@ -59,3 +71,41 @@ class AcceptedEvent(BaseModel):
     task_id: UUID | None
     reply_delivery_id: UUID | None
     error_code: str | None
+
+
+class PendingAction(BaseModel):
+    id: UUID
+    kind: str
+    risk_level: str
+
+
+class EventState(BaseModel):
+    event: AcceptedEvent
+    task_status: str | None
+    output: dict[str, object]
+    pending_actions: list[PendingAction]
+    notification_sequence: int
+
+
+class AutomationReply(BaseModel):
+    sequence: int = Field(ge=1)
+    automation_id: UUID
+    event_id: UUID
+    conversation_id: str
+    source_event_id: str
+    sender_id: str | None
+    task_id: UUID
+    status: str
+    kind: Literal["result", "progress", "action_required", "control_applied"]
+    output: dict[str, object]
+    pending_actions: list[PendingAction] = Field(default_factory=list)
+
+
+class AutomationDelivery(BaseModel):
+    id: str
+    type: Literal["automation.reply"]
+    workspace_id: UUID
+    delivery_attempt_id: UUID
+    attempt: int = Field(ge=1)
+    created_at: AwareDatetime
+    data: AutomationReply

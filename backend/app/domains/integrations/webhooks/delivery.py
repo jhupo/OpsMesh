@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.security.rate_limits import FixedWindowRateLimiter
 from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.capabilities.plugins.policy import plugin_resource_available
+from backend.app.domains.integrations.automation_authorization import automation_delivery_available
 from backend.app.domains.integrations.webhooks.delivery_state import WebhookDeliveryStateRecorder
 from backend.app.domains.integrations.webhooks.http_client import (
     HttpxWebhookHttpClient,
@@ -100,11 +101,19 @@ class WebhookDeliveryService:
         )
 
     def deliver(self, *, workspace_id: UUID, delivery_attempt_id: UUID) -> WebhookDeliveryAttempt:
+        # Serialize duplicate worker jobs through the bounded HTTP request and its state commit.
+        # A remote success followed by a local crash still requires receiver-side deduplication.
         attempt = self._attempt(workspace_id=workspace_id, delivery_attempt_id=delivery_attempt_id)
+        if attempt.status in {"succeeded", "dead_lettered"}:
+            return attempt
         subscription = self._subscription(workspace_id=workspace_id, attempt=attempt)
         if (
             subscription is None
             or subscription.status != "active"
+            or (
+                attempt.event_type == "automation.reply"
+                and not automation_delivery_available(self._session, attempt)
+            )
             or not plugin_resource_available(
                 self._session,
                 workspace_id,
@@ -182,10 +191,13 @@ class WebhookDeliveryService:
 
     def _attempt(self, *, workspace_id: UUID, delivery_attempt_id: UUID) -> WebhookDeliveryAttempt:
         attempt = self._session.scalar(
-            select(WebhookDeliveryAttempt).where(
+            select(WebhookDeliveryAttempt)
+            .where(
                 WebhookDeliveryAttempt.workspace_id == workspace_id,
                 WebhookDeliveryAttempt.id == delivery_attempt_id,
             )
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if attempt is None:
             raise ValueError("Webhook delivery attempt not found")

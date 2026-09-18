@@ -4,7 +4,7 @@ from uuid import UUID
 
 import httpx
 
-from opsmesh_plugin_sdk.contracts import AcceptedEvent, IncomingMessage
+from opsmesh_plugin_sdk.contracts import AcceptedEvent, EventState, IncomingMessage
 
 
 class AutomationClient:
@@ -17,3 +17,8 @@ class AutomationClient:
         response = self._client.post(self._path, json=message.model_dump(mode="json"))
         response.raise_for_status()
         return AcceptedEvent.model_validate(response.json())
+
+    def state(self, event_id: UUID) -> EventState:
+        response = self._client.get(f"{self._path}/{event_id}")
+        response.raise_for_status()
+        return EventState.model_validate(response.json())

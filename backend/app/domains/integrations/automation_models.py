@@ -27,6 +27,7 @@ class AutomationEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("automation_id", "external_event_id", name="uq_automation_event"),
         Index("ix_automation_events_pending", "status", "created_at"),
+        Index("ix_automation_events_scan", "status", "checked_at", "created_at"),
         Index(
             "ix_automation_events_conversation", "workspace_id", "automation_id", "conversation_id"
         ),
@@ -45,3 +46,7 @@ class AutomationEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("webhook_delivery_attempts.id", ondelete="SET NULL")
     )
     error_code: Mapped[str | None] = mapped_column(String(80))
+    result_payload: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    progress_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    notification_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

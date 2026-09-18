@@ -8,6 +8,7 @@ from sqlalchemy import select
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.tasks.observation.execution import (
     TaskExecutionDiagnosticsService,
@@ -846,6 +847,260 @@ def test_configured_automation_admits_workflow_and_delivers_reply(trigger_type: 
             ).status_code
             == 403
         )
+
+
+def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
+    from datetime import UTC, datetime
+
+    from opsmesh_plugin_sdk.client import AutomationClient
+    from opsmesh_plugin_sdk.contracts import IncomingMessage
+    from opsmesh_plugin_sdk.webhooks import parse_automation_delivery
+
+    from backend.app.core.config import get_settings
+    from backend.app.core.security.secrets import SecretEncryptionService
+    from backend.app.domains.integrations.automations import AutomationService
+    from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
+    from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
+    from backend.app.domains.integrations.webhooks.models import WebhookDeliveryAttempt
+    from backend.app.domains.orchestration.tasks.models import TaskMessage
+    from backend.app.runtime.workers.contracts import JobPayload, JobType
+    from backend.tests.test_webhooks import _RecordingHttpClient
+    from backend.tests.test_worker_run_execution import (
+        _run_agent_sync,
+        _seed_default_model_provider,
+    )
+
+    client, session = _api_client()
+    owner, workspace = _seed_api_workspace(session, "conversation@example.com", "conversation")
+    _seed_default_model_provider(session, workspace_id=workspace.id, user_id=owner.id)
+    client.headers.update(_api_headers(owner.id))
+    client.base_url = "http://testserver/api/v1/"
+    base = f"workspaces/{workspace.id}"
+    agent = client.post(
+        f"{base}/agents",
+        json={
+            "name": "Coordinator",
+            "role": "project_manager",
+            "runtime_policy": {"execution_mode": "none"},
+        },
+    )
+    assert agent.status_code == 201, agent.text
+    team = client.post(
+        f"{base}/teams",
+        json={
+            "name": "Message team",
+            "manager_agent_profile_id": agent.json()["id"],
+        },
+    )
+    assert team.status_code == 201, team.text
+    workflow = client.post(
+        f"{base}/orchestrations",
+        json={
+            "key": "review-message",
+            "name": "Review message",
+            "nodes": [
+                {
+                    "package_id": "review",
+                    "title": "Confirm the proposal",
+                    "node_type": "approval",
+                    "required_role": "project_manager",
+                    "assigned_agent_profile_id": agent.json()["id"],
+                },
+                {"package_id": "end", "title": "End", "node_type": "end", "depends_on": ["review"]},
+            ],
+        },
+    )
+    assert workflow.status_code == 201, workflow.text
+    assert client.post(f"{base}/orchestrations/{workflow.json()['id']}/publish").status_code == 200
+    subscription = client.post(
+        f"{base}/webhook-subscriptions",
+        json={
+            "name": "Replies",
+            "target_url": "https://hooks.example.test/reply",
+            "event_types": ["automation.reply"],
+            "signing_secret": "message-signing-secret",
+        },
+    )
+    assert subscription.status_code == 201, subscription.text
+    config = {
+        "name": "Message collaboration",
+        "trigger_type": "message",
+        "orchestration_definition_id": workflow.json()["id"],
+        "orchestration_version": 1,
+        "agent_team_id": team.json()["id"],
+        "reply_subscription_id": subscription.json()["id"],
+        "allowed_senders": ["member-1", "member-2"],
+        "notify_progress": True,
+        "allowed_message_actions": [
+            "start",
+            "follow_up",
+            "add_instruction",
+            "pause",
+            "resume",
+            "cancel",
+        ],
+    }
+    created = client.post(f"{base}/automations", json=config)
+    assert created.status_code == 201, created.text
+    automation_id = UUID(created.json()["id"])
+    sdk = AutomationClient(client, workspace.id, automation_id)
+    message = IncomingMessage(
+        event_id="first",
+        conversation_id="thread-1",
+        sender_id="member-1",
+        occurred_at=datetime.now(UTC),
+        text="Analyze the supplied information",
+    )
+    accepted = sdk.submit(message)
+    assert sdk.submit(message).id == accepted.id
+    service = AutomationService(session)
+    service.maintain()
+    state = sdk.state(accepted.id)
+    assert state.event.task_id is not None, state
+    task_id = state.event.task_id
+    run = session.scalar(
+        select(AgentRun).where(AgentRun.task_id == task_id, AgentRun.status == "queued")
+    )
+    assert run is not None
+    settings = client.app.dependency_overrides[get_settings]()
+    _run_agent_sync(
+        session,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=owner.id,
+            idempotency_key=f"run:{run.id}",
+        ),
+        settings=settings,
+    )
+    service.maintain()
+    waiting = sdk.state(accepted.id)
+    assert waiting.pending_actions, waiting
+    approval_id = waiting.pending_actions[0].id
+    count_before = session.query(WebhookDeliveryAttempt).count()
+    service.maintain()
+    assert session.query(WebhookDeliveryAttempt).count() == count_before
+
+    def control(action: str, event_id: str) -> object:
+        response = sdk.submit(
+            IncomingMessage(
+                event_id=event_id,
+                conversation_id="thread-1",
+                sender_id="member-1",
+                occurred_at=datetime.now(UTC),
+                text="Additional facts",
+                action=action,
+                reply_to_event_id=accepted.id,
+            )
+        )
+        service.maintain()
+        assert sdk.state(response.id).event.task_id == task_id
+        return response
+
+    denied = client.post(
+        f"{base}/automations/{automation_id}/events",
+        json={
+            **message.model_dump(mode="json"),
+            "event_id": "foreign-sender",
+            "sender_id": "member-2",
+            "action": "pause",
+            "reply_to_event_id": str(accepted.id),
+        },
+    )
+    assert denied.status_code == 400
+    control("add_instruction", "facts")
+    assert (
+        session.scalar(
+            select(TaskMessage).where(
+                TaskMessage.task_id == task_id,
+                TaskMessage.message_type == "task.control.add_instruction",
+            )
+        )
+        is not None
+    )
+    control("pause", "takeover")
+    session.expire_all()
+    assert session.get(Approval, approval_id).status == "cancelled"
+    assert sdk.state(accepted.id).task_status == "blocked"
+    control("resume", "resume")
+    assert (
+        session.scalar(
+            select(AgentRun.id).where(
+                AgentRun.task_id == task_id,
+                AgentRun.status == "queued",
+            )
+        )
+        is not None
+    )
+    control("cancel", "cancel")
+    assert sdk.state(accepted.id).task_status == "cancelled"
+    assert session.query(Task).count() == 1
+
+    followup = sdk.submit(
+        IncomingMessage(
+            event_id="next",
+            conversation_id="thread-1",
+            sender_id="member-1",
+            occurred_at=datetime.now(UTC),
+            text="Please reconsider using these facts",
+            action="follow_up",
+            reply_to_event_id=accepted.id,
+        )
+    )
+    service.maintain()
+    next_state = sdk.state(followup.id)
+    assert next_state.event.task_id != task_id
+    next_task = session.get(Task, next_state.event.task_id)
+    assert next_task.input["previous_context"]["task_id"] == str(task_id)
+    assert session.query(Task).count() == 2
+
+    transport = _RecordingHttpClient(WebhookHttpResponse(status_code=200, body="ok", headers={}))
+    delivery_service = WebhookDeliveryService(
+        session,
+        SecretEncryptionService(
+            secret=settings.credential_encryption_secret,
+            key_id=settings.credential_encryption_key_id,
+        ),
+        transport,
+    )
+    attempt_id = sdk.state(accepted.id).event.reply_delivery_id
+    assert attempt_id is not None
+    delivery_service.deliver(workspace_id=workspace.id, delivery_attempt_id=attempt_id)
+    delivery_service.deliver(workspace_id=workspace.id, delivery_attempt_id=attempt_id)
+    assert len(transport.calls) == 1
+    parsed = parse_automation_delivery(
+        transport.calls[0]["body"],
+        transport.calls[0]["headers"],
+        secret="message-signing-secret",
+        workspace_id=workspace.id,
+        automation_id=automation_id,
+    )
+    assert parsed.data.kind == "result"
+    assert parsed.data.sender_id == "member-1"
+    assert parsed.data.status == "cancelled"
+    service.maintain()
+    assert sdk.state(accepted.id).event.status == "completed"
+
+    pending = next(
+        attempt
+        for attempt in session.scalars(
+            select(WebhookDeliveryAttempt).where(WebhookDeliveryAttempt.status == "pending")
+        )
+        if attempt.payload.get("event_id") == str(followup.id)
+    )
+    updated = client.put(
+        f"{base}/automations/{automation_id}",
+        json={
+            "expected_version": 1,
+            "status": "active",
+            "configuration": {**config, "allowed_senders": ["member-2"]},
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    refused = delivery_service.deliver(workspace_id=workspace.id, delivery_attempt_id=pending.id)
+    assert refused.status == "dead_lettered"
+    assert len(transport.calls) == 1
 
 
 def test_locked_nodes_and_incident_edges_require_authorized_admin_scope() -> None:

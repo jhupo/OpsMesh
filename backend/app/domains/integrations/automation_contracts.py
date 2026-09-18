@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
+from opsmesh_plugin_sdk.contracts import MessageAction
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
@@ -27,16 +28,24 @@ class AutomationConfiguration(BaseModel):
     schedule_type: Literal["one_shot", "hourly", "daily"] | None = None
     schedule_config: dict[str, object] = Field(default_factory=dict, max_length=4)
     overlap_policy: Literal["queue", "skip"] = "queue"
+    allowed_message_actions: list[MessageAction] = Field(
+        default=["start"], min_length=1, max_length=6
+    )
+    notify_progress: bool = False
 
     @model_validator(mode="after")
     def validate_configuration(self) -> AutomationConfiguration:
         reject_embedded_secrets(self.input_defaults)
+        if len(set(self.allowed_message_actions)) != len(self.allowed_message_actions):
+            raise ValueError("Message actions must be unique")
         if self.trigger_type == "message":
             if not self.allowed_senders or any(not item.strip() for item in self.allowed_senders):
                 raise ValueError("Message automations require explicit allowed_senders")
             if self.schedule_type is not None or self.schedule_config:
                 raise ValueError("Message automations cannot define schedules")
         else:
+            if self.allowed_message_actions != ["start"]:
+                raise ValueError("Scheduled automations cannot enable message controls")
             if self.schedule_type is None:
                 raise ValueError("Scheduled automations require schedule_type")
             if self.allowed_senders:
@@ -69,4 +78,3 @@ class AutomationResponse(BaseModel):
     status: str
     configuration: AutomationConfiguration
     next_due_at: datetime | None
-

@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.runs.state import RunStateService, RunStatus
@@ -31,7 +32,9 @@ class TaskControlExecutionService:
         self._session = session
         self._queue = queue
 
-    def cancel_active_runs(self, task: Task, *, now: datetime) -> tuple[int, int]:
+    def cancel_active_runs(
+        self, task: Task, *, now: datetime, actor_user_id: UUID
+    ) -> tuple[int, int]:
         runs = self._session.scalars(
             select(AgentRun).where(
                 AgentRun.workspace_id == task.workspace_id,
@@ -41,6 +44,11 @@ class TaskControlExecutionService:
         ).all()
         worker_cancel_requests = 0
         for run in runs:
+            AgentToolApprovalLifecycleService(self._session).cancel_for_run(
+                workspace_id=task.workspace_id,
+                run_id=run.id,
+                actor_user_id=actor_user_id,
+            )
             RunStateService().transition(
                 run,
                 RunStatus.CANCELLED,

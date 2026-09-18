@@ -85,21 +85,34 @@ class TaskControlService:
         task_id: UUID,
         actor_user_id: UUID,
         request: TaskControlActionRequest,
+        commit: bool = True,
     ) -> dict[str, object] | None:
         task = self._task(workspace_id, task_id)
         if task is None:
             return None
         action = request.action
         if action == "pause":
-            return self._pause_task(task, actor_user_id=actor_user_id, request=request)
+            return self._pause_task(
+                task, actor_user_id=actor_user_id, request=request, commit=commit
+            )
         if action == "resume":
-            return self._resume_task(task, actor_user_id=actor_user_id, request=request)
+            if not commit and request.enqueue and self._queue is not None:
+                raise ValueError("Transactional resume cannot enqueue Redis jobs before commit")
+            return self._resume_task(
+                task, actor_user_id=actor_user_id, request=request, commit=commit
+            )
         if action == "add_instruction":
-            return self._add_instruction(task, actor_user_id=actor_user_id, request=request)
+            return self._add_instruction(
+                task, actor_user_id=actor_user_id, request=request, commit=commit
+            )
         if action == "create_correction":
+            if not commit:
+                raise ValueError("Corrections own their transaction")
             return self._create_correction(task, actor_user_id=actor_user_id, request=request)
         if action == "cancel":
-            return self._cancel_task(task, actor_user_id=actor_user_id, request=request)
+            return self._cancel_task(
+                task, actor_user_id=actor_user_id, request=request, commit=commit
+            )
         raise ValueError(f"Unsupported task control action: {action}")
 
     def _pause_task(
@@ -108,12 +121,17 @@ class TaskControlService:
         *,
         actor_user_id: UUID,
         request: TaskControlActionRequest,
+        commit: bool,
     ) -> dict[str, object]:
         if TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
             raise ValueError("Terminal tasks cannot be paused")
         now = datetime.now(UTC)
         execution = TaskControlExecutionService(self._session, queue=self._queue)
-        cancelled_runs, worker_cancel_requests = execution.cancel_active_runs(task, now=now)
+        cancelled_runs, worker_cancel_requests = execution.cancel_active_runs(
+            task,
+            now=now,
+            actor_user_id=actor_user_id,
+        )
         blocked_steps = execution.block_schedulable_steps(task, request=request, now=now)
         previous_status = task.status
         if TaskStatus(task.status) != TaskStatus.BLOCKED:
@@ -153,7 +171,8 @@ class TaskControlService:
                 "reason": request.reason,
             },
         )
-        self._session.commit()
+        if commit:
+            self._session.commit()
         return self._response(
             task,
             request=request,
@@ -173,6 +192,7 @@ class TaskControlService:
         *,
         actor_user_id: UUID,
         request: TaskControlActionRequest,
+        commit: bool,
     ) -> dict[str, object]:
         if TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
             raise ValueError("Terminal tasks cannot be resumed")
@@ -222,7 +242,8 @@ class TaskControlService:
                 "reason": request.reason,
             },
         )
-        self._session.commit()
+        if commit:
+            self._session.commit()
         return self._response(
             task,
             request=request,
@@ -243,6 +264,7 @@ class TaskControlService:
         *,
         actor_user_id: UUID,
         request: TaskControlActionRequest,
+        commit: bool,
     ) -> dict[str, object]:
         if not request.instruction:
             raise ValueError("instruction is required")
@@ -264,7 +286,8 @@ class TaskControlService:
             action="task.control.instruction_added",
             metadata={"message_id": str(message.id), "reason": request.reason},
         )
-        self._session.commit()
+        if commit:
+            self._session.commit()
         return self._response(
             task,
             request=request,
@@ -322,6 +345,7 @@ class TaskControlService:
         *,
         actor_user_id: UUID,
         request: TaskControlActionRequest,
+        commit: bool,
     ) -> dict[str, object] | None:
         cancelled = RunControlService(
             session=self._session,
@@ -330,6 +354,7 @@ class TaskControlService:
             workspace_id=task.workspace_id,
             task_id=task.id,
             actor_user_id=actor_user_id,
+            commit=commit,
         )
         if cancelled is None:
             return None
@@ -342,7 +367,10 @@ class TaskControlService:
 
     def _task(self, workspace_id: UUID, task_id: UUID) -> Task | None:
         return self._session.scalar(
-            select(Task).where(Task.workspace_id == workspace_id, Task.id == task_id)
+            select(Task)
+            .where(Task.workspace_id == workspace_id, Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
 
     def _audit(

@@ -240,6 +240,9 @@ sequenceDiagram
   Signed remote plugins bind workspace MCP, skills, message automations and reply subscriptions;
   trust revocation, disablement and version retirement gate execution. See the
   [remote plugin lifecycle](docs/automation-and-extension-contracts.md) (2026-09-18).
+- Message-driven collaboration through the independent connector SDK: explicit follow-ups,
+  task pause/resume/cancel, scoped state queries, progress/approval notifications and signed replies.
+  External channel plugins stay in their own repositories; no channel business logic is embedded.
 - Run authorization snapshots that freeze the capabilities allowed for a concrete execution.
 
 ### Isolated execution

@@ -1,0 +1,78 @@
+{
+  "key": "reviewed-message-analysis",
+  "name": "消息分析与确认后记忆",
+  "nodes": [
+    {
+      "package_id": "analyze",
+      "node_type": "agent",
+      "title": "专家分析",
+      "required_role": "specialist",
+      "description": "分析输入消息和 previous_context。区分已知事实与推测，生成用于检索知识的 query 以及 analysis。缺少信息时明确说明，禁止编造。",
+      "output_schema": {
+        "type": "object",
+        "required": ["query", "analysis"],
+        "properties": {"query": {"type": "string"}, "analysis": {"type": "string"}},
+        "additionalProperties": false
+      }
+    },
+    {
+      "package_id": "lookup",
+      "node_type": "tool",
+      "title": "查询授权知识与记忆",
+      "required_role": "project_manager",
+      "depends_on": ["analyze"],
+      "tool_name": "search_workspace_memory",
+      "required_tools": ["search_workspace_memory"],
+      "arguments": {"limit": 5},
+      "input_bindings": {"query": {"reference": "steps.analyze.output.structured_output.value.query"}}
+    },
+    {
+      "package_id": "summarize",
+      "node_type": "agent",
+      "title": "领导整合结论与依据",
+      "required_role": "project_manager",
+      "depends_on": ["lookup"],
+      "description": "整合分析与检索依据。不要把相似案例当作本次事实。输出供人工确认的标题和结论，保留不确定性与引用。",
+      "input_bindings": {
+        "analysis": {"reference": "steps.analyze.output.structured_output.value.analysis"},
+        "knowledge": {"reference": "steps.lookup.output"}
+      },
+      "output_schema": {
+        "type": "object",
+        "required": ["title", "content"],
+        "properties": {"title": {"type": "string", "maxLength": 240}, "content": {"type": "string"}},
+        "additionalProperties": false
+      }
+    },
+    {
+      "package_id": "confirm",
+      "node_type": "approval",
+      "title": "确认结论后才允许记忆",
+      "required_role": "project_manager",
+      "depends_on": ["summarize"],
+      "acceptance_criteria": ["有权限的人工确认结论、引用与不确定性；不批准则不得写入长期记忆。"]
+    },
+    {
+      "package_id": "remember",
+      "node_type": "tool",
+      "title": "保存已确认结论",
+      "required_role": "memory_curator",
+      "depends_on": ["confirm"],
+      "tool_name": "upsert_semantic_memory",
+      "required_tools": ["upsert_semantic_memory"],
+      "arguments": {"scope_type": "workspace", "knowledge_type": "fact", "change_reason": "Human-reviewed workflow conclusion"},
+      "input_bindings": {
+        "scope_id": {"reference": "task.input.memory_scope_id"},
+        "memory_key": {"reference": "task.input.event.event_id"},
+        "title": {"reference": "steps.summarize.output.structured_output.value.title"},
+        "content": {"reference": "steps.summarize.output.structured_output.value.content"}
+      }
+    },
+    {
+      "package_id": "end",
+      "node_type": "end",
+      "title": "结束",
+      "depends_on": ["remember"]
+    }
+  ]
+}
