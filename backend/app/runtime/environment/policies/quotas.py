@@ -38,15 +38,20 @@ class RuntimeQuotaExceededError(ValueError):
 
 
 class RuntimeQuotaPolicy:
-    _COUNTED_STATUSES = {"created", "running", "stopped"}
+    _COUNTED_STATUSES = {"provisioning", "created", "running", "stopped", "cleanup_failed"}
 
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def assert_can_create_runtime(self, workspace_id: UUID, limits: RuntimeLimits) -> RuntimeQuota:
+    def assert_can_create_runtime(
+        self, workspace_id: UUID, limits: RuntimeLimits, *, excluding_runtime_id: UUID | None = None
+    ) -> RuntimeQuota:
+        self._session.scalar(
+            select(Workspace).where(Workspace.id == workspace_id).with_for_update()
+        )
         quota = self.quota_for_workspace(workspace_id)
         self._validate_single_runtime(limits, quota)
-        usage = self.usage_for_workspace(workspace_id)
+        usage = self.usage_for_workspace(workspace_id, excluding_runtime_id=excluding_runtime_id)
         self._validate_total_usage(limits, usage, quota)
         return quota
 
@@ -103,11 +108,14 @@ class RuntimeQuotaPolicy:
             ),
         )
 
-    def usage_for_workspace(self, workspace_id: UUID) -> RuntimeUsage:
+    def usage_for_workspace(
+        self, workspace_id: UUID, *, excluding_runtime_id: UUID | None = None
+    ) -> RuntimeUsage:
         runtimes = self._session.scalars(
             select(WorkspaceRuntime).where(
                 WorkspaceRuntime.workspace_id == workspace_id,
                 WorkspaceRuntime.status.in_(self._COUNTED_STATUSES),
+                WorkspaceRuntime.id != excluding_runtime_id,
             )
         ).all()
         return RuntimeUsage(

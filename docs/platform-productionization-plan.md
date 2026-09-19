@@ -512,6 +512,8 @@ P1-8 evidence plane ───┼──> P1-9 release supply chain
 ## 9. 插件边界与后续工作
 
 远程插件的签名 manifest、工作区安装授权、版本切换和独立 SDK 已有实现。
-尚未实现外部目录同步、受控远程拉取和托管 OCI 插件执行；设计唯一维护在
-[SDK 架构与分发合同](https://github.com/jhupo/opsmesh-plugin-sdk-python/blob/master/docs/architecture.md)。
+2026-09-19 更新：外部目录同步、受控远程拉取、安装凭据和隔离进程部署控制已有代码与
+相关本地流程证据；插件中心远程迁移、真实镜像和钉钉验收仍未完成。
+当前状态见[插件服务接入](plugin-service-integration.md)与[分发合同](plugin-distribution.md)，
+不以历史 SDK 仓库文档代替当前实现证据。
 后续继续复用 Marketplace、Capability Catalog、Runtime、Audit 和审批，不另建权限或执行引擎。

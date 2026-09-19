@@ -455,6 +455,10 @@ class RunRuntimeAuthorizationService:
         return runtime_space
 
     def _require_runtime_ready(self, runtime: WorkspaceRuntime) -> None:
+        if runtime.capabilities.get("plugin_install_id"):
+            raise RunRuntimeAuthorizationError(
+                "runtime_reserved", "Plugin processes cannot be used as agent sandboxes"
+            )
         if runtime.status not in RUNTIME_READY_STATUSES or runtime.connection_status != "online":
             raise RunRuntimeAuthorizationError(
                 "runtime_unavailable",

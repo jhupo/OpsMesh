@@ -27,6 +27,7 @@ class RuntimeTemplate(UUIDPrimaryKeyMixin, Base):
 class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workspace_runtimes"
     __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_workspace_runtime_scope"),
         CheckConstraint(
             "execution_mode in ('none', 'isolated', 'pooled', 'persistent')",
             name="workspace_runtime_execution_mode_valid",

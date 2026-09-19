@@ -18,6 +18,13 @@ class RuntimeLimits:
 
 
 @dataclass(frozen=True)
+class RuntimeProcess:
+    """Ephemeral process inputs; never include these in durable runtime metadata."""
+
+    environment: dict[str, str] = field(repr=False)
+
+
+@dataclass(frozen=True)
 class RuntimeCreateRequest:
     image: str
     name: str
@@ -31,6 +38,7 @@ class RuntimeCreateRequest:
     mounts: tuple["RuntimeMount", ...] = ()
     hardening: "RuntimeHardeningPolicy" = field(default_factory=lambda: RuntimeHardeningPolicy())
     working_dir: str | None = None
+    process: RuntimeProcess | None = None
 
 
 @dataclass(frozen=True)

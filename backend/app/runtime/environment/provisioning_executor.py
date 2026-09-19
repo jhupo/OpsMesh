@@ -8,6 +8,7 @@ from backend.app.runtime.environment.contracts import (
     RuntimeHardeningPolicy,
     RuntimeLimits,
     RuntimeMount,
+    RuntimeProcess,
 )
 from backend.app.runtime.environment.events import RuntimeEventLog
 from backend.app.runtime.environment.leases import (
@@ -58,10 +59,13 @@ class RuntimeProvisioningExecutor:
         limits: RuntimeLimits,
         network_disabled: bool,
         policy_metadata: dict[str, object] | None = None,
+        process: RuntimeProcess | None = None,
     ) -> WorkspaceRuntime:
         workspace_id = runtime.workspace_id
         runtime_space_id = runtime.runtime_space_id
-        RuntimeQuotaPolicy(self._session).assert_can_create_runtime(workspace_id, limits)
+        RuntimeQuotaPolicy(self._session).assert_can_create_runtime(
+            workspace_id, limits, excluding_runtime_id=runtime.id
+        )
         network_policy = dict(runtime.network_policy)
         isolation_metadata = runtime_isolation_metadata(
             workspace_id=workspace_id,
@@ -109,10 +113,12 @@ class RuntimeProvisioningExecutor:
                 network_policy=dict(runtime.network_policy),
                 isolation_metadata=isolation_metadata,
                 hardening_policy=hardening_policy,
+                process=process,
             )
         except Exception:
             self._reservations.release(runtime)
-            self._session.delete(runtime)
+            if process is None:
+                self._session.delete(runtime)
             self._session.flush()
             raise
 
@@ -198,6 +204,7 @@ class RuntimeProvisioningExecutor:
         network_policy: dict[str, object],
         isolation_metadata: RuntimeIsolationMetadata,
         hardening_policy: RuntimeHardeningPolicy,
+        process: RuntimeProcess | None,
     ) -> str:
         return self._docker.create_container(
             RuntimeCreateRequest(
@@ -218,5 +225,6 @@ class RuntimeProvisioningExecutor:
                 ),
                 hardening=hardening_policy,
                 working_dir=isolation_metadata["workspace_mount"]["target"],
+                process=process,
             )
         )

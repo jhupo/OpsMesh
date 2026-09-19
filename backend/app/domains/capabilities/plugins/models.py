@@ -10,12 +10,50 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+
+class PluginDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "plugin_deployments"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "install_id", name="uq_plugin_deployment_install"),
+        ForeignKeyConstraint(
+            ["workspace_id", "install_id"],
+            ["plugin_installs.workspace_id", "plugin_installs.id"],
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "runtime_id"],
+            ["workspace_runtimes.workspace_id", "workspace_runtimes.id"],
+        ),
+        CheckConstraint("desired_state IN ('running', 'stopped')", name="deployment_desired"),
+        CheckConstraint("revision > 0", name="deployment_revision"),
+        Index("ix_plugin_deployments_due", "next_check_at"),
+    )
+    workspace_id: Mapped[UUID] = mapped_column()
+    install_id: Mapped[UUID] = mapped_column()
+    template_id: Mapped[UUID] = mapped_column(ForeignKey("runtime_templates.id"))
+    image: Mapped[str] = mapped_column(String(260))
+    desired_state: Mapped[str] = mapped_column(String(20), default="running")
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    applied_revision: Mapped[int] = mapped_column(Integer, default=0)
+    generation: Mapped[int] = mapped_column(Integer)
+    execution_identity: Mapped[dict[str, object]] = mapped_column(JSONB)
+    configuration: Mapped[dict[str, object]] = mapped_column(JSONB)
+    encrypted_environment: Mapped[str] = mapped_column(Text)
+    encryption_key_id: Mapped[str] = mapped_column(String(120))
+    runtime_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    credential_id: Mapped[UUID | None] = mapped_column(ForeignKey("plugin_credentials.id"))
+    credential_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(64))
 
 
 class PluginTrustKey(UUIDPrimaryKeyMixin, TimestampMixin, Base):

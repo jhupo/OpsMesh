@@ -159,9 +159,21 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
             labels["opsmesh.runtime_space_id"] = request.runtime_space_id
 
         with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
+            if request.process is not None:
+                try:
+                    existing = client.containers.get(request.name)
+                except NotFound:
+                    pass
+                else:
+                    config = existing.attrs.get("Config", {})
+                    if config.get("Image") != request.image or any(
+                        existing.labels.get(key) != value for key, value in labels.items()
+                    ):
+                        raise ValueError("Runtime process identity conflict")
+                    return str(existing.id)
             container = client.containers.create(
                 image=request.image,
-                command=["sleep", "infinity"],
+                command=None if request.process is not None else ["sleep", "infinity"],
                 name=request.name,
                 labels=labels,
                 nano_cpus=int(request.limits.cpu_count * 1_000_000_000),
@@ -169,7 +181,10 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                 pids_limit=request.limits.max_processes,
                 storage_opt={"size": f"{request.limits.disk_mb}m"},
                 network_mode=_docker_network_mode(request),
-                environment=_docker_network_environment(request),
+                environment={
+                    **(request.process.environment if request.process is not None else {}),
+                    **(_docker_network_environment(request) or {}),
+                },
                 cap_drop=list(request.hardening.cap_drop),
                 security_opt=_security_options(request),
                 read_only=request.hardening.read_only_rootfs,
@@ -200,12 +215,18 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
             client.containers.get(container_id).stop(timeout=_DOCKER_CONTROL_TIMEOUT_SECONDS)
 
     def remove_container(self, container_id: str) -> None:
-        with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
-            client.containers.get(container_id).remove(force=True)
+        try:
+            with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
+                client.containers.get(container_id).remove(force=True)
+        except NotFound:
+            return
 
     def remove_volume(self, volume_name: str) -> None:
-        with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
-            client.volumes.get(volume_name).remove(force=True)
+        try:
+            with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
+                client.volumes.get(volume_name).remove(force=True)
+        except NotFound:
+            return
 
     def container_running(self, container_id: str) -> bool:
         try:

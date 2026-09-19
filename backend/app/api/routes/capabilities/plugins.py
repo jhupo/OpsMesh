@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.db.session import get_db_session
 from backend.app.core.pagination import PageParams
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.plugins.contracts import (
@@ -35,6 +37,11 @@ from backend.app.domains.capabilities.plugins.contracts import (
     TrustKeyCreate,
     TrustKeyResponse,
 )
+from backend.app.domains.capabilities.plugins.deployments import (
+    DeploymentRequest,
+    DeploymentView,
+    PluginDeploymentService,
+)
 from backend.app.domains.capabilities.plugins.distribution import PluginDistributionService
 from backend.app.domains.capabilities.plugins.models import (
     PluginBinding,
@@ -49,6 +56,45 @@ from backend.app.domains.capabilities.plugins.service import PluginService
 from backend.app.domains.capabilities.plugins.services import PluginServices
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/plugins", tags=["plugins"])
+
+
+@router.put("/{install_id}/deployment", response_model=DeploymentView, status_code=202)
+def configure_deployment(
+    install_id: UUID,
+    request: DeploymentRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> object:
+    secrets = SecretEncryptionService(
+        secret=settings.credential_encryption_secret,
+        key_id=settings.credential_encryption_key_id,
+        previous_secrets=settings.credential_encryption_previous_secrets,
+    )
+    try:
+        return PluginDeploymentService(session).configure(
+            context.workspace.id, install_id, context.user, request, secrets
+        )
+    except ValueError as exc:
+        raise HTTPException(422, "Invalid plugin deployment configuration") from exc
+
+
+@router.get("/{install_id}/deployment", response_model=DeploymentView)
+def deployment_status(
+    install_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    return PluginDeploymentService(session).get(context.workspace.id, install_id)
+
+
+@router.post("/{install_id}/deployment/stop", response_model=DeploymentView, status_code=202)
+def stop_deployment(
+    install_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> object:
+    return PluginDeploymentService(session).stop(context.workspace.id, install_id, context.user)
 
 
 @router.post("/{install_id}/credentials", response_model=CredentialResponse, status_code=201)

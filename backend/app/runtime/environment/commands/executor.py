@@ -184,6 +184,8 @@ class RuntimeCommandExecutor:
         record: RuntimeCommand,
         command: list[str],
     ) -> int:
+        if runtime.capabilities.get("plugin_install_id"):
+            raise PermissionError("Plugin processes do not accept interactive runtime commands")
         if runtime.workspace_id != workspace_id:
             raise PermissionError("Runtime does not belong to workspace")
         require_container(runtime)

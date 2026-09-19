@@ -225,11 +225,19 @@ A change is complete only when:
 
 ## Independent plugin SDK
 
-The SDK source owner is https://github.com/jhupo/opsmesh-plugin-sdk-python.
+The local SDK source owner is the independent opsmesh-plugin-center repository under sdk/;
+each plugin lives under plugins/<name> with its own package, templates and deployment assets.
+Remote migration and the immutable dependency switch remain tracked in
+docs/plugin-service-integration.md; do not claim release readiness before that switch is verified.
 Do not restore plugin_sdk/ or add source-copy fallbacks. Pin the external package to immutable
 release content or a full commit and update uv.lock. Preserve dependencies' license metadata.
-Plugin business implementations live in their own repositories; platform download/installation
+Plugin business implementations stay outside OpsMesh; platform download/installation
 never dynamically imports external code in API/Worker. Data-only catalog synchronization and
 pinned HTTPS downloads belong to the plugins domain; installation reuses PluginService.
-Catalogs cannot grant publisher trust or auto-approve upgrades. OCI deployment and external
-plugin process management are not implemented.
+Catalogs cannot grant publisher trust or auto-approve upgrades or execution. Hosted plugin
+deployment is explicit admin-approved durable intent. Runtime workers reuse the isolated
+container lifecycle with digest-pinned templates, encrypted environment values, scoped
+credentials, quotas, bounded recovery and revocation-driven cleanup. Plugin containers are not
+Agent sandboxes or interactive command targets. Configuration refresh is not process hot-loading.
+Simulations, migrations and package builds do not prove live container or channel acceptance;
+report the external verification evidence separately.

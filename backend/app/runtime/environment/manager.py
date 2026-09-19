@@ -20,6 +20,7 @@ from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeLimits,
+    RuntimeProcess,
 )
 from backend.app.runtime.environment.events import RuntimeEventLog
 from backend.app.runtime.environment.leases import (
@@ -142,6 +143,7 @@ class RuntimeManager:
         policy_metadata: dict[str, object] | None = None,
         execution_mode: RuntimeExecutionMode | None = None,
         pool_key: str | None = None,
+        process: RuntimeProcess | None = None,
     ) -> WorkspaceRuntime:
         if execution_mode is not None:
             validate_runtime_execution_mode(execution_mode, pool_key)
@@ -159,6 +161,7 @@ class RuntimeManager:
             limits=limits,
             network_disabled=network_disabled,
             policy_metadata=policy_metadata,
+            process=process,
         )
 
     def start_runtime(self, runtime: WorkspaceRuntime) -> WorkspaceRuntime:

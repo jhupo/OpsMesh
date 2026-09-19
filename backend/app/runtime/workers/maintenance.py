@@ -26,6 +26,7 @@ from backend.app.observability.audit.integrity import AuditIntegrityService
 from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.environment.cleanup_jobs import RuntimeCleanupService
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
+from backend.app.runtime.environment.plugin_processes import PluginProcessWorker
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.leases import WorkerLeaseMaintenanceService
 from backend.app.runtime.workers.queue import RedisQueue
@@ -107,6 +108,10 @@ class WorkerMaintenanceService:
     def run(self) -> WorkerMaintenanceSummary:
         try:
             PluginDownloadWorker(self._session_factory).run_once()
+            if self._settings is not None and self._runtime_docker_client is not None:
+                PluginProcessWorker(
+                    self._session_factory, self._settings, self._runtime_docker_client
+                ).run_once()
             self._queue.reclaim_due_retries(limit=self._config.recovery_batch_size)
             reclaimed_jobs = self._queue.reclaim_expired(limit=self._config.recovery_batch_size)
             with self._session_scope() as session:

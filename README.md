@@ -250,6 +250,8 @@ sequenceDiagram
 - Installation-scoped plugin credentials, private CAS storage, configuration, permission queries
   and redacted logs extend the remote connector boundary without exposing user tokens or SQL.
   Event-scoped card approval decisions reuse task authorization and durable run resumption.
+  Private event-bound media inputs feed provider SDKs; hosted plugin processes use durable
+  deployment intent and the existing isolated runtime lifecycle, with revocation-driven cleanup.
   See [plugin host services and DingTalk validation status](docs/plugin-service-integration.md)
   (2026-09-19); remote migration, card template import and live DingTalk acceptance remain pending.
 - Workspace-approved plugin catalogs pin exact SHA256 snapshots. Background downloads verify

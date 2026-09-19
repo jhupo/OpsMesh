@@ -1,10 +1,11 @@
 # 远程插件分发与安装闭环
 
-状态：2026-09-18，后端与独立 SDK 已实现。当前只处理 remote 插件，不部署外部进程。
+状态：2026-09-19。目录下载与安装保持数据边界；隔离进程部署由管理员另行批准，
+见[插件服务与部署](plugin-service-integration.md)。插件中心远程迁移尚未完成。
 
 ## 实施项
 
-- SDK 0.2.0 发布描述合同、目录合同、双层签名、发布命令及 reusable workflow。
+- SDK 0.4 开发版的 descriptor v2、目录合同、双层签名、发布命令及分包工作流。
 - 工作区来源配置、固定摘要目录同步、不可变候选版本。
 - 后台持久化下载请求、租约恢复、安全 HTTPS 拉取与内容校验。
 - 预览权限/配置差异、显式安装、升级/回滚及目录撤回。
@@ -28,14 +29,17 @@ release JSON 包含已签名 manifest、SDK/平台版本范围和发布者签名
 
 下载成功只产生可审核候选。管理员查看权限/绑定差异后安装，升级使用已有 generation CAS；
 目录删除或撤回条目阻止新的安装，不静默卸载正在使用的版本。紧急停止继续使用 disable
-或撤销发布者公钥。SDK 和业务插件的发布工作流互相独立，具体业务插件不放进 SDK 仓库。
+或撤销发布者公钥。SDK 和业务插件独立版本、独立 tag；插件中心中 sdk/ 与 plugins/ 分开维护。
 
 ## 发布与目录
 
 SDK 唯一源为 [opsmesh-plugin-sdk-python](https://github.com/jhupo/opsmesh-plugin-sdk-python)。
 平台固定完整提交及 uv.lock 摘要，不复制 SDK 实现。SDK 的 `opsmesh-plugin-publish` 命令
 产生 SignedPluginRelease：受签 manifest、平台/SDK 版本范围、许可证、源码仓库与 commit。
-独立插件仓库可调用其 `plugin-release.yml`，并依赖自己的业务门禁；仅 tag 发布，私钥不进 PR。
+新插件中心的根 `.github/workflows/release.yml` 按 sdk/v* 或 plugins/<name>/v* 发布；
+插件使用 CI 门禁产物构建 OCI 镜像，descriptor v2 签名覆盖 `container_image` 固定摘要。
+目录仍是 contract_version=1；描述合同升级到 v2 不增加旧合同兼容分支。
+仅 tag 发布，私钥不进 PR。远程地址与平台依赖切换状态以接入文档为准。
 SDK 的 wheel/sdist 发布与插件 release.json 发布各自独立，本次没有打 tag 或上架 PyPI。
 
 目录 JSON 合同如下。摘要必须由已审核的准确文件字节计算，不能填写下面的说明文字：
@@ -127,5 +131,6 @@ commit 的 raw.githubusercontent.com 地址或可信静态镜像，不能直接�
 
 ## 范围以外
 
-本阶段不包含 Web 页面、业务插件、私网/带凭据的分发服务、公共目录运营、OCI 安装或插件进程
-热更新。外部服务须独立部署；本阶段完成的是平台数据分发与现有安装生命周期的连接。
+目录分发不包含 Web 页面、私网/带凭据的分发服务或公共目录运营。业务插件在独立插件中心维护；
+进程托管由显式部署 API 负责，不通过下载目录隐式执行。进程替换与配置刷新分别处理，
+不提供 API/Worker 内的 Python 热加载。当前真实运行验收状态见插件服务接入文档。
