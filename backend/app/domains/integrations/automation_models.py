@@ -37,6 +37,11 @@ class Automation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class AutomationEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "automation_events"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "source_install_id"],
+            ["plugin_installs.workspace_id", "plugin_installs.id"],
+            name="fk_automation_event_plugin_scope",
+        ),
         UniqueConstraint("automation_id", "external_event_id", name="uq_automation_event"),
         Index("ix_automation_events_pending", "status", "created_at"),
         Index("ix_automation_events_scan", "status", "checked_at", "created_at"),
@@ -48,6 +53,7 @@ class AutomationEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
     automation_id: Mapped[UUID] = mapped_column(ForeignKey("automations.id", ondelete="CASCADE"))
     external_event_id: Mapped[str] = mapped_column(String(160))
+    source_install_id: Mapped[UUID | None] = mapped_column(nullable=True)
     conversation_id: Mapped[str] = mapped_column(String(160))
     content_hash: Mapped[str] = mapped_column(String(64))
     configuration: Mapped[dict[str, object]] = mapped_column(JSONB)

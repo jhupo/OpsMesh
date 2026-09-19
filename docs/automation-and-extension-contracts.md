@@ -141,7 +141,7 @@ SDK 目录、外部插件贡献位置和插件发布资产合同维护在独立�
 
 SDK 只支持远程执行声明。插件不能被动态导入 API 或 worker 进程，也不能凭 manifest 自动获得权限。安装时校验签名与明确批准的权限集合，执行时复查插件状态、发布密钥、版本和绑定配置；能力原有的凭证、工作区授权与审批规则仍生效。
 
-当前 `plugin_installation_supported: true`，`plugin_execution_modes: ["remote"]`。这是远程资源的控制面生命周期：外部连接器自行部署与运行，OpsMesh 不启动、停止或更新外部服务进程。启停无需重启 OpsMesh，但不是 Python 模块热加载。平台托管插件容器、第三方镜像发布、钉钉等具体渠道适配器及 Web 页面均未实现。
+当前 `plugin_installation_supported: true`，`plugin_execution_modes: ["remote"]`。这是远程资源的控制面生命周期：外部连接器自行部署与运行，OpsMesh 不启动、停止或更新外部服务进程。启停无需重启 OpsMesh，但不是 Python 模块热加载。平台托管插件容器、第三方镜像发布及 Web 页面未实现。独立钉钉插件与安装范围服务见 [接入和验收状态](plugin-service-integration.md)，真实渠道联调待验收。
 
 ## 安装与信任
 

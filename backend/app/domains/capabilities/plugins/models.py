@@ -32,6 +32,42 @@ class PluginTrustKey(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="active")
 
 
+class PluginCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "plugin_credentials"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "install_id"],
+            ["plugin_installs.workspace_id", "plugin_installs.id"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("token_hash", name="uq_plugin_credential_hash"),
+        Index("ix_plugin_credentials_install", "workspace_id", "install_id"),
+    )
+    workspace_id: Mapped[UUID] = mapped_column()
+    install_id: Mapped[UUID] = mapped_column()
+    generation: Mapped[int] = mapped_column(Integer)
+    token_hash: Mapped[str] = mapped_column(String(64))
+    permissions: Mapped[list[str]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PluginValue(TimestampMixin, Base):
+    __tablename__ = "plugin_values"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "install_id"],
+            ["plugin_installs.workspace_id", "plugin_installs.id"],
+            ondelete="CASCADE",
+        ),
+    )
+    workspace_id: Mapped[UUID] = mapped_column(primary_key=True)
+    install_id: Mapped[UUID] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    value: Mapped[dict[str, object]] = mapped_column(JSONB)
+
+
 class PluginInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "plugin_installs"
     __table_args__ = (

@@ -11,10 +11,12 @@ from backend.app.core.errors import DomainError
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.utils import payload_hash
 from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.capabilities.plugins.policy import (
     plugin_resource_available,
     require_plugin_resource,
 )
+from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
 from backend.app.domains.integrations.automation_authorization import require_automation_principal
 from backend.app.domains.integrations.automation_contracts import (
@@ -141,7 +143,7 @@ class AutomationService:
         self,
         workspace_id: UUID,
         automation_id: UUID,
-        user_id: UUID,
+        user_id: UUID | PluginPrincipal,
         message: IncomingMessage,
     ) -> AutomationEvent:
         item = self.require(workspace_id, automation_id)
@@ -151,7 +153,13 @@ class AutomationService:
         reject_embedded_secrets(message.text)
         if item.status != "active" or config.trigger_type != "message":
             raise ValueError("Message automation is not active")
-        if user_id != item.created_by_user_id:
+        source_install_id = None
+        if isinstance(user_id, PluginPrincipal):
+            if user_id.workspace_id != workspace_id:
+                raise ResourceAccessDenied()
+            PluginServices(self._session).require_automation(user_id, item.id, "messages.receive")
+            source_install_id = user_id.install_id
+        elif user_id != item.created_by_user_id:
             raise ValueError("Message ingress requires the automation's configured principal")
         require_automation_principal(self._session, item)
         if message.sender_id not in config.allowed_senders:
@@ -162,13 +170,16 @@ class AutomationService:
         identity = ExternalIdentityService(self._session).resolve(item, message.sender_id)
         if message.action in {"follow_up", "add_instruction"}:
             message_instruction(config, message)
-        AutomationConversationService(self._session).target(item, message)
+        target = AutomationConversationService(self._session).target(item, message)
+        if target is not None and target.source_install_id != source_install_id:
+            raise ResourceAccessDenied()
         event = self._accept(
             item,
             external_id=message.event_id,
             conversation_id=message.conversation_id,
             payload=message.model_dump(mode="json"),
             execution_identity=identity,
+            source_install_id=source_install_id,
         )
         self._session.commit()
         return event
@@ -200,18 +211,22 @@ class AutomationService:
         workspace_id: UUID,
         automation_id: UUID,
         *,
+        user_id: UUID,
         limit: int = 50,
         offset: int = 0,
     ) -> list[AutomationEvent]:
-        self.require(workspace_id, automation_id)
+        item = self.require(workspace_id, automation_id)
+        query = select(AutomationEvent).where(
+            AutomationEvent.workspace_id == workspace_id,
+            AutomationEvent.automation_id == automation_id,
+        )
+        if item.created_by_user_id != user_id:
+            query = query.where(
+                AutomationEvent.execution_identity["user_id"].as_string() == str(user_id)
+            )
         return list(
             self._session.scalars(
-                select(AutomationEvent)
-                .where(
-                    AutomationEvent.workspace_id == workspace_id,
-                    AutomationEvent.automation_id == automation_id,
-                )
-                .order_by(AutomationEvent.created_at.desc(), AutomationEvent.id)
+                query.order_by(AutomationEvent.created_at.desc(), AutomationEvent.id)
                 .limit(limit)
                 .offset(offset)
             )
@@ -225,9 +240,12 @@ class AutomationService:
         conversation_id: str,
         payload: dict[str, object],
         execution_identity: dict[str, object] | None,
+        source_install_id: UUID | None = None,
     ) -> AutomationEvent:
         checksum = payload_hash(payload)
-        ExecutionIdentityService(self._session).restore(item.workspace_id, execution_identity)
+        principal = ExecutionIdentityService(self._session).restore(
+            item.workspace_id, execution_identity
+        )
         existing = self._session.scalar(
             select(AutomationEvent).where(
                 AutomationEvent.workspace_id == item.workspace_id,
@@ -236,6 +254,8 @@ class AutomationService:
             )
         )
         if existing is not None:
+            if existing.source_install_id != source_install_id:
+                raise ResourceAccessDenied()
             if existing.content_hash != checksum:
                 raise ValueError("Event ID was already used for different content")
             if existing.execution_identity != execution_identity:
@@ -250,10 +270,21 @@ class AutomationService:
             configuration=dict(item.configuration),
             input_payload=payload,
             execution_identity=execution_identity,
+            source_install_id=source_install_id,
         )
         self._session.add(event)
         self._session.flush()
-        self._audit(item, "automation.event_accepted", item.created_by_user_id)
+        AuditService(self._session).record_user_action(
+            workspace_id=item.workspace_id,
+            user_id=principal.user_id,
+            action="automation.event_accepted",
+            target_type="automation_event",
+            target_id=event.id,
+            metadata={
+                "automation_id": str(item.id),
+                "source_install_id": str(source_install_id) if source_install_id else None,
+            },
+        )
         return event
 
     def maintain(self, *, limit: int = 100) -> None:

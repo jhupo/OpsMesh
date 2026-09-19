@@ -1743,7 +1743,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.65b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.44.0" },
     { name = "opsmesh-operator", extras = ["host"], editable = "operator" },
-    { name = "opsmesh-plugin-sdk", url = "https://github.com/jhupo/opsmesh-plugin-sdk-python/archive/3baf379b9a732a882161a070b40d62c9988b50b7.tar.gz" },
+    { name = "opsmesh-plugin-sdk", url = "https://github.com/jhupo/opsmesh-plugin-sdk-python/archive/6d2e7179cfaafc0c2ec299122c57014991b13276.tar.gz" },
     { name = "packaging", specifier = ">=26.2,<27.0" },
     { name = "pgvector", specifier = ">=0.5.0,<0.6.0" },
     { name = "prometheus-client", specifier = ">=0.26.0" },
@@ -1809,14 +1809,14 @@ provides-extras = ["host"]
 
 [[package]]
 name = "opsmesh-plugin-sdk"
-version = "0.2.0"
-source = { url = "https://github.com/jhupo/opsmesh-plugin-sdk-python/archive/3baf379b9a732a882161a070b40d62c9988b50b7.tar.gz" }
+version = "0.3.0"
+source = { url = "https://github.com/jhupo/opsmesh-plugin-sdk-python/archive/6d2e7179cfaafc0c2ec299122c57014991b13276.tar.gz" }
 dependencies = [
     { name = "httpx" },
     { name = "packaging" },
     { name = "pydantic" },
 ]
-sdist = { hash = "sha256:8e24bd24a97360371677d503608b3bf7ba9d8cbb611c0a1c35a81de01530ff6a" }
+sdist = { hash = "sha256:c50b3780d41380511965698fcc4be2db0c4544b400e542b3471c21b03a281c62" }
 
 [package.metadata]
 requires-dist = [

@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from opsmesh_plugin_sdk.services import StoredValue, StoreWrite
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,8 @@ from backend.app.domains.capabilities.plugins.contracts import (
     CandidatePreviewRequest,
     CandidatePreviewResponse,
     CandidateResponse,
+    CredentialRequest,
+    CredentialResponse,
     DownloadRequest,
     DownloadResponse,
     PluginAction,
@@ -43,8 +46,54 @@ from backend.app.domains.capabilities.plugins.models import (
     PluginTrustKey,
 )
 from backend.app.domains.capabilities.plugins.service import PluginService
+from backend.app.domains.capabilities.plugins.services import PluginServices
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/plugins", tags=["plugins"])
+
+
+@router.post("/{install_id}/credentials", response_model=CredentialResponse, status_code=201)
+def rotate_credential(
+    install_id: UUID,
+    request: CredentialRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> CredentialResponse:
+    record, token = PluginServices(session).issue(
+        context.workspace.id,
+        install_id,
+        context.user,
+        request.permissions,
+        request.lifetime_hours,
+    )
+    session.commit()
+    return CredentialResponse(
+        id=record.id, token=token, expires_at=record.expires_at, permissions=record.permissions
+    )
+
+
+@router.delete("/{install_id}/credentials", status_code=204)
+def revoke_credentials(
+    install_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> None:
+    PluginServices(session).revoke(context.workspace.id, install_id, context.user)
+    session.commit()
+
+
+@router.put("/{install_id}/configuration", response_model=StoredValue)
+def configure_plugin(
+    install_id: UUID,
+    request: StoreWrite,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> StoredValue:
+    with distribution_errors():
+        value = PluginServices(session).configure(
+            context.workspace.id, install_id, context.user, request
+        )
+        session.commit()
+        return value
 
 
 @contextmanager

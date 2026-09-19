@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from opsmesh_plugin_sdk.cards import CardTemplate
 from opsmesh_plugin_sdk.contracts import (
     AcceptedEvent,
     AutomationReply,
@@ -59,6 +60,8 @@ def configuration_contracts(
         "plugin_catalog": PluginCatalog.model_json_schema(),
         "plugin_release": SignedPluginRelease.model_json_schema(),
         "plugin_execution_modes": ["remote"],
+        "plugin_service_credentials_supported": True,
+        "card_template": CardTemplate.model_json_schema(),
     }
 
 
@@ -160,6 +163,7 @@ def list_events(
         return AutomationService(session).events(
             context.workspace.id,
             automation_id,
+            user_id=context.user.user_id,
             limit=limit,
             offset=offset,
         )
@@ -175,7 +179,9 @@ def event_state(
     session: Session = Depends(get_db_session),
 ) -> EventState:
     try:
-        return AutomationService(session).event_state(context.workspace.id, automation_id, event_id)
+        service = AutomationStreamService(session)
+        event, _ = service.authorize(context.workspace.id, automation_id, event_id, context.user)
+        return service.state(event)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
 

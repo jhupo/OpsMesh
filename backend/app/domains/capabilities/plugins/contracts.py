@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -13,6 +14,19 @@ class TrustKeyCreate(BaseModel):
     key_id: str = Field(pattern=r"^[a-zA-Z0-9_.-]{1,120}$")
     plugin_key: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,119}$")
     public_key: str = Field(min_length=44, max_length=44)
+
+
+class CredentialRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    permissions: list[str] = Field(min_length=1, max_length=16)
+    lifetime_hours: int = Field(default=24, ge=1, le=2160)
+
+
+class CredentialResponse(BaseModel):
+    id: UUID
+    token: str
+    expires_at: datetime
+    permissions: list[str]
 
 
 class TrustKeyResponse(TimestampedModel):

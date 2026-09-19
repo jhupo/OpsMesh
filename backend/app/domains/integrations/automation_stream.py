@@ -13,8 +13,10 @@ from backend.app.core.errors import DomainError
 from backend.app.domains.access.context import AuthenticatedUser
 from backend.app.domains.access.errors import AuthorizationError
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.capabilities.plugins.policy import require_plugin_resource
+from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.integrations.automation_authorization import (
     require_automation_principal,
     require_event_principal,
@@ -30,16 +32,27 @@ class AutomationStreamService:
         self.session = session
 
     def authorize(
-        self, workspace_id: UUID, automation_id: UUID, event_id: UUID, user: AuthenticatedUser
+        self,
+        workspace_id: UUID,
+        automation_id: UUID,
+        event_id: UUID,
+        user: AuthenticatedUser | PluginPrincipal,
     ) -> tuple[AutomationEvent, AutomationConfiguration]:
-        authorization = AuthorizationService(self.session)
-        refreshed = authorization.refresh_authenticated_user(user)
-        authorization.require_workspace(
-            user_id=refreshed.user_id,
-            workspace_id=workspace_id,
-            action=WorkspaceAction.READ,
-            authenticated_user=refreshed,
-        )
+        owner_id = None
+        if isinstance(user, PluginPrincipal):
+            if user.workspace_id != workspace_id:
+                raise ResourceAccessDenied()
+            PluginServices(self.session).require_automation(user, automation_id, "messages.read")
+        else:
+            authorization = AuthorizationService(self.session)
+            refreshed = authorization.refresh_authenticated_user(user)
+            authorization.require_workspace(
+                user_id=refreshed.user_id,
+                workspace_id=workspace_id,
+                action=WorkspaceAction.READ,
+                authenticated_user=refreshed,
+            )
+            owner_id = refreshed.user_id
         pair = self.session.execute(
             select(AutomationEvent, Automation)
             .join(Automation, Automation.id == AutomationEvent.automation_id)
@@ -54,7 +67,15 @@ class AutomationStreamService:
         if pair is None:
             raise ValueError("Message stream unavailable")
         event, item = pair
-        if item.status != "active" or item.created_by_user_id != refreshed.user_id:
+        if item.status != "active":
+            raise ValueError("Message stream unavailable")
+        if isinstance(user, PluginPrincipal):
+            if event.source_install_id != user.install_id:
+                raise ResourceAccessDenied()
+        elif item.created_by_user_id != owner_id and (
+            event.execution_identity is None
+            or event.execution_identity.get("user_id") != str(owner_id)
+        ):
             raise ValueError("Message stream unavailable")
         require_automation_principal(self.session, item)
         require_event_principal(self.session, item, event)
@@ -85,7 +106,7 @@ class AutomationStreamService:
         workspace_id: UUID,
         automation_id: UUID,
         event_id: UUID,
-        user: AuthenticatedUser,
+        user: AuthenticatedUser | PluginPrincipal,
         cursor: str,
         once: bool,
     ) -> AsyncIterator[AutomationStreamEvent]:

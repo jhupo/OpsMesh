@@ -14,6 +14,7 @@ from backend.app.api.routes.agents.sessions import (
 from backend.app.api.routes.capabilities.marketplace import router as marketplace_router
 from backend.app.api.routes.capabilities.router import router as capabilities_router
 from backend.app.api.routes.integrations.automations import router as automations_router
+from backend.app.api.routes.integrations.plugin_runtime import router as plugin_runtime_router
 from backend.app.api.routes.integrations.webhooks import router as webhooks_router
 from backend.app.api.routes.operations.costs import router as costs_router
 from backend.app.api.routes.operations.health import router as health_router
@@ -66,3 +67,4 @@ api_router.include_router(operations_router)
 api_router.include_router(exports_router)
 api_router.include_router(webhooks_router)
 api_router.include_router(automations_router)
+api_router.include_router(plugin_runtime_router)

@@ -246,6 +246,10 @@ sequenceDiagram
   Versioned input/output JSON Schemas, explicit model-visible fields, and an async NDJSON
   subscription expose live text previews and safe tool status with replay cursors (2026-09-18).
   External channel plugins stay in their own repositories; no channel business logic is embedded.
+- Installation-scoped plugin credentials, private CAS storage, configuration, permission queries
+  and redacted logs extend the remote connector boundary without exposing user tokens or SQL.
+  See [plugin host services and DingTalk validation status](docs/plugin-service-integration.md)
+  (2026-09-18); live DingTalk acceptance remains pending.
 - Workspace-approved plugin catalogs pin exact SHA256 snapshots. Background downloads verify
   public HTTPS egress, publisher signatures and platform/SDK compatibility; explicit permission
   and configuration previews lead into the existing install/upgrade lifecycle. See

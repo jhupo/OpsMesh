@@ -1357,11 +1357,20 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     monkeypatch: pytest.MonkeyPatch, valid_output: bool
 ) -> None:
     import asyncio
+    import base64
     from datetime import UTC, datetime
 
     import httpx
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from opsmesh_plugin_sdk.client import AsyncAutomationClient, AutomationClient
-    from opsmesh_plugin_sdk.contracts import IncomingMessage
+    from opsmesh_plugin_sdk.contracts import IncomingMessage, PluginManifest
+    from opsmesh_plugin_sdk.packages import sign_package
+    from opsmesh_plugin_sdk.services import (
+        PermissionQuery,
+        PluginLog,
+        PluginServicesClient,
+        StoreWrite,
+    )
 
     from backend.app.api.dependencies.redis import get_redis_client
     from backend.app.core.config import get_settings
@@ -1508,6 +1517,103 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     )
     assert bound.status_code == 200, bound.text
     sdk = AutomationClient(client, workspace.id, automation_id)
+    private = Ed25519PrivateKey.generate()
+    trusted = client.post(
+        f"{base}/plugins/trust-keys",
+        json={
+            "key_id": "stream-publisher",
+            "plugin_key": "stream.connector",
+            "public_key": base64.b64encode(private.public_key().public_bytes_raw()).decode(),
+        },
+    )
+    assert trusted.status_code == 201, trusted.text
+    permissions = [
+        "messages.receive",
+        "messages.read",
+        "configuration.read",
+        "storage.read",
+        "storage.write",
+        "permissions.read",
+        "logs.write",
+    ]
+    package = sign_package(
+        PluginManifest.model_validate(
+            {
+                "key": "stream.connector",
+                "name": "Stream connector",
+                "version": "1.0.0",
+                "capabilities": [
+                    {
+                        "key": "receive",
+                        "kind": "message_trigger",
+                        "title": "Receive",
+                        "required_permissions": permissions,
+                    }
+                ],
+            }
+        ),
+        "stream-publisher",
+        private.private_bytes_raw(),
+    )
+    installed = client.post(
+        f"{base}/plugins",
+        json={
+            "package": package.model_dump(mode="json"),
+            "bindings": {"receive": {"resource_id": str(automation_id)}},
+            "approved_permissions": permissions,
+        },
+    )
+    assert installed.status_code == 201, installed.text
+    install_id = UUID(installed.json()["id"])
+    credential_url = f"{base}/plugins/{install_id}/credentials"
+    issued = client.post(credential_url, json={"permissions": permissions})
+    assert issued.status_code == 201, issued.text
+    plugin_headers = {"Authorization": "Bearer " + issued.json()["token"]}
+    assert client.get(f"{base}/teams", headers=plugin_headers).status_code == 401
+    assert (
+        client.post(
+            credential_url, headers=_api_headers(employee.id), json={"permissions": permissions}
+        ).status_code
+        == 403
+    )
+    configured = client.put(
+        f"{base}/plugins/{install_id}/configuration",
+        json={"expected_revision": 0, "value": {"poll_seconds": 3}},
+    )
+    assert configured.status_code == 200, configured.text
+
+    async def host_services():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=client.app),
+            base_url="http://testserver/api/v1/",
+            headers=plugin_headers,
+        ) as http:
+            host = PluginServicesClient(http, workspace.id, install_id)
+            assert await host.configuration() == {"poll_seconds": 3}
+            saved = await host.write(
+                "delivery:1", StoreWrite(expected_revision=0, value={"cursor": "0-0"})
+            )
+            assert (await host.read("delivery:1")).revision == saved.revision
+            with pytest.raises(httpx.HTTPStatusError) as conflict:
+                await host.write("delivery:1", StoreWrite(expected_revision=0, value={}))
+            assert conflict.value.response.status_code == 409
+            assert len(await host.values(prefix="delivery:")) == 1
+            allowed = await host.permissions(
+                PermissionQuery(
+                    automation_id=automation_id,
+                    sender_id="user-1",
+                    resource_kind="team",
+                    resource_id=UUID(team.json()["id"]),
+                )
+            )
+            assert "invoke" in allowed.actions
+            await host.log(
+                PluginLog(code="delivery.started", metadata={"authorization": "private-value"})
+            )
+            await host.delete("delivery:1", expected_revision=saved.revision)
+            assert await host.read("delivery:1") is None
+
+    asyncio.run(host_services())
     message = IncomingMessage(
         event_id="structured-1",
         conversation_id="thread-1",
@@ -1520,7 +1626,21 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         sdk.submit(message.model_copy(update={"contract_version": 1}))
     with pytest.raises(httpx.HTTPStatusError):
         sdk.submit(message.model_copy(update={"data": {"question": 123}}))
-    accepted = sdk.submit(message)
+
+    async def submit_plugin():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=client.app),
+            base_url="http://testserver/api/v1/",
+            headers=plugin_headers,
+        ) as http:
+            connector = PluginServicesClient(http, workspace.id, install_id).automation(
+                automation_id
+            )
+            accepted = await connector.submit(message)
+            assert (await connector.submit(message)).id == accepted.id
+            return accepted
+
+    accepted = asyncio.run(submit_plugin())
     service = AutomationService(session)
     service.maintain()
     task_id = sdk.state(accepted.id).event.task_id
@@ -1532,9 +1652,11 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=client.app),
             base_url="http://testserver/api/v1/",
-            headers=headers,
+            headers=plugin_headers,
         ) as http:
-            subscriber = AsyncAutomationClient(http, workspace.id, automation_id)
+            subscriber = AsyncAutomationClient(
+                http, workspace.id, automation_id, install_id=install_id
+            )
             return [
                 frame async for frame in subscriber.events(accepted.id, cursor=cursor, once=True)
             ]
@@ -1590,6 +1712,29 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     assert str(employee.id) in executed.session_key
     service.maintain()
     frames = asyncio.run(read_stream(observed[-1].cursor))
+    observer_user = User(email="stream-observer@example.com", display_name="Observer")
+    session.add(observer_user)
+    session.flush()
+    session.add(
+        WorkspaceMember(workspace_id=workspace.id, user_id=observer_user.id, role="operator")
+    )
+    session.commit()
+    assert (
+        client.put(
+            f"{base}/access/automation/{automation_id}/grants/{observer_user.id}",
+            json={"actions": ["read"]},
+        ).status_code
+        == 200
+    )
+    event_path = f"{base}/automations/{automation_id}/events"
+    assert (
+        client.get(f"{event_path}/{accepted.id}", headers=_api_headers(employee.id)).status_code
+        == 200
+    )
+    assert client.get(
+        f"{event_path}/{accepted.id}", headers=_api_headers(observer_user.id)
+    ).status_code in {403, 404}
+    assert client.get(event_path, headers=_api_headers(observer_user.id)).json() == []
     assert any(
         frame.kind == "tool.started" and frame.data["call_id"] == "inbox-1" for frame in frames
     )
@@ -1609,6 +1754,14 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     )
     reset = asyncio.run(read_stream("1-0"))
     assert reset[0].kind == "stream.reset"
+    old_headers = plugin_headers
+    rotated = client.post(credential_url, json={"permissions": permissions})
+    assert rotated.status_code == 201, rotated.text
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(read_stream())
+    plugin_headers = {"Authorization": "Bearer " + rotated.json()["token"]}
+    assert plugin_headers != old_headers
+    assert asyncio.run(read_stream())[-1].kind == "stream.completed"
     foreign_owner, foreign_workspace = _seed_api_workspace(
         session, "stream-other@example.com", "stream-other"
     )
