@@ -50,7 +50,7 @@ async def approve(
     approval = ApprovalQueryService(session).get_scoped(context.workspace.id, approval_id)
     if approval is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
-    _require_resource_review_admin(context, approval.payload)
+    ApprovalDecisionService(session, queue).require_actor(approval, context.user)
     try:
         return ApprovalResponse.model_validate(
             ApprovalDecisionService(session, queue).approve(
@@ -74,7 +74,7 @@ async def reject(
     approval = ApprovalQueryService(session).get_scoped(context.workspace.id, approval_id)
     if approval is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval not found")
-    _require_resource_review_admin(context, approval.payload)
+    ApprovalDecisionService(session, queue).require_actor(approval, context.user)
     try:
         return ApprovalResponse.model_validate(
             ApprovalDecisionService(session, queue).reject(
@@ -85,17 +85,6 @@ async def reject(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-
-
-def _require_resource_review_admin(context: WorkspaceContext, payload: object) -> None:
-    if not isinstance(payload, dict) or payload.get("kind") != "resource_review":
-        return
-    if _can_review_resources(context):
-        return
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Resource review approvals require a workspace admin",
-    )
 
 
 def _can_review_resources(context: WorkspaceContext) -> bool:

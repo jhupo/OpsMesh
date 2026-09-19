@@ -1366,12 +1366,14 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     from opsmesh_plugin_sdk.contracts import IncomingMessage, PluginManifest
     from opsmesh_plugin_sdk.packages import sign_package
     from opsmesh_plugin_sdk.services import (
+        ApprovalDecision,
         PermissionQuery,
         PluginLog,
         PluginServicesClient,
         StoreWrite,
     )
 
+    from backend.app.api.dependencies.queue import get_worker_queue
     from backend.app.api.dependencies.redis import get_redis_client
     from backend.app.core.config import get_settings
     from backend.app.domains.access.models import User
@@ -1417,6 +1419,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     _seed_default_model_provider(session, workspace_id=workspace.id, user_id=owner.id)
     queue = _queue()
     client.app.dependency_overrides[get_redis_client] = lambda: queue.redis
+    client.app.dependency_overrides[get_worker_queue] = lambda: queue
     headers = _api_headers(owner.id)
     client.headers.update(headers)
     client.base_url = "http://testserver/api/v1/"
@@ -1530,6 +1533,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     permissions = [
         "messages.receive",
         "messages.read",
+        "approvals.decide",
         "configuration.read",
         "storage.read",
         "storage.write",
@@ -1695,6 +1699,53 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     )
     assert run is not None
     settings = client.app.dependency_overrides[get_settings]()
+    monkeypatch.setattr(
+        ModelRequestReviewService,
+        "review_request",
+        lambda self, **kwargs: ModelRequestReview(
+            required=True, risk_level="high", reasons=["flow approval"], signals={}
+        ),
+    )
+    waiting = _run_agent_sync(
+        session,
+        JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=run.id,
+            requested_by_user_id=employee.id,
+            idempotency_key=f"approval-gate:{run.id}",
+        ),
+        agent_runner=StreamingModel(), settings=settings, queue=queue,
+    )
+    assert waiting.status == "waiting_approval"
+    approval = sdk.state(accepted.id).pending_actions[0]
+
+    async def approve_message():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=client.app),
+            base_url="http://testserver/api/v1/", headers=plugin_headers,
+        ) as http:
+            host = PluginServicesClient(http, workspace.id, install_id)
+            with pytest.raises(httpx.HTTPStatusError) as wrong_sender:
+                await host.decide_approval(
+                    automation_id, accepted.id, approval.id,
+                    ApprovalDecision(sender_id="unbound", decision="approve"),
+                )
+            assert wrong_sender.value.response.status_code == 403
+            for _ in range(2):
+                result = await host.decide_approval(
+                    automation_id, accepted.id, approval.id,
+                    ApprovalDecision(sender_id="user-1", decision="approve"),
+                )
+                assert result.status == "approved"
+            with pytest.raises(httpx.HTTPStatusError) as conflict:
+                await host.decide_approval(
+                    automation_id, accepted.id, approval.id,
+                    ApprovalDecision(sender_id="user-1", decision="reject"),
+                )
+            assert conflict.value.response.status_code == 409
+
+    asyncio.run(approve_message())
     executed = _run_agent_sync(
         session,
         JobPayload(

@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from opsmesh_plugin_sdk.contracts import AcceptedEvent, EventState, IncomingMessage
 from opsmesh_plugin_sdk.services import (
+    ApprovalDecision,
+    ApprovalReceipt,
     PermissionQuery,
     PermissionResult,
     PluginLog,
@@ -18,6 +20,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from backend.app.api.client_ip import security_request_context
+from backend.app.api.dependencies.queue import get_worker_queue
 from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
@@ -25,8 +28,10 @@ from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.integrations.automation_stream import AutomationStreamService
 from backend.app.domains.integrations.automations import AutomationService
+from backend.app.domains.integrations.plugin_messages import PluginMessageService
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
 from backend.app.observability.audit.security_events import SecurityAuditService
+from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter(prefix="/plugin-runtime/{workspace_id}/{install_id}", tags=["plugin-runtime"])
 
@@ -215,3 +220,24 @@ async def stream(
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post(
+    "/automations/{automation_id}/events/{event_id}/approvals/{approval_id}/decision",
+    response_model=ApprovalReceipt,
+)
+def decide_approval(
+    automation_id: UUID,
+    event_id: UUID,
+    approval_id: UUID,
+    request: ApprovalDecision,
+    principal: PluginPrincipal = Depends(plugin_principal),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> ApprovalReceipt:
+    try:
+        return PluginMessageService(session, queue).decide_approval(
+            principal, automation_id, event_id, approval_id, request
+        )
+    except ValueError as exc:
+        raise HTTPException(403, "Message unavailable") from exc

@@ -6,6 +6,15 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
 from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.access.context import AuthenticatedUser
+from backend.app.domains.access.permissions import WorkspaceAction, WorkspaceRole
+from backend.app.domains.access.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
+from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
@@ -38,6 +47,25 @@ class ApprovalDecisionService:
     def approve(self, approval: Approval, user_id: UUID, reason: str | None = None) -> Approval:
         return self._decide(approval, user_id, "approved", reason)
 
+    def require_actor(self, approval: Approval, actor: AuthenticatedUser) -> None:
+        authorization = AuthorizationService(self._session)
+        actor = authorization.refresh_authenticated_user(actor)
+        context = authorization.require_workspace(
+            user_id=actor.user_id,
+            workspace_id=approval.workspace_id,
+            action=WorkspaceAction.APPROVE,
+            authenticated_user=actor,
+        )
+        if approval.payload.get("kind") == "resource_review" and context.role not in {
+            WorkspaceRole.OWNER,
+            WorkspaceRole.ADMIN,
+        }:
+            raise ResourceAccessDenied()
+        if approval.task_id is not None:
+            ResourceAuthorizationService(self._session, actor).require(
+                approval.workspace_id, ResourceKind.TASK, approval.task_id, ResourceAction.APPROVE
+            )
+
     def reject(self, approval: Approval, user_id: UUID, reason: str | None = None) -> Approval:
         return self._decide(approval, user_id, "rejected", reason)
 
@@ -48,6 +76,15 @@ class ApprovalDecisionService:
         status: str,
         reason: str | None,
     ) -> Approval:
+        locked = self._session.scalar(
+            select(Approval)
+            .where(Approval.workspace_id == approval.workspace_id, Approval.id == approval.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if locked is None:
+            raise ValueError("Approval no longer exists")
+        approval = locked
         if approval.status == status:
             return approval
         if approval.status != "pending":

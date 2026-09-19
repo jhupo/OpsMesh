@@ -55,6 +55,7 @@ SERVICE_PERMISSIONS = frozenset(
         "configuration.read",
         "logs.write",
         "permissions.read",
+        "approvals.decide",
     }
 )
 
