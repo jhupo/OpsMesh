@@ -6,6 +6,22 @@ apply to the entire repository.
 
 ## Current code-quality rules
 
+- Complete the entire user-authorized task, not an arbitrarily selected slice. Break work into
+  internal steps and coherent commits, but continue through the agreed acceptance criteria without
+  requiring repeated "continue" prompts. Do not move to the next roadmap stage with required
+  work unfinished or silently reduce the requested scope to a demo, scaffold or happy path.
+- Never claim completion while required implementation or validation remains. Report implemented,
+  verified, unverified, and blocked items distinctly; passing static checks, a mock flow, a build,
+  or a commit is not proof of a working external integration.
+- Reconcile every acceptance criterion with the implementation, affected callers, configuration,
+  assets, migrations, packaging and documentation as applicable. A completed subtask or a disclosed
+  blocker does not make the overall task complete. For example, parseable card JSON does not prove
+  it can be imported, published, rendered or used for callbacks by the vendor.
+- When credentials, external setup, a material user choice or new authority are missing, finish
+  unaffected work and identify the exact remaining work and prerequisite. Never invent evidence,
+  conceal gaps or bypass authorization. Retain the focused verification policy below; these rules
+  do not require per-file tests, repeated checks or full-suite testing.
+
 - The source of truth is the current code, migrations, focused tests, and architecture checks. Do
   not use an old plan, release note, or review snapshot as proof that the current checkout supports
   a behavior.
