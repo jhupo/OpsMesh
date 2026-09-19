@@ -9,7 +9,9 @@ from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeResumeState
 from backend.app.domains.orchestration.runs.models import AgentRunStateSnapshot
 
-MAX_SERIALIZED_RUN_STATE_BYTES = 8 * 1024 * 1024
+# Native provider state can retain up to 20 MiB of admitted media as base64, plus SDK context.
+# Keep a hard ceiling while allowing approval/resumption of the largest admitted message.
+MAX_SERIALIZED_RUN_STATE_BYTES = 40 * 1024 * 1024
 RESUMABLE_STATE_STATUSES = frozenset({"paused", "approved", "rejected"})
 
 

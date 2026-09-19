@@ -348,6 +348,16 @@ class AgentRuntimeToolExecutor(Protocol):
 
 
 @dataclass(frozen=True)
+class AgentInputAttachment:
+    file_id: UUID
+    kind: str
+    filename: str
+    content_type: str
+    content: bytes = field(repr=False)
+    transcript: str = field(default="", repr=False)
+
+
+@dataclass(frozen=True)
 class AgentRunRequest:
     agent_profile: AgentRuntimeProfile
     input_text: str
@@ -376,6 +386,7 @@ class AgentRunRequest:
     event_sink: Callable[[AgentRuntimeStreamEvent], None] | None = None
     cancellation: AgentRuntimeCancellation | None = None
     sandbox: SandboxBinding | None = None
+    attachments: tuple[AgentInputAttachment, ...] = ()
 
 
 @dataclass(frozen=True)

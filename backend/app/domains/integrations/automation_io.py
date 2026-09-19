@@ -24,6 +24,7 @@ def model_message(config: AutomationConfiguration, message: IncomingMessage) -> 
     return {
         "event_id": message.event_id,
         "text": message.text,
+        "attachments": [item.model_dump(mode="json") for item in message.attachments],
         "data": {
             key: message.data[key] for key in config.model_input_fields if key in message.data
         },

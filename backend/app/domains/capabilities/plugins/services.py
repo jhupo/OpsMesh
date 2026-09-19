@@ -56,6 +56,7 @@ SERVICE_PERMISSIONS = frozenset(
         "logs.write",
         "permissions.read",
         "approvals.decide",
+        "attachments.write",
     }
 )
 
@@ -92,7 +93,7 @@ class PluginServices:
             raise ResourceAccessDenied()
         return item
 
-    def _release(self, install: PluginInstall) -> PluginRelease:
+    def active_release(self, install: PluginInstall) -> PluginRelease:
         release = self.session.scalar(
             select(PluginRelease)
             .join(
@@ -129,7 +130,7 @@ class PluginServices:
             authenticated_user=actor,
         )
         install = self.active_install(workspace_id, install_id, lock=True)
-        release = self._release(install)
+        release = self.active_release(install)
         if not permissions or not set(permissions) <= SERVICE_PERMISSIONS & set(
             release.approved_permissions
         ):
@@ -184,7 +185,7 @@ class PluginServices:
 
     def require(self, principal: PluginPrincipal, permission: str | None = None) -> PluginInstall:
         install = self.active_install(principal.workspace_id, principal.install_id)
-        release = self._release(install)
+        release = self.active_release(install)
         record = self.session.scalar(
             select(PluginCredential)
             .where(
@@ -214,7 +215,7 @@ class PluginServices:
         self, principal: PluginPrincipal, automation_id: UUID, permission: str
     ) -> None:
         install = self.require(principal, permission)
-        release = self._release(install)
+        release = self.active_release(install)
         binding = self.session.scalar(
             select(PluginBinding.id).where(
                 PluginBinding.workspace_id == principal.workspace_id,

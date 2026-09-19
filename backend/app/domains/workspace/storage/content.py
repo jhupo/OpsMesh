@@ -58,6 +58,17 @@ class WorkspaceFileContentReader:
         )
 
     def read(self, file: WorkspaceFile, *, workspace_id: UUID) -> WorkspaceFileContent:
+        content = self.read_bytes(file, workspace_id=workspace_id)
+        try:
+            decoded = content.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise WorkspaceFileReadError(
+                "workspace_file_encoding_unsupported",
+                "Workspace file is not valid UTF-8 text",
+            ) from exc
+        return WorkspaceFileContent(file=file, content=decoded)
+
+    def read_bytes(self, file: WorkspaceFile, *, workspace_id: UUID) -> bytes:
         if file.workspace_id != workspace_id or file.status != "active":
             raise WorkspaceFileReadError(
                 "workspace_file_not_found",
@@ -117,14 +128,7 @@ class WorkspaceFileContentReader:
                 "workspace_file_checksum_mismatch",
                 "Workspace file checksum verification failed",
             )
-        try:
-            decoded = content.decode("utf-8-sig")
-        except UnicodeDecodeError as exc:
-            raise WorkspaceFileReadError(
-                "workspace_file_encoding_unsupported",
-                "Workspace file is not valid UTF-8 text",
-            ) from exc
-        return WorkspaceFileContent(file=file, content=decoded)
+        return content
 
 
 def _normalized_content_type(value: str) -> str:

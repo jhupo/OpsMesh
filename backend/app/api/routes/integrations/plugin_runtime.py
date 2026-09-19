@@ -4,18 +4,35 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
-from opsmesh_plugin_sdk.contracts import AcceptedEvent, EventState, IncomingMessage
+from opsmesh_plugin_sdk.contracts import (
+    AcceptedEvent,
+    EventState,
+    IncomingMessage,
+    MessageAttachment,
+)
 from opsmesh_plugin_sdk.services import (
     ApprovalDecision,
     ApprovalReceipt,
+    AttachmentUpload,
     PermissionQuery,
     PermissionResult,
     PluginLog,
     StoredValue,
     StoreWrite,
 )
+from pydantic import ValidationError
 from redis import Redis
 from sqlalchemy.orm import Session
 
@@ -28,8 +45,11 @@ from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.integrations.automation_stream import AutomationStreamService
 from backend.app.domains.integrations.automations import AutomationService
+from backend.app.domains.integrations.plugin_attachments import PluginAttachmentService
 from backend.app.domains.integrations.plugin_messages import PluginMessageService
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
+from backend.app.domains.workspace.storage.service import WorkspaceFileService
+from backend.app.domains.workspace.storage.storage import create_storage
 from backend.app.observability.audit.security_events import SecurityAuditService
 from backend.app.runtime.workers.queue import RedisQueue
 
@@ -168,6 +188,37 @@ def receive(
         )
     except ValueError as exc:
         raise HTTPException(400, "Message admission rejected") from exc
+
+
+@router.post(
+    "/automations/{automation_id}/attachments", response_model=MessageAttachment, status_code=201
+)
+async def upload_attachment(
+    automation_id: UUID,
+    metadata: str = Form(max_length=24000),
+    file: UploadFile = File(),
+    principal: PluginPrincipal = Depends(plugin_principal),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> MessageAttachment:
+    try:
+        request = AttachmentUpload.model_validate_json(metadata)
+    except ValidationError as exc:
+        raise HTTPException(422, "Invalid attachment metadata") from exc
+    limit = min(settings.max_upload_bytes, 20 * 1024 * 1024)
+    content = await file.read(limit + 1)
+    if len(content) > limit:
+        raise HTTPException(413, "Attachment exceeds upload limit")
+    try:
+        return PluginAttachmentService(session).upload(
+            principal,
+            automation_id,
+            request,
+            content,
+            WorkspaceFileService(session, create_storage(settings), limit),
+        )
+    except ValueError as exc:
+        raise HTTPException(422, "Invalid attachment content") from exc
 
 
 @router.get("/automations/{automation_id}/events/{event_id}", response_model=EventState)

@@ -45,6 +45,7 @@ class WorkspaceFileService:
         filename: str,
         content_type: str,
         content: bytes,
+        metadata: dict[str, object] | None = None,
     ) -> WorkspaceFile:
         if len(content) > self._max_upload_bytes:
             raise ValueError("File exceeds maximum upload size")
@@ -61,6 +62,7 @@ class WorkspaceFileService:
             size_bytes=len(content),
             checksum_sha256=checksum,
             storage_key=f"workspaces/{workspace_id}/files/{file_id}/{sanitized_filename}",
+            file_metadata=dict(metadata or {}),
         )
         writes = CompensatingObjectStorageWrites(self._storage)
         try:

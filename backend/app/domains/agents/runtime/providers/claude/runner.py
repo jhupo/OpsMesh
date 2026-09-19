@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterable, AsyncIterator, Callable
 from contextlib import suppress
 from typing import Protocol, cast
 
@@ -87,7 +88,9 @@ class _ClaudeClient(Protocol):
 
     async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> bool: ...
 
-    async def query(self, prompt: str, session_id: str = "default") -> None: ...
+    async def query(
+        self, prompt: str | AsyncIterable[dict[str, object]], session_id: str = "default"
+    ) -> None: ...
 
     def receive_response(self) -> AsyncIterator[object]: ...
 
@@ -218,7 +221,9 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
         client = self._client_factory(options)
         async with client:
             try:
-                await client.query(prompt)
+                await client.query(
+                    self._prompt_input(request, prompt) if request.attachments else prompt
+                )
 
                 async def watch_cancellation() -> None:
                     cancellation = request.cancellation
@@ -311,6 +316,48 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
                 request_count=result_message.num_turns,
             ),
         )
+
+    async def _prompt_input(
+        self, request: AgentRunRequest, prompt: str
+    ) -> AsyncIterator[dict[str, object]]:
+        content: list[dict[str, object]] = [{"type": "text", "text": prompt}]
+        for attachment in request.attachments:
+            if attachment.kind == "audio":
+                continue
+            if (
+                attachment.content_type.startswith("text/")
+                or attachment.content_type == "application/json"
+            ):
+                continue
+            encoded = base64.b64encode(attachment.content).decode("ascii")
+            if attachment.kind == "image":
+                content.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": attachment.content_type,
+                            "data": encoded,
+                        },
+                    }
+                )
+            elif attachment.kind == "file":
+                content.append(
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": attachment.content_type,
+                            "data": encoded,
+                        },
+                        "title": attachment.filename,
+                    }
+                )
+        yield {
+            "type": "user",
+            "message": {"role": "user", "content": content},
+            "parent_tool_use_id": None,
+        }
 
     def _options(
         self,

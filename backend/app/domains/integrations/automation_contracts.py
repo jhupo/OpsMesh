@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from opsmesh_plugin_sdk.contracts import MessageAction
+from opsmesh_plugin_sdk.contracts import AttachmentKind, MessageAction
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.domains.capabilities.resources.schema import (
@@ -57,6 +57,7 @@ class AutomationConfiguration(BaseModel):
     output_binding: WorkflowDataBinding | None = None
     stream_output_nodes: list[str] = Field(default_factory=list, max_length=128)
     stream_tool_events: bool = False
+    allowed_attachment_kinds: list[AttachmentKind] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="after")
     def validate_configuration(self) -> AutomationConfiguration:

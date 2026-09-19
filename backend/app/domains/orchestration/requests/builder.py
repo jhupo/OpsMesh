@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.memory.context import AgentMemoryContext, AgentMemoryContextService
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
@@ -16,6 +16,7 @@ from backend.app.domains.agents.memory.working import (
 )
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
+    AgentInputAttachment,
     AgentRunRequest,
     AgentRuntimeAgentTool,
     AgentRuntimeContext,
@@ -33,6 +34,7 @@ from backend.app.domains.agents.sessions.models import PersistentAgentSessionRef
 from backend.app.domains.agents.sessions.store import SQLAlchemyAgentSession
 from backend.app.domains.capabilities.mcp.transport.resolver import McpAdapterResolver
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
+from backend.app.domains.orchestration.requests.attachments import message_attachments
 from backend.app.domains.orchestration.requests.context import RunRequestContextProvider
 from backend.app.domains.orchestration.requests.context_budget import (
     ContextBudgetManager,
@@ -107,6 +109,7 @@ class _MemoryRequestState:
 
 @dataclass(slots=True)
 class _ContextRequestState:
+    attachments: tuple[AgentInputAttachment, ...]
     runtime_context: AgentRuntimeContext
     agent_tools: tuple[AgentRuntimeAgentTool, ...]
     output_schema: Any
@@ -373,11 +376,32 @@ class RunRequestBuilder:
             resolve_model_provider=self.resolve_model_provider,
         )
         output_schema, guardrails = runtime_controls_from_snapshot(inputs.snapshot)
+        attachments = message_attachments(
+            self.session, inputs.task, self.settings or get_settings()
+        )
         fragments = self.prompt_renderer.context_fragments_for_run(
             run,
             allowed_tools=inputs.allowed_tools,
             runtime_metadata=runtime.metadata,
         )
+        for attachment in attachments:
+            if attachment.kind == "audio":
+                text = "Voice transcript:\n" + attachment.transcript
+            elif (
+                attachment.content_type.startswith("text/")
+                or attachment.content_type == "application/json"
+            ):
+                text = "Attached document:\n" + attachment.content.decode("utf-8-sig")
+            else:
+                continue
+            fragments += (
+                ContextFragment(
+                    key=f"attachment.{attachment.file_id}",
+                    text=text,
+                    priority=ContextPriority.CRITICAL,
+                    required=True,
+                ),
+            )
         rendered_working_memory = working_memory_context(memory.working_entries)
         if rendered_working_memory:
             fragments += (
@@ -434,6 +458,7 @@ class RunRequestBuilder:
             metadata=runtime.metadata,
         )
         return _ContextRequestState(
+            attachments=attachments,
             runtime_context=runtime_context,
             agent_tools=agent_tools,
             output_schema=output_schema,
@@ -454,6 +479,7 @@ class RunRequestBuilder:
         return AgentRunRequest(
             agent_profile=inputs.runtime_profile,
             input_text=context.budget.text,
+            attachments=context.attachments,
             context=context.runtime_context,
             model=inputs.model_provider["model"],
             provider=inputs.model_provider["provider"],

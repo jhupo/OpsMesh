@@ -33,6 +33,7 @@ from backend.app.domains.integrations.automation_io import (
 )
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
 from backend.app.domains.integrations.identities import ExternalIdentityService
+from backend.app.domains.integrations.plugin_attachments import PluginAttachmentService
 from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
 from backend.app.domains.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
@@ -168,6 +169,11 @@ class AutomationService:
             raise ValueError("Message action is not enabled for this automation")
         model_message(config, message)
         identity = ExternalIdentityService(self._session).resolve(item, message.sender_id)
+        PluginAttachmentService(self._session).require_references(
+            item, message,
+            ExecutionIdentityService(self._session).restore(workspace_id, identity),
+            source_install_id,
+        )
         if message.action in {"follow_up", "add_instruction"}:
             message_instruction(config, message)
         target = AutomationConversationService(self._session).target(item, message)
@@ -407,6 +413,9 @@ class AutomationService:
                         )
                         if live_identity != event.execution_identity:
                             raise ValueError("Message identity binding was changed")
+                        PluginAttachmentService(self._session).require_references(
+                            item, message, principal, event.source_install_id
+                        )
                         live_config = AutomationConfiguration.model_validate(item.configuration)
                         if (
                             message.sender_id not in live_config.allowed_senders

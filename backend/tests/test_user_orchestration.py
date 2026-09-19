@@ -1367,6 +1367,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     from opsmesh_plugin_sdk.packages import sign_package
     from opsmesh_plugin_sdk.services import (
         ApprovalDecision,
+        AttachmentUpload,
         PermissionQuery,
         PluginLog,
         PluginServicesClient,
@@ -1494,6 +1495,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         "output_binding": {"reference": "steps.answer.output.structured_output.value"},
         "stream_output_nodes": ["answer"],
         "stream_tool_events": True,
+        "allowed_attachment_kinds": ["file", "image", "audio"],
     }
     created = client.post(f"{base}/automations", json=config)
     assert created.status_code == 201, created.text
@@ -1534,6 +1536,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         "messages.receive",
         "messages.read",
         "approvals.decide",
+        "attachments.write",
         "configuration.read",
         "storage.read",
         "storage.write",
@@ -1618,6 +1621,32 @@ def test_structured_messages_stream_before_model_completion_and_replay(
             assert await host.read("delivery:1") is None
 
     asyncio.run(host_services())
+
+    async def upload_media():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=client.app),
+            base_url="http://testserver/api/v1/",
+            headers=plugin_headers,
+        ) as http:
+            host = PluginServicesClient(http, workspace.id, install_id)
+            upload = AttachmentUpload(
+                sender_id="user-1",
+                external_event_id="structured-1",
+                slot=0,
+                kind="file",
+                filename="order.txt",
+                content_type="text/plain",
+            )
+            attachment = await host.upload_attachment(automation_id, upload, b"order 123: timeout")
+            assert (
+                await host.upload_attachment(automation_id, upload, b"order 123: timeout")
+            ) == attachment
+            with pytest.raises(httpx.HTTPStatusError) as conflict:
+                await host.upload_attachment(automation_id, upload, b"different content")
+            assert conflict.value.response.status_code == 409
+            return attachment
+
+    attachment = asyncio.run(upload_media())
     message = IncomingMessage(
         event_id="structured-1",
         conversation_id="thread-1",
@@ -1625,6 +1654,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         occurred_at=datetime.now(UTC),
         contract_version=2,
         data={"question": "What is the result?", "user": {"name": "private-name", "level": "vip"}},
+        attachments=[attachment],
     )
     with pytest.raises(httpx.HTTPStatusError):
         sdk.submit(message.model_copy(update={"contract_version": 1}))
@@ -1640,6 +1670,9 @@ def test_structured_messages_stream_before_model_completion_and_replay(
             connector = PluginServicesClient(http, workspace.id, install_id).automation(
                 automation_id
             )
+            with pytest.raises(httpx.HTTPStatusError) as wrong_event:
+                await connector.submit(message.model_copy(update={"event_id": "different-event"}))
+            assert wrong_event.value.response.status_code == 403
             accepted = await connector.submit(message)
             assert (await connector.submit(message)).id == accepted.id
             return accepted
@@ -1667,6 +1700,8 @@ def test_structured_messages_stream_before_model_completion_and_replay(
 
     class StreamingModel:
         async def run(self, request):
+            assert len(request.attachments) == 1
+            assert request.attachments[0].content == b"order 123: timeout"
             assert request.context.user_id == employee.id
             assert "private-name" not in request.input_text
             assert request.event_sink is not None
@@ -1715,7 +1750,9 @@ def test_structured_messages_stream_before_model_completion_and_replay(
             requested_by_user_id=employee.id,
             idempotency_key=f"approval-gate:{run.id}",
         ),
-        agent_runner=StreamingModel(), settings=settings, queue=queue,
+        agent_runner=StreamingModel(),
+        settings=settings,
+        queue=queue,
     )
     assert waiting.status == "waiting_approval"
     approval = sdk.state(accepted.id).pending_actions[0]
@@ -1723,24 +1760,31 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     async def approve_message():
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=client.app),
-            base_url="http://testserver/api/v1/", headers=plugin_headers,
+            base_url="http://testserver/api/v1/",
+            headers=plugin_headers,
         ) as http:
             host = PluginServicesClient(http, workspace.id, install_id)
             with pytest.raises(httpx.HTTPStatusError) as wrong_sender:
                 await host.decide_approval(
-                    automation_id, accepted.id, approval.id,
+                    automation_id,
+                    accepted.id,
+                    approval.id,
                     ApprovalDecision(sender_id="unbound", decision="approve"),
                 )
             assert wrong_sender.value.response.status_code == 403
             for _ in range(2):
                 result = await host.decide_approval(
-                    automation_id, accepted.id, approval.id,
+                    automation_id,
+                    accepted.id,
+                    approval.id,
                     ApprovalDecision(sender_id="user-1", decision="approve"),
                 )
                 assert result.status == "approved"
             with pytest.raises(httpx.HTTPStatusError) as conflict:
                 await host.decide_approval(
-                    automation_id, accepted.id, approval.id,
+                    automation_id,
+                    accepted.id,
+                    approval.id,
                     ApprovalDecision(sender_id="user-1", decision="reject"),
                 )
             assert conflict.value.response.status_code == 409
@@ -1786,6 +1830,9 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         f"{event_path}/{accepted.id}", headers=_api_headers(observer_user.id)
     ).status_code in {403, 404}
     assert client.get(event_path, headers=_api_headers(observer_user.id)).json() == []
+    assert client.get(
+        f"{base}/files/{attachment.file_id}/download", headers=_api_headers(observer_user.id)
+    ).status_code == 403
     assert any(
         frame.kind == "tool.started" and frame.data["call_id"] == "inbox-1" for frame in frames
     )

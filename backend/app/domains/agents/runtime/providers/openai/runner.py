@@ -1,3 +1,4 @@
+import base64
 import json
 from dataclasses import replace
 from typing import Any
@@ -258,7 +259,37 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         agent: Agent[Any],
     ) -> str | list[Any] | RunState[Any]:
         if request.resume_state is None:
-            return self._input_for_request(request)
+            if not request.attachments:
+                return self._input_for_request(request)
+            content: list[dict[str, object]] = [
+                {"type": "input_text", "text": self._input_for_request(request)}
+            ]
+            for attachment in request.attachments:
+                if attachment.kind == "audio":
+                    continue
+                if (
+                    attachment.content_type.startswith("text/")
+                    or attachment.content_type == "application/json"
+                ):
+                    continue
+                encoded = base64.b64encode(attachment.content).decode("ascii")
+                if attachment.kind == "image":
+                    content.append(
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{attachment.content_type};base64,{encoded}",
+                            "detail": "auto",
+                        }
+                    )
+                else:
+                    content.append(
+                        {
+                            "type": "input_file",
+                            "filename": attachment.filename,
+                            "file_data": f"data:{attachment.content_type};base64,{encoded}",
+                        }
+                    )
+            return [{"role": "user", "content": content}]
         if request.resume_state.provider != "openai_agents":
             raise ValueError("OpenAI Agents runner cannot restore another provider's state")
         try:
@@ -280,15 +311,11 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             for item in state.get_interruptions()
             if item.call_id is not None and item.name is not None
         ]
-        interruptions = {
-            (item.call_id, item.name): item
-            for item in sdk_interruptions
-        }
+        interruptions = {(item.call_id, item.name): item for item in sdk_interruptions}
         if len(interruptions) != len(sdk_interruptions):
             raise ValueError("Stored OpenAI Agents state contains duplicate interruptions")
         decision_keys = {
-            (decision.tool_call_id, decision.tool_name)
-            for decision in request.approval_decisions
+            (decision.tool_call_id, decision.tool_name) for decision in request.approval_decisions
         }
         if len(decision_keys) != len(request.approval_decisions):
             raise ValueError("OpenAI approval decisions must be unique")
