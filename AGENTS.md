@@ -4,6 +4,31 @@ Before changing this repository, read `.codex/AGENTS.md`. It contains the projec
 architecture invariants, dependency policy, development workflow, and validation requirements that
 apply to the entire repository.
 
+## Platform, plugin, and business boundaries
+
+- OpsMesh owns reusable platform domain logic: identity and authorization, generic message and
+  attachment contracts, private storage, approvals, durable orchestration, knowledge and memory
+  services, and plugin installation, deployment, isolation, audit and lifecycle management.
+  Platform domain logic is expected; customer-specific business workflows are not.
+- Keep channel-specific implementations in the independent plugin center under
+  `plugins/<name>/`: vendor SDK dependencies, message transport, channel membership queries,
+  native card templates, vendor callbacks and protocol translation. Do not place DingTalk or
+  another channel's implementation, templates or SDK dependencies in OpsMesh or the shared SDK.
+- The plugin center's `sdk/` owns provider-neutral plugin contracts and platform clients. Plugins
+  use these public interfaces; they must not import platform source or bypass platform services
+  with direct database access. The platform must not import plugin implementation code.
+- Users configure business roles, instructions, experts, tools, skills and workflows through
+  platform resources. Do not hardcode order-number extraction, order processing, log-analysis
+  experts, a particular team leader, business prompts or fixed knowledge/memory sequences into
+  platform routes, services, workers, migrations or production defaults.
+- When a business example exposes a missing capability, implement the reusable capability in
+  OpsMesh and keep the specific integration in its plugin or user configuration. Examples and
+  product-flow fixtures may illustrate a scenario, but must remain explicitly opt-in and must not
+  become production policy or mandatory seeded resources.
+- Plugins authenticate their external channel, while OpsMesh remains the authority for workspace
+  membership, resource access, tool invocation and approvals. Channel user IDs, roles, levels or
+  group membership never grant platform permissions by themselves.
+
 ## Current code-quality rules
 
 - Complete the entire user-authorized task, not an arbitrarily selected slice. Break work into
