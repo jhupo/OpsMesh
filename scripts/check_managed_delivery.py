@@ -104,8 +104,8 @@ class Acceptance:
         if ROOT.exists():
             raise ValueError("Acceptance refuses to reuse an installation directory")
         ROOT.mkdir(mode=0o750)
-        # A temporary workflow token lets this disposable runner install the signed draft before
-        # it is made public. Production public-release installs require only the repository name.
+        # A temporary workflow token lets this disposable runner install the attested,
+        # unpublished candidate before publication. Public hosts require only the repository name.
         release_token = os.environ["OPSMESH_RELEASE_TOKEN"]
         atomic_write(ROOT / "updater.env", f"OPSMESH_RELEASE_TOKEN={release_token}\n")
         source = ReleaseSource("jhupo/OpsMesh")

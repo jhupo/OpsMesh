@@ -1,6 +1,6 @@
 # Delivery operations
 
-Release status (2026-09-20): `v0.1.0rc16` targets database revision
+Release status (2026-09-20): `v0.1.0rc17` targets database revision
 `0102_platform_admin_credentials`, connector protocol 2 and Linux amd64. The tag-triggered release gate is
 the source of truth for publication and managed Compose/systemd acceptance. This remains a pre-1.0
 release; validate your own ingress, configuration and off-host disaster-recovery policy before use.
@@ -77,7 +77,7 @@ native CLI and checksum list from the fixed repository release, verifies the arc
 the managed installer. It never clones or builds source. For Linux amd64:
 
 ```sh
-TAG=v0.1.0rc16
+TAG=v0.1.0rc17
 curl -fsSL "https://github.com/jhupo/OpsMesh/releases/download/${TAG}/install.sh" | \
   sudo sh -s -- --version "${TAG}" --origin https://opsmesh.example.com
 ```

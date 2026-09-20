@@ -161,7 +161,7 @@ jobs:
       - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
         with:
           subject-path: dist/*
-      - name: Stage signed release assets as a draft
+      - name: Stage attested release assets as an unpublished candidate
         run: |
           uv run python -m scripts.publish_release stage \
             --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY"
