@@ -24,8 +24,10 @@ from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
+from backend.app.domains.access.execution import ExecutionIdentityService
+from backend.app.domains.access.models import ResourceGrant, SecuredResource, User
 from backend.app.domains.access.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
+from backend.app.domains.access.resources import ResourceAction, ResourceKind
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     memory_content_fingerprint,
@@ -1449,7 +1451,7 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     assert any(item["action"] == "request_manager_review" for item in body["action_plan"])
     assert any(item["action"] == "start_team_runtime" for item in body["action_plan"])
     assert missing.status_code == 403
-    assert foreign_team_response.status_code == 404
+    assert foreign_team_response.status_code == 403
     assert forbidden.status_code == 403
     serialized = str(body)
     assert "sk-command-manager" not in serialized
@@ -1931,6 +1933,7 @@ def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
     task = Task(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, owner.id),
         agent_team_id=team.id,
         title="Quota blocked delivery",
         status="queued",
@@ -2043,6 +2046,7 @@ def test_team_command_center_apply_reports_blocked_reasons_with_partial_schedule
     first_task = Task(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, owner.id),
         agent_team_id=team.id,
         title="First delivery",
         status="queued",
@@ -2051,6 +2055,7 @@ def test_team_command_center_apply_reports_blocked_reasons_with_partial_schedule
     second_task = Task(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, owner.id),
         agent_team_id=team.id,
         title="Second delivery",
         status="queued",
@@ -2705,7 +2710,7 @@ def test_team_session_controls_manage_runtime_and_member_sessions() -> None:
     assert cleared.status_code == 200
     assert cleared.json()["deleted_item_count"] == 3
     assert missing_team_session.status_code == 403
-    assert foreign_team_session.status_code == 404
+    assert foreign_team_session.status_code == 403
     assert forbidden.status_code == 403
 
 
@@ -2736,6 +2741,28 @@ def test_team_runtime_actions_require_manage_runtime_for_write_only_user(
         team_type="software",
     )
     session.add_all([template, team])
+    session.flush()
+    session.add(
+        SecuredResource(
+            workspace_id=workspace.id,
+            resource_kind=ResourceKind.TEAM.value,
+            resource_id=team.id,
+            owner_user_id=owner.id,
+        )
+    )
+    session.flush()
+    session.add_all(
+        [
+            ResourceGrant(
+                workspace_id=workspace.id,
+                resource_kind=ResourceKind.TEAM.value,
+                resource_id=team.id,
+                user_id=writer.id,
+                action=action.value,
+            )
+            for action in (ResourceAction.READ, ResourceAction.CONTROL)
+        ]
+    )
     session.commit()
     monkeypatch.setitem(
         ROLE_PERMISSIONS,
@@ -5276,6 +5303,7 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     approved_task = Task(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, owner.id),
         agent_team_id=team.id,
         title="Approved loop delivery",
         status="running",
@@ -5287,6 +5315,7 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     handoff_task = Task(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, owner.id),
         agent_team_id=team.id,
         title="Continue loop delivery",
         status="running",
@@ -5749,6 +5778,7 @@ def test_team_execution_loop_ignores_non_runtime_provider_blockers() -> None:
     task = Task(
         workspace_id=workspace.id,
         created_by_user_id=owner.id,
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, owner.id),
         agent_team_id=team.id,
         title="Runnable loop task",
         status="running",
@@ -6830,8 +6860,8 @@ def test_planning_routes_reject_foreign_task_ids() -> None:
     session.refresh(attempt)
 
     assert retry.status_code == 403
-    assert regenerate.status_code == 404
-    assert attempts.status_code == 404
+    assert regenerate.status_code == 403
+    assert attempts.status_code == 403
     assert task.workspace_id == other_workspace.id
     assert task.project_plan == {"plan_id": "foreign-plan", "work_packages": []}
     assert attempt.workspace_id == other_workspace.id
@@ -8710,7 +8740,7 @@ def test_task_execution_diagnostics_explains_assignments_dependencies_and_blocke
     assert "hidden-token" not in str(raw_diagnostics)
     assert "sk-run" not in str(raw_diagnostics)
     assert foreign_response.status_code == 403
-    assert missing_response.status_code == 404
+    assert missing_response.status_code == 403
 
 
 def test_task_handoff_queue_lists_attention_items_and_preserves_scope() -> None:

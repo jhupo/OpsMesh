@@ -28,6 +28,11 @@ from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.access.errors import PermissionDeniedError
 from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.domains.access.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.workspace.teams.execution.loop import (
     TeamExecutionLoopService,
@@ -58,14 +63,17 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
 async def apply_team_command_center_actions(
     team_id: UUID,
     request: AgentTeamCommandCenterApplyRequest,
-    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
+    context: WorkspaceContext = Depends(
+        workspace_dependency(WorkspaceAction.OPERATE, path_resource_action=ResourceAction.READ)
+    ),
     session: Session = Depends(get_db_session),
     queue: RedisQueue = Depends(get_worker_queue),
     settings: Settings = Depends(get_settings),
 ) -> AgentTeamCommandCenterApplyResponse:
-    _require_command_center_runtime_permission(
+    _require_command_center_action_permissions(
         session=session,
         context=context,
+        team_id=team_id,
         request=request,
     )
     response = TeamCommandCenterService(session).apply_action_plan(
@@ -92,14 +100,21 @@ async def apply_team_command_center_actions(
     return AgentTeamCommandCenterApplyResponse.model_validate(response)
 
 
-def _require_command_center_runtime_permission(
+def _require_command_center_action_permissions(
     *,
     session: Session,
     context: WorkspaceContext,
+    team_id: UUID,
     request: AgentTeamCommandCenterApplyRequest,
 ) -> None:
     if request.dry_run:
         return
+    ResourceAuthorizationService(session, context.user).require(
+        context.workspace.id,
+        ResourceKind.TEAM,
+        team_id,
+        ResourceAction.CONTROL,
+    )
     requested_sources = set(request.sources or [])
     if requested_sources and "team_runtime" not in requested_sources:
         return
