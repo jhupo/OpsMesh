@@ -207,7 +207,7 @@ tar -xzf "$work_directory/$archive" -C "$work_directory/cli"
 
 # Keep the host operator available for later status, update and credential recovery commands.
 install -d -m 0750 "$install_root/operator"
-cp -a "$work_directory/cli/opsmesh/." "$install_root/operator/"
+cp -a "$work_directory/cli/." "$install_root/operator/"
 ln -sfn "$install_root/operator/opsmesh" /usr/local/bin/opsmesh
 
 echo "OpsMesh $version installed under $install_root"

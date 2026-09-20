@@ -194,3 +194,5 @@ def test_public_installer_recovers_interrupted_release_downloads() -> None:
     assert "--retry-all-errors" in installer
     assert "--retry-max-time 900" in installer
     assert "--continue-at -" in installer
+    assert 'cp -a "$work_directory/cli/." "$install_root/operator/"' in installer
+    assert 'cp -a "$work_directory/cli/opsmesh/."' not in installer
