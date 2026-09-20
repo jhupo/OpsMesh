@@ -518,7 +518,7 @@ permissions, health checks, monitoring, updates, and rollback.
 
 ## Contributing
 
-Changes enter protected `master` through pull requests. See [GitHub security and collaboration
+Changes must enter `master` through feature-branch pull requests. See [GitHub security and collaboration
 automation](docs/github-automation.md) for checks, dependency updates, labels and repository settings.
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the repository

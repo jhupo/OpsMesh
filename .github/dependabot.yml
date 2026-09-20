@@ -25,3 +25,12 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 3
+  - package-ecosystem: docker-compose
+    directories:
+      - /
+      - /deploy/server
+      - /deploy/server/monitoring
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3

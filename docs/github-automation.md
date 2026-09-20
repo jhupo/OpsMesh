@@ -10,11 +10,14 @@
 | CodeQL | PR、master push、周一、手动 | Python 与 GitHub Actions 安全扫描，结果上传 Security / Code scanning |
 | Dependency Review | PR | 检查新增依赖漏洞，moderate 及以上失败；不发布 PR 评论 |
 | Issue and PR Labels | Issue 新建/重开，PR 新建/重开/更新 | 确保标签存在；Issue 待分类及类型标签；PR 按变更目录分类 |
-| Dependabot | 每周 | 提交 uv、GitHub Actions、Docker 更新 PR；不自动合并 |
+| Dependabot | 每周 | 提交 uv、GitHub Actions、Dockerfile 与 Compose 镜像更新 PR；不自动合并 |
 | Release Publish | 发布 tag | 完整测试门禁通过后构建与发布；不因新增安全配置取消既有门禁 |
 
 `uv` 配置维护根锁文件及其本地 operator/runtime 依赖。独立 SDK 的固定发布 URL 和
 SHA-256 仍需要维护者在核实发布内容后更新，不能认为 Dependabot 会自动追踪该 URL。
+`docker` 负责根目录 Dockerfile；`docker-compose` 显式覆盖根目录开发环境、
+`deploy/server` 生产环境和 `deploy/server/monitoring` 监控栈。由运行时环境变量提供的
+OpsMesh 发布镜像仍由签名发布清单和更新器管理，不由 Dependabot 选择版本。
 Dependency Review 比较 GitHub 依赖图；它不是容器镜像漏洞扫描，也不能证明外部插件安全。
 
 ## 权限与外部贡献
