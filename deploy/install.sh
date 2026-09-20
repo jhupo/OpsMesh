@@ -140,10 +140,15 @@ trap 'rm -rf "$work_directory"' EXIT HUP INT TERM
 archive="opsmesh-cli-${version}-linux-amd64.tar.gz"
 base_url="https://github.com/${repository}/releases/download/${version}"
 
-curl --proto '=https' --tlsv1.2 -fL --retry 3 \
-    -o "$work_directory/checksums.txt" "$base_url/checksums.txt"
-curl --proto '=https' --tlsv1.2 -fL --retry 3 \
-    -o "$work_directory/$archive" "$base_url/$archive"
+download_release_file() {
+    curl --proto '=https' --tlsv1.2 --fail --location \
+        --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 900 \
+        --connect-timeout 20 --speed-limit 1024 --speed-time 30 \
+        --continue-at - --output "$2" "$1"
+}
+
+download_release_file "$base_url/checksums.txt" "$work_directory/checksums.txt"
+download_release_file "$base_url/$archive" "$work_directory/$archive"
 
 checksum_count="$(awk -v name="$archive" '$2 == name { count++ } END { print count + 0 }' \
     "$work_directory/checksums.txt")"

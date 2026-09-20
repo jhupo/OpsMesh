@@ -184,3 +184,11 @@ def test_images_use_locked_dependencies_and_explicit_migrations() -> None:
         assert "USER opsmesh" in dockerfile
         assert "uv.lock" in dockerfile
     assert "alembic upgrade" not in (ROOT / "deploy/images/Dockerfile").read_text("utf-8")
+
+
+def test_public_installer_recovers_interrupted_release_downloads() -> None:
+    installer = (ROOT / "deploy/install.sh").read_text("utf-8")
+    assert installer.count("download_release_file ") == 2
+    assert "--retry-all-errors" in installer
+    assert "--retry-max-time 900" in installer
+    assert "--continue-at -" in installer

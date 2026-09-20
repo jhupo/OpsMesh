@@ -1,6 +1,6 @@
 # Delivery operations
 
-Release status (2026-09-20): `v0.1.0rc17` targets database revision
+Release status (2026-09-20): `v0.1.0rc18` targets database revision
 `0102_platform_admin_credentials`, connector protocol 2 and Linux amd64. The tag-triggered release gate is
 the source of truth for publication and managed Compose/systemd acceptance. This remains a pre-1.0
 release; validate your own ingress, configuration and off-host disaster-recovery policy before use.
@@ -77,7 +77,7 @@ native CLI and checksum list from the fixed repository release, verifies the arc
 the managed installer. It never clones or builds source. For Linux amd64:
 
 ```sh
-TAG=v0.1.0rc17
+TAG=v0.1.0rc18
 curl -fsSL "https://github.com/jhupo/OpsMesh/releases/download/${TAG}/install.sh" | \
   sudo sh -s -- --version "${TAG}" --origin https://opsmesh.example.com
 ```
@@ -86,6 +86,11 @@ The script accepts `--repository`, `--root`, and `--mode compose|systemd`. Versi
 are mandatory so a mutable latest release or guessed public address is never installed silently.
 Automatic prerequisite installation currently supports Ubuntu and Debian; other Linux amd64 hosts
 must prepare the documented commands and run the native CLI directly.
+
+Release downloads retry transient HTTP, DNS, connection and TLS failures for up to 15 minutes and
+resume partial files. The installer still verifies the completed CLI archive against the release's
+SHA-256 list before execution; exhausted retries or any checksum mismatch fail without creating an
+installation.
 
 Keep the CLI executable and its bundled libraries together. Python developer wheels remain
 available but are not the standalone installation route. The server archive contains its own
