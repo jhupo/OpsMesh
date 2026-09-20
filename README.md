@@ -25,6 +25,11 @@ product contract.
 
 ## Project Status
 
+2026-09-20: SDK 0.4.0 is published from the plugin-center monorepo at the existing
+`jhupo/opsmesh-plugin-sdk-python` remote. OpsMesh rc10 preparation pins that release wheel and its
+SHA-256; rc10 packages and current plugin container acceptance remain pending. See
+[plugin integration evidence](docs/plugin-service-integration.md) for the remaining external checks.
+
 Release delivery provides attested GHCR images, native CLI/server archives and a durable host
 updater. In `v0.1.0rc9`, both Compose and systemd pass real managed installation, cross-version
 upgrade/rollback, killed-updater recovery, startup-failure rollback, and acknowledged restoration

@@ -1664,7 +1664,7 @@ wheels = [
 
 [[package]]
 name = "opsmesh"
-version = "0.1.0rc9"
+version = "0.1.0rc10"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -1743,7 +1743,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.65b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.44.0" },
     { name = "opsmesh-operator", extras = ["host"], editable = "operator" },
-    { name = "opsmesh-plugin-sdk", url = "https://github.com/jhupo/opsmesh-plugin-sdk-python/archive/6d2e7179cfaafc0c2ec299122c57014991b13276.tar.gz" },
+    { name = "opsmesh-plugin-sdk", url = "https://github.com/jhupo/opsmesh-plugin-sdk-python/releases/download/sdk/v0.4.0/opsmesh_plugin_sdk-0.4.0-py3-none-any.whl" },
     { name = "packaging", specifier = ">=26.2,<27.0" },
     { name = "pgvector", specifier = ">=0.5.0,<0.6.0" },
     { name = "prometheus-client", specifier = ">=0.26.0" },
@@ -1775,7 +1775,7 @@ packaging = [{ name = "pyinstaller", specifier = "==6.22.2" }]
 
 [[package]]
 name = "opsmesh-operator"
-version = "0.1.0rc9"
+version = "0.1.0rc10"
 source = { editable = "operator" }
 dependencies = [
     { name = "filelock" },
@@ -1809,14 +1809,16 @@ provides-extras = ["host"]
 
 [[package]]
 name = "opsmesh-plugin-sdk"
-version = "0.3.0"
-source = { url = "https://github.com/jhupo/opsmesh-plugin-sdk-python/archive/6d2e7179cfaafc0c2ec299122c57014991b13276.tar.gz" }
+version = "0.4.0"
+source = { url = "https://github.com/jhupo/opsmesh-plugin-sdk-python/releases/download/sdk/v0.4.0/opsmesh_plugin_sdk-0.4.0-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
     { name = "packaging" },
     { name = "pydantic" },
 ]
-sdist = { hash = "sha256:c50b3780d41380511965698fcc4be2db0c4544b400e542b3471c21b03a281c62" }
+wheels = [
+    { url = "https://github.com/jhupo/opsmesh-plugin-sdk-python/releases/download/sdk/v0.4.0/opsmesh_plugin_sdk-0.4.0-py3-none-any.whl", hash = "sha256:8a34d4fa69675520dfb4a57d69ad0ecc3c981b77483d68be4550a0361dfb8461" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1829,7 +1831,7 @@ provides-extras = ["signing"]
 
 [[package]]
 name = "opsmesh-runtime"
-version = "0.1.0rc9"
+version = "0.1.0rc10"
 source = { editable = "runtime" }
 dependencies = [
     { name = "filelock" },

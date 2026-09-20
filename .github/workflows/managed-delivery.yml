@@ -15,9 +15,9 @@ on:
         required: true
         type: string
       previous:
-        description: Published schema-compatible previous release
+        description: Published baseline; incompatible rollback must be rejected
         required: true
-        default: v0.1.0rc6
+        default: v0.1.0rc9
         type: string
 permissions:
   contents: read

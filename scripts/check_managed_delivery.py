@@ -198,7 +198,9 @@ class Acceptance:
 
     def plan(self, tag: str, action: str) -> str:
         result = json.loads(
-            self.command("update", action, "--version", tag, "--idempotency-key", uuid4().hex)
+            self.command("backup", "create")
+            if action == "backup"
+            else self.command("update", action, "--version", tag, "--idempotency-key", uuid4().hex)
         )
         job_id = str(result["id"])
         wait_for(lambda: self.status(job_id) in {"ready", "failed"}, "validated plan")
@@ -234,8 +236,8 @@ class Acceptance:
         self.assert_version(tag)
         print(f"PASS {self.mode}: approved {action} to {tag}", flush=True)
 
-    def interrupted(self, strategy: str) -> None:
-        job_id = self.plan(self.tag, "plan")
+    def interrupted(self, strategy: str, *, action: str = "plan") -> None:
+        job_id = self.plan(self.tag, action)
         wait_for(lambda: self.journal(job_id).get("phase") == "backup", "backup entry")
         # The real DB row lock holds the next checkpoint after its fsynced journal write.
         # Killing the actual systemd process now deterministically tests crash recovery.
@@ -300,7 +302,9 @@ class Acceptance:
             arguments.append("--ack-data-loss")
         self.command(*arguments)
         run_command(["systemctl", "start", "opsmesh-updater"])
-        self.assert_version(self.tag if strategy == "resume" else self.previous)
+        self.assert_version(
+            self.tag if strategy == "resume" or action == "backup" else self.previous
+        )
         with self.connect() as connection:
             if connection.execute("SELECT maintenance FROM platform_installation").fetchone() != (
                 False,
@@ -323,8 +327,8 @@ class Acceptance:
             flush=True,
         )
 
-    def failed_start(self) -> None:
-        job_id = self.plan(self.tag, "plan")
+    def failed_start(self, *, action: str = "plan") -> None:
+        job_id = self.plan(self.tag, action)
         wait_for(lambda: self.journal(job_id).get("phase") == "backup", "stopped application")
         server = ThreadingHTTPServer(("127.0.0.1", 8000), Unavailable)
         thread = Thread(target=server.serve_forever, daemon=True)
@@ -338,9 +342,36 @@ class Acceptance:
         run_command(["systemctl", "stop", "opsmesh-updater"])
         self.command("update", "recover", "--plan", job_id, "--strategy", "rollback")
         run_command(["systemctl", "start", "opsmesh-updater"])
-        self.assert_version(self.previous)
+        self.assert_version(self.tag if action == "backup" else self.previous)
         print(
             f"PASS {self.mode}: real port-bind/startup failure and application rollback", flush=True
+        )
+
+    def accepts_previous_application(self) -> bool:
+        source = ReleaseSource("jhupo/OpsMesh")
+        previous = source.fetch_manifest(self.previous, ROOT / "baseline-manifest")
+        return self.installation.current().database_revision in previous.rollback_database_revisions
+
+    def reject_incompatible_rollback(self) -> None:
+        result = json.loads(
+            self.command(
+                "update", "rollback", "--version", self.previous,
+                "--idempotency-key", uuid4().hex,
+            )
+        )
+        job_id = str(result["id"])
+        wait_for(lambda: self.status(job_id) in {"ready", "failed"}, "schema rollback rejection")
+        if self.status(job_id) != "failed" or self.journal(job_id):
+            raise AssertionError("Incompatible rollback was admitted or executed")
+        self.assert_version(self.tag)
+        with self.connect() as connection:
+            if connection.execute("SELECT maintenance FROM platform_installation").fetchone() != (
+                False,
+            ):
+                raise AssertionError("Rejected rollback changed maintenance state")
+        print(
+            f"PASS {self.mode}: incompatible baseline rollback rejected before execution",
+            flush=True,
         )
 
 
@@ -358,6 +389,19 @@ def main() -> None:
     except Exception:
         acceptance.diagnostics()
         raise
+    if not acceptance.accepts_previous_application():
+        acceptance.reject_incompatible_rollback()
+        acceptance.normal(args.tag, "backup")
+        acceptance.interrupted("resume", action="backup")
+        acceptance.failed_start(action="backup")
+        acceptance.interrupted("restore", action="backup")
+        acceptance.normal(args.tag, "backup")
+        print(
+            f"PASS {args.mode}: native install, schema boundary and current-release recovery; "
+            "cross-version rollback is unsupported by the published baseline",
+            flush=True,
+        )
+        return
     acceptance.normal(args.previous, "rollback")
     acceptance.normal(args.tag, "plan")
     acceptance.normal(args.previous, "rollback")

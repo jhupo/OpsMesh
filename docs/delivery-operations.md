@@ -1,5 +1,13 @@
 # Delivery operations
 
+Release preparation status (2026-09-20): `v0.1.0rc10` targets database revision
+`0101_plugin_deployments` and the published SDK 0.4.0 wheel. It is not yet accepted or published.
+The rc9 application declares only revision `0072_release_schema` for rollback and must not run
+on revision 0101. Managed acceptance checks this rejection before any side effect, then exercises
+current-release backup, killed-updater recovery, failed startup and acknowledged restoration.
+Cross-version upgrade/rollback acceptance is reported separately; these current-release recovery
+checks do not establish that an old updater can upgrade across all intervening schema changes.
+
 The supported managed delivery lifecycle is accepted in `v0.1.0rc9`: see
 [release delivery evidence](release-delivery-plan.md). Signed native installation, cross-version
 upgrade/rollback, process interruption recovery, startup failure and offline application-database
