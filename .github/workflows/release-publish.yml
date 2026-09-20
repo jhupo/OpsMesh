@@ -12,7 +12,10 @@ jobs:
     needs: stage
     uses: ./.github/workflows/managed-delivery.yml
     permissions:
-      contents: read
+      # GitHub only exposes draft releases to credentials with push access.
+      # The acceptance job uses this access solely to download the staged assets;
+      # publication remains owned by the separate publish job below.
+      contents: write
       attestations: read
       packages: read
     with:
