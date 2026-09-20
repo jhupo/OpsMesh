@@ -328,7 +328,6 @@ audit, and capability negotiation remain in the OpsMesh control plane.
 | OAuth 2.0 and OpenID Connect | [Authlib](https://authlib.org/) | Use for future enterprise SSO; do not build an identity provider |
 | Durable workflows | [Temporal Python SDK](https://github.com/temporalio/sdk-python) | Run an architecture spike before replacing the current queue and state machine |
 | Fine-grained authorization | [OpenFGA](https://github.com/openfga/openfga) or [OPA](https://www.openpolicyagent.org/) | Evaluate only when concrete relationship or policy requirements exceed current RBAC |
-| External-call retry policies | [Tenacity](https://github.com/jd/tenacity) | Reuse for bounded transport retries; keep product idempotency and durable retry state |
 
 Any-LLM and LiteLLM integrations provided by the Agents SDK are candidates for provider expansion,
 but they are currently treated as evaluation items. They must pass OpsMesh contract tests for tool
@@ -494,11 +493,14 @@ Ready-to-run release artifacts and their tested platforms are described in
 [Standalone Distributions](docs/standalone-distributions.md). Native CLI archives include Python;
 the Linux amd64 server archive includes CPython and locked production dependencies. Developer
 `.whl`/source packages are separate assets. Follow [Delivery Operations](docs/delivery-operations.md)
-for signature verification and managed installation.
+for checksum validation and managed installation.
 
-The current production model runs API and worker processes on a VPS through systemd. The worker
-uses Docker for isolated task runtimes, while a separate root-owned systemd unit manages the pinned
-observability Compose stack. The API has no Docker daemon access.
+The current production model uses the managed release package with Compose by default and systemd
+as an explicit alternative. The worker uses Docker for isolated task runtimes; the API has no
+Docker daemon access.
+
+安装完成后会在终端打印一次随机生成的 `superadmin` 管理员密码；忘记密码可在安装主机执行
+`sudo opsmesh --root /opt/opsmesh admin reset-password` 重置。
 
 See [Backend Deployment](docs/backend-deployment.md) for release bundles, service users, runtime
 permissions, health checks, monitoring, updates, and rollback.

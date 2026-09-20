@@ -4,7 +4,7 @@ import tarfile
 from pathlib import Path
 
 import pytest
-from opsmesh_operator import commands, releases
+from opsmesh_operator import commands
 from opsmesh_operator.cli import parser, request
 from opsmesh_operator.contracts import ReleaseFile
 from opsmesh_operator.files import atomic_write, require_install_root
@@ -47,18 +47,6 @@ def test_download_checksum_denial(tmp_path: Path, monkeypatch) -> None:
     with pytest.raises(ValueError, match="integrity"):
         source.download_file(manifest(), record, tmp_path)
     assert not (tmp_path / record.name).exists()
-
-
-def test_provenance_verification_pins_repository_workflow_tag_and_commit(
-    tmp_path: Path, monkeypatch
-) -> None:
-    calls = []
-    monkeypatch.setattr(releases, "run_command", lambda argv, **kwargs: calls.append(argv))
-    ReleaseSource("jhupo/OpsMesh").verify(tmp_path / "manifest.json", "v0.1.0", commit="a" * 40)
-    assert calls[0][-2:] == ["--source-digest", "a" * 40]
-    assert "--deny-self-hosted-runners" in calls[0]
-    assert "jhupo/OpsMesh/.github/workflows/release-publish.yml" in calls[0]
-    assert "refs/tags/v0.1.0" in calls[0]
 
 
 def test_subprocess_errors_do_not_disclose_stderr(monkeypatch) -> None:

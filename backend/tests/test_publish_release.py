@@ -99,17 +99,17 @@ def test_public_download_verification_fails_closed(
         files=[file_record(package)],
     )
     calls: list[list[str]] = []
-    verified: list[tuple[str, str | None]] = []
+    verified: list[tuple[str, str, str, str]] = []
     monkeypatch.setattr(check_release.ReleaseSource, "fetch_manifest", lambda *args: manifest)
     monkeypatch.setattr(check_release.ReleaseSource, "download_file", lambda *args: package)
 
-    def verify(self: object, path: Path, tag: str, *, commit: str | None = None) -> None:
-        assert path == package
+    def verify(path: str, tag: str, commit: str, repository: str) -> None:
+        assert path == str(package)
         if tampered:
             raise ValueError("Invalid provenance")
-        verified.append((tag, commit))
+        verified.append((path, tag, commit, repository))
 
-    monkeypatch.setattr(check_release.ReleaseSource, "verify", verify)
+    monkeypatch.setattr(check_release, "verify_attestation", verify)
     monkeypatch.setattr(check_release, "run_command", lambda args, **kwargs: calls.append(args))
     if tampered:
         with pytest.raises(ValueError, match="Invalid provenance"):
@@ -117,10 +117,15 @@ def test_public_download_verification_fails_closed(
         assert not calls
     else:
         check_release.verify_release(manifest.tag, manifest.repository)
-        assert verified == [(manifest.tag, manifest.commit)]
-        assert len(calls) == 2
-        for kind, call in zip(("backend", "runtime"), calls, strict=True):
-            assert call[3] == f"oci://{manifest.image(kind)}"
-            assert call[call.index("--source-digest") + 1] == manifest.commit
-            assert call[call.index("--source-ref") + 1] == f"refs/tags/{manifest.tag}"
-            assert "--deny-self-hosted-runners" in call
+        assert verified == [
+            (str(package), manifest.tag, manifest.commit, manifest.repository),
+            (
+                f"oci://{manifest.image('backend')}", manifest.tag,
+                manifest.commit, manifest.repository,
+            ),
+            (
+                f"oci://{manifest.image('runtime')}", manifest.tag,
+                manifest.commit, manifest.repository,
+            ),
+        ]
+        assert calls == []

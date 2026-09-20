@@ -8,3 +8,8 @@ Portions of this work were previously distributed under the MIT License.
 The original copyright and permission notice is retained in LICENSE-MIT.
 This change does not revoke licenses already granted for earlier versions.
 Third-party dependencies retain their respective licenses.
+
+The repository-scoped skills under `.agents/skills` include unmodified material from
+openvetta/open-vetta commit `bcfc8699014267a841b16d05eedf08c3ab8c3586`, licensed under the
+Apache License 2.0. The retained license text is
+`.agents/skills/frontend-design/LICENSE.txt`.

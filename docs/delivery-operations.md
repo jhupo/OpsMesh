@@ -1,18 +1,9 @@
 # Delivery operations
 
-Release preparation status (2026-09-20): `v0.1.0rc10` targets database revision
-`0101_plugin_deployments` and the published SDK 0.4.0 wheel. It is not yet accepted or published.
-The rc9 application declares only revision `0072_release_schema` for rollback and must not run
-on revision 0101. Managed acceptance checks this rejection before any side effect, then exercises
-current-release backup, killed-updater recovery, failed startup and acknowledged restoration.
-Cross-version upgrade/rollback acceptance is reported separately; these current-release recovery
-checks do not establish that an old updater can upgrade across all intervening schema changes.
-
-The supported managed delivery lifecycle is accepted in `v0.1.0rc9`: see
-[release delivery evidence](release-delivery-plan.md). Signed native installation, cross-version
-upgrade/rollback, process interruption recovery, startup failure and offline application-database
-restoration pass on real disposable Linux hosts for both Compose and systemd. This remains a
-pre-1.0 release; validate your own configuration and off-host disaster-recovery policy before use.
+Release status (2026-09-20): `v0.1.0rc13` targets database revision
+`0102_platform_admin_credentials`, connector protocol 2 and Linux amd64. The tag-triggered release gate is
+the source of truth for publication and managed Compose/systemd acceptance. This remains a pre-1.0
+release; validate your own ingress, configuration and off-host disaster-recovery policy before use.
 
 ## Supported topology and prerequisites
 
@@ -21,13 +12,12 @@ The initial managed updater supports this single-host maintenance-window topolog
 advertise rolling upgrades, multi-host coordination, ARM64, remote S3 snapshot restoration or
 Postgres major upgrades. Such deployments must not use its local backup/restore path.
 
-Install Docker Engine and Compose v2, GitHub CLI with attestation support,
-PostgreSQL 16 client tools (`pg_dump`/`pg_restore`), and systemd. The backup role needs permission to
-create temporary databases for restore verification. Authenticate `gh` for the public repository
-and GHCR if necessary; credentials belong to the host updater environment, never a request body.
-For unattended authentication use a root-readable `updater.env` (mode 0600), not the shared `.env`;
-the latter is delivered to application containers. Never put registry/GitHub credentials there.
-Configure a reverse proxy with TLS to the API's loopback port. No frontend is installed.
+Install Docker Engine and Compose v2, PostgreSQL 16 client tools (`pg_dump`/`pg_restore`), and
+systemd. The backup role needs permission to create temporary databases for restore verification.
+The public-release installer does not require GitHub CLI or a GitHub login. If private registry
+credentials are required, keep them in the host credential store, never a request body or the
+application `.env`. Configure a reverse proxy with TLS to the API's loopback port. No frontend is
+installed.
 
 Compose is the default application deployment. Systemd mode uses pre-provisioned Postgres/Redis
 and the same updater/state machine with a different deployment implementation. Docker is required
@@ -81,31 +71,35 @@ are retained for 14 days even when tests fail.
 
 ## Install
 
-Download the native CLI archive for your host from the release, and verify before extraction.
-For Linux amd64 (replace the tag with your approved version):
+The release-provided bootstrap script installs missing Ubuntu/Debian prerequisites, downloads the
+native CLI and checksum list from the fixed repository release, verifies the archive, and invokes
+the managed installer. It never clones or builds source. For Linux amd64:
 
 ```sh
-gh attestation verify opsmesh-cli-v0.1.0rc9-linux-amd64.tar.gz --repo jhupo/OpsMesh \
-  --signer-workflow jhupo/OpsMesh/.github/workflows/release-publish.yml \
-  --source-ref refs/tags/v0.1.0rc9 --deny-self-hosted-runners
-mkdir opsmesh-cli
-tar -xzf opsmesh-cli-v0.1.0rc9-linux-amd64.tar.gz -C opsmesh-cli
-./opsmesh-cli/opsmesh doctor
-sudo ./opsmesh-cli/opsmesh --root /opt/opsmesh install --version v0.1.0rc9 --origin https://opsmesh.example.com
+TAG=v0.1.0rc13
+curl -fsSL "https://github.com/jhupo/OpsMesh/releases/download/${TAG}/install.sh" | \
+  sudo sh -s -- --version "${TAG}" --origin https://opsmesh.example.com
 ```
+
+The script accepts `--repository`, `--root`, and `--mode compose|systemd`. Version and HTTPS origin
+are mandatory so a mutable latest release or guessed public address is never installed silently.
+Automatic prerequisite installation currently supports Ubuntu and Debian; other Linux amd64 hosts
+must prepare the documented commands and run the native CLI directly.
 
 Keep the CLI executable and its bundled libraries together. Python developer wheels remain
 available but are not the standalone installation route. The server archive contains its own
 CPython and locked production dependencies; installation does not resolve packages online.
 
-The administrator must make the verified `opsmesh`, `gh` and PostgreSQL binaries available to
-sudo/systemd; sudo may reset PATH and authentication environment. For systemd application mode add
+The administrator must make the checksummed `opsmesh` and PostgreSQL binaries available to
+sudo/systemd; sudo may reset PATH. For systemd application mode add
 `--mode systemd` and provide `/opt/opsmesh/.env` for the pre-provisioned database and Redis first.
 Use dedicated `opsmesh-api` (UID 10001), `opsmesh-worker` (UID 10002), group `opsmesh` (GID 10001).
 The installer rejects identity collisions instead of changing unrelated accounts.
 
-Installer-generated secrets are random and are never printed. Read/configure them on the host under
-administrator control. Existing configuration is preserved. New installations explicitly leave
+Installer-generated application secrets are random and are never printed. The one-time `superadmin`
+password is the deliberate exception: the installer prints it after readiness so the operator can
+store it in a password manager; it is not written to `.env` or installation state. Existing
+configuration is preserved. New installations explicitly leave
 OTLP export disabled until a collector is configured; application logs still use structured output.
 To operate the existing monitoring bundle, follow the observability instructions and configure a
 reachable secured collector for container clients; container loopback is not host loopback.
@@ -116,12 +110,19 @@ reachable secured collector for container clients; container loopback is not hos
   installation.json          root-owned topology configuration
   installation-status.json   installation recovery marker
   current -> releases/v…     selected immutable release
-  releases/                  verified bundles, deployment files and release manifests
-  updater/                   independent copy of the verified self-contained server runtime
+  releases/                  checksummed bundles, deployment files and release manifests
+  updater/                   independent copy of the self-contained server runtime
   downloads/                 bounded downloaded release assets
   updates/<job-id>.json       fsynced execution checkpoints
   backups/<backup-id>/        database, storage and configuration snapshots (sensitive)
   data/storage/              workspace files and artifacts
+```
+
+The installer keeps the native operator at `/opt/opsmesh/operator` and exposes it as
+`/usr/local/bin/opsmesh`. To rotate the platform administrator password later:
+
+```sh
+sudo opsmesh --root /opt/opsmesh admin reset-password
 ```
 
 After an interrupted first install, rerun the same install/version/mode to resume. A different

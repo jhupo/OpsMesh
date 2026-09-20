@@ -90,6 +90,8 @@ jobs:
           BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
           RUNTIME_DIGEST: ${{ steps.runtime.outputs.digest }}
         run: |
+          docker pull "ghcr.io/jhupo/opsmesh-runtime@$RUNTIME_DIGEST"
+          docker pull "ghcr.io/jhupo/opsmesh@$BACKEND_DIGEST"
           uv run python scripts/check_runtime_image.py \
             --image "ghcr.io/jhupo/opsmesh-runtime@$RUNTIME_DIGEST" \
             --fixture backend/tests/fixtures/mcp_stdio_server.py
@@ -150,6 +152,7 @@ jobs:
           push-to-registry: true
       - name: Create final release manifest
         run: |
+          install -m 0755 deploy/install.sh dist/install.sh
           uv run python -m scripts.release manifest --tag "$RELEASE_TAG" \
             --repository "$GITHUB_REPOSITORY" --backend-digest "$BACKEND_DIGEST" --runtime-digest "$RUNTIME_DIGEST"
       - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2

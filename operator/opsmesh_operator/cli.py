@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 import httpx
 
 from opsmesh_operator.commands import run_command
+from opsmesh_operator.deployments import deployment_for
 from opsmesh_operator.installation import Installation
 from opsmesh_operator.installer import doctor, install
 
@@ -49,6 +50,10 @@ def parser() -> argparse.ArgumentParser:
     setup.add_argument("--version", required=True)
     setup.add_argument("--origin", required=True)
     setup.add_argument("--mode", choices=["compose", "systemd"], default="compose")
+    setup.add_argument("--repository", default="jhupo/OpsMesh")
+    admin = commands.add_parser("admin")
+    admin_commands = admin.add_subparsers(dest="admin_action", required=True)
+    admin_commands.add_parser("reset-password")
     updates = commands.add_parser("update").add_subparsers(dest="action", required=True)
     updates.add_parser("check")
     for name in ("plan", "rollback"):
@@ -81,8 +86,18 @@ def execute(args: argparse.Namespace) -> object:
     if args.command == "doctor":
         return doctor(args.root)
     if args.command == "install":
-        install(Installation(root=args.root, mode=args.mode), args.version, args.origin)
-        return {"installed": True, "tag": args.version}
+        credentials = install(
+            Installation(root=args.root, mode=args.mode, repository=args.repository),
+            args.version,
+            args.origin,
+        )
+        return {"installed": True, "tag": args.version, "administrator": credentials}
+    if args.command == "admin":
+        if os.name != "posix" or os.geteuid() != 0:
+            raise ValueError("Administrator password reset requires root")
+        installation = Installation.load(args.root)
+        if args.admin_action == "reset-password":
+            return json.loads(deployment_for(installation).reset_admin_password())
     if args.command == "status":
         return request(args.api_url, "GET", "/api/v1/admin/system/version")
     if args.command == "logs":

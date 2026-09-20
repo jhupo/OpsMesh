@@ -5,13 +5,10 @@ Linux CLI, following [PyInstaller's external-program guidance](https://pyinstall
 Host `systemctl`, PostgreSQL tools and the separate server runtime must not inherit CLI library
 overrides. This does not change the running CLI's own environment or add another command runner.
 
-GitHub proof-service failures observed during rc7 justify a bounded verification retry, delegated
-to [Tenacity](https://github.com/jd/tenacity) (Apache-2.0, small Python-only dependency), the project's
-preferred retry library. HTTPX transport retries do not cover the official `gh` subprocess;
-a hand-written loop or another workflow framework is unnecessary. Verification makes at most three
-attempts with jittered waits and the same repository/workflow/tag/commit constraints. Permanent
-rejection still fails closed; no artifact is executed without a successful official verification.
-This retry applies only to read-only provenance verification, never migrations or restoration.
+The release pipeline creates and verifies GitHub build attestations before it reports success.
+Host installation deliberately requires neither GitHub CLI nor a GitHub credential. The bootstrap
+script and updater download from the configured repository/tag, validate manifest identity and
+platform/protocol fields, check package SHA-256 values, and retain digest-pinned images.
 
 Accepted in [v0.1.0rc9](https://github.com/jhupo/OpsMesh/releases/tag/v0.1.0rc9):
 [native matrix, public provenance and both managed deployment/recovery modes](https://github.com/jhupo/OpsMesh/actions/runs/34429198774).
@@ -31,7 +28,7 @@ The server distribution supports the existing Linux amd64/glibc deployment. It c
 3.12.14 from uv's python-build-standalone distribution, locked production wheels, migrations and
 deployment assets. It does not require system Python, pip or uv to run, install or update. This is
 a self-contained Python application, not a claim of Go-like static machine-code compilation.
-PostgreSQL, Redis, Docker, systemd and the official gh verification client remain host services.
+PostgreSQL, Redis, Docker, and systemd remain host services.
 
 PyInstaller is build-only. Its documented dynamic-import collection limitations make freezing
 the entire plugin/SDK-heavy backend less reliable than shipping its complete Python environment.
@@ -44,7 +41,8 @@ https://docs.astral.sh/uv/guides/install-python/ .
 
 ## Runtime contract
 
-`opsmesh-server version`, `check`, `api`, `worker`, `migrate` and `updater` use only the interpreter
+`opsmesh-server version`, `check`, `api`, `worker`, `migrate`, `bootstrap-admin`,
+`reset-admin-password` and `updater` use only the interpreter
 and wheels inside the extracted archive. Paths are resolved relative to the executable launcher;
 configuration remains in the caller's working directory/environment. No secrets enter archives.
 Systemd uses the same launcher. The independent updater receives its own copy of the server bundle,

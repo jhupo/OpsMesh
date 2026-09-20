@@ -57,7 +57,7 @@ def main() -> None:
     args.output.mkdir(parents=True, exist_ok=True)
     from scripts.build_standalone import CLI_PLATFORMS
 
-    required = {f"opsmesh-server-{args.tag}-linux-amd64.tar.gz"} | {
+    required = {"install.sh", f"opsmesh-server-{args.tag}-linux-amd64.tar.gz"} | {
         f"opsmesh-cli-{args.tag}-{target}.{'zip' if target.startswith('windows-') else 'tar.gz'}"
         for target in CLI_PLATFORMS
     }

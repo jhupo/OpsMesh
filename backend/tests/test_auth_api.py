@@ -136,6 +136,36 @@ def test_password_login_issues_user_token_and_auth_me_accepts_it() -> None:
     assert me.json() == registered.json()
 
 
+def test_bootstrapped_superadmin_can_login_and_reset_platform_access() -> None:
+    client, session = _client()
+    administrator, initial_password = AuthorizationService(session).create_platform_admin()
+
+    logged_in = client.post(
+        "/api/v1/auth/login",
+        json={"username": "superadmin", "password": initial_password},
+    )
+    assert logged_in.status_code == 200
+    first_token = logged_in.json()["token"]
+    platform_users = client.get(
+        "/api/v1/admin/users?limit=50&offset=0",
+        headers=_user_token_headers(first_token),
+    )
+    assert platform_users.status_code == 200
+    assert platform_users.json()["items"][0]["email"] == administrator.email
+
+    _, replacement_password = AuthorizationService(session).reset_platform_admin_password()
+    expired_admin = client.get(
+        "/api/v1/admin/users?limit=50&offset=0",
+        headers=_user_token_headers(first_token),
+    )
+    assert expired_admin.status_code == 401
+    replacement_login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "superadmin", "password": replacement_password},
+    )
+    assert replacement_login.status_code == 200
+
+
 def test_password_login_rejects_invalid_credentials() -> None:
     client, _ = _client()
     client.post(
