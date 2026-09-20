@@ -138,17 +138,56 @@ docker info >/dev/null
 work_directory="$(mktemp -d /tmp/opsmesh-install.XXXXXX)"
 trap 'rm -rf "$work_directory"' EXIT HUP INT TERM
 archive="opsmesh-cli-${version}-linux-amd64.tar.gz"
-base_url="https://github.com/${repository}/releases/download/${version}"
+release_api_url="https://api.github.com/repos/${repository}/releases/tags/${version}"
 
-download_release_file() {
+download_from_github_api() {
+    download_url="$1"
+    download_output="$2"
+    download_accept="$3"
+    shift 3
     curl --proto '=https' --tlsv1.2 --fail --location \
         --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 900 \
         --connect-timeout 20 --speed-limit 1024 --speed-time 30 \
-        --continue-at - --output "$2" "$1"
+        --header "Accept: $download_accept" \
+        --header 'X-GitHub-Api-Version: 2022-11-28' \
+        "$@" --output "$download_output" "$download_url"
 }
 
-download_release_file "$base_url/checksums.txt" "$work_directory/checksums.txt"
-download_release_file "$base_url/$archive" "$work_directory/$archive"
+download_from_github_api "$release_api_url" "$work_directory/release.json" \
+    'application/vnd.github+json'
+grep -F "\"tag_name\": \"$version\"" "$work_directory/release.json" >/dev/null || {
+    echo "install.sh: release identity mismatch" >&2
+    exit 1
+}
+
+release_asset_url() {
+    awk -v target="$1" '
+        BEGIN { RS = "\\{" }
+        index($0, "\"name\": \"" target "\"") {
+            if (match($0, /"url":[[:space:]]*"[^"]+"/)) {
+                value = substr($0, RSTART, RLENGTH)
+                sub(/^"url":[[:space:]]*"/, "", value)
+                sub(/"$/, "", value)
+                print value
+            }
+        }
+    ' "$work_directory/release.json"
+}
+
+download_release_file() {
+    asset_url="$(release_asset_url "$1")"
+    asset_count="$(printf '%s\n' "$asset_url" | awk 'NF { count++ } END { print count + 0 }')"
+    [ "$asset_count" -eq 1 ] && \
+        printf '%s\n' "$asset_url" | grep -Eq \
+            "^https://api\\.github\\.com/repos/${repository}/releases/assets/[0-9]+$" || {
+        echo "install.sh: release asset identity mismatch for $1" >&2
+        exit 1
+    }
+    download_from_github_api "$asset_url" "$2" 'application/octet-stream' --continue-at -
+}
+
+download_release_file "checksums.txt" "$work_directory/checksums.txt"
+download_release_file "$archive" "$work_directory/$archive"
 
 checksum_count="$(awk -v name="$archive" '$2 == name { count++ } END { print count + 0 }' \
     "$work_directory/checksums.txt")"
