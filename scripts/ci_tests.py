@@ -24,7 +24,7 @@ def select_tests(changed: list[str]) -> list[str]:
         path = Path(name)
         if name.startswith("operator/"):
             tests.update({"test_operator_security.py", "test_platform_updates.py"})
-        if name.startswith(("deploy/", "Dockerfile", "docker-compose", ".github/workflows/")):
+        if name.startswith(("deploy/", ".github/workflows/")):
             tests.add("test_deployment_assets.py")
         if name.startswith("scripts/release"):
             tests.add("test_release_delivery.py")

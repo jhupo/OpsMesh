@@ -22,7 +22,10 @@ def main() -> None:
         storage = root / "data/storage"
         storage.mkdir(parents=True)
         os.chown(storage, 10001, 10001)
-        values = {key: value or "" for key, value in dotenv_values(".env.example").items()}
+        values = {
+            key: value or ""
+            for key, value in dotenv_values("deploy/server/env.example").items()
+        }
         values.update({
             "OPSMESH_ROOT": str(root),
             "OPSMESH_BACKEND_IMAGE": f"ghcr.io/jhupo/opsmesh@{backend}",

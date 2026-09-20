@@ -52,7 +52,7 @@ def copy_server_assets(target: Path) -> None:
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
     )
     shutil.copytree(ROOT / "deploy/server", target / "deploy/server")
-    shutil.copy2(ROOT / ".env.example", target / ".env.example")
+    shutil.copy2(ROOT / "deploy/server/env.example", target / ".env.example")
     shutil.copy2(ROOT / "docs/standalone-distributions.md", target / "DISTRIBUTION.md")
     shutil.copy2(ROOT / "deploy/server/opsmesh-server", target / "opsmesh-server")
     (target / "opsmesh-server").chmod(0o755)
@@ -86,8 +86,8 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str) -> Path:
     with tempfile.TemporaryDirectory(prefix="opsmesh-native-build-") as temporary:
         work = Path(temporary)
 
-        def run(*args: str, **kwargs: object) -> None:
-            subprocess.run(list(args), check=True, cwd=ROOT, **kwargs)
+        def run(*args: str) -> None:
+            subprocess.run(list(args), check=True, cwd=ROOT)
 
         requirements = work / "requirements.txt"
         selection = ["--package", "opsmesh-operator", "--extra", "host"] if kind == "cli" else []
@@ -194,9 +194,6 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str) -> Path:
                 "--no-deps",
                 "--only-binary",
                 ":all:",
-                # The independent SDK is pinned to a hashed source archive until publication.
-                "--no-binary",
-                "opsmesh-plugin-sdk",
                 "--link-mode",
                 "copy",
                 "-r",
