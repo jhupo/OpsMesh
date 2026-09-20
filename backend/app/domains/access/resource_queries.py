@@ -176,6 +176,19 @@ def _row_predicate(
             and_(tenant, _workspace_admin(scope)),
             and_(table.c.visibility == "public", table.c.status == "public"),
         )
+    if table_name == "agent_runs" or (
+        table_name in {"model_usage_records", "approvals"} and action == ResourceAction.READ
+    ):
+        # Administrators must retain operational and billing visibility after a task is
+        # deleted, including terminal cleanup of orphaned runs. This does not authorize
+        # executing a run without its initiating identity or deciding an orphaned approval.
+        return and_(
+            tenant,
+            or_(
+                _workspace_admin(scope),
+                service.predicate(scope.workspace_id, ResourceKind.TASK, table.c.task_id, action),
+            ),
+        )
     if table_name == "agent_messages":
         return and_(
             tenant,

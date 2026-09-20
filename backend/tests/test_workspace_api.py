@@ -674,7 +674,7 @@ def test_team_org_chart_returns_reporting_tree_and_capacity_summary() -> None:
     ]
     assert body["members"][1]["agent"]["name"] == "Frontend Dev"
     assert "sk-hidden" not in str(body)
-    assert missing.status_code == 404
+    assert missing.status_code == 403
     assert cycle_response.status_code == 200
     assert {
         manager_member.json()["id"],
@@ -1063,7 +1063,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert include_completed.status_code == 200
     titles = {item["title"] for item in include_completed.json()["tasks"]}
     assert titles == {"Build workspace console", "Ship onboarding flow"}
-    assert not_found.status_code == 404
+    assert not_found.status_code == 403
     assert forbidden.status_code == 403
 
     serialized = str(include_completed.json())
@@ -1448,7 +1448,7 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     assert any(item["action"] == "schedule_downstream_steps" for item in body["action_plan"])
     assert any(item["action"] == "request_manager_review" for item in body["action_plan"])
     assert any(item["action"] == "start_team_runtime" for item in body["action_plan"])
-    assert missing.status_code == 404
+    assert missing.status_code == 403
     assert foreign_team_response.status_code == 404
     assert forbidden.status_code == 403
     serialized = str(body)
@@ -2262,7 +2262,7 @@ def test_team_execution_loop_finalize_closes_approved_tasks_only(system_executio
     assert by_task[str(needs_follow_up.id)]["reason"] == "manager_acceptance_not_healthy"
     assert str(other_team_task.id) not in by_task
     assert forbidden.status_code == 403
-    assert missing.status_code == 404
+    assert missing.status_code == 403
     assert "Private body" not in str(dry_run_body)
     assert "sk-approved-finalize" not in str(dry_run_body)
     session.refresh(approved_task)
@@ -2704,7 +2704,7 @@ def test_team_session_controls_manage_runtime_and_member_sessions() -> None:
     assert active.json()["status"] == "active"
     assert cleared.status_code == 200
     assert cleared.json()["deleted_item_count"] == 3
-    assert missing_team_session.status_code == 404
+    assert missing_team_session.status_code == 403
     assert foreign_team_session.status_code == 404
     assert forbidden.status_code == 403
 
@@ -3569,7 +3569,7 @@ def test_team_project_space_exposes_runtime_capacity_and_outputs() -> None:
     assert "Foreign workspace memory" not in body_text
     assert "sk-project-space-secret" not in body_text
     assert "file-hidden-token" not in body_text
-    assert missing_response.status_code == 404
+    assert missing_response.status_code == 403
 
 
 def test_team_runtime_timeline_includes_scheduler_scan_metadata() -> None:
@@ -5419,7 +5419,7 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
         json={"dry_run": True},
     )
     assert forbidden.status_code == 403
-    assert missing.status_code == 404
+    assert missing.status_code == 403
 
     applied = client.post(
         f"/api/v1/workspaces/{workspace.id}/teams/{team.id}/execution-loop/run",
@@ -6829,7 +6829,7 @@ def test_planning_routes_reject_foreign_task_ids() -> None:
     session.refresh(task)
     session.refresh(attempt)
 
-    assert retry.status_code == 404
+    assert retry.status_code == 403
     assert regenerate.status_code == 404
     assert attempts.status_code == 404
     assert task.workspace_id == other_workspace.id
@@ -7085,7 +7085,7 @@ def test_create_task_rejects_foreign_team_reference() -> None:
         json={"title": "Should fail", "agent_team_id": foreign_team.json()["id"]},
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 403
 
 
 def test_model_provider_credentials_are_created_without_returning_secret() -> None:
@@ -8164,7 +8164,7 @@ def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
     assert filtered.status_code == 200
     assert filtered.json()["total"] == 1
     assert filtered.json()["items"][0]["message_type"] == "step.completed"
-    assert foreign.status_code == 404
+    assert foreign.status_code == 403
 
 
 def test_task_live_status_api_returns_active_runs_and_message_cursor() -> None:
@@ -8709,7 +8709,7 @@ def test_task_execution_diagnostics_explains_assignments_dependencies_and_blocke
     assert raw_diagnostics is not None
     assert "hidden-token" not in str(raw_diagnostics)
     assert "sk-run" not in str(raw_diagnostics)
-    assert foreign_response.status_code == 404
+    assert foreign_response.status_code == 403
     assert missing_response.status_code == 404
 
 
@@ -9108,7 +9108,7 @@ def test_task_plan_diagnostics_explains_assignment_and_dependency_quality() -> N
     assert "hidden-token" not in str(body)
     assert no_plan_response.status_code == 200
     assert no_plan_response.json()["blocked_reasons"] == ["no_project_plan"]
-    assert foreign_response.status_code == 404
+    assert foreign_response.status_code == 403
 
 
 def test_task_manager_diagnostics_explains_acceptance_follow_up_and_redacts() -> None:
@@ -9305,7 +9305,7 @@ def test_task_manager_diagnostics_explains_acceptance_follow_up_and_redacts() ->
         "follow_up_review_incomplete",
     }
     assert cycle["metadata"]["headers"] == "[redacted]"
-    assert foreign_response.status_code == 404
+    assert foreign_response.status_code == 403
     serialized = str(body)
     assert "Private acceptance body should not be returned." not in serialized
     assert "hidden-token" not in serialized
@@ -9797,7 +9797,7 @@ def test_task_observation_composes_domain_sections_and_sanitizes_payloads() -> N
     assert forced_domain["cards"][0]["card_type"] == "delivery_status"
     assert "capture_requirements" in forced_domain["cards"][0]["data"]["recommended_actions"]
     assert unsupported.status_code == 400
-    assert foreign.status_code == 404
+    assert foreign.status_code == 403
     serialized = str(body)
     assert "sk-observation-input" not in serialized
     assert "Bearer generic" not in serialized
@@ -10192,7 +10192,7 @@ def test_task_operator_action_reassigns_and_requeues_blocked_step() -> None:
     assert blocked_step.assigned_agent_profile_id == replacement_agent.id
     assert blocked_step.dependencies == {"after_step_ids": []}
     assert foreign_agent_response.status_code == 404
-    assert foreign_task_response.status_code == 404
+    assert foreign_task_response.status_code == 403
     assert messages.status_code == 200
     message_payload = messages.json()["items"][0]["payload"]
     assert message_payload["metadata"]["token"] == "[redacted]"
@@ -10647,7 +10647,7 @@ def test_task_correction_diagnostics_tracks_follow_up_status_and_redacts_metadat
     assert raw_diagnostics is not None
     assert "hidden-token" not in str(raw_diagnostics)
     assert "sk-hidden" not in str(raw_diagnostics)
-    assert foreign_response.status_code == 404
+    assert foreign_response.status_code == 403
 
 
 def test_task_timeline_returns_execution_events_and_redacts_metadata() -> None:
@@ -10850,7 +10850,7 @@ def test_task_timeline_returns_execution_events_and_redacts_metadata() -> None:
     assert limited.status_code == 200
     assert limited.json()["summary"]["returned_events"] == 3
     assert limited.json()["summary"]["truncated_count"] == 5
-    assert foreign_response.status_code == 404
+    assert foreign_response.status_code == 403
     serialized = str(body)
     assert "sk-task" not in serialized
     assert "router.example.test/private" not in serialized

@@ -326,7 +326,7 @@ def test_claude_approval_hook_fails_closed_on_unknown_decision(
 
     executor = Executor()
     request = _request(tool_executor=executor)
-    state = _ApprovalState(reviews={}, deferred={}, active_calls={})
+    state = _ApprovalState(reviews={}, deferred={}, active_calls={}, decisions={})
     hook = _approval_hook(request, state)
     hook_input: PreToolUseHookInput = {
         "hook_event_name": "PreToolUse",
@@ -340,7 +340,9 @@ def test_claude_approval_hook_fails_closed_on_unknown_decision(
     result = asyncio.run(hook(hook_input, "call-1", {}))
     assert result["hookSpecificOutput"]["permissionDecision"] == expected
     assert executor.calls == []
-    assert state.active_calls == ({"search_docs": "call-1"} if expected == "allow" else {})
+    assert state.active_calls == (
+        {("search_docs", '{"query":"sdk"}'): ["call-1"]} if expected == "allow" else {}
+    )
 
 
 def test_claude_model_settings_use_sdk_shapes_without_silent_fallback() -> None:

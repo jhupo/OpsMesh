@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.access.models import User
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.domains.capabilities.mcp.execution.contracts import (
@@ -845,7 +846,9 @@ def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> 
         external_ref="",
         encrypted_secret_payload=SecretEncryptionService(
             secret="test-credential-secret", key_id="test"
-        ).encrypt_payload({"headers": {"x-api-key": "test-secret"}}).ciphertext,
+        )
+        .encrypt_payload({"headers": {"x-api-key": "test-secret"}})
+        .ciphertext,
         encryption_key_id="test",
         scopes=["images.write"],
     )
@@ -1057,7 +1060,14 @@ def _seed_run_with_mcp_tool(
     risk_level: str = "medium",
     requires_approval: bool = False,
 ) -> tuple[AgentRun, McpServer]:
-    task = Task(workspace_id=workspace.id, title="Create poster")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Create poster",
+    )
     session.add(task)
     session.flush()
     step = TaskStep(workspace_id=workspace.id, task_id=task.id, title="Generate image")
@@ -1170,9 +1180,7 @@ def _bind_credential_to_run_snapshot(
         {
             "credential_reference_id": str(credential.id),
             "mcp_server_id": (
-                str(credential.mcp_server_id)
-                if credential.mcp_server_id is not None
-                else None
+                str(credential.mcp_server_id) if credential.mcp_server_id is not None else None
             ),
             "configuration_version": credential.configuration_version,
             "provider": credential.provider,

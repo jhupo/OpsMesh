@@ -63,7 +63,7 @@ def test_file_upload_download_and_cross_workspace_denial(tmp_path: Path) -> None
         f"/api/v1/workspaces/{other_workspace.id}/files/{file_id}/download",
         headers=_headers(other.id),
     )
-    assert not_found.status_code == 404
+    assert not_found.status_code == 403
 
 
 def test_file_upload_enqueues_workspace_file_memory_index_job(tmp_path: Path) -> None:

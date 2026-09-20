@@ -343,7 +343,7 @@ def test_effective_catalog_requires_active_team_membership_and_workspace_scope()
     assert other_owner.id
     assert not_member.status_code == 403
     assert not_member.json()["error"]["code"] == "agent_team_membership_required"
-    assert foreign.status_code == 404
+    assert foreign.status_code == 403
     assert foreign.json()["error"]["code"] == "agent_profile_not_found"
 
 

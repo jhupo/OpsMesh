@@ -154,7 +154,7 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
         f"/api/v1/workspaces/{other_workspace.id}/agents/{agent_id}",
         headers=_headers(other_owner.id),
     )
-    assert foreign_get.status_code == 404
+    assert foreign_get.status_code == 403
 
     agent_uuid = UUID(agent_id)
     agent = session.get(AgentProfile, agent_uuid)
