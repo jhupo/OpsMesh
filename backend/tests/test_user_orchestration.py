@@ -536,14 +536,14 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
 
     import httpx
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    from opsmesh_plugin_sdk.contracts import PluginManifest
-    from opsmesh_plugin_sdk.distribution import (
+    from opsmesh_plugin_sdk.packaging.distribution import (
         CatalogEntry,
         PluginCatalog,
         PluginReleaseDescriptor,
         sign_release,
     )
-    from opsmesh_plugin_sdk.packages import SignedPluginPackage, sign_package
+    from opsmesh_plugin_sdk.packaging.manifest import PluginManifest
+    from opsmesh_plugin_sdk.packaging.packages import SignedPluginPackage, sign_package
     from sqlalchemy.orm import sessionmaker
 
     from backend.app.core.config import get_settings
@@ -804,6 +804,7 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
             assert configured.status_code == 200, configured.text
         source = configured.json()
         sync_url = f"{base}/plugins/sources/{source['id']}/sync"
+        installed_before_sync = client.get(f"{base}/plugins", headers=headers).json()["items"]
         queued = client.post(sync_url, headers=headers, json={"request_key": "sync-" + version})
         assert queued.status_code == 202, queued.text
         assert (
@@ -822,6 +823,7 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
         status = client.get(f"{base}/plugins/downloads/{job.id}", headers=headers)
         assert status.json()["status"] == "succeeded", status.text
         candidates = client.get(f"{base}/plugins/candidates", headers=headers).json()["items"]
+        assert client.get(f"{base}/plugins", headers=headers).json()["items"] == installed_before_sync
         candidate = next(item for item in candidates if item["version"] == version)
         candidate_path = f"{base}/plugins/candidates/{candidate['id']}"
         foreign_read = client.post(
@@ -1095,9 +1097,9 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
 def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     from datetime import UTC, datetime
 
-    from opsmesh_plugin_sdk.client import AutomationClient
-    from opsmesh_plugin_sdk.contracts import IncomingMessage
-    from opsmesh_plugin_sdk.webhooks import parse_automation_delivery
+    from opsmesh_plugin_sdk.messaging.client import AutomationClient
+    from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
+    from opsmesh_plugin_sdk.messaging.webhooks import parse_automation_delivery
 
     from backend.app.core.config import get_settings
     from backend.app.core.security.secrets import SecretEncryptionService
@@ -1362,17 +1364,18 @@ def test_structured_messages_stream_before_model_completion_and_replay(
 
     import httpx
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    from opsmesh_plugin_sdk.client import AsyncAutomationClient, AutomationClient
-    from opsmesh_plugin_sdk.contracts import IncomingMessage, PluginManifest
-    from opsmesh_plugin_sdk.packages import sign_package
-    from opsmesh_plugin_sdk.services import (
+    from opsmesh_plugin_sdk.client import PluginClient
+    from opsmesh_plugin_sdk.messaging.client import AsyncAutomationClient, AutomationClient
+    from opsmesh_plugin_sdk.messaging.contracts import (
         ApprovalDecision,
         AttachmentUpload,
-        PermissionQuery,
-        PluginLog,
-        PluginServicesClient,
-        StoreWrite,
+        IncomingMessage,
     )
+    from opsmesh_plugin_sdk.packaging.manifest import PluginManifest
+    from opsmesh_plugin_sdk.packaging.packages import sign_package
+    from opsmesh_plugin_sdk.services.identity import PermissionQuery
+    from opsmesh_plugin_sdk.services.observability import PluginLog
+    from opsmesh_plugin_sdk.services.storage import StoreWrite
 
     from backend.app.api.dependencies.queue import get_worker_queue
     from backend.app.api.dependencies.redis import get_redis_client
@@ -1541,6 +1544,10 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         "storage.read",
         "storage.write",
         "permissions.read",
+        "identity.read",
+        "resources.read",
+        "knowledge.read",
+        "memory.write",
         "logs.write",
     ]
     package = sign_package(
@@ -1590,22 +1597,88 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     assert configured.status_code == 200, configured.text
 
     async def host_services():
+        from opsmesh_plugin_sdk.context import UserContext
+        from opsmesh_plugin_sdk.services.knowledge import KnowledgeQuery, MemoryWrite
+        from opsmesh_plugin_sdk.services.resources import ResourceQuery
+
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=client.app),
             base_url="http://testserver/api/v1/",
             headers=plugin_headers,
         ) as http:
-            host = PluginServicesClient(http, workspace.id, install_id)
-            assert await host.configuration() == {"poll_seconds": 3}
-            saved = await host.write(
+            host = PluginClient(http, workspace.id, install_id)
+            context = UserContext(automation_id=automation_id, sender_id="user-1")
+            assert (await host.identity.resolve(context)).user_id == employee.id
+            assert set((await host.identity.context()).permissions) == set(permissions)
+            with pytest.raises(httpx.HTTPStatusError) as unbound:
+                await host.identity.resolve(context.model_copy(update={"sender_id": "unknown"}))
+            assert unbound.value.response.status_code == 403
+            for kind in (
+                "team",
+                "agent",
+                "project",
+                "capability",
+                "mcp_server",
+                "mcp_tool",
+                "skill",
+                "workflow",
+                "file",
+                "knowledge",
+                "memory",
+                "automation",
+            ):
+                page = await host.resources.list(
+                    ResourceQuery(
+                        **context.model_dump(),
+                        resource_kind=kind,
+                        limit=1,
+                    )
+                )
+                if kind == "team":
+                    assert [str(item.id) for item in page.items] == [team.json()["id"]]
+            memory = await host.knowledge.remember(
+                MemoryWrite(
+                    **context.model_dump(),
+                    scope_type="workspace",
+                    scope_id=workspace.id,
+                    memory_key="plugin-answer",
+                    knowledge_type="procedure",
+                    title="Plugin answer",
+                    content="Inspect the authorized task output before responding.",
+                    expected_revision=0,
+                )
+            )
+            hits = await host.knowledge.search(
+                KnowledgeQuery(
+                    **context.model_dump(),
+                    query="Plugin answer",
+                )
+            )
+            assert any(hit.id == memory.id for hit in hits)
+            with pytest.raises(httpx.HTTPStatusError) as forbidden_scope:
+                await host.knowledge.remember(
+                    MemoryWrite(
+                        **context.model_dump(),
+                        scope_type="team",
+                        scope_id=UUID(team.json()["id"]),
+                        memory_key="team-answer",
+                        knowledge_type="fact",
+                        title="Denied",
+                        content="Invoke permission is not permission to modify team knowledge.",
+                        expected_revision=0,
+                    )
+                )
+            assert forbidden_scope.value.response.status_code == 403
+            assert await host.configuration.read() == {"poll_seconds": 3}
+            saved = await host.storage.write(
                 "delivery:1", StoreWrite(expected_revision=0, value={"cursor": "0-0"})
             )
-            assert (await host.read("delivery:1")).revision == saved.revision
+            assert (await host.storage.read("delivery:1")).revision == saved.revision
             with pytest.raises(httpx.HTTPStatusError) as conflict:
-                await host.write("delivery:1", StoreWrite(expected_revision=0, value={}))
+                await host.storage.write("delivery:1", StoreWrite(expected_revision=0, value={}))
             assert conflict.value.response.status_code == 409
-            assert len(await host.values(prefix="delivery:")) == 1
-            allowed = await host.permissions(
+            assert len(await host.storage.values(prefix="delivery:")) == 1
+            allowed = await host.identity.permissions(
                 PermissionQuery(
                     automation_id=automation_id,
                     sender_id="user-1",
@@ -1614,11 +1687,11 @@ def test_structured_messages_stream_before_model_completion_and_replay(
                 )
             )
             assert "invoke" in allowed.actions
-            await host.log(
+            await host.observability.log(
                 PluginLog(code="delivery.started", metadata={"authorization": "private-value"})
             )
-            await host.delete("delivery:1", expected_revision=saved.revision)
-            assert await host.read("delivery:1") is None
+            await host.storage.delete("delivery:1", expected_revision=saved.revision)
+            assert await host.storage.read("delivery:1") is None
 
     asyncio.run(host_services())
 
@@ -1628,7 +1701,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
             base_url="http://testserver/api/v1/",
             headers=plugin_headers,
         ) as http:
-            host = PluginServicesClient(http, workspace.id, install_id)
+            host = PluginClient(http, workspace.id, install_id)
             upload = AttachmentUpload(
                 sender_id="user-1",
                 external_event_id="structured-1",
@@ -1637,12 +1710,14 @@ def test_structured_messages_stream_before_model_completion_and_replay(
                 filename="order.txt",
                 content_type="text/plain",
             )
-            attachment = await host.upload_attachment(automation_id, upload, b"order 123: timeout")
+            attachment = await host.messages.upload_attachment(
+                automation_id, upload, b"order 123: timeout"
+            )
             assert (
-                await host.upload_attachment(automation_id, upload, b"order 123: timeout")
+                await host.messages.upload_attachment(automation_id, upload, b"order 123: timeout")
             ) == attachment
             with pytest.raises(httpx.HTTPStatusError) as conflict:
-                await host.upload_attachment(automation_id, upload, b"different content")
+                await host.messages.upload_attachment(automation_id, upload, b"different content")
             assert conflict.value.response.status_code == 409
             return attachment
 
@@ -1667,9 +1742,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
             base_url="http://testserver/api/v1/",
             headers=plugin_headers,
         ) as http:
-            connector = PluginServicesClient(http, workspace.id, install_id).automation(
-                automation_id
-            )
+            connector = PluginClient(http, workspace.id, install_id).automation(automation_id)
             with pytest.raises(httpx.HTTPStatusError) as wrong_event:
                 await connector.submit(message.model_copy(update={"event_id": "different-event"}))
             assert wrong_event.value.response.status_code == 403
@@ -1763,9 +1836,9 @@ def test_structured_messages_stream_before_model_completion_and_replay(
             base_url="http://testserver/api/v1/",
             headers=plugin_headers,
         ) as http:
-            host = PluginServicesClient(http, workspace.id, install_id)
+            host = PluginClient(http, workspace.id, install_id)
             with pytest.raises(httpx.HTTPStatusError) as wrong_sender:
-                await host.decide_approval(
+                await host.messages.decide_approval(
                     automation_id,
                     accepted.id,
                     approval.id,
@@ -1773,7 +1846,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
                 )
             assert wrong_sender.value.response.status_code == 403
             for _ in range(2):
-                result = await host.decide_approval(
+                result = await host.messages.decide_approval(
                     automation_id,
                     accepted.id,
                     approval.id,
@@ -1781,7 +1854,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
                 )
                 assert result.status == "approved"
             with pytest.raises(httpx.HTTPStatusError) as conflict:
-                await host.decide_approval(
+                await host.messages.decide_approval(
                     automation_id,
                     accepted.id,
                     approval.id,
@@ -1830,9 +1903,12 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         f"{event_path}/{accepted.id}", headers=_api_headers(observer_user.id)
     ).status_code in {403, 404}
     assert client.get(event_path, headers=_api_headers(observer_user.id)).json() == []
-    assert client.get(
-        f"{base}/files/{attachment.file_id}/download", headers=_api_headers(observer_user.id)
-    ).status_code == 403
+    assert (
+        client.get(
+            f"{base}/files/{attachment.file_id}/download", headers=_api_headers(observer_user.id)
+        ).status_code
+        == 403
+    )
     assert any(
         frame.kind == "tool.started" and frame.data["call_id"] == "inbox-1" for frame in frames
     )

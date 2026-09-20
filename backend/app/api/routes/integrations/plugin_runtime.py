@@ -16,22 +16,26 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import StreamingResponse
-from opsmesh_plugin_sdk.contracts import (
+from opsmesh_plugin_sdk.context import PluginContext, UserContext, UserIdentity
+from opsmesh_plugin_sdk.messaging.contracts import (
     AcceptedEvent,
+    ApprovalDecision,
+    ApprovalReceipt,
+    AttachmentUpload,
     EventState,
     IncomingMessage,
     MessageAttachment,
 )
-from opsmesh_plugin_sdk.services import (
-    ApprovalDecision,
-    ApprovalReceipt,
-    AttachmentUpload,
-    PermissionQuery,
-    PermissionResult,
-    PluginLog,
-    StoredValue,
-    StoreWrite,
+from opsmesh_plugin_sdk.services.identity import PermissionQuery, PermissionResult
+from opsmesh_plugin_sdk.services.knowledge import (
+    KnowledgeHit,
+    KnowledgeQuery,
+    MemoryReceipt,
+    MemoryWrite,
 )
+from opsmesh_plugin_sdk.services.observability import PluginLog
+from opsmesh_plugin_sdk.services.resources import ResourcePage, ResourceQuery
+from opsmesh_plugin_sdk.services.storage import StoredValue, StoreWrite
 from pydantic import ValidationError
 from redis import Redis
 from sqlalchemy.orm import Session
@@ -43,6 +47,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
+from backend.app.domains.capabilities.plugins.user_services import PluginUserServices
 from backend.app.domains.integrations.automation_stream import AutomationStreamService
 from backend.app.domains.integrations.automations import AutomationService
 from backend.app.domains.integrations.plugin_attachments import PluginAttachmentService
@@ -94,6 +99,57 @@ def configuration(
 ) -> dict[str, object]:
     result = PluginServices(session).read(principal, "configuration")
     return result.value if result else {}
+
+
+@router.get("/context", response_model=PluginContext)
+def installation_context(
+    principal: PluginPrincipal = Depends(plugin_principal),
+    session: Session = Depends(get_db_session),
+) -> PluginContext:
+    return PluginServices(session).context(principal)
+
+
+@router.post("/identity", response_model=UserIdentity)
+def user_identity(
+    request: UserContext,
+    principal: PluginPrincipal = Depends(plugin_principal),
+    session: Session = Depends(get_db_session),
+) -> UserIdentity:
+    return PluginServices(session).identity(principal, request)
+
+
+@router.post("/resources/query", response_model=ResourcePage)
+def query_resources(
+    request: ResourceQuery,
+    principal: PluginPrincipal = Depends(plugin_principal),
+    session: Session = Depends(get_db_session),
+) -> ResourcePage:
+    return PluginUserServices(session).resources(principal, request)
+
+
+@router.post("/knowledge/search", response_model=list[KnowledgeHit])
+def search_knowledge(
+    request: KnowledgeQuery,
+    principal: PluginPrincipal = Depends(plugin_principal),
+    session: Session = Depends(get_db_session),
+) -> list[KnowledgeHit]:
+    result = PluginUserServices(session).search(principal, request)
+    session.commit()
+    return result
+
+
+@router.post("/memory", response_model=MemoryReceipt)
+def remember(
+    request: MemoryWrite,
+    principal: PluginPrincipal = Depends(plugin_principal),
+    session: Session = Depends(get_db_session),
+) -> MemoryReceipt:
+    try:
+        result = PluginUserServices(session).remember(principal, request)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid memory request") from exc
+    session.commit()
+    return result
 
 
 @router.post("/permissions", response_model=PermissionResult)

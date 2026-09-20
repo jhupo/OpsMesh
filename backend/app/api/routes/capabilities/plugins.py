@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from opsmesh_plugin_sdk.services import StoredValue, StoreWrite
+from opsmesh_plugin_sdk.services.storage import StoredValue, StoreWrite
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 

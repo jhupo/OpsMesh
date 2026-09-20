@@ -25,9 +25,10 @@ product contract.
 
 ## Project Status
 
-2026-09-20: SDK 0.4.0 is published from the plugin-center monorepo at the existing
-`jhupo/opsmesh-plugin-sdk-python` remote. OpsMesh rc10 preparation pins that release wheel and its
-SHA-256; rc10 packages and current plugin container acceptance remain pending. See
+2026-09-20: the plugin center is now `jhupo/opsmesh-plugin-center`. SDK 0.5 source separates
+platform services, messaging and packaging; card templates and mappings belong to plugins.
+This change adds delegated identity, authorized resource discovery and knowledge/memory access.
+Release packages and current plugin container acceptance remain pending. See
 [plugin integration evidence](docs/plugin-service-integration.md) for the remaining external checks.
 
 Release delivery provides attested GHCR images, native CLI/server archives and a durable host
@@ -251,7 +252,7 @@ sequenceDiagram
   Versioned input/output JSON Schemas, explicit model-visible fields, and an async NDJSON
   subscription expose live text previews and safe tool status with replay cursors (2026-09-18).
   External channel plugins stay outside the platform; the local plugin center groups SDK and
-  plugin packages separately. Its remote migration is pending; no channel business logic is embedded.
+  plugin packages separately. Remote migration is complete; no channel business logic is embedded.
 - Installation-scoped plugin credentials, private CAS storage, configuration, permission queries
   and redacted logs extend the remote connector boundary without exposing user tokens or SQL.
   Event-scoped card approval decisions reuse task authorization and durable run resumption.
@@ -513,7 +514,7 @@ permissions, health checks, monitoring, updates, and rollback.
 - [Open-Source SDK Strategy](docs/open-source-sdk-strategy.md)
 - [Observability, Audit, and Cost Operations](docs/observability-audit-and-costs.md)
 - [Platform Productionization Plan](docs/platform-productionization-plan.md)
-- [Independent Plugin SDK](https://github.com/jhupo/opsmesh-plugin-sdk-python)
+- [Independent Plugin SDK](https://github.com/jhupo/opsmesh-plugin-center)
 - [Code Organization and Architecture Boundaries](docs/code-organization-audit.md)
 
 ## Contributing

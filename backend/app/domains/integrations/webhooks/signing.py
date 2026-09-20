@@ -2,7 +2,7 @@ import json
 import time
 from datetime import UTC
 
-from opsmesh_plugin_sdk.webhooks import signed_headers
+from opsmesh_plugin_sdk.messaging.webhooks import signed_headers
 
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.security.secrets import SecretEncryptionService

@@ -6,8 +6,8 @@ import fakeredis
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
-from opsmesh_plugin_sdk.contracts import CapabilityDeclaration, PluginManifest
-from opsmesh_plugin_sdk.packages import sign_package
+from opsmesh_plugin_sdk.packaging.manifest import CapabilityDeclaration, PluginManifest
+from opsmesh_plugin_sdk.packaging.packages import sign_package
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID

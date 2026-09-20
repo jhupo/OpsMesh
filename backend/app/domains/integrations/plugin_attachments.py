@@ -3,8 +3,11 @@
 from hashlib import sha256
 from uuid import UUID
 
-from opsmesh_plugin_sdk.contracts import IncomingMessage, MessageAttachment
-from opsmesh_plugin_sdk.services import AttachmentUpload
+from opsmesh_plugin_sdk.messaging.contracts import (
+    AttachmentUpload,
+    IncomingMessage,
+    MessageAttachment,
+)
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 

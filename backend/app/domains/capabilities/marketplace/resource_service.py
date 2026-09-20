@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from opsmesh_plugin_sdk.packages import SignedPluginPackage
+from opsmesh_plugin_sdk.packaging.packages import SignedPluginPackage
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 

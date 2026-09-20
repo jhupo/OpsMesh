@@ -64,8 +64,8 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 - 远程插件绑定已有能力，不在 API/Worker 动态导入第三方代码；托管插件进程仍须通过 Runtime 隔离边界。
 
 2026-09-18：自动化、画布配置合同和远程插件生命周期已接入现有后端；
-[独立 SDK 仓库](https://github.com/jhupo/opsmesh-plugin-sdk-python) 提供连接器合同与签名能力，
+[独立 SDK 仓库](https://github.com/jhupo/opsmesh-plugin-center) 提供连接器合同与签名能力，
 本仓库已删除内置副本。外部插件贡献与发布合同见其
-[架构文档](https://github.com/jhupo/opsmesh-plugin-sdk-python/blob/master/docs/architecture.md)。
+[架构文档](https://github.com/jhupo/opsmesh-plugin-center/blob/master/docs/architecture.md)。
 平台已有受控 HTTPS 目录和描述文件下载，详见 [分发合同](plugin-distribution.md)。
 当前不包含钉钉适配器、Web 页面、独立公共目录运营仓库或自动部署外部插件服务。

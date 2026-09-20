@@ -1,6 +1,6 @@
 """Materialize authorized message inputs at the model execution boundary only."""
 
-from opsmesh_plugin_sdk.contracts import IncomingMessage
+from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 

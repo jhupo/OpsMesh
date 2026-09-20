@@ -2,19 +2,17 @@
 
 import hashlib
 import json
+import logging
 import re
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from opsmesh_plugin_sdk.services import (
-    PermissionQuery,
-    PermissionResult,
-    PluginLog,
-    StoredValue,
-    StoreWrite,
-)
+from opsmesh_plugin_sdk.context import PluginContext, UserContext, UserIdentity
+from opsmesh_plugin_sdk.services.identity import PermissionQuery, PermissionResult
+from opsmesh_plugin_sdk.services.observability import PluginLog
+from opsmesh_plugin_sdk.services.storage import StoredValue, StoreWrite
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -55,6 +53,10 @@ SERVICE_PERMISSIONS = frozenset(
         "configuration.read",
         "logs.write",
         "permissions.read",
+        "identity.read",
+        "resources.read",
+        "knowledge.read",
+        "memory.write",
         "approvals.decide",
         "attachments.write",
     }
@@ -354,22 +356,47 @@ class PluginServices:
         metadata = redact_sensitive_payload(request.metadata)
         if len(json.dumps(metadata)) > 8000:
             raise ValueError("Plugin log metadata exceeds limit")
+        logging.getLogger("opsmesh.plugins").log(
+            {"info": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}[
+                request.level
+            ],
+            request.code,
+            extra={
+                "plugin_workspace_id": str(principal.workspace_id),
+                "plugin_install_id": str(principal.install_id),
+                "plugin_credential_id": str(principal.credential_id),
+                "plugin_event_id": str(request.event_id) if request.event_id else None,
+                "plugin_fields": metadata,
+            },
+        )
         AuditService(self.session).record_system_action(
             workspace_id=principal.workspace_id,
-            action="plugin.log",
+            action="plugin.log.accepted",
             target_type="plugin_install",
             target_id=principal.install_id,
             metadata={
                 "level": request.level,
                 "code": request.code,
                 "event_id": str(request.event_id) if request.event_id else None,
-                "fields": metadata,
                 "credential_id": str(principal.credential_id),
             },
         )
 
-    def permissions(self, principal: PluginPrincipal, query: PermissionQuery) -> PermissionResult:
-        self.require_automation(principal, query.automation_id, "permissions.read")
+    def context(self, principal: PluginPrincipal) -> PluginContext:
+        install = self.require(principal)
+        release = self.active_release(install)
+        credential = self.session.get(PluginCredential, principal.credential_id)
+        assert credential is not None
+        return PluginContext(
+            workspace_id=principal.workspace_id,
+            install_id=principal.install_id,
+            permissions=sorted(set(credential.permissions) & set(release.approved_permissions)),
+        )
+
+    def resolve_user(
+        self, principal: PluginPrincipal, query: UserContext, permission: str
+    ) -> AuthenticatedUser:
+        self.require_automation(principal, query.automation_id, permission)
         item = self.session.scalar(
             select(Automation).where(
                 Automation.workspace_id == principal.workspace_id,
@@ -384,7 +411,18 @@ class PluginServices:
         ):
             raise ResourceAccessDenied()
         identity = ExternalIdentityService(self.session).resolve(item, query.sender_id)
-        user = ExecutionIdentityService(self.session).restore(principal.workspace_id, identity)
+        return ExecutionIdentityService(self.session).restore(principal.workspace_id, identity)
+
+    def identity(self, principal: PluginPrincipal, query: UserContext) -> UserIdentity:
+        user = self.resolve_user(principal, query, "identity.read")
+        return UserIdentity(
+            user_id=user.user_id,
+            display_name=user.display_name,
+            workspace_id=principal.workspace_id,
+        )
+
+    def permissions(self, principal: PluginPrincipal, query: PermissionQuery) -> PermissionResult:
+        user = self.resolve_user(principal, query, "permissions.read")
         try:
             actions = ResourceAuthorizationService(self.session, user).effective_actions(
                 principal.workspace_id,

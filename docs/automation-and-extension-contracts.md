@@ -128,14 +128,14 @@ Redis 保留窗口沿用任务流的约 10,000 条事件，不承诺所有历史
 
 ## 插件 SDK 边界
 
-`opsmesh-plugin-sdk` 的源码唯一位于 [独立仓库](https://github.com/jhupo/opsmesh-plugin-sdk-python)。
+`opsmesh-plugin-sdk` 的源码唯一位于 [独立仓库](https://github.com/jhupo/opsmesh-plugin-center)。
 平台通过 pyproject.toml 中的完整提交归档依赖及 uv.lock 摘要安装；不再复制源码，
 也不依赖浮动 master。尚未发布 PyPI 版本，当前固定源码归档需要安装器构建 wheel。
 外部连接器只依赖 SDK，不导入 backend。SDK 提供签名插件包、能力声明、同步/异步客户端、
 结构化消息与回复、流式订阅、Webhook 验签及作用域校验。
 
 SDK 目录、外部插件贡献位置和插件发布资产合同维护在独立仓库
-[架构与分发合同](https://github.com/jhupo/opsmesh-plugin-sdk-python/blob/master/docs/architecture.md)。
+[架构与分发合同](https://github.com/jhupo/opsmesh-plugin-center/blob/master/docs/architecture.md)。
 平台还支持 [固定目录同步与受控下载](plugin-distribution.md)，仍调用同一个 PluginService。
 目录仅拉取签名 JSON，不自动执行插件。2026-09-19 已接入管理员批准的隔离进程部署控制，
 仍待真实镜像与渠道验收，见[插件服务接入](plugin-service-integration.md)。SDK 下载、业务插件
@@ -148,7 +148,7 @@ SDK 只支持远程执行声明。插件不能被动态导入 API 或 worker 进
 ## 安装与信任
 
 1. 在工作区通过现有 API 配置远程 MCP、安装技能、消息自动化和 Webhook 回复订阅。MCP 的地址、认证引用、发现与 allowlist 仍归 MCP 模块管理；回复签名密钥仍归 Webhook 模块管理。
-2. 发布者用 `opsmesh_plugin_sdk.packages.sign_package(manifest, publisher_key_id, private_key)` 签名；安装 `opsmesh-plugin-sdk[signing]` 即可使用。包是 `SignedPluginPackage` JSON，包含 manifest、密钥标识及 Base64 Ed25519 签名，绝不上传私钥。
+2. 发布者用 `opsmesh_plugin_sdk.packaging.packages.sign_package(manifest, publisher_key_id, private_key)` 签名；安装 `opsmesh-plugin-sdk[signing]` 即可使用。包是 `SignedPluginPackage` JSON，包含 manifest、密钥标识及 Base64 Ed25519 签名，绝不上传私钥。
 3. 管理员通过可信的独立渠道确认发布者公钥，再向 `POST /api/v1/workspaces/{workspace_id}/plugins/trust-keys` 提交 `key_id`、`plugin_key`、Base64 `public_key`。信任仅对该工作区和精确插件 key 有效。
 4. 向 `POST /api/v1/workspaces/{workspace_id}/plugins` 提交签名包、声明能力到本工作区资源 ID 的完整绑定，以及明确批准的权限集合。跨工作区、已占用的资源、签名错误、未批准权限和原始凭证均被拒绝。配置按 capability 的 JSON Schema 校验，不允许从网络解析 Schema 引用。
 
