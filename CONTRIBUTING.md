@@ -19,13 +19,16 @@ docker compose up --build
 
 ## Pull Requests
 
+- Create a feature branch and open a PR targeting `master`; do not push directly to `master`
+  or bypass required checks. See [GitHub automation](docs/github-automation.md) for the policy
+  and the verified repository settings, which are recorded separately.
 - Keep changes scoped to one feature or fix.
 - Add or update tests for API behavior, worker behavior, migrations, security boundaries, and review/approval flows.
 - Do not add compatibility aliases, deprecated shims, fallback branches, or duplicate implementations.
 - Do not put fake provider, mock runner, or local-only test switches in `backend/app`.
 - Keep credentials, API keys, provider base URLs, and generated artifacts out of commits.
 - Run targeted `ruff check` and targeted pytest tests for the affected modules before opening a PR.
-- Run the complete pytest suite only immediately before creating a release tag.
+- The complete pytest suite runs only in the tag-triggered release gate, not locally or on every PR.
 
 ## Safety Expectations
 
