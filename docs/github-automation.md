@@ -43,8 +43,9 @@ Dependency Review 比较 GitHub 依赖图；它不是容器镜像漏洞扫描，
 Dependabot、定时任务、Issues 和 `pull_request_target` 工作流以默认分支配置为准；首次合并后
 才开始生效。默认 CodeQL setup 若已启用，应切换为本仓库高级 workflow 配置，避免上传冲突。
 GitHub 后台的 dependency graph、Dependabot alerts/security updates、Secret scanning 和
-Push protection 独立于 YAML。当前凭据未能核实这些设置，不能声明已经开启；维护者需在
-Settings / Code security 核对。新增 YAML 不会自动改变这些后台设置。
+Push protection 独立于 YAML。2026-09-20 已通过仓库 Settings / Advanced Security 页面开启，
+并确认各项按钮均显示 Disable。Dependency Review 首次运行因 dependency graph 未开启而失败，
+已在开启后重跑。默认 CodeQL setup 状态未核实；若出现默认/高级上传冲突需单独处理。
 
 参考：[CodeQL](https://github.com/github/codeql-action)、
 [Dependency Review](https://github.com/actions/dependency-review-action)、
