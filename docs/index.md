@@ -37,6 +37,7 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 
 ## 架构与质量
 
+- [GitHub 安全与协作自动化](github-automation.md)：PR 提交、CodeQL、依赖检查、Dependabot 和标签规则（2026-09-20）。
 20. [Architecture Gates](architecture-gates.md)：Import Linter、依赖方向、API/Domain/Infrastructure 边界。
 21. [代码组织与架构边界](code-organization-audit.md)：当前目录、唯一 owner、拆分规则、重构结论和结构证据。
 22. [Decisions](decisions.md)：稳定的产品与架构决策。

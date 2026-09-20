@@ -31,6 +31,9 @@ apply to the entire repository.
 
 ## Current code-quality rules
 
+- Submit changes on a feature branch through a pull request targeting `master`. Do not push
+  directly to `master`, bypass branch protection, or merge without the required checks/review.
+
 - Complete the entire user-authorized task, not an arbitrarily selected slice. Break work into
   internal steps and coherent commits, but continue through the agreed acceptance criteria without
   requiring repeated "continue" prompts. Do not move to the next roadmap stage with required

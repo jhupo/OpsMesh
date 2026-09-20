@@ -1,0 +1,61 @@
+name: Issue and PR Labels
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+permissions: {}
+concurrency:
+  group: triage-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      # Only GitHub metadata is read. Never check out or execute PR head code here.
+      - name: Ensure labels and classify issues
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const definitions = [
+              ['bug', 'd73a4a', 'A reproducible defect'],
+              ['enhancement', 'a2eeef', 'A proposed feature or improvement'],
+              ['needs-triage', 'fbca04', 'Awaiting maintainer triage'],
+              ['area:backend', '1d76db', 'Platform API and domain implementation'],
+              ['area:runtime', '5319e7', 'Isolated runtime, worker or operator'],
+              ['area:security', 'b60205', 'Identity, authorization or security policy'],
+              ['area:delivery', '006b75', 'CI, packaging and deployment'],
+              ['documentation', '0075ca', 'Documentation changes'],
+              ['dependencies', '0366d6', 'Dependency updates'],
+            ];
+            const existing = new Set((await github.paginate(
+              github.rest.issues.listLabelsForRepo, {...context.repo, per_page: 100}
+            )).map(label => label.name));
+            for (const [name, color, description] of definitions) {
+              if (existing.has(name)) continue;
+              try {
+                await github.rest.issues.createLabel({...context.repo, name, color, description});
+              } catch (error) {
+                // Concurrent events may create the same label. Only ignore that exact conflict.
+                if (error.status !== 422 || !error.response?.data?.errors?.some(
+                  item => item.code === 'already_exists'
+                )) throw error;
+              }
+            }
+            if (context.eventName === 'issues') {
+              const labels = ['needs-triage'];
+              const title = context.payload.issue.title;
+              if (title.startsWith('[Bug]:')) labels.push('bug');
+              if (title.startsWith('[Feature]:')) labels.push('enhancement');
+              await github.rest.issues.addLabels({...context.repo, issue_number: context.issue.number, labels});
+            }
+      - name: Label PR by changed paths
+        if: github.event_name == 'pull_request_target'
+        uses: actions/labeler@b8dd2d9be0f68b860e7dae5dae7d772984eacd6d # v6
+        with:
+          sync-labels: false

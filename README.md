@@ -518,6 +518,9 @@ permissions, health checks, monitoring, updates, and rollback.
 
 ## Contributing
 
+Changes enter protected `master` through pull requests. See [GitHub security and collaboration
+automation](docs/github-automation.md) for checks, dependency updates, labels and repository settings.
+
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the repository
 instructions in [AGENTS.md](AGENTS.md). Changes that affect authorization, execution, credentials,
 or tenant-owned data require success-path and denial-path tests.

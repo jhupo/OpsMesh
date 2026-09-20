@@ -1,0 +1,18 @@
+'area:backend':
+  - changed-files:
+      - any-glob-to-any-file: ['backend/**']
+'area:runtime':
+  - changed-files:
+      - any-glob-to-any-file: ['backend/app/runtime/**', 'runtime/**', 'operator/**']
+'area:security':
+  - changed-files:
+      - any-glob-to-any-file: ['backend/app/domains/access/**', 'backend/app/core/security/**', 'SECURITY.md', '.github/workflows/codeql.yml', '.github/workflows/dependency-review.yml']
+'area:delivery':
+  - changed-files:
+      - any-glob-to-any-file: ['.github/**', 'deploy/**', 'scripts/**', 'Dockerfile*', 'compose*.yml']
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ['docs/**', '*.md']
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ['**/pyproject.toml', '**/uv.lock', '**/requirements*.txt', '.github/dependabot.yml']
