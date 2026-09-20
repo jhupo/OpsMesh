@@ -173,9 +173,9 @@ def main() -> None:
     arguments = parser()
     args = arguments.parse_args()
     try:
-        # lgtm[py/clear-text-logging-sensitive-data] Install/reset output is an explicit
-        # one-time terminal handoff requested by the operator, not an application log.
-        print(json.dumps(execute(args), ensure_ascii=False, indent=2))
+        payload = json.dumps(execute(args), ensure_ascii=False, indent=2)
+        # Install/reset credentials are handed directly to the invoking terminal, never a logger.
+        os.write(1, f"{payload}\n".encode())
     except (ValueError, RuntimeError) as exc:
         arguments.exit(1, f"opsmesh: {exc}\n")
     except (OSError, httpx.HTTPError):

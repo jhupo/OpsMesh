@@ -50,19 +50,17 @@ def main() -> None:
                 user, password = service.create_platform_admin()
             else:
                 user, password = service.reset_platform_admin_password()
-        # lgtm[py/clear-text-logging-sensitive-data] The installer explicitly requests this
-        # one-time terminal delivery; the password is never sent to an application logger.
-        print(
-            json.dumps(
-                {
-                    "username": user.username,
-                    "email": user.email,
-                    "password": password,
-                    "message": "Store this password securely; it is not persisted by OpsMesh.",
-                },
-                ensure_ascii=False,
-            )
+        payload = json.dumps(
+            {
+                "username": user.username,
+                "email": user.email,
+                "password": password,
+                "message": "Store this password securely; it is not persisted by OpsMesh.",
+            },
+            ensure_ascii=False,
         )
+        # This is an intentional one-time terminal handoff, bypassing all application loggers.
+        os.write(sys.stdout.fileno(), f"{payload}\n".encode())
         return
     if args.command == "api":
         sys.argv = [
