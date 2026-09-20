@@ -1,6 +1,6 @@
 # Delivery operations
 
-Release status (2026-09-20): `v0.1.0rc13` targets database revision
+Release status (2026-09-20): `v0.1.0rc14` targets database revision
 `0102_platform_admin_credentials`, connector protocol 2 and Linux amd64. The tag-triggered release gate is
 the source of truth for publication and managed Compose/systemd acceptance. This remains a pre-1.0
 release; validate your own ingress, configuration and off-host disaster-recovery policy before use.
@@ -43,20 +43,21 @@ maintenance procedure; an application update does not hot-replace the executing 
    run/attempt-specific candidate tags and probes their exact digests. Native runners also build
    five CLI archives and a Linux amd64 self-contained server archive from the validated wheels.
    Relocation, CLI HTTP requests and server migration/readiness in a Python-free container are
-   mandatory checks. Only successful validation
-   enables the signing/publishing job, which downloads the same packages and promotes the tested
-   image digests without rebuilding. It publishes the draft Release last, then downloads its public
-   assets through the operator's real release source, checks their sizes/hashes and verifies every
-   package and both image attestations against the repository, workflow, tag and commit. These
-   post-publication checks must also pass before the workflow reports success. No manual workflow
-   dispatch or previously successful workflow run is required.
+   mandatory checks. Only successful validation enables the staging job, which signs the exact
+   package and image digests and uploads the complete asset set to a non-public draft Release.
    The same workflow then runs **Managed Delivery Acceptance** on separate disposable Compose
-   and systemd hosts. Its explicitly selected previous-release baseline must remain schema-compatible
+   and systemd hosts against those exact draft bytes. The CI-only release token is passed as an
+   HTTP credential and never makes `gh` a host prerequisite. Its explicitly selected
+   previous-release baseline must remain schema-compatible
    with `release-policy.json`; do not replace it with a mutable latest-version lookup. It uses the
-   publicly signed native CLI, not the checkout installer, and tests managed installation, approved
+   staged native CLI, not the checkout installer, and tests managed installation, approved
    cross-version changes, a killed updater, an occupied API port, explicit resume/rollback, and
-   acknowledged database/filesystem restoration. Publication is not update acceptance until both
-   deployment jobs pass. The workflow can also be dispatched against existing immutable releases.
+   acknowledged database/filesystem restoration. Only after both deployment jobs pass does the
+   final job promote the already-tested image digests, publish the draft, download all assets through
+   the public release path, check their sizes/hashes, and verify every package and image attestation
+   against the repository, workflow, tag and commit. No manual workflow dispatch or previously
+   successful workflow run is required. Managed acceptance can also be dispatched against an
+   existing immutable public release.
 4. Operators discover a version through `update check`; this does not approve or install it.
 
 The workflows use minimal job permissions and pinned Action SHAs. No mutable `latest` reference
@@ -76,7 +77,7 @@ native CLI and checksum list from the fixed repository release, verifies the arc
 the managed installer. It never clones or builds source. For Linux amd64:
 
 ```sh
-TAG=v0.1.0rc13
+TAG=v0.1.0rc14
 curl -fsSL "https://github.com/jhupo/OpsMesh/releases/download/${TAG}/install.sh" | \
   sudo sh -s -- --version "${TAG}" --origin https://opsmesh.example.com
 ```

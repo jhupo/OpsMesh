@@ -30,7 +30,7 @@ def test_existing_assets_are_verified_not_overwritten(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("draft,new_release", [(True, False), (False, False), (True, True)])
-def test_publication_reuses_existing_assets_and_published_release_is_noop(
+def test_release_is_staged_before_managed_acceptance_and_finalized_without_asset_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, draft: bool, new_release: bool
 ) -> None:
     package = tmp_path / "package.whl"
@@ -49,8 +49,10 @@ def test_publication_reuses_existing_assets_and_published_release_is_noop(
         for path in tmp_path.iterdir()
     ]
     calls: list[tuple[str, ...]] = []
+    created = False
 
     def command(*args: str) -> str:
+        nonlocal created
         calls.append(args)
         if args[:2] == ("git", "rev-parse"):
             return manifest.commit
@@ -58,28 +60,31 @@ def test_publication_reuses_existing_assets_and_published_release_is_noop(
             if "/git/ref/" in args[2]:
                 return "{}"
             if "POST" in args:
+                created = True
                 assert "draft=true" in args
                 assert "generate_release_notes=true" in args
                 assert "prerelease=true" in args
                 return json.dumps({"tag_name": manifest.tag, "id": 1, "draft": True})
             if "/assets?" in args[2]:
                 return json.dumps([assets])
-            if new_release:
+            if new_release and not created:
                 # Simulate a release list that remains stale after creation.
                 return "[[]]"
             return json.dumps([[{"tag_name": manifest.tag, "id": 1, "draft": draft}]])
         return ""
 
     monkeypatch.setattr(publish_release, "command", command)
-    publish_release.publish(manifest.tag, manifest.repository, tmp_path)
+    publish_release.stage_release(manifest.tag, manifest.repository, tmp_path)
     assert not any(call[:3] == ("gh", "release", "upload") for call in calls)
+    assert not any(call[0] == "docker" or call[:2] == ("gh", "release") for call in calls)
+    publish_release.finalize_release(manifest.tag, manifest.repository, tmp_path)
     mutations = [call for call in calls if call[0] == "docker" or call[:2] == ("gh", "release")]
     assert len(mutations) == (3 if draft else 0)
     if draft:
         assert mutations[-1][-1] == "--draft=false"
         assert mutations[0][-1] == manifest.image("backend")
     if new_release:
-        assert len([call for call in calls if "--slurp" in call and "/assets?" not in call[2]]) == 1
+        assert len([call for call in calls if "--slurp" in call and "/assets?" not in call[2]]) == 2
         tag_check = ("gh", "api", f"repos/{manifest.repository}/git/ref/tags/{manifest.tag}")
         creation = next(call for call in calls if "POST" in call)
         assert calls.index(tag_check) < calls.index(creation)
