@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.domains.workspace.data_transfer.contracts import (
     WorkspaceArchiveImportRequest,
     WorkspaceArchiveRestoreDrillRequest,
+    WorkspaceImportResponse,
 )
 from backend.app.domains.workspace.data_transfer.importers.archive import (
     WorkspaceArchiveImportService,
@@ -46,67 +47,31 @@ class WorkspaceArchiveRestoreDrillService:
             storage=storage,
         )
         drilled_at = datetime.now(UTC)
-        drill_workspace = Workspace(
-            owner_user_id=workspace.owner_user_id,
-            name=f"{request.name_prefix}{workspace.name}"[:160],
-            slug=f"restore-drill-{export_job.id.hex[:16]}",
-            settings={"restore_drill": True},
-            status="active",
-        )
-        self._session.add(drill_workspace)
-        self._session.flush()
-        imported_files: list[str] = []
-        imported_artifacts: list[str] = []
+        # The authorized source session must retain its tenant scope. Restore only into a
+        # newly-created disposable workspace in a separate session and rollback its savepoint,
+        # including commits performed by the normal archive importer.
+        connection = self._session.connection()
+        savepoint = connection.begin_nested()
         try:
-            preview = WorkspaceArchiveImportService(self._session).import_archive(
-                workspace=drill_workspace,
-                user_id=user_id,
-                archive_bytes=archive_bytes,
-                request=WorkspaceArchiveImportRequest(
-                    dry_run=False,
-                    import_agents=request.import_agents,
-                    import_teams=request.import_teams,
-                    import_tasks=request.import_tasks,
-                    import_runtime_spaces=request.import_runtime_spaces,
-                    import_skill_installs=request.import_skill_installs,
-                    import_memory=request.import_memory,
-                    import_projects=request.import_projects,
-                    import_file_bytes=request.import_file_bytes,
-                    import_artifact_bytes=request.import_artifact_bytes,
-                    name_prefix=request.name_prefix,
-                    max_items_per_collection=request.max_items_per_collection,
-                    max_bytes_per_object=request.max_bytes_per_object,
-                    max_total_bytes=request.max_total_bytes,
-                ),
-                storage=storage,
-            )
-            imported_files = list(
-                self._session.scalars(
-                    select(WorkspaceFile.storage_key).where(
-                        WorkspaceFile.workspace_id == drill_workspace.id
-                    )
+            with Session(
+                bind=connection, join_transaction_mode="create_savepoint"
+            ) as drill_session:
+                preview, drill_workspace_id = self._restore(
+                    drill_session,
+                    workspace=workspace,
+                    user_id=user_id,
+                    job_id=export_job.id,
+                    archive_bytes=archive_bytes,
+                    request=request,
+                    storage=storage,
                 )
-            )
-            imported_artifacts = list(
-                self._session.scalars(
-                    select(Artifact.storage_key).where(Artifact.workspace_id == drill_workspace.id)
-                )
-            )
-            passed = (
-                len(preview.required_resolutions) == 0
-                and preview.skipped_counts.get("files", 0) == 0
-                and preview.skipped_counts.get("artifacts", 0) == 0
-            )
-        except Exception:
-            self._session.rollback()
-            raise
         finally:
-            for storage_key in [*imported_files, *imported_artifacts]:
-                storage.delete(storage_key)
-            existing_workspace = self._session.get(Workspace, drill_workspace.id)
-            if existing_workspace is not None:
-                self._session.delete(existing_workspace)
-            self._session.commit()
+            savepoint.rollback()
+        passed = (
+            len(preview.required_resolutions) == 0
+            and preview.skipped_counts.get("files", 0) == 0
+            and preview.skipped_counts.get("artifacts", 0) == 0
+        )
         audit_metadata = _import_preview_audit_metadata(preview)
         metadata = {
             "source_export_job_id": str(export_job.id),
@@ -114,7 +79,7 @@ class WorkspaceArchiveRestoreDrillService:
                 export_job.completed_at.isoformat() if export_job.completed_at is not None else None
             ),
             "passed": passed,
-            "disposable_workspace_id": str(drill_workspace.id),
+            "disposable_workspace_id": str(drill_workspace_id),
             **audit_metadata,
         }
         AuditService(self._session).record_user_action(
@@ -137,3 +102,65 @@ class WorkspaceArchiveRestoreDrillService:
             "import_preview": preview,
             "metadata": metadata,
         }
+
+    @staticmethod
+    def _restore(
+        session: Session,
+        *,
+        workspace: Workspace,
+        user_id: UUID,
+        job_id: UUID,
+        archive_bytes: bytes,
+        request: WorkspaceArchiveRestoreDrillRequest,
+        storage: ObjectStorage,
+    ) -> tuple[WorkspaceImportResponse, UUID]:
+        drill_workspace = Workspace(
+            owner_user_id=workspace.owner_user_id,
+            name=f"{request.name_prefix}{workspace.name}"[:160],
+            slug=f"restore-drill-{job_id.hex[:16]}",
+            settings={"restore_drill": True},
+            status="active",
+        )
+        session.add(drill_workspace)
+        session.flush()
+        imported_files: list[str] = []
+        imported_artifacts: list[str] = []
+        try:
+            preview = WorkspaceArchiveImportService(session).import_archive(
+                workspace=drill_workspace,
+                user_id=user_id,
+                archive_bytes=archive_bytes,
+                request=WorkspaceArchiveImportRequest(
+                    dry_run=False,
+                    import_agents=request.import_agents,
+                    import_teams=request.import_teams,
+                    import_tasks=request.import_tasks,
+                    import_runtime_spaces=request.import_runtime_spaces,
+                    import_skill_installs=request.import_skill_installs,
+                    import_memory=request.import_memory,
+                    import_projects=request.import_projects,
+                    import_file_bytes=request.import_file_bytes,
+                    import_artifact_bytes=request.import_artifact_bytes,
+                    name_prefix=request.name_prefix,
+                    max_items_per_collection=request.max_items_per_collection,
+                    max_bytes_per_object=request.max_bytes_per_object,
+                    max_total_bytes=request.max_total_bytes,
+                ),
+                storage=storage,
+            )
+            imported_files = list(
+                session.scalars(
+                    select(WorkspaceFile.storage_key).where(
+                        WorkspaceFile.workspace_id == drill_workspace.id
+                    )
+                )
+            )
+            imported_artifacts = list(
+                session.scalars(
+                    select(Artifact.storage_key).where(Artifact.workspace_id == drill_workspace.id)
+                )
+            )
+            return preview, drill_workspace.id
+        finally:
+            for storage_key in [*imported_files, *imported_artifacts]:
+                storage.delete(storage_key)

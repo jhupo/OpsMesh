@@ -20,6 +20,7 @@ from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.access.models import User
+from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.messages.models import AgentMessage
 from backend.app.domains.agents.profiles.models import AgentProfile
@@ -1254,6 +1255,8 @@ def test_worker_runner_processes_team_execution_loop_job() -> None:
     session_factory = _session_factory()
     queue = _queue()
     workspace_id, team_id, user_id, task_id = _seed_team_loop_task(session_factory)
+    with session_factory() as session:
+        identity = ExecutionIdentityService(session).capture(workspace_id, user_id)
     queue.enqueue(
         JobPayload(
             workspace_id=workspace_id,
@@ -1261,6 +1264,7 @@ def test_worker_runner_processes_team_execution_loop_job() -> None:
             resource_id=team_id,
             requested_by_user_id=user_id,
             idempotency_key=f"team.execution_loop:{workspace_id}:{team_id}:test",
+            execution_identity=identity,
         )
     )
     runner = WorkerRunner(
@@ -1401,7 +1405,7 @@ def test_worker_runner_records_team_execution_loop_missing_actor_failure() -> No
         ),
     )
 
-    with pytest.raises(ValueError, match="requested_by_user_id"):
+    with pytest.raises(ResourceAccessDenied):
         runner.run_once()
 
     with session_factory() as session:
@@ -1425,7 +1429,7 @@ def test_worker_runner_records_team_execution_loop_missing_actor_failure() -> No
         failure = runtime_metadata["last_worker_failure"]
         assert failure["status"] == "retrying"
         assert failure["will_retry"] is True
-        assert failure["error"] == "Team execution loop jobs require requested_by_user_id"
+        assert failure["error"] == "Resource access denied"
         assert failure["routing"]["trigger"] == "scheduled_team_runtime"
         assert message is not None
         assert message.payload["worker_failure"]["status"] == "retrying"
@@ -1440,6 +1444,8 @@ def test_worker_runner_team_execution_loop_ensures_workspace_runtime() -> None:
         session_factory,
         with_runtime_template=True,
     )
+    with session_factory() as session:
+        identity = ExecutionIdentityService(session).capture(workspace_id, user_id)
     queue.enqueue(
         JobPayload(
             workspace_id=workspace_id,
@@ -1447,6 +1453,7 @@ def test_worker_runner_team_execution_loop_ensures_workspace_runtime() -> None:
             resource_id=team_id,
             requested_by_user_id=user_id,
             idempotency_key=f"team.execution_loop:{workspace_id}:{team_id}:runtime",
+            execution_identity=identity,
         )
     )
     runner = WorkerRunner(
@@ -1563,6 +1570,8 @@ def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterat
         session_factory,
         with_runtime_template=True,
     )
+    with session_factory() as session:
+        identity = ExecutionIdentityService(session).capture(workspace_id, user_id)
     for iteration in range(2):
         queue.enqueue(
             JobPayload(
@@ -1571,6 +1580,7 @@ def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterat
                 resource_id=team_id,
                 requested_by_user_id=user_id,
                 idempotency_key=(f"team.execution_loop:{workspace_id}:{team_id}:soak:{iteration}"),
+                execution_identity=identity,
                 routing={"trigger": "scheduled_team_runtime"},
             )
         )
@@ -1789,11 +1799,11 @@ def test_worker_runner_continues_after_job_failure() -> None:
         assert heartbeat is not None
         assert heartbeat.status == "degraded"
         assert heartbeat.details["failed"] == 1
-        assert "workspace mismatch" in str(heartbeat.details["last_error"])
+        assert "Agent run not found" in str(heartbeat.details["last_error"])
         assert {lease.status for lease in leases} == {"failed", "completed"}
         failed_lease = next(lease for lease in leases if lease.status == "failed")
         assert failed_lease.lease_metadata["last_lifecycle_event"]["type"] == "failed"
-        assert "workspace mismatch" in failed_lease.lease_metadata["error"]
+        assert "Agent run not found" in failed_lease.lease_metadata["error"]
 
 
 def test_worker_runner_schedules_retry_with_error_metadata() -> None:
@@ -1820,7 +1830,7 @@ def test_worker_runner_schedules_retry_with_error_metadata() -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match="workspace mismatch"):
+    with pytest.raises(ValueError, match="Agent run not found"):
         runner.run_once()
 
     assert queue.count_queued(workspace_id=missing_workspace_id) == 0
@@ -1829,7 +1839,7 @@ def test_worker_runner_schedules_retry_with_error_metadata() -> None:
     assert len(reclaimed) == 1
     assert reclaimed[0].attempt == 1
     assert reclaimed[0].last_error is not None
-    assert "workspace mismatch" in reclaimed[0].last_error
+    assert "Agent run not found" in reclaimed[0].last_error
     assert reclaimed[0].last_error_type == "ValueError"
 
 
@@ -2233,6 +2243,8 @@ def test_worker_runner_processes_mcp_tool_execution_job() -> None:
             name="image-tools",
             server_type="streamable_http",
             connection={"url": "https://mcp.example.test/jsonrpc"},
+            health_status="healthy",
+            last_health_check_at=datetime.now(UTC),
         )
         session.add(server)
         session.flush()
@@ -3159,6 +3171,7 @@ def _seed_multi_agent_task(
             created_by_user_id=user.id,
             agent_team_id=team.id,
             title="Build restart-safe delivery",
+            execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
             description="Complete specialist work and obtain manager approval.",
             status=TaskStatus.QUEUED.value,
         )
@@ -3367,6 +3380,7 @@ def _seed_team_loop_task(
             created_by_user_id=user.id,
             agent_team_id=team.id,
             title="Finalize loop task",
+            execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
             status=TaskStatus.RUNNING.value,
             priority=8,
             team_snapshot={"team": {"manager_agent_profile_id": str(manager.id)}},

@@ -30,7 +30,8 @@ platform services, messaging and packaging; card templates and mappings belong t
 This change adds delegated identity, authorized resource discovery and knowledge/memory access.
 SDK 0.5.0 and DingTalk plugin 0.3.0 packages are published. The platform release gate is being
 repaired; deployment and current plugin container acceptance remain pending. Catalog sync only
-fetches metadata and never implicitly installs a plugin. See
+fetches metadata and never implicitly installs a plugin. Release repairs also preserve tenant-wide
+budget enforcement and keep archive restore drills separate from the source request's resource scope. See
 [plugin integration evidence](docs/plugin-service-integration.md) for the remaining external checks.
 
 Release delivery provides attested GHCR images, native CLI/server archives and a durable host

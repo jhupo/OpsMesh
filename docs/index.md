@@ -10,7 +10,7 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 
 ## 当前实现
 
-- [多用户资源权限](multi-user-authorization.md)：默认私有、用户授权、执行身份、渠道绑定、会话隔离与撤权（2026-09-18）。
+- [多用户资源权限](multi-user-authorization.md)：默认私有、用户授权、执行身份、渠道绑定、会话隔离、预算及恢复演练边界（2026-09-20）。
 
 - [系统架构](architecture.md)：控制面、执行面、状态面和证据面的总览。
 - [Backend 服务架构](backend-service-architecture.md)：API、领域、runtime、worker 与基础设施依赖方向。

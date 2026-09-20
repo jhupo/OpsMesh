@@ -12,6 +12,8 @@ from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.utils import ensure_aware_utc
+from backend.app.domains.access.resource_queries import resource_query_scope
+from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.agents.providers.policy import canonical_model_provider
 from backend.app.observability.costs.models import ModelUsageRecord, WorkspaceCostBudget
 from backend.app.observability.costs.pricing import normalize_currency
@@ -127,37 +129,45 @@ class CostQueryService:
         currency: str = "USD",
         now: datetime | None = None,
     ) -> CostBudgetStatus:
+        scope = resource_query_scope(self._session)
+        if scope is not None and scope.workspace_id != workspace_id:
+            raise ResourceAccessDenied()
         now = now or datetime.now(UTC)
         period_start, period_end = _month_window(now)
         normalized_currency = normalize_currency(currency)
-        budget = self._session.scalar(
-            select(WorkspaceCostBudget).where(
-                WorkspaceCostBudget.workspace_id == workspace_id,
-                WorkspaceCostBudget.currency == normalized_currency,
+        # Enforcement consumes the whole tenant ledger, including private/deleted tasks.
+        # User-visible usage queries above retain resource filtering; budget totals cannot,
+        # otherwise a restricted initiating user could bypass an exhausted workspace budget.
+        budgets = WorkspaceCostBudget.__table__.c
+        usage = ModelUsageRecord.__table__.c
+        budget = self._session.execute(
+            select(*budgets).where(
+                budgets.workspace_id == workspace_id,
+                budgets.currency == normalized_currency,
             )
-        )
+        ).one_or_none()
         spent = self._session.scalar(
-            select(func.coalesce(func.sum(ModelUsageRecord.total_cost), 0)).where(
-                ModelUsageRecord.workspace_id == workspace_id,
-                ModelUsageRecord.currency == normalized_currency,
-                ModelUsageRecord.occurred_at >= period_start,
-                ModelUsageRecord.occurred_at < period_end,
+            select(func.coalesce(func.sum(usage.total_cost), 0)).where(
+                usage.workspace_id == workspace_id,
+                usage.currency == normalized_currency,
+                usage.occurred_at >= period_start,
+                usage.occurred_at < period_end,
             )
         )
         spent = Decimal(str(spent or 0))
         unpriced = int(
             self._session.scalar(
                 select(func.count())
-                .select_from(ModelUsageRecord)
+                .select_from(ModelUsageRecord.__table__)
                 .where(
-                    ModelUsageRecord.workspace_id == workspace_id,
-                    ModelUsageRecord.metering_status != "priced",
+                    usage.workspace_id == workspace_id,
+                    usage.metering_status != "priced",
                     or_(
-                        ModelUsageRecord.currency == normalized_currency,
-                        ModelUsageRecord.currency.is_(None),
+                        usage.currency == normalized_currency,
+                        usage.currency.is_(None),
                     ),
-                    ModelUsageRecord.occurred_at >= period_start,
-                    ModelUsageRecord.occurred_at < period_end,
+                    usage.occurred_at >= period_start,
+                    usage.occurred_at < period_end,
                 )
             )
             or 0
@@ -200,6 +210,7 @@ def _month_window(value: datetime) -> tuple[datetime, datetime]:
         end = start.replace(month=start.month + 1)
     return start, end
 
+
 def _aggregate_columns(currency: str) -> tuple[Any, ...]:
     priced = and_(
         ModelUsageRecord.metering_status == "priced",
@@ -223,6 +234,7 @@ def _aggregate_columns(currency: str) -> tuple[Any, ...]:
         ).label("total_cost"),
     )
 
+
 def _totals_from_row(row: Any) -> dict[str, int | Decimal]:
     return {
         "records": int(row["records"] or 0),
@@ -236,6 +248,7 @@ def _totals_from_row(row: Any) -> dict[str, int | Decimal]:
         "total_tokens": int(row["total_tokens"] or 0),
         "total_cost": Decimal(str(row["total_cost"] or 0)),
     }
+
 
 def _group_expression(group_by: str) -> Any:
     if group_by == "provider":
