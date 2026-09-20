@@ -19,8 +19,12 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_migration_chain_fits_alembic_version_column() -> None:
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     assert len(scripts.get_heads()) == 1
-    for revision in scripts.walk_revisions():
-        assert len(revision.revision) <= 32, revision.revision
+    # Migration 0088 widens the real version column before later revision names are stored.
+    width = 32
+    for revision in reversed(list(scripts.walk_revisions())):
+        if revision.revision == "0088_normalize_managed_runtime_provider":
+            width = 128
+        assert len(revision.revision) <= width, revision.revision
 
 
 def test_long_explicit_constraint_names_use_alembic_naming() -> None:

@@ -65,7 +65,7 @@ def test_env_template_lists_required_runtime_settings() -> None:
     assert "OPSMESH_SERVICE_NAME=opsmesh-backend" in env_example
     assert "OPSMESH_STORAGE_ROOT=.opsmesh-storage" in env_example
     assert "OPSMESH_AGENT_RUNNER_BACKEND" not in env_example
-    assert 'OPSMESH_RUNTIME_ALLOWED_IMAGES=["opsmesh-runtime:local"]' in env_example
+    assert "OPSMESH_RUNTIME_ALLOWED_IMAGES=[]" in env_example
 
 
 def test_deployment_docs_cover_processes_and_production_guards() -> None:
