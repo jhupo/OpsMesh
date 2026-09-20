@@ -45,6 +45,10 @@ class ReleaseManifest(Contract):
         digest = self.backend_digest if kind == "backend" else self.runtime_digest
         return f"ghcr.io/{owner}/{name}@{digest}"
 
+    def accepts_database_revision(self, revision: str) -> bool:
+        """Return whether this application release can run against a live schema."""
+        return revision == self.database_revision or revision in self.rollback_database_revisions
+
 
 def require_tag(tag: str) -> str:
     if re.fullmatch(TAG_PATTERN, tag) is None:

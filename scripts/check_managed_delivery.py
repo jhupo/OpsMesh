@@ -351,7 +351,7 @@ class Acceptance:
     def accepts_previous_application(self) -> bool:
         source = ReleaseSource("jhupo/OpsMesh")
         previous = source.fetch_manifest(self.previous, ROOT / "baseline-manifest")
-        return self.installation.current().database_revision in previous.rollback_database_revisions
+        return previous.accepts_database_revision(self.installation.current().database_revision)
 
     def reject_incompatible_rollback(self) -> None:
         result = json.loads(
