@@ -49,7 +49,7 @@ jobs:
           version: '0.12.10'
           python-version: '3.12'
       - run: uv sync --frozen --all-groups
-      - run: uv run mypy operator/opsmesh_operator backend/app/domains/platform/updates backend/app/api/routes/admin/updates.py
+      - run: uv run mypy operator/opsmesh_operator backend/app/domains/platform/updates backend/app/api/routes/platform/updates.py
       - run: uv run pytest backend/tests/test_platform_updates.py backend/tests/test_operator_security.py backend/tests/test_release_delivery.py
       - name: Real PostgreSQL migrations and delivery contracts
         env:
