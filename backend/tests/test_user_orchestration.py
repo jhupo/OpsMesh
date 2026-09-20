@@ -823,7 +823,8 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
         status = client.get(f"{base}/plugins/downloads/{job.id}", headers=headers)
         assert status.json()["status"] == "succeeded", status.text
         candidates = client.get(f"{base}/plugins/candidates", headers=headers).json()["items"]
-        assert client.get(f"{base}/plugins", headers=headers).json()["items"] == installed_before_sync
+        installed_after_sync = client.get(f"{base}/plugins", headers=headers).json()["items"]
+        assert installed_after_sync == installed_before_sync
         candidate = next(item for item in candidates if item["version"] == version)
         candidate_path = f"{base}/plugins/candidates/{candidate['id']}"
         foreign_read = client.post(
