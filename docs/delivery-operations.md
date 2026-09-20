@@ -1,6 +1,6 @@
 # Delivery operations
 
-Release status (2026-09-20): `v0.1.0rc16` targets database revision
+Release status (2026-09-20): `v0.1.0rc17` targets database revision
 `0102_platform_admin_credentials`, connector protocol 2 and Linux amd64. The tag-triggered release gate is
 the source of truth for publication and managed Compose/systemd acceptance. This remains a pre-1.0
 release; validate your own ingress, configuration and off-host disaster-recovery policy before use.
@@ -77,7 +77,7 @@ native CLI and checksum list from the fixed repository release, verifies the arc
 the managed installer. It never clones or builds source. For Linux amd64:
 
 ```sh
-TAG=v0.1.0rc16
+TAG=v0.1.0rc17
 curl -fsSL "https://github.com/jhupo/OpsMesh/releases/download/${TAG}/install.sh" | \
   sudo sh -s -- --version "${TAG}" --origin https://opsmesh.example.com
 ```
@@ -177,7 +177,8 @@ Stop the idle/recovery-required updater service before the selected local recove
 polling does not compete for the host lock; restart it after successful recovery. Do not kill an
 actively executing production update merely because the CLI has not returned yet.
 Resume checks that the database is at the approved source or target revision. Application rollback
-checks that the previous release explicitly supports the live database revision. Restore uses the
+accepts a release's own database revision; any other live revision must be explicitly declared in
+that release's rollback support list. Restore uses the
 verified pre-upgrade backup and discards database writes since its timestamp; it preserves the
 post-backup storage directory under `data/before-restore-*` for manual salvage. Database restoration
 requires PostgreSQL's administrative database to remain reachable. A destroyed host/database

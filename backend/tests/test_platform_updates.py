@@ -28,7 +28,7 @@ def manifest(tag: str = "v0.1.0") -> ReleaseManifest:
         runtime_digest="sha256:" + "c" * 64,
         database_revision="0071_platform_delivery",
         upgrade_from_revisions=["0071_platform_delivery"],
-        rollback_database_revisions=["0071_platform_delivery"],
+        rollback_database_revisions=[],
         connector_protocol=2,
         platforms=["linux/amd64"],
         files=[ReleaseFile(name="bundle.tar.gz", size=1, sha256="d" * 64)],
@@ -196,6 +196,14 @@ def test_host_workflow_is_durable_and_never_replays_interrupted_work(
         select(PlatformUpdateEvent.phase).where(PlatformUpdateEvent.job_id == job.id)
     ).all()
     assert "migrating" in phases and "health_check" in phases
+    if health_failure:
+        deployment.fail_health = False
+        monkeypatch.setattr(updater.backups, "verify", lambda _backup_id: None)
+        updater.recover(job.id, "rollback")
+        session.expire_all()
+        assert session.get(PlatformUpdateJob, job.id).status == "failed"
+        assert not maintenance_enabled(session)
+        assert deployment.calls[-4:] == ["stop", "switch", "start", "healthy"]
 
 
 def test_journal_preserves_recovery_plan(tmp_path: Path) -> None:

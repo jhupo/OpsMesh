@@ -104,8 +104,8 @@ class Acceptance:
         if ROOT.exists():
             raise ValueError("Acceptance refuses to reuse an installation directory")
         ROOT.mkdir(mode=0o750)
-        # A temporary workflow token lets this disposable runner install the signed draft before
-        # it is made public. Production public-release installs require only the repository name.
+        # A temporary workflow token lets this disposable runner install the attested,
+        # unpublished candidate before publication. Public hosts require only the repository name.
         release_token = os.environ["OPSMESH_RELEASE_TOKEN"]
         atomic_write(ROOT / "updater.env", f"OPSMESH_RELEASE_TOKEN={release_token}\n")
         source = ReleaseSource("jhupo/OpsMesh")
@@ -351,7 +351,7 @@ class Acceptance:
     def accepts_previous_application(self) -> bool:
         source = ReleaseSource("jhupo/OpsMesh")
         previous = source.fetch_manifest(self.previous, ROOT / "baseline-manifest")
-        return self.installation.current().database_revision in previous.rollback_database_revisions
+        return previous.accepts_database_revision(self.installation.current().database_revision)
 
     def reject_incompatible_rollback(self) -> None:
         result = json.loads(

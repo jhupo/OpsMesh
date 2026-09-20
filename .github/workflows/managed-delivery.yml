@@ -20,7 +20,10 @@ on:
         default: v0.1.0rc9
         type: string
 permissions:
-  contents: read
+  # GitHub only includes unpublished candidate releases for credentials with
+  # push access. This workflow downloads and exercises those exact assets; it
+  # never publishes or modifies the release.
+  contents: write
   attestations: read
   packages: read
 jobs:

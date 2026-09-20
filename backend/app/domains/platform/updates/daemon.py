@@ -104,7 +104,7 @@ class HostUpdater:
             ):
                 raise ValueError("Target does not declare this source database revision")
         elif action == "rollback":
-            if revision not in target.rollback_database_revisions:
+            if not target.accepts_database_revision(revision):
                 raise ValueError("Target application cannot run against the current database")
         elif target != previous:
             raise ValueError("Backup plans must target the installed release")
@@ -318,7 +318,7 @@ class HostUpdater:
                 revision = self.revision()
                 if (
                     strategy == "rollback"
-                    and revision not in journal.plan.previous.rollback_database_revisions
+                    and not journal.plan.previous.accepts_database_revision(revision)
                 ):
                     raise ValueError(
                         "Previous app cannot run on this schema; restore requires consent"
@@ -364,7 +364,7 @@ class HostUpdater:
                 journal = journal.advance(self.installation.root, "backup_restored")
                 self.reconcile_terminal(job_id, journal)
             elif strategy == "rollback":
-                if self.revision() not in journal.plan.previous.rollback_database_revisions:
+                if not journal.plan.previous.accepts_database_revision(self.revision()):
                     raise ValueError(
                         "Previous app cannot run on this schema; restore requires consent"
                     )

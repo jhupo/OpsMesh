@@ -121,6 +121,11 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
     )
     assert set(gate["on"]) == {"workflow_call"}
     assert gate["permissions"] == {"contents": "read"}
+    managed = yaml.load(
+        (ROOT / ".github/workflows/managed-delivery.yml").read_text("utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    assert managed["permissions"]["contents"] == "write"
     steps = gate["jobs"]["gate"]["steps"]
     commands = "\n".join(step.get("run", "") for step in steps)
     assert 'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"' in commands
