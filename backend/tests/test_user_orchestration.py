@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
@@ -109,6 +110,7 @@ def test_user_orchestration_can_publish_and_apply_to_a_team_task() -> None:
         created_by_user_id=user.id,
         agent_team_id=team.id,
         title="Ship release",
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         input={"release": True},
     )
     session.add(task)
@@ -2178,6 +2180,7 @@ def test_task_api_can_apply_a_published_orchestration_without_queueing() -> None
         created_by_user_id=owner.id,
         agent_team_id=team.id,
         title="Apply authored plan",
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, owner.id),
         input={"requires_review": True},
     )
     session.add(task)

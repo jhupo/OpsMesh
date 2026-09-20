@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from typing import cast
 from uuid import UUID
 
 from opsmesh_plugin_sdk.packaging.packages import SignedPluginPackage
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, Table, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
@@ -227,10 +228,17 @@ class MarketplaceService:
             config=data.config,
         )
         self._session.add(install)
-        listing.install_count += 1
         flush_or_raise_conflict(
             self._session,
             "Marketplace listing is already installed in workspace",
+        )
+        # This platform-owned aggregate counter is not permission to edit the publisher's
+        # resource. Increment atomically only after the authorized install has been flushed.
+        table = cast(Table, MarketplaceListing.__table__)
+        self._session.execute(
+            update(table)
+            .where(table.c.id == listing.id, table.c.workspace_id == listing.workspace_id)
+            .values(install_count=table.c.install_count + 1)
         )
         AuditService(self._session).record_user_action(
             workspace_id=workspace_id,

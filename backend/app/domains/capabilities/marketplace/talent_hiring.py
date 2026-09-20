@@ -75,10 +75,7 @@ class TalentHiringService:
         listing = self._session.get(TalentListing, listing_id)
         if listing is None or listing.status != "public":
             raise ValueError("Talent listing not found")
-        source = self._session.get(AgentProfile, listing.source_agent_profile_id)
-        if source is None or source.status != "active":
-            raise ValueError("Published agent profile is not available")
-        definition = listing_agent_definition(listing, source)
+        definition = listing_agent_definition(listing)
 
         installed_agent = AgentProfile(
             workspace_id=workspace_id,
@@ -103,7 +100,7 @@ class TalentHiringService:
             workspace_id=workspace_id,
             talent_listing_id=listing.id,
             current_talent_listing_id=listing.id,
-            source_agent_profile_id=source.id,
+            source_agent_profile_id=listing.source_agent_profile_id,
             installed_agent_profile_id=installed_agent.id,
             hired_by_user_id=user_id,
             installed_version=listing.version,

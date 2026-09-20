@@ -4,6 +4,7 @@ import io
 import json
 import tarfile
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.core.config import Settings
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
@@ -53,7 +55,7 @@ from backend.app.domains.workspace.storage.storage import LocalStorage
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.contracts import RuntimeCommandResult
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.tests.test_worker_run_execution import (
@@ -209,8 +211,16 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
             ),
         ]
     )
+    template = RuntimeTemplate(
+        name="critical-workflow",
+        image="example.invalid/critical@sha256:" + "1" * 64,
+        created_at=datetime.now(UTC),
+    )
+    session.add(template)
+    session.flush()
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
+        runtime_template_id=template.id,
         runtime_provider="cloud_docker",
         runtime_type="docker",
         execution_mode="persistent",
@@ -308,10 +318,9 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
     session.add_all([runtime_resource, file_resource])
     session.flush()
     for profile in (planner, builder, handoff_target):
-        profile.capabilities = {
-            "resource_ids": [str(runtime_resource.id), str(file_resource.id)]
-        }
+        profile.capabilities = {"resource_ids": [str(runtime_resource.id), str(file_resource.id)]}
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, owner.id),
         workspace_id=workspace.id,
         agent_team_id=team.id,
         owner_agent_profile_id=planner.id,

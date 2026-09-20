@@ -56,15 +56,18 @@ def test_agent_run_operations_evidence_shares_trace_and_run_identity() -> None:
         span_id="abcdef0123456789",
     )
     with trace_context(parent_trace):
-        assert queue.enqueue(
-            JobPayload(
-                workspace_id=workspace_id,
-                job_type=JobType.AGENT_RUN,
-                resource_id=run_id,
-                requested_by_user_id=user_id,
-                idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+        assert (
+            queue.enqueue(
+                JobPayload(
+                    workspace_id=workspace_id,
+                    job_type=JobType.AGENT_RUN,
+                    resource_id=run_id,
+                    requested_by_user_id=user_id,
+                    idempotency_key=f"agent.run:{workspace_id}:{run_id}",
+                )
             )
-        ) is True
+            is True
+        )
 
     runner = WorkerRunner(
         queue=queue,

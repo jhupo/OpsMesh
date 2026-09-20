@@ -171,6 +171,11 @@ def _row_predicate(
     table = Base.metadata.tables[table_name]
     service = ResourceAuthorizationService(session, scope.user)
     tenant = table.c.workspace_id == scope.workspace_id
+    if table_name == "marketplace_listings" and action == ResourceAction.READ:
+        return or_(
+            and_(tenant, _workspace_admin(scope)),
+            and_(table.c.visibility == "public", table.c.status == "public"),
+        )
     if table_name == "agent_messages":
         return and_(
             tenant,
@@ -214,6 +219,30 @@ def _row_predicate(
                 service.predicate(scope.workspace_id, ResourceKind.TASK, table.c.task_id, action),
             ),
         )
+    if table_name in {"approvals", "mcp_tool_call_logs"}:
+        task_access = and_(
+            table.c.task_id.is_not(None),
+            service.predicate(scope.workspace_id, ResourceKind.TASK, table.c.task_id, action),
+        )
+        # Resource reviews and standalone MCP calls are not task-owned. A deleted task must
+        # not accidentally turn its former approval into a workspace-wide approval.
+        standalone_access = (
+            and_(
+                table.c.payload["kind"].as_string() == "resource_review",
+                _workspace_admin(scope),
+            )
+            if table_name == "approvals"
+            else and_(
+                _workspace_admin(scope),
+                service.predicate(
+                    scope.workspace_id, ResourceKind.MCP_SERVER, table.c.mcp_server_id, action
+                ),
+            )
+        )
+        return and_(
+            tenant,
+            or_(task_access, and_(table.c.task_id.is_(None), standalone_access)),
+        )
     if table_name in _ROOTS:
         return and_(
             tenant,
@@ -241,8 +270,12 @@ def _row_predicate(
         )
     if table_name in _WORKSPACE_METADATA:
         return tenant
+    return and_(tenant, _workspace_admin(scope))
+
+
+def _workspace_admin(scope: ResourceQueryScope) -> ColumnElement[bool]:
     members = Base.metadata.tables["workspace_members"].alias("data_admin")
-    admin = exists(
+    return exists(
         select(members.c.id).where(
             members.c.workspace_id == scope.workspace_id,
             members.c.user_id == scope.user.user_id,
@@ -250,7 +283,6 @@ def _row_predicate(
             members.c.role.in_(["owner", "admin"]),
         )
     )
-    return and_(tenant, admin)
 
 
 def _filter_queries(state: ORMExecuteState) -> None:
@@ -387,10 +419,22 @@ def _authorize_changes(session: Session, flush_context: object, instances: objec
         if row in session.new:
             if table.name in _ROOTS or table.name in _APPENDED_EVIDENCE:
                 continue
+            if (
+                table.name == "approvals"
+                and row.task_id is None
+                and row.payload.get("kind") == "resource_review"
+                and row.status == "pending"
+                and row.decided_by_user_id is None
+            ):
+                # Only the authorized resource-review service appends these requests; there
+                # is no client approval-creation endpoint. Deciding still requires admin.
+                continue
             if table.name in _PARENTS:
                 foreign_key, parent_name = _PARENTS[table.name]
                 if table.name == "automation_events":
                     foreign_key, parent_name = "automation_id", "automations"
+                elif table.name == "mcp_tool_call_logs" and row.task_id is None:
+                    foreign_key, parent_name = "mcp_server_id", "mcp_servers"
                 identifier = getattr(row, foreign_key)
                 if (parent_name, identifier) in new_parents:
                     continue

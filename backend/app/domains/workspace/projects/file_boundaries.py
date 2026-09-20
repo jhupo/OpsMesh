@@ -12,7 +12,10 @@ from backend.app.domains.orchestration.runs.authorization.policy import (
 from backend.app.domains.orchestration.runs.authorization.runtime import (
     runtime_binding_for_snapshot,
 )
-from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
+from backend.app.domains.orchestration.runs.authorization.validation import (
+    RunAuthorizationService,
+    authorized_profile_for_run,
+)
 from backend.app.domains.orchestration.runs.models import (
     AUTHORIZATION_SNAPSHOT_VERSION,
     AgentRun,
@@ -64,7 +67,7 @@ class ProjectFileBoundaryService:
             RunAuthorizationService(self._session).validate_authorization_snapshot(
                 run,
                 task,
-                None,
+                authorized_profile_for_run(self._session, run),
                 snapshot,
                 lock_resources=True,
             )

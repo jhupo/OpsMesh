@@ -18,6 +18,7 @@ from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.messages.models import AgentMessage
@@ -2246,19 +2247,26 @@ def test_worker_runner_processes_mcp_tool_execution_job() -> None:
         )
         run = session.get(AgentRun, run_id)
         assert run is not None
-        task = session.scalar(select(Task).where(
-            Task.workspace_id == workspace_id, Task.id == run.task_id,
-        ))
-        agent = session.scalar(select(AgentProfile).where(
-            AgentProfile.workspace_id == workspace_id, AgentProfile.id == run.agent_profile_id,
-        ))
+        task = session.scalar(
+            select(Task).where(
+                Task.workspace_id == workspace_id,
+                Task.id == run.task_id,
+            )
+        )
+        agent = session.scalar(
+            select(AgentProfile).where(
+                AgentProfile.workspace_id == workspace_id,
+                AgentProfile.id == run.agent_profile_id,
+            )
+        )
         assert task is not None and agent is not None
         agent.tool_policy = {"allowed_tools": ["generate_image"]}
         agent.runtime_policy = {"mcp": {"timeout_seconds": 15}}
         session.flush()
         run.input = {
             "authorization_snapshot": RunAuthorizationSnapshotService(
-                session, RunRequestBuilder(session, Settings(environment="test")),
+                session,
+                RunRequestBuilder(session, Settings(environment="test")),
             ).build_authorization_snapshot(task, None, agent)
         }
         session.commit()
@@ -3233,6 +3241,7 @@ def _seed_run(
         )
         session.add_all([member, task, agent])
         session.flush()
+        task.execution_identity = ExecutionIdentityService(session).capture(workspace.id, user.id)
         credential = ModelProviderCredentialCommandService(
             session,
             SecretEncryptionService(
@@ -3258,7 +3267,8 @@ def _seed_run(
             input={
                 "task_id": str(task.id),
                 "authorization_snapshot": RunAuthorizationSnapshotService(
-                    session, RunRequestBuilder(session, Settings(environment="test")),
+                    session,
+                    RunRequestBuilder(session, Settings(environment="test")),
                 ).build_authorization_snapshot(task, None, agent),
             },
             started_at=started_at,

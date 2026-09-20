@@ -28,7 +28,9 @@ product contract.
 2026-09-20: the plugin center is now `jhupo/opsmesh-plugin-center`. SDK 0.5 source separates
 platform services, messaging and packaging; card templates and mappings belong to plugins.
 This change adds delegated identity, authorized resource discovery and knowledge/memory access.
-Release packages and current plugin container acceptance remain pending. See
+SDK 0.5.0 and DingTalk plugin 0.3.0 packages are published. The platform release gate is being
+repaired; deployment and current plugin container acceptance remain pending. Catalog sync only
+fetches metadata and never implicitly installs a plugin. See
 [plugin integration evidence](docs/plugin-service-integration.md) for the remaining external checks.
 
 Release delivery provides attested GHCR images, native CLI/server archives and a durable host

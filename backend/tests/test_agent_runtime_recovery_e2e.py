@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.execution import (
@@ -97,6 +98,7 @@ def test_duplicate_delivery_is_terminally_idempotent() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Duplicate delivery",
@@ -137,6 +139,7 @@ def test_runtime_timeout_marks_run_failed_with_durable_evidence(
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Runtime timeout",
@@ -204,6 +207,7 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
     session.add(team)
     session.flush()
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -264,19 +268,25 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
 
     assert result.status == RunStatus.FAILED.value
     assert result.error["code"] == "runtime_network_policy_mismatch"
-    assert session.scalar(
-        select(RunEvent).where(
-            RunEvent.agent_run_id == run.id,
-            RunEvent.event_type == "runtime.authorization_blocked",
+    assert (
+        session.scalar(
+            select(RunEvent).where(
+                RunEvent.agent_run_id == run.id,
+                RunEvent.event_type == "runtime.authorization_blocked",
+            )
         )
-    ) is not None
-    assert session.scalar(
-        select(SecurityEvent).where(
-            SecurityEvent.workspace_id == workspace.id,
-            SecurityEvent.action == "agent_runtime.authorization_blocked",
-            SecurityEvent.reason == "runtime_network_policy_mismatch",
+        is not None
+    )
+    assert (
+        session.scalar(
+            select(SecurityEvent).where(
+                SecurityEvent.workspace_id == workspace.id,
+                SecurityEvent.action == "agent_runtime.authorization_blocked",
+                SecurityEvent.reason == "runtime_network_policy_mismatch",
+            )
         )
-    ) is not None
+        is not None
+    )
 
 
 def test_runtime_space_quota_denial_does_not_create_reservation() -> None:
@@ -302,6 +312,7 @@ def test_runtime_space_quota_denial_does_not_create_reservation() -> None:
         )
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Quota denied",
@@ -335,18 +346,22 @@ def test_runtime_space_quota_denial_does_not_create_reservation() -> None:
     session.flush()
 
     assert blocked == [(step.id, "runtime_space_quota_exceeded:active_runs")]
-    assert session.scalar(
-        select(RuntimeSpaceQuota).where(
-            RuntimeSpaceQuota.runtime_space_id == runtime_space.id,
-            RuntimeSpaceQuota.quota_key == "active_runs",
-        )
-    ).reserved_value == 0
+    assert (
+        session.scalar(
+            select(RuntimeSpaceQuota).where(
+                RuntimeSpaceQuota.runtime_space_id == runtime_space.id,
+                RuntimeSpaceQuota.quota_key == "active_runs",
+            )
+        ).reserved_value
+        == 0
+    )
 
 
 def test_worker_loss_fails_stale_run_and_releases_execution_state() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Worker lost",
@@ -374,12 +389,15 @@ def test_worker_loss_fails_stale_run_and_releases_execution_state() -> None:
     assert run.status == RunStatus.FAILED.value
     assert run.error["code"] == "stale_worker_run"
     assert task.status == TaskStatus.FAILED.value
-    assert session.scalar(
-        select(RunEvent).where(
-            RunEvent.agent_run_id == run.id,
-            RunEvent.event_type == "run.recovered_failed",
+    assert (
+        session.scalar(
+            select(RunEvent).where(
+                RunEvent.agent_run_id == run.id,
+                RunEvent.event_type == "run.recovered_failed",
+            )
         )
-    ) is not None
+        is not None
+    )
 
 
 def _job(workspace_id: UUID, run_id: UUID, user_id: UUID) -> JobPayload:
