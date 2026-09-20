@@ -14,7 +14,6 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.credentials import (
@@ -36,6 +35,7 @@ from backend.app.domains.platform.admin.models import PlatformPolicy
 from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember, WorkspaceQuota
 from backend.app.main import create_app
+from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,

@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.types import JSON
 
+from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.configuration import (

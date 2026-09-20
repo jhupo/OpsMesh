@@ -16,13 +16,13 @@ from backend.app.domains.agents.runtime.contracts import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
+from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
+from backend.app.domains.orchestration.workflows.planning.completion import PlannerCompletionService
 from backend.app.domains.orchestration.workflows.planning.lifecycle import (
     TaskPlanLifecycleService,
     TaskPlanRetryCommand,
 )
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
-from backend.app.domains.orchestration.workflows.planning.completion import PlannerCompletionService
 from backend.app.domains.orchestration.workflows.planning.mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
@@ -33,8 +33,8 @@ from backend.app.domains.workspace.tenants.models import WorkspaceQuota
 from backend.app.observability.costs.models import WorkspaceCostBudget
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
+from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.tests.test_worker_run_execution import (
     _build_agent_request,
     _seed_workspace,

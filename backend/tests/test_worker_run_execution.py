@@ -278,7 +278,9 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
         async def run(self, request):
             raise AssertionError("Revoked principal must never reach the model")
 
-    assert consume_once(queue, WorkerJobHandler(session, queue, agent_runner=ForbiddenRunner()).handle)
+    assert consume_once(
+        queue, WorkerJobHandler(session, queue, agent_runner=ForbiddenRunner()).handle
+    )
     session.refresh(revoked_task)
     assert revoked_task.status == TaskStatus.FAILED.value
     rejected_run = session.scalar(select(AgentRun).where(AgentRun.task_id == revoked_task.id))

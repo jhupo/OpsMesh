@@ -16,9 +16,9 @@ from backend.app.core.pagination import PageParams
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.domains.access.models import User
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.observability.audit.queries import AuditQueryService
 from backend.app.observability.audit.integrity import AuditIntegrityService
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.observability.audit.queries import AuditQueryService
 from backend.app.observability.audit.security_events import SecurityAuditService
 from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.observability.audit.service import AuditService

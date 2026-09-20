@@ -3,8 +3,8 @@ from uuid import UUID, uuid4
 import fakeredis
 import pytest
 
-from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 

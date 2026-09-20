@@ -22,8 +22,8 @@ from backend.app.domains.workspace.extensions.models import RevisionRequest
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 from backend.app.main import create_app
 from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.workers.registry import WorkerJobHandler
 
 TOKEN = "test-token"
 

@@ -10,11 +10,11 @@ from backend.app.runtime.environment.backends.docker import (
     _docker_network_environment,
     _docker_network_mode,
 )
+from backend.app.runtime.environment.contracts import RuntimeCreateRequest, RuntimeLimits
 from backend.app.runtime.environment.policies.egress import (
     RuntimeEgressPolicyError,
     resolve_egress_policy,
 )
-from backend.app.runtime.environment.contracts import RuntimeCreateRequest, RuntimeLimits
 
 
 def _request(policy: dict[str, object], *, disabled: bool = False) -> RuntimeCreateRequest:

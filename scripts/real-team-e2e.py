@@ -13,6 +13,7 @@ from agents import set_tracing_disabled
 from backend.app.api.services.resources import WorkspaceResourceService
 from backend.app.core.identity.models import User
 from backend.app.domains.agents.providers.service import ModelProviderCredentialService
+from backend.app.domains.agents.runtime.openai.runner import OpenAIAgentsRunner
 from backend.app.runtime.workers.queue.consumer import consume_once
 from backend.app.runtime.workers.queue.redis import RedisQueue
 from sqlalchemy import select
@@ -26,7 +27,6 @@ from backend.app.core.redis.client import redis_client
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.openai.runner import OpenAIAgentsRunner
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
