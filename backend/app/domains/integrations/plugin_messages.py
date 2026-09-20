@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from opsmesh_plugin_sdk.services import ApprovalDecision, ApprovalReceipt
+from opsmesh_plugin_sdk.messaging.contracts import ApprovalDecision, ApprovalReceipt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -50,9 +50,11 @@ class PluginMessageService:
                 Automation.status == "active",
             )
         )
-        if item is None or request.sender_id not in AutomationConfiguration.model_validate(
-            item.configuration
-        ).allowed_senders:
+        if (
+            item is None
+            or request.sender_id
+            not in AutomationConfiguration.model_validate(item.configuration).allowed_senders
+        ):
             raise ResourceAccessDenied()
         identity = ExternalIdentityService(self.session).resolve(item, request.sender_id)
         actor = ExecutionIdentityService(self.session).restore(principal.workspace_id, identity)

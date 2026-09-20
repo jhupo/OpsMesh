@@ -80,7 +80,7 @@ def test_runtime_space_api_lifecycle_and_workspace_scope() -> None:
         f"/api/v1/workspaces/{other_workspace.id}/runtime-spaces/{runtime_space_id}",
         headers=_headers(other_owner.id),
     )
-    assert forbidden_read.status_code == 404
+    assert forbidden_read.status_code == 403
 
     listed = client.get(
         f"/api/v1/workspaces/{workspace.id}/runtime-spaces",

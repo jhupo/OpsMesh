@@ -62,4 +62,4 @@ uv run pytest backend/tests/test_runtime_manager.py backend/tests/test_worker_ru
 - `scripts/server-update.sh` installs GitHub release bundles by tag.
 - `scripts/server-smoke-test.sh` verifies API, worker, migrations, and optional worker-user Docker runtime access.
 
-Local `docker compose up --build` remains available for development and CI checks only.
+Local `docker compose -f deploy/local/compose.yml up --build` remains available for development and CI checks only.

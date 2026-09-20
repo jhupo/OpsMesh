@@ -1,19 +1,19 @@
 # 独立插件服务接入
 
-状态：2026-09-20。平台与 SDK 已通过本地接入流程验证；钉钉插件通过模拟渠道流程。
-插件中心已推送至现有远程，SDK 0.4.0 已通过 GitHub Actions 发布；真实模板导入及钉钉消息联调
+状态：2026-09-20。平台与 SDK 0.5 已通过本地接入流程验证；钉钉插件通过模拟渠道流程。
+插件中心已更名为 jhupo/opsmesh-plugin-center，SDK 0.5.0 已发布；本次源码采用其固定摘要 wheel，真实模板导入及钉钉消息联调
 尚未验收，整个接入任务未完成。
 
 | 验收项 | 当前证据与剩余事项 |
 | --- | --- |
 | 平台安装凭据、用户授权、消息隔离 | 相关产品流程及 PostgreSQL 验证通过 |
-| 插件中心单仓库 | sdk/、plugins/dingtalk/ 已推送到 jhupo/opsmesh-plugin-sdk-python，保留原远程名称 |
-| SDK 与插件独立分发 | SDK 0.4.0/插件 0.2.0 的 wheel/sdist、严格元数据检查、独立临时环境安装及三套模板资源检查通过；未执行正式发布 |
+| 插件中心单仓库 | sdk/、plugins/dingtalk/ 已推送到 jhupo/opsmesh-plugin-center |
+| SDK 与插件独立分发 | SDK 0.5.0、插件 0.3.0、双架构镜像和签名描述文件已发布；外部运行验收单独记录 |
 | 钉钉卡片资源 | UI、映射、预览已分文件且进入插件包；尚无真实设计器导入证据 |
 | 钉钉消息与回调 | 模拟流程通过；真实应用、模板、账号及模型端到端待验收 |
-| 平台切换新 SDK 来源 | pyproject/uv.lock 已固定 GitHub SDK 0.4.0 发布 wheel 与 SHA-256，安装验证通过 |
+| 平台切换新 SDK 来源 | 全部导入迁移到 SDK 0.5，依赖和锁文件固定 GitHub Release wheel 与 SHA256；来源证明验证通过 |
 
-需要运营者提供本机密钥配置位置、测试应用/账号和模板；插件发布还需可写 Actions Secrets 的凭据。
+仍需运营者提供测试应用/账号和模板；签名 Actions Secret 已配置，私钥不进入源码。
 JSON 结构校验、模拟渠道流程、打包成功都不能代替真实钉钉验收。
 用户提供的 Linux 虚拟机已确认 Docker 可用；按用户要求仅安装 GitHub 发布包/镜像，
 不在虚拟机编译。桥接网络 DNS 曾阻止本地包镜像构建，该构建已停止，失败容器已清理。
@@ -21,11 +21,36 @@ JSON 结构校验、模拟渠道流程、打包成功都不能代替真实钉钉
 代码依赖方向检查 8 项通过；历史 `app-layout-2026-09-14` 快照核对仍失败，
 其目标清单未纳入已有插件/授权等新模块。本次不把旧快照改成“已验证当前架构”的证据。
 
+## 发布与目录部署记录（2026-09-20）
+
+- SDK 发布：`jhupo/opsmesh-plugin-center` 的 `sdk/v0.5.0`，平台按发布 wheel 摘要安装通过。
+- 插件发布：`plugins/dingtalk/v0.3.0`。描述文件 SHA256：
+  `3a38bd382d458929b0802954f5af9fb54e6de8613fb8b717c943f370cee2b672`。
+  摘要、发布者双层 Ed25519 签名及 GitHub 工作流来源证明均核验通过。
+- 镜像：`ghcr.io/jhupo/opsmesh-plugin-center-dingtalk@sha256:bbdfebbe343b238471172e4a42133a84c80b85f268fb5b4c6a51bef7565afa77`。
+  授权虚拟机可匿名读取镜像 manifest；未安装或启动插件，不能声称已运行验收。
+- 公开目录提交：`faf5c350f71fc3713aaa867a0671703d322488b6`，路径 `catalog/index.json`。
+  目录 SHA256：`af767e830eef6ecc95817914dcfde67d676c68b1d46929551d8aa809f7a843ef`。
+  平台真实受控下载器已成功获取 raw.githubusercontent.com 上的目录与描述文件并核对摘要。
+- 虚拟机 `192.168.232.129` 的 `/opt/opsmesh-plugin-center/catalog/` 已保存校验通过的
+  `index.json` 和平台源请求 `source.json`。这是元数据准备，不是运行中工作区的安装记录。
+- 默认行为是只同步插件信息；不授予信任、不创建安装/凭据、不拉取镜像或启动容器。
+  已有分发流程覆盖同步前后安装列表保持不变；安装与进程部署必须分别显式批准。
+- 平台新版 SDK 接入在 PR #14；当前可下载平台仍为 rc9，不满足插件平台/SDK要求。
+  rc10 发布门禁历史失败正在 PR #14 修复，不能跳过门禁或在虚拟机编译源码替代发布包。
+  因此本次尚未完成新版平台运行部署、工作区目录同步和真实钉钉联调。
+
+当前门禁修复包括：无任务的资源发布审批按工作区管理员权限读取和决策；公开市场安装只读取
+审核后的发布快照，不读取发布者私有 Agent。项目文件与自托管执行的完整鉴权传入当前 Agent，
+保留停用/归档校验；持久运行时直接使用已授权并租用的固定运行环境，不要求子容器。
+市场/能力、用户编排/恢复、跨租户拒绝及项目文件→审批→续接→交接→验收流程已在本地验证；
+本地验证不替代 GitHub 发布门禁、真实 Docker 或钉钉验收。
+
 ## 本次完整交付范围（2026-09-19 用户确认）
 
 以下全部属于当前任务，子项提交不能作为整个任务结束的理由：
 
-- [x] 插件中心远程目录迁移及平台 SDK 固定发布来源切换；远程仓库保留原名称。
+- [x] 插件中心远程目录迁移及平台 SDK 固定发布来源切换。
 - [ ] 图片、文件、语音接收：平台和 SDK 合同、官方下载、大小/类型/配额、租户私有文件存储、
   授权引用及 OpenAI/Claude 输入映射已实现；仍需钉钉真实媒体消息与模型验收。
 - [ ] 群回复：指定群接收人、官方成员检查和实时任务权限已接入插件模拟流程；
@@ -46,7 +71,7 @@ JSON 结构校验、模拟渠道流程、打包成功都不能代替真实钉钉
 ## 边界
 
 - 平台：安装专用凭据、绑定校验、用户授权、私有存储、脱敏日志、消息入口。
-- SDK：HTTPX 客户端、数据合同、card.json 参数映射；不依赖平台源码或渠道 SDK。
+- SDK：HTTPX 功能客户端、消息和打包合同；卡片及映射由插件拥有，不依赖平台源码或渠道 SDK。
 - 独立钉钉插件：官方 dingtalk-stream/OpenAPI SDK、消息/卡片适配、回调及平台私有存储中的投递恢复。
 - 插件服务凭据不是用户身份，不能访问普通用户 API；用户权限由管理员绑定的 sender 决定。
 - 不允许任意 SQL、平台数据库连接、宿主机执行或动态插件导入。
@@ -55,7 +80,7 @@ JSON 结构校验、模拟渠道流程、打包成功都不能代替真实钉钉
 
 - [x] 安装范围、权限声明、凭据发放/轮换/撤销；generation 变更、停用、失信后拒绝访问。
 - [x] 私有 JSON 存储的 CAS、容量限制、配置引用和日志脱敏。
-- [x] SDK 客户端与 card.json 合同、wheel/sdist 构建、独立安装。
+- [x] SDK 客户端与插件拥有的卡片合同、wheel/sdist 构建、独立安装。
 - [x] 独立钉钉仓库、官方 SDK、入站去重、持久恢复、卡片更新和回调重鉴权。
 - [x] 平台 SDK 接入流程（SQLite/PostgreSQL），不同执行用户、撤权、轮换和重放。
 - [x] 插件模拟渠道流程：私发、跨发送人拒绝、重复回调、失败恢复及终态投递失败重试。
@@ -81,8 +106,13 @@ JSON 结构校验、模拟渠道流程、打包成功都不能代替真实钉钉
 | GET configuration | configuration.read | 只读配置；不给出平台密钥 |
 | GET storage、GET storage/{key} | storage.read | 按安装隔离；列表每页 100 项 |
 | PUT/DELETE storage/{key} | storage.write | CAS；配置保留键不可写 |
-| POST logs | logs.write | 结构化、脱敏的持久审计 |
+| POST logs | logs.write | 脱敏结构化运行日志；审计只记录接收事实 |
 | POST permissions | permissions.read | 绑定自动化的发送人对指定资源的实际动作 |
+| GET context | 有效安装凭据 | 安装、工作区、批准服务权限 |
+| POST identity | identity.read | 已绑定成员的 ID/显示名，不开放用户目录 |
+| POST resources/query | resources.read | 用户可读/可调用资源的分页 ID、名称、有效动作 |
+| POST knowledge/search | knowledge.read | 复用受用户资源权限过滤的语义知识检索 |
+| POST memory | memory.write | 复用语义记忆写入、作用域授权、CAS 与所有权 |
 | POST automations/{id}/events | messages.receive | 只能使用当前 release 绑定的入口 |
 | GET automations/{id}/events/{event}/[stream] | messages.read | 只能读取同一安装来源的事件 |
 | POST automations/{id}/events/{event}/approvals/{approval}/decision | approvals.decide | 真实成员具备审批权限，审批属于事件的任务；同决定幂等、相反决定 409 |
@@ -136,20 +166,20 @@ restricted 模式仍需部署者提供已有受管出口网关，平台不会凭
 迁移 `0101_plugin_deployments` 已验证升级→回退→升级。受影响的 PostgreSQL 产品流程
 验证受理、失联创建恢复、服务凭据、停止与信任撤销；Docker 调用使用替身，不代表真实容器验收。
 插件中心发布流程以门禁 wheel 和锁定依赖构建镜像，生成来源证明，并把镜像摘要放入
-SDK 0.4 的受签 release descriptor v2。目录下载不会自动部署，管理员必须另行审核运行模板。
+受签 release descriptor v2。目录下载不会自动部署，管理员必须另行审核运行模板。
 
 ## 独立仓库与模板
 
-平台依赖已切换到 GitHub `sdk/v0.4.0` 发布的 wheel，SHA-256 为
-`8a34d4fa69675520dfb4a57d69ad0ecc3c981b77483d68be4550a0361dfb8461`，不复制源码。
-新的本地维护目录为 `../opsmesh-plugin-center/sdk` 和
-`../opsmesh-plugin-center/plugins/dingtalk`，根目录统一开发锁和 CI，各包独立版本与产物。
-当前版本分别为 SDK 0.4.0、钉钉插件 0.2.0；平台已从 GitHub 安装 SDK wheel 验证新合同。
-旧 SDK/钉钉目录暂保留迁移前副本，不应并行维护两套实现。
+源码采用 SDK 0.5.0、钉钉插件 0.3.0。平台固定独立仓库已发布的 SDK 0.5.0 wheel，
+SHA256 为 `527942f297330fe0f482722a97b06b0fa72b73bbca6c716b496a2bc5cf128858`；
+不使用 editable 路径、源码归档或源码副本。旧 SDK 0.4.1 不包含本次新接口。
+维护目录为 ../opsmesh-plugin-center/sdk 和 plugins/dingtalk。SDK 按 services、messaging、
+packaging 分组；PluginClient 组合入口保留一个 HTTPX 客户端。旧根模块直接删除，调用方全部迁移。
+执行仍经自动化/任务/工具网关，不向插件开放直接 SQL 或绕过审批的工具执行端点。
 插件没有硬编码订单业务：领导、日志专家、工具、知识和记忆由平台工作流配置。
 
 钉钉插件的 `card-templates/task/v1/card.json` 保存 UI 设计器数据，当前未验证实际导入。
-同目录 `mapping.json` 才是 OpsMesh 的数据合同：channel、已发布 template_id、变量及按钮映射；
+同目录 `mapping.json` 是钉钉插件拥有的数据映射：channel、已发布 template_id、变量及按钮映射；
 `preview.json` 是不含真实用户数据的预览参数。
 文本/状态映射到厂商变量；不执行模板代码。按钮支持 pause/resume/cancel 与 approve/reject；
 审批按钮携带当前 approvalId，平台重新校验安装权限、成员审批权限及事件与任务归属。

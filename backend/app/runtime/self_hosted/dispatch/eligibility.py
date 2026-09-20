@@ -12,7 +12,10 @@ from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.orchestration.runs.authorization.runtime import (
     RunRuntimeAuthorizationService,
 )
-from backend.app.domains.orchestration.runs.authorization.validation import RunAuthorizationService
+from backend.app.domains.orchestration.runs.authorization.validation import (
+    RunAuthorizationService,
+    authorized_profile_for_run,
+)
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
@@ -86,7 +89,7 @@ class SelfHostedWorkerEligibilityService:
             RunAuthorizationService(self._session).validate_authorization_snapshot(
                 run,
                 task,
-                None,
+                authorized_profile_for_run(self._session, run),
                 snapshot,
             )
             return

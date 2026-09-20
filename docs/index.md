@@ -4,12 +4,13 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 控制、Agent SDK 适配、任务与团队编排、能力/MCP、隔离运行时、Worker、审计、成本和发布
 运维能力。远程插件生命周期和隔离进程托管已进入后端，真实插件容器与渠道仍待验收；前端画布未实现。
 
-2026-09-20：SDK 0.4.0 已通过 GitHub Actions 发布，平台依赖切换为带 SHA-256 的发布 wheel。
-平台 rc10 正在准备发布，不能用 rc9 的历史验收代替当前版本验收。
+2026-09-20：SDK 0.5.0 与钉钉插件 0.3.0 已发布，平台依赖固定发布 wheel 的 SHA-256。
+平台 rc10 门禁失败正在修复，当前可下载平台仍为 rc9；新版部署尚未完成。
+插件目录默认只同步信息，不安装插件。发布与部署证据见[插件服务接入](plugin-service-integration.md)。
 
 ## 当前实现
 
-- [多用户资源权限](multi-user-authorization.md)：默认私有、用户授权、执行身份、渠道绑定、会话隔离与撤权（2026-09-18）。
+- [多用户资源权限](multi-user-authorization.md)：默认私有、用户授权、执行身份、渠道绑定、会话隔离、预算及恢复演练边界（2026-09-20）。
 
 - [系统架构](architecture.md)：控制面、执行面、状态面和证据面的总览。
 - [Backend 服务架构](backend-service-architecture.md)：API、领域、runtime、worker 与基础设施依赖方向。
@@ -49,7 +50,7 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 - [Platform Productionization Plan](platform-productionization-plan.md)：当前平台收口、可靠性和运维阶段。
 - [Release Delivery Plan](release-delivery-plan.md)：tag 门禁、构建、签名、发布和公共下载验证。
 - [Standalone Distributions](standalone-distributions.md)：CLI 与 server bundle 的构建和验证。
-- [Backend Deployment](backend-deployment.md)：Compose/systemd 部署、更新、回滚和恢复。
+- [Backend Deployment](backend-deployment.md)：Compose/systemd 部署、更新、回滚和恢复；镜像构建集中在 `deploy/images`，开发配置在 `deploy/local`，生产配置在 `deploy/server`（2026-09-20）。
 - [Delivery Operations](delivery-operations.md)：发布后交付、托管安装和运维操作。
 
 ## 文档规则
@@ -64,8 +65,8 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 - 远程插件绑定已有能力，不在 API/Worker 动态导入第三方代码；托管插件进程仍须通过 Runtime 隔离边界。
 
 2026-09-18：自动化、画布配置合同和远程插件生命周期已接入现有后端；
-[独立 SDK 仓库](https://github.com/jhupo/opsmesh-plugin-sdk-python) 提供连接器合同与签名能力，
+[独立 SDK 仓库](https://github.com/jhupo/opsmesh-plugin-center) 提供连接器合同与签名能力，
 本仓库已删除内置副本。外部插件贡献与发布合同见其
-[架构文档](https://github.com/jhupo/opsmesh-plugin-sdk-python/blob/master/docs/architecture.md)。
+[架构文档](https://github.com/jhupo/opsmesh-plugin-center/blob/master/docs/architecture.md)。
 平台已有受控 HTTPS 目录和描述文件下载，详见 [分发合同](plugin-distribution.md)。
 当前不包含钉钉适配器、Web 页面、独立公共目录运营仓库或自动部署外部插件服务。

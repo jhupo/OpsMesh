@@ -1,7 +1,9 @@
+name: opsmesh
 services:
   migrate:
     build:
-      context: .
+      context: ../..
+      dockerfile: deploy/images/Dockerfile
     image: opsmesh-backend:local
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
@@ -11,10 +13,11 @@ services:
         condition: service_healthy
   api:
     build:
-      context: .
+      context: ../..
+      dockerfile: deploy/images/Dockerfile
     image: opsmesh-backend:local
     env_file:
-      - .env
+      - ../../.env
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
       OPSMESH_REDIS_URL: redis://redis:6379/0
@@ -42,9 +45,10 @@ services:
   worker:
     image: opsmesh-backend:local
     build:
-      context: .
+      context: ../..
+      dockerfile: deploy/images/Dockerfile
     env_file:
-      - .env
+      - ../../.env
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
       OPSMESH_REDIS_URL: redis://redis:6379/0

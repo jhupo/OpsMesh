@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.core.config import Settings
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.profiles.service import AgentManagementService
 from backend.app.domains.agents.runtime.contracts import (
@@ -217,6 +218,7 @@ def test_claude_guardrail_blocks_before_provider_query() -> None:
         yield
 
     with pytest.raises(AgentRuntimeGuardrailBlockedError):
+
         class UnexpectedClient:
             def __init__(self, options: object) -> None:
                 raise AssertionError("blocked input must not create a Claude client")
@@ -239,6 +241,7 @@ def test_runtime_controls_are_frozen_and_hydrated_for_worker() -> None:
     session.add(profile)
     session.flush()
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Structured task",

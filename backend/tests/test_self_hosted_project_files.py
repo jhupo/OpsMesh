@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
@@ -276,6 +277,7 @@ def _seed_project_run(
     )
     task = Task(
         workspace_id=workspace.id,
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, owner.id),
         created_by_user_id=owner.id,
         workspace_project_id=project.id,
         title="Self-hosted report",

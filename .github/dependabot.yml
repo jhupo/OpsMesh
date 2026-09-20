@@ -20,14 +20,14 @@ updates:
         patterns: ['*']
         update-types: [minor, patch]
   - package-ecosystem: docker
-    directory: /
+    directory: /deploy/images
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 3
   - package-ecosystem: docker-compose
     directories:
-      - /
+      - /deploy/local
       - /deploy/server
       - /deploy/server/monitoring
     schedule:

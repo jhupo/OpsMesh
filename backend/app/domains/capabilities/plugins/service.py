@@ -3,7 +3,7 @@
 import base64
 from uuid import UUID
 
-from opsmesh_plugin_sdk.packages import verify_package
+from opsmesh_plugin_sdk.packaging.packages import verify_package
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 

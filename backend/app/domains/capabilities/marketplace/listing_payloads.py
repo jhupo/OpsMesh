@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 
-from backend.app.core.utils import dict_or_empty, string_or_default
+from pydantic import TypeAdapter
+
+from backend.app.core.utils import string_or_default
 from backend.app.domains.agents.profiles.contracts import AgentProfileCreateRequest
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.marketplace.models import MarketplaceListing, TalentListing
@@ -131,31 +133,13 @@ def marketplace_source_checksum(listing: MarketplaceListing) -> str:
 
 def listing_agent_definition(
     listing: TalentListing,
-    source: AgentProfile,
 ) -> AgentDefinitionSnapshot:
     snapshot = listing.listing_metadata.get(AGENT_SNAPSHOT_METADATA_KEY)
-    if isinstance(snapshot, dict):
-        return AgentDefinitionSnapshot(
-            name=_non_empty_string_or_default(snapshot.get("name"), source.name),
-            role=_non_empty_string_or_default(snapshot.get("role"), source.role),
-            description=_non_empty_string_or_default(
-                snapshot.get("description"),
-                source.description,
-            ),
-            instructions=_non_empty_string_or_default(
-                snapshot.get("instructions"),
-                source.instructions,
-            ),
-            model=_non_empty_string_or_default(snapshot.get("model"), source.model),
-            model_settings=dict_or_empty(snapshot.get("model_settings")),
-            capabilities=dict_or_empty(snapshot.get("capabilities")),
-            skills=dict_or_empty(snapshot.get("skills")),
-            tool_policy=dict_or_empty(snapshot.get("tool_policy")),
-            runtime_policy=dict_or_empty(snapshot.get("runtime_policy")),
-            memory_policy=dict_or_empty(snapshot.get("memory_policy")),
-            approval_policy=dict_or_empty(snapshot.get("approval_policy")),
-        )
-    return agent_marketplace_snapshot(source)
+    # Installation consumes only the reviewed, published snapshot. Loading the publisher's
+    # private profile would cross workspace boundaries and silently change pinned versions.
+    if not isinstance(snapshot, dict):
+        raise ValueError("Published agent snapshot is missing")
+    return TypeAdapter(AgentDefinitionSnapshot).validate_python(snapshot)
 
 
 def agent_marketplace_snapshot(agent: AgentProfile) -> AgentDefinitionSnapshot:
@@ -199,7 +183,3 @@ def _safe_definition_value(value: object) -> object:
     if isinstance(value, list):
         return [_safe_definition_value(item) for item in value]
     return value
-
-
-def _non_empty_string_or_default(value: object, default: str) -> str:
-    return value if isinstance(value, str) else default

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.access.models import User
 from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.agents.profiles.models import AgentProfile
@@ -29,6 +30,7 @@ from backend.app.domains.capabilities.mcp.models import (
 )
 from backend.app.domains.capabilities.resources.models import CapabilityResource
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.domains.workspace.storage.models import WorkspaceFile
@@ -105,7 +107,17 @@ def test_effective_catalog_hides_product_tool_without_required_resource() -> Non
 def test_agent_tool_gateway_enforces_locked_parameters_and_live_resource_status() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    run = AgentRun(workspace_id=workspace.id)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=workspace.owner_user_id,
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        title="Use authorized file tools",
+    )
+    session.add(task)
+    session.flush()
+    run = AgentRun(workspace_id=workspace.id, task_id=task.id)
     resource = CapabilityResource(
         workspace_id=workspace.id,
         key="locked-files",
@@ -118,8 +130,9 @@ def test_agent_tool_gateway_enforces_locked_parameters_and_live_resource_status(
     session.commit()
     context = AgentRuntimeContext(
         workspace_id=workspace.id,
-        task_id=None,
+        task_id=task.id,
         run_id=run.id,
+        user_id=workspace.owner_user_id,
         allowed_tools=("list_workspace_files",),
         tool_definitions=(
             AgentRuntimeToolDefinition(
@@ -184,7 +197,15 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
     oversized_file = _workspace_file(workspace, "oversized.txt", user)
     oversized_file.size_bytes = 5
     oversized_file.checksum_sha256 = sha256(b"large").hexdigest()
-    run = AgentRun(workspace_id=workspace.id)
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
+        title="Read authorized files",
+    )
+    session.add(task)
+    session.flush()
+    run = AgentRun(workspace_id=workspace.id, task_id=task.id)
     resource = CapabilityResource(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -212,7 +233,7 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
     )
     context = AgentRuntimeContext(
         workspace_id=workspace.id,
-        task_id=None,
+        task_id=task.id,
         run_id=run.id,
         user_id=user.id,
         allowed_tools=("list_workspace_files", "read_workspace_file"),

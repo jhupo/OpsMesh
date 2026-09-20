@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from time import monotonic
 from uuid import UUID
 
-from opsmesh_plugin_sdk.contracts import AutomationStreamEvent, EventState
+from opsmesh_plugin_sdk.messaging.contracts import AutomationStreamEvent, EventState
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 

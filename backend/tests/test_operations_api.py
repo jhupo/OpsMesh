@@ -1065,7 +1065,7 @@ def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
     assert filtered_response.json()["summary"]["total_events"] == 1
     assert filtered_response.json()["items"][0]["source_type"] == "runtime_event"
     assert filtered_response.json()["items"][0]["event_type"] == "runtime.heartbeat"
-    assert other_workspace_response.status_code == 404
+    assert other_workspace_response.status_code == 403
 
 
 def test_team_runtime_timeline_degrades_when_queue_snapshot_unavailable() -> None:

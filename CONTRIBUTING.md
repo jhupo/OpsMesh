@@ -6,7 +6,7 @@ Thanks for taking the time to improve OpsMesh. This project is backend-first and
 
 ```bash
 uv sync --all-groups
-cp .env.example .env
+cp deploy/local/env.example .env
 uv run pytest backend/tests/test_health.py
 uv run ruff check .
 ```
@@ -14,7 +14,7 @@ uv run ruff check .
 Run the local container stack when you need Postgres, Redis, API, and worker processes together:
 
 ```bash
-docker compose up --build
+docker compose -f deploy/local/compose.yml up --build
 ```
 
 ## Pull Requests

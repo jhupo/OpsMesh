@@ -2,8 +2,8 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from opsmesh_plugin_sdk.distribution import PluginReleaseDescriptor, SignedPluginRelease
-from opsmesh_plugin_sdk.packages import SignedPluginPackage
+from opsmesh_plugin_sdk.packaging.distribution import PluginReleaseDescriptor, SignedPluginRelease
+from opsmesh_plugin_sdk.packaging.packages import SignedPluginPackage
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.core.contracts import TimestampedModel

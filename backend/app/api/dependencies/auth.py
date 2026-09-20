@@ -159,6 +159,7 @@ def workspace_dependency(
     action: WorkspaceAction,
     *,
     resource_action: ResourceAction = ResourceAction.UPDATE,
+    path_resource_action: ResourceAction | None = None,
 ) -> Callable[..., object]:
     async def require_workspace_context(
         request: Request,
@@ -193,7 +194,7 @@ def workspace_dependency(
                 if action == WorkspaceAction.READ
                 else ResourceAction.DELETE
                 if request.method == "DELETE"
-                else scope.mutation_action
+                else path_resource_action or scope.mutation_action
             )
             for name, table in _RESOURCE_PATHS.items():
                 raw_id = request.path_params.get(name)

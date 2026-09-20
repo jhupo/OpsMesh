@@ -222,10 +222,13 @@ class RunRequestBuilder:
             authorization_snapshot=inputs.snapshot,
         )
         binding = inputs.runtime_binding
-        if binding.execution_runtime_id is not None or mode == "persistent":
+        runtime_id = (
+            binding.workspace_runtime_id if mode == "persistent" else binding.execution_runtime_id
+        )
+        if runtime_id is not None:
             metadata["runtime_execution"] = {
                 "mode": mode,
-                "execution_runtime_id": str(binding.execution_runtime_id),
+                "execution_runtime_id": str(runtime_id),
                 "parent_runtime_id": (
                     str(binding.workspace_runtime_id)
                     if binding.workspace_runtime_id is not None
@@ -236,13 +239,13 @@ class RunRequestBuilder:
         if project_workspace is not None:
             metadata["project_workspace"] = project_workspace
         sandbox = None
-        if binding.execution_runtime_id is not None and inputs.model_provider["provider"] in {
+        if runtime_id is not None and inputs.model_provider["provider"] in {
             "openai",
             "openai-compatible",
         }:
             runtime = self.session.scalar(
                 select(WorkspaceRuntime).where(
-                    WorkspaceRuntime.id == binding.execution_runtime_id,
+                    WorkspaceRuntime.id == runtime_id,
                     WorkspaceRuntime.workspace_id == run.workspace_id,
                 )
             )
@@ -269,7 +272,7 @@ class RunRequestBuilder:
             sandbox = SandboxBinding(manifest=manifest, session=sandbox_session)
         if mode == "none":
             metadata["sandbox_mode"] = "none"
-        elif binding.execution_runtime_id is None:
+        elif runtime_id is None:
             raise ValueError("Sandbox execution requires an authorized runtime session")
         return _RuntimeRequestState(
             metadata=metadata,
@@ -540,13 +543,16 @@ class RunRequestBuilder:
             ),
             "node_execution": "direct_tool",
         }
-        if (
-            runtime_binding.execution_runtime_id is not None
-            or _runtime_execution_mode(run) == "persistent"
-        ):
+        mode = _runtime_execution_mode(run)
+        runtime_id = (
+            runtime_binding.workspace_runtime_id
+            if mode == "persistent"
+            else runtime_binding.execution_runtime_id
+        )
+        if runtime_id is not None:
             metadata["runtime_execution"] = {
-                "mode": _runtime_execution_mode(run),
-                "execution_runtime_id": str(runtime_binding.execution_runtime_id),
+                "mode": mode,
+                "execution_runtime_id": str(runtime_id),
                 "parent_runtime_id": (
                     str(runtime_binding.workspace_runtime_id)
                     if runtime_binding.workspace_runtime_id is not None

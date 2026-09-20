@@ -25,9 +25,13 @@ product contract.
 
 ## Project Status
 
-2026-09-20: SDK 0.4.0 is published from the plugin-center monorepo at the existing
-`jhupo/opsmesh-plugin-sdk-python` remote. OpsMesh rc10 preparation pins that release wheel and its
-SHA-256; rc10 packages and current plugin container acceptance remain pending. See
+2026-09-20: the plugin center is now `jhupo/opsmesh-plugin-center`. SDK 0.5 source separates
+platform services, messaging and packaging; card templates and mappings belong to plugins.
+This change adds delegated identity, authorized resource discovery and knowledge/memory access.
+SDK 0.5.0 and DingTalk plugin 0.3.0 packages are published. The platform release gate is being
+repaired; deployment and current plugin container acceptance remain pending. Catalog sync only
+fetches metadata and never implicitly installs a plugin. Release repairs also preserve tenant-wide
+budget enforcement and keep archive restore drills separate from the source request's resource scope. See
 [plugin integration evidence](docs/plugin-service-integration.md) for the remaining external checks.
 
 Release delivery provides attested GHCR images, native CLI/server archives and a durable host
@@ -251,7 +255,7 @@ sequenceDiagram
   Versioned input/output JSON Schemas, explicit model-visible fields, and an async NDJSON
   subscription expose live text previews and safe tool status with replay cursors (2026-09-18).
   External channel plugins stay outside the platform; the local plugin center groups SDK and
-  plugin packages separately. Its remote migration is pending; no channel business logic is embedded.
+  plugin packages separately. Remote migration is complete; no channel business logic is embedded.
 - Installation-scoped plugin credentials, private CAS storage, configuration, permission queries
   and redacted logs extend the remote connector boundary without exposing user tokens or SQL.
   Event-scoped card approval decisions reuse task authorization and durable run resumption.
@@ -443,9 +447,9 @@ is run only by the tag-triggered release gate, before artifact publication.
 Start the API, worker, Postgres, and Redis:
 
 ```bash
-cp .env.example .env
-docker build -f Dockerfile.runtime -t opsmesh-runtime:local .
-docker compose up --build
+cp deploy/local/env.example .env
+docker build -f deploy/images/Dockerfile.runtime -t opsmesh-runtime:local .
+docker compose -f deploy/local/compose.yml up --build
 ```
 
 Install and run the self-hosted MCP connector after registering a runtime and receiving its runtime
@@ -464,7 +468,7 @@ without repeating a recorded tool result. See the
 [self-hosted connector guide](docs/self-hosted-connector.md) for registration, security, recovery,
 and service deployment details.
 
-On PowerShell, use `Copy-Item .env.example .env` instead of `cp`.
+On PowerShell, use `Copy-Item deploy/local/env.example .env` instead of `cp`.
 
 The API listens on `http://localhost:8000` by default:
 
@@ -513,7 +517,7 @@ permissions, health checks, monitoring, updates, and rollback.
 - [Open-Source SDK Strategy](docs/open-source-sdk-strategy.md)
 - [Observability, Audit, and Cost Operations](docs/observability-audit-and-costs.md)
 - [Platform Productionization Plan](docs/platform-productionization-plan.md)
-- [Independent Plugin SDK](https://github.com/jhupo/opsmesh-plugin-sdk-python)
+- [Independent Plugin SDK](https://github.com/jhupo/opsmesh-plugin-center)
 - [Code Organization and Architecture Boundaries](docs/code-organization-audit.md)
 
 ## Contributing

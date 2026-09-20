@@ -322,7 +322,7 @@ def test_project_versions_freeze_exact_run_inputs_and_retry_snapshot() -> None:
         f"/api/v1/workspaces/{foreign_workspace.id}/runs/{first_run.id}/project-snapshot",
         headers=_headers(foreign_owner.id),
     )
-    assert cross_workspace.status_code == 404
+    assert cross_workspace.status_code == 403
 
 
 def _client() -> tuple[TestClient, Session]:

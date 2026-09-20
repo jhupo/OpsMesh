@@ -59,6 +59,7 @@ from backend.app.domains.agents.providers.credentials import (
 )
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
 from backend.app.runtime.workers.handlers.memory_embedding import (
@@ -250,6 +251,7 @@ def test_embedding_configuration_schedules_and_completes_versioned_work(
     )
     MemoryEmbeddingJobHandler(
         WorkerJobHandlerContext(
+            runtime_backends=build_runtime_backend_registry(None),
             session=session,
             settings=Settings(environment="test"),
         )

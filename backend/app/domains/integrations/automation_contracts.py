@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from opsmesh_plugin_sdk.contracts import AttachmentKind, MessageAction
+from opsmesh_plugin_sdk.messaging.contracts import AttachmentKind, MessageAction
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.domains.capabilities.resources.schema import (

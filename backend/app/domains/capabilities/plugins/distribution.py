@@ -5,7 +5,11 @@ import re
 from importlib.metadata import version
 from uuid import UUID
 
-from opsmesh_plugin_sdk.distribution import PluginCatalog, SignedPluginRelease, verify_release
+from opsmesh_plugin_sdk.packaging.distribution import (
+    PluginCatalog,
+    SignedPluginRelease,
+    verify_release,
+)
 from packaging.specifiers import SpecifierSet
 from sqlalchemy import select
 from sqlalchemy.orm import Session

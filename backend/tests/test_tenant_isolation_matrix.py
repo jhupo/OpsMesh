@@ -92,10 +92,9 @@ ID_SCOPED_CASES = [
         name="file download",
         method="GET",
         path=lambda data: (
-            f"/api/v1/workspaces/{data.target_workspace.id}"
-            f"/files/{data.source_file.id}/download"
+            f"/api/v1/workspaces/{data.target_workspace.id}/files/{data.source_file.id}/download"
         ),
-        expected_status=404,
+        expected_status=403,
     ),
     EndpointCase(
         name="artifact download",
@@ -104,7 +103,7 @@ ID_SCOPED_CASES = [
             f"/api/v1/workspaces/{data.target_workspace.id}"
             f"/artifacts/{data.source_artifact.id}/download"
         ),
-        expected_status=404,
+        expected_status=403,
     ),
     EndpointCase(
         name="artifact history",
@@ -120,29 +119,25 @@ ID_SCOPED_CASES = [
         name="task messages",
         method="GET",
         path=lambda data: (
-            f"/api/v1/workspaces/{data.target_workspace.id}"
-            f"/tasks/{data.source_task.id}/messages"
+            f"/api/v1/workspaces/{data.target_workspace.id}/tasks/{data.source_task.id}/messages"
         ),
-        expected_status=404,
+        expected_status=403,
     ),
     EndpointCase(
         name="run events",
         method="GET",
         path=lambda data: (
-            f"/api/v1/workspaces/{data.target_workspace.id}"
-            f"/runs/{data.source_run.id}/events"
+            f"/api/v1/workspaces/{data.target_workspace.id}/runs/{data.source_run.id}/events"
         ),
-        expected_status=200,
-        expected_total=0,
+        expected_status=403,
     ),
     EndpointCase(
         name="run cancel",
         method="POST",
         path=lambda data: (
-            f"/api/v1/workspaces/{data.target_workspace.id}"
-            f"/runs/{data.source_run.id}/cancel"
+            f"/api/v1/workspaces/{data.target_workspace.id}/runs/{data.source_run.id}/cancel"
         ),
-        expected_status=404,
+        expected_status=403,
     ),
     EndpointCase(
         name="runtime space",
@@ -151,7 +146,7 @@ ID_SCOPED_CASES = [
             f"/api/v1/workspaces/{data.target_workspace.id}"
             f"/runtime-spaces/{data.source_runtime_space.id}"
         ),
-        expected_status=404,
+        expected_status=403,
     ),
     EndpointCase(
         name="runtime space events",
@@ -160,7 +155,7 @@ ID_SCOPED_CASES = [
             f"/api/v1/workspaces/{data.target_workspace.id}"
             f"/runtime-spaces/{data.source_runtime_space.id}/events"
         ),
-        expected_status=404,
+        expected_status=403,
     ),
     EndpointCase(
         name="runtime events",
@@ -175,8 +170,7 @@ ID_SCOPED_CASES = [
         name="runtime start",
         method="POST",
         path=lambda data: (
-            f"/api/v1/workspaces/{data.target_workspace.id}"
-            f"/runtimes/{data.source_runtime.id}/start"
+            f"/api/v1/workspaces/{data.target_workspace.id}/runtimes/{data.source_runtime.id}/start"
         ),
         expected_status=404,
     ),
@@ -293,9 +287,7 @@ LIST_SCOPED_CASES = [
     EndpointCase(
         name="webhooks",
         method="GET",
-        path=lambda data: (
-            f"/api/v1/workspaces/{data.target_workspace.id}/webhook-subscriptions"
-        ),
+        path=lambda data: f"/api/v1/workspaces/{data.target_workspace.id}/webhook-subscriptions",
         expected_status=200,
         expected_total=1,
     ),
@@ -318,9 +310,7 @@ LIST_SCOPED_CASES = [
     EndpointCase(
         name="agent message threads",
         method="GET",
-        path=lambda data: (
-            f"/api/v1/workspaces/{data.target_workspace.id}/agent-message-threads"
-        ),
+        path=lambda data: f"/api/v1/workspaces/{data.target_workspace.id}/agent-message-threads",
         expected_status=200,
         expected_total=1,
     ),

@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from opsmesh_plugin_sdk.contracts import IncomingMessage, PendingAction
+from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage, PendingAction
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 

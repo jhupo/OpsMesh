@@ -16,6 +16,7 @@ from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
@@ -24,9 +25,6 @@ from backend.app.domains.agents.memory.models import (
 )
 from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.contracts import (
-    ModelProviderUnavailableError,
-)
 from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
@@ -78,6 +76,7 @@ from backend.app.domains.orchestration.runs.lifecycle import (
     RunLifecycleService,
 )
 from backend.app.domains.orchestration.runs.models import (
+    AUTHORIZATION_SNAPSHOT_VERSION,
     AgentRun,
     AgentRunStateSnapshot,
     RunEvent,
@@ -182,7 +181,9 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     session = _session()
     user, workspace = _seed_workspace(session)
     task = WorkspaceTaskService(session).create_task(
-        workspace.id, user.id, TaskCreateCommand(title="Draft report"),
+        workspace.id,
+        user.id,
+        TaskCreateCommand(title="Draft report"),
     )
 
     queue = RedisQueue(
@@ -229,9 +230,7 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     ]
     assert events[0].event_metadata["job"]["priority"] == 0
     assert events[2].event_metadata["allowed_tool_count"] == 0
-    assert events[2].event_metadata["context_budget"]["estimator"] == (
-        "utf8_bytes_upper_bound"
-    )
+    assert events[2].event_metadata["context_budget"]["estimator"] == ("utf8_bytes_upper_bound")
     assert events[2].event_metadata["context_budget"]["included_tokens"] > 0
     assert events[2].event_metadata["memory_retrieval"] == {
         "enabled": True,
@@ -266,11 +265,17 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
 
     # Permission changes after admission must reject the queued work before any model call.
     revoked_task = WorkspaceTaskService(session).create_task(
-        workspace.id, user.id, TaskCreateCommand(title="Revoked queued work"), queue=queue,
+        workspace.id,
+        user.id,
+        TaskCreateCommand(title="Revoked queued work"),
+        queue=queue,
     )
-    member = session.scalar(select(WorkspaceMember).where(
-        WorkspaceMember.workspace_id == workspace.id, WorkspaceMember.user_id == user.id,
-    ))
+    member = session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.user_id == user.id,
+        )
+    )
     member.status = "disabled"
     session.commit()
 
@@ -285,9 +290,15 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     assert revoked_task.status == TaskStatus.FAILED.value
     rejected_run = session.scalar(select(AgentRun).where(AgentRun.task_id == revoked_task.id))
     assert rejected_run.status == RunStatus.FAILED.value
-    assert session.scalar(select(RunEvent.id).where(
-        RunEvent.agent_run_id == rejected_run.id, RunEvent.event_type == "authorization.revoked",
-    )) is not None
+    assert (
+        session.scalar(
+            select(RunEvent.id).where(
+                RunEvent.agent_run_id == rejected_run.id,
+                RunEvent.event_type == "authorization.revoked",
+            )
+        )
+        is not None
+    )
 
 
 def test_worker_persists_interrupted_sdk_state_for_resume() -> None:
@@ -318,6 +329,7 @@ def test_worker_persists_interrupted_sdk_state_for_resume() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Approve a sensitive tool",
@@ -434,6 +446,7 @@ def test_phase_one_approval_flow_survives_worker_restart_and_executes_once() -> 
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Write an approved artifact",
@@ -539,6 +552,7 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
         model_settings={"model_api": "responses", "temperature": 0},
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="SDK-backed research",
@@ -634,8 +648,6 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
         "cost.usage_recorded",
         "model.response_received",
         "model_provider.used",
-        "agent.stream.run.started",
-        "agent.stream.run.completed",
         "run.completed",
         "task_step.completed",
     ]
@@ -645,6 +657,7 @@ def test_worker_fails_closed_without_model_provider_credential() -> None:
     session = _session()
     user, workspace = _seed_workspace(session, with_default_provider=False)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -702,6 +715,7 @@ def test_completed_run_writes_episodic_memory_by_default() -> None:
         instructions="Write clearly.",
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft launch note token=task-title-secret",
@@ -757,6 +771,7 @@ def test_completed_run_episodic_capture_can_be_disabled() -> None:
         memory_policy={"episodic_memory": {"capture_enabled": False}},
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft launch note",
@@ -793,6 +808,7 @@ def test_completed_run_episodic_capture_is_idempotent_for_same_run() -> None:
         instructions="Write clearly.",
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft launch note",
@@ -880,6 +896,7 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
         ]
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -1039,6 +1056,7 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
         ]
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -1187,6 +1205,7 @@ def test_runtime_space_reserves_multi_resource_capacity_for_team_steps() -> None
         ]
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -1323,6 +1342,7 @@ def test_runtime_space_blocks_step_when_multi_resource_quota_exceeded() -> None:
         unit="mb",
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         runtime_space_id=runtime_space.id,
@@ -1404,6 +1424,7 @@ def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
         ]
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -1504,6 +1525,7 @@ def test_workspace_run_quota_limits_parallel_specialist_scheduling() -> None:
         ]
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -1578,6 +1600,7 @@ def test_team_scheduler_policy_limits_team_steps_without_relaxing_workspace_poli
         )
     )
     first_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -1586,6 +1609,7 @@ def test_team_scheduler_policy_limits_team_steps_without_relaxing_workspace_poli
         status=TaskStatus.QUEUED.value,
     )
     second_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -1676,6 +1700,7 @@ def test_team_scheduler_blocks_step_when_model_provider_unavailable() -> None:
         )
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -1809,6 +1834,7 @@ def test_team_scheduler_does_not_reserve_when_model_provider_unavailable() -> No
         ]
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -1885,6 +1911,7 @@ def test_workspace_scheduler_starts_higher_priority_task_first() -> None:
     user, workspace = _seed_workspace(session)
     workspace.settings = {"scheduler": {"max_active_runs": 1}}
     low_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Low priority",
@@ -1892,6 +1919,7 @@ def test_workspace_scheduler_starts_higher_priority_task_first() -> None:
         status=TaskStatus.QUEUED.value,
     )
     high_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="High priority",
@@ -1946,6 +1974,7 @@ def test_workspace_scheduler_boosts_starved_lower_priority_task() -> None:
         }
     }
     low_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Old low priority",
@@ -1953,6 +1982,7 @@ def test_workspace_scheduler_boosts_starved_lower_priority_task() -> None:
         status=TaskStatus.QUEUED.value,
     )
     high_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Fresh high priority",
@@ -2014,6 +2044,7 @@ def test_workspace_scheduler_blocks_steps_over_resource_limits() -> None:
         }
     }
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Resource limited task",
@@ -2101,7 +2132,8 @@ def test_pm_summary_acceptance_completes_task_with_structured_decision() -> None
     lifecycle = _run_lifecycle(session)
     lifecycle.mark_run_started(run)
     lifecycle.mark_run_completed(
-        run, AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        run,
+        AgentRunResult(final_output=output, raw_output=json.loads(output)),
         requested_by_user_id=user.id,
     )
     session.flush()
@@ -2156,7 +2188,8 @@ def test_pm_summary_revision_decision_materializes_follow_up_steps() -> None:
     lifecycle = _run_lifecycle(session)
     lifecycle.mark_run_started(run)
     lifecycle.mark_run_completed(
-        run, AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        run,
+        AgentRunResult(final_output=output, raw_output=json.loads(output)),
         requested_by_user_id=user.id,
     )
     session.flush()
@@ -2244,7 +2277,8 @@ def test_pm_summary_missing_work_matches_team_member_and_queues_follow_up() -> N
     lifecycle = _run_lifecycle(session)
     lifecycle.mark_run_started(run)
     lifecycle.mark_run_completed(
-        run, AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        run,
+        AgentRunResult(final_output=output, raw_output=json.loads(output)),
         requested_by_user_id=user.id,
     )
     session.flush()
@@ -2310,7 +2344,8 @@ def test_team_task_persists_auditable_task_messages() -> None:
     lifecycle = _run_lifecycle(session)
     lifecycle.mark_run_started(run)
     lifecycle.mark_run_completed(
-        run, AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        run,
+        AgentRunResult(final_output=output, raw_output=json.loads(output)),
         requested_by_user_id=user.id,
     )
     session.flush()
@@ -2358,6 +2393,7 @@ def test_create_queued_run_for_task_reuses_active_team_run() -> None:
     session.add(team)
     session.flush()
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -2427,6 +2463,8 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
         name="Image MCP",
         server_type="streamable_http",
         connection={"url": "https://mcp.example.test/rpc"},
+        health_status="healthy",
+        last_health_check_at=datetime.now(UTC),
     )
     session.add(server)
     session.flush()
@@ -2463,6 +2501,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     session.add(member)
     session.flush()
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -2530,6 +2569,8 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
                     "mcp_server_id": str(server.id),
                     "mcp_server_name": "Image MCP",
                     "server_type": "streamable_http",
+                    "mcp_server_configuration_version": server.configuration_version,
+                    "mcp_tool_configuration_version": allow.configuration_version,
                     "tool_name": "generate_image",
                     "capability_key": "image.generate",
                     "requires_approval": True,
@@ -2540,6 +2581,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
                         {
                             "credential_reference_id": str(credential_ref.id),
                             "mcp_server_id": str(server.id),
+                            "configuration_version": credential_ref.configuration_version,
                             "name": "image-key",
                             "provider": "hosted",
                             "secret_fingerprint": "fp-image",
@@ -2553,6 +2595,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
                 {
                     "credential_reference_id": str(credential_ref.id),
                     "mcp_server_id": str(server.id),
+                    "configuration_version": credential_ref.configuration_version,
                     "name": "image-key",
                     "provider": "hosted",
                     "secret_fingerprint": "fp-image",
@@ -2577,7 +2620,9 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert snapshot["approval_policy"] == {"required_tools": ["write_artifact"]}
     assert request.context.allowed_tools == ("generate_image",)
     assert request.tool_executor is not None
-    assert request.context.metadata["authorization_snapshot_version"] == 3
+    assert (
+        request.context.metadata["authorization_snapshot_version"] == AUTHORIZATION_SNAPSHOT_VERSION
+    )
     assert request.context.metadata["authorization_snapshot_fingerprint"] == snapshot["fingerprint"]
     assert request.context.tool_definitions[0].name == "generate_image"
     assert request.context.tool_definitions[0].mcp_server_id == server.id
@@ -2587,6 +2632,7 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Create image",
@@ -2600,6 +2646,7 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
         status=RunStatus.QUEUED.value,
         input={
             "authorization_snapshot": _authorization_snapshot(
+                session,
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
             ),
@@ -2695,6 +2742,7 @@ def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> Non
     session.add(member)
     session.flush()
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -2716,6 +2764,7 @@ def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> Non
     session.add(task)
     session.flush()
 
+    task.input = {**(task.input or {}), "planning_mode": "deterministic"}
     run = RunOrchestrationService(session).create_queued_run_for_task(task)
     snapshot = run.input["authorization_snapshot"]["model_provider"]
     events = session.scalars(
@@ -2824,6 +2873,7 @@ def test_queued_team_run_uses_frozen_agent_model_provider_protocol() -> None:
     session.add(member)
     session.flush()
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -2840,6 +2890,9 @@ def test_queued_team_run_uses_frozen_agent_model_provider_protocol() -> None:
                         "id": str(agent.id),
                         "name": "Frozen Writer",
                         "role": "writer",
+                        "version": agent.version,
+                        "instructions": agent.instructions,
+                        "model_settings": {"model_api": "chat_completions"},
                         "model": "snapshot-model",
                         "model_provider_credential_id": str(credential.id),
                         "model_api": "chat_completions",
@@ -2864,6 +2917,7 @@ def test_queued_team_run_uses_frozen_agent_model_provider_protocol() -> None:
     session.add(task)
     session.flush()
 
+    task.input = {**(task.input or {}), "planning_mode": "deterministic"}
     run = RunOrchestrationService(session).create_queued_run_for_task(task)
     snapshot = run.input["authorization_snapshot"]["model_provider"]
     request = _build_agent_request(
@@ -2933,6 +2987,7 @@ def test_disabled_skill_install_is_not_in_future_run_snapshot() -> None:
     session.flush()
 
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -2979,6 +3034,7 @@ def test_agent_request_restores_provider_native_continuation_from_persistent_ses
         model="gpt-4.1",
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft continued note",
@@ -2989,7 +3045,7 @@ def test_agent_request_restores_provider_native_continuation_from_persistent_ses
     session.add(
         PersistentAgentSession(
             workspace_id=workspace.id,
-            session_key=f"{workspace.id}:task_agent:{task.id}:{agent.id}",
+            session_key=f"{workspace.id}:{user.id}:task_agent:{task.id}:{agent.id}",
             scope_type="task_agent",
             scope_id=f"{task.id}:{agent.id}",
             agent_profile_id=agent.id,
@@ -3002,6 +3058,7 @@ def test_agent_request_restores_provider_native_continuation_from_persistent_ses
         task_id=task.id,
         agent_profile_id=agent.id,
         status=RunStatus.COMPLETED.value,
+        session_key=f"{workspace.id}:{user.id}:task_agent:{task.id}:{agent.id}",
         completed_at=datetime.now(UTC) - timedelta(minutes=1),
         output={
             "final_output": "Earlier result",
@@ -3020,6 +3077,7 @@ def test_agent_request_restores_provider_native_continuation_from_persistent_ses
         status=RunStatus.QUEUED.value,
         input={
             "authorization_snapshot": _authorization_snapshot(
+                session,
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -3066,6 +3124,7 @@ def test_model_request_review_allows_low_risk_request_after_semantic_approval() 
         model="gpt-4.1",
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft product note",
@@ -3081,6 +3140,7 @@ def test_model_request_review_allows_low_risk_request_after_semantic_approval() 
         status=RunStatus.QUEUED.value,
         input={
             "authorization_snapshot": _authorization_snapshot(
+                session,
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -3144,6 +3204,7 @@ def test_model_request_review_routes_sensitive_input_to_admin_approval(
         model="gpt-4.1",
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Review incident",
@@ -3159,6 +3220,7 @@ def test_model_request_review_routes_sensitive_input_to_admin_approval(
         status=RunStatus.QUEUED.value,
         input={
             "authorization_snapshot": _authorization_snapshot(
+                session,
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -3203,6 +3265,7 @@ def test_model_request_review_does_not_repeat_after_admin_approval() -> None:
         model="gpt-4.1",
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Review incident",
@@ -3218,6 +3281,7 @@ def test_model_request_review_does_not_repeat_after_admin_approval() -> None:
         status=RunStatus.QUEUED.value,
         input={
             "authorization_snapshot": _authorization_snapshot(
+                session,
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -3279,6 +3343,7 @@ def test_completed_run_updates_persistent_session_conversation_id() -> None:
         model="gpt-4.1",
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft continued note",
@@ -3288,7 +3353,7 @@ def test_completed_run_updates_persistent_session_conversation_id() -> None:
     session.flush()
     persistent_session = PersistentAgentSession(
         workspace_id=workspace.id,
-        session_key=f"{workspace.id}:task_agent:{task.id}:{agent.id}",
+        session_key=f"{workspace.id}:{user.id}:task_agent:{task.id}:{agent.id}",
         scope_type="task_agent",
         scope_id=f"{task.id}:{agent.id}",
         agent_profile_id=agent.id,
@@ -3366,6 +3431,7 @@ def test_team_task_orchestration_uses_frozen_team_snapshot(member_revoked: bool)
     session.add(original_member)
     session.flush()
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -3458,6 +3524,7 @@ def test_invalid_project_plan_records_attempt_and_blocks_task_for_review() -> No
     session.add(manager)
     session.flush()
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Build dashboard",
@@ -3516,6 +3583,7 @@ def test_worker_rejects_workspace_mismatch() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -3536,7 +3604,7 @@ def test_worker_rejects_workspace_mismatch() -> None:
     try:
         WorkerJobHandler(session).handle(bad_job)
     except ValueError as exc:
-        assert "workspace mismatch" in str(exc)
+        assert "Agent run not found" in str(exc)
     else:
         raise AssertionError("Expected workspace mismatch to raise")
 
@@ -3572,6 +3640,7 @@ def test_worker_persists_failed_run_event() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -3613,7 +3682,7 @@ def test_worker_persists_failed_run_event() -> None:
     assert stored_run.error == {
         "code": "RuntimeError",
         "message": "model failed",
-        "retryable": True,
+        "retryable": False,
     }
     request_failed_event = session.scalar(
         select(RunEvent).where(
@@ -3625,7 +3694,7 @@ def test_worker_persists_failed_run_event() -> None:
     assert request_failed_event.event_metadata["reason"] == {
         "code": "RuntimeError",
         "message": "model failed",
-        "retryable": True,
+        "retryable": False,
     }
     assert failed_event is not None
 
@@ -3634,6 +3703,7 @@ def test_worker_flushes_running_status_before_model_call() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -3673,6 +3743,7 @@ def test_worker_skips_cancelled_run_without_starting_model() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -3722,6 +3793,7 @@ def test_worker_discards_model_result_when_run_cancelled_during_execution() -> N
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -3775,6 +3847,7 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -3916,6 +3989,7 @@ def test_worker_persists_structured_task_progress_from_agent_output() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         domain_type="novel",
@@ -4009,6 +4083,7 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -4069,8 +4144,9 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         },
     }
     assert request.context.metadata | expected_metadata == request.context.metadata
-    assert request.context.metadata["authorization_snapshot_fingerprint"] == (
-        run.input["authorization_snapshot"]["fingerprint"]
+    assert (
+        request.context.metadata["authorization_snapshot_fingerprint"]
+        == (run.input["authorization_snapshot"]["fingerprint"])
     )
     assert request.context.metadata["persistent_session_mode"] == "sdk_session"
     assert isinstance(request.context.metadata["persistent_session_key"], str)
@@ -4080,6 +4156,7 @@ def test_agent_request_includes_unread_mailbox_context() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Inbox task",
@@ -4167,12 +4244,14 @@ def test_agent_request_mailbox_context_is_scoped_to_current_task() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     current_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Current inbox task",
         status=TaskStatus.QUEUED.value,
     )
     other_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Other inbox task",
@@ -4274,6 +4353,7 @@ def test_team_agent_mailbox_context_is_scoped_to_runtime_thread() -> None:
         ]
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -4350,7 +4430,12 @@ def test_team_agent_mailbox_context_is_scoped_to_runtime_thread() -> None:
 def test_agent_request_includes_authorized_task_step_context() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Build pitch deck")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Build pitch deck",
+    )
     agent = AgentProfile(
         workspace_id=workspace.id,
         name="Designer",
@@ -4432,6 +4517,7 @@ def test_agent_request_allows_snapshot_to_narrow_agent_tools() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -4497,6 +4583,7 @@ def test_agent_request_resolves_agent_model_provider_override() -> None:
         budget_metadata={"model_api": "anthropic_messages"},
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -4582,6 +4669,7 @@ def test_agent_request_model_api_overrides_credential_default_protocol() -> None
         budget_metadata={"model_api": "chat_completions"},
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -4664,6 +4752,7 @@ def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhe
         is_default=False,
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -4689,8 +4778,11 @@ def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhe
         status=RunStatus.QUEUED.value,
         input={
             "authorization_snapshot": _authorization_snapshot(
-                workspace_id=str(workspace.id), task_id=str(task.id),
-                agent_profile_id=str(agent.id), model_provider=snapshot,
+                session,
+                workspace_id=str(workspace.id),
+                task_id=str(task.id),
+                agent_profile_id=str(agent.id),
+                model_provider=snapshot,
             )
         },
     )
@@ -4700,7 +4792,7 @@ def test_agent_request_fails_closed_when_workspace_default_snapshot_becomes_unhe
     primary.health_status = "unhealthy"
     session.commit()
 
-    with pytest.raises(ModelProviderUnavailableError):
+    with pytest.raises(ValueError, match="not found or unavailable"):
         _build_agent_request(
             session,
             run,
@@ -4744,7 +4836,6 @@ def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -
         base_url="https://inactive.example.test/v1",
         is_default=False,
     )
-    inactive.status = "inactive"
     backup = service.create(
         workspace_id=workspace.id,
         created_by_user_id=user.id,
@@ -4756,6 +4847,7 @@ def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -
         is_default=True,
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -4793,12 +4885,18 @@ def test_agent_request_does_not_fallback_explicit_inactive_provider_override() -
         status=RunStatus.QUEUED.value,
         input={
             "authorization_snapshot": _authorization_snapshot(
-                workspace_id=str(workspace.id), task_id=str(task.id),
-                agent_profile_id=str(agent.id), model_provider=snapshot,
+                session,
+                workspace_id=str(workspace.id),
+                task_id=str(task.id),
+                agent_profile_id=str(agent.id),
+                model_provider=snapshot,
             )
         },
     )
     session.add(run)
+    session.commit()
+
+    inactive.status = "inactive"
     session.commit()
 
     with pytest.raises(ValueError, match="not found or unavailable"):
@@ -4892,6 +4990,7 @@ def test_worker_fails_closed_without_model_provider_fallback() -> None:
         )
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -4955,10 +5054,11 @@ def test_worker_fails_closed_without_model_provider_fallback() -> None:
     assert [request.model for request in runner.requests] == ["primary-model"]
     assert runner.requests[0].api_key == "sk-primary"
     assert [request.model_api for request in runner.requests] == ["chat_completions"]
-    assert primary.health_status == "degraded"
-    assert primary.last_failure_code == "RuntimeError"
-    assert primary.last_failure_message == "[redacted]"
-    assert primary.last_failure_at is not None
+    assert primary.health_status == "unknown"
+    assert primary.last_failure_code is None
+    assert primary.last_failure_message is None
+    assert primary.last_failure_at is None
+    assert run.error["message"] == "[redacted]"
     assert backup.health_status == "unknown"
     assert backup.last_success_at is None
     assert run.status == RunStatus.FAILED.value
@@ -5042,6 +5142,7 @@ def test_worker_falls_back_across_model_provider_vendors() -> None:
         )
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -5221,6 +5322,7 @@ def test_worker_ignores_budget_exhausted_model_provider_fallback_policy() -> Non
         )
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -5349,6 +5451,7 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
         )
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -5448,7 +5551,12 @@ def test_agent_request_rejects_foreign_workspace_agent_profile() -> None:
     )
     session.add_all([foreign_user, other_workspace, foreign_membership])
     session.flush()
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+    )
     foreign_agent = AgentProfile(
         workspace_id=other_workspace.id,
         name="Foreign",
@@ -5479,7 +5587,7 @@ def test_agent_request_rejects_foreign_workspace_agent_profile() -> None:
             ),
         )
     except ValueError as exc:
-        assert "agent profile workspace mismatch" in str(exc)
+        assert "Run agent profile not found" in str(exc)
     else:
         raise AssertionError("Expected foreign agent profile to be rejected")
 
@@ -5487,8 +5595,14 @@ def test_agent_request_rejects_foreign_workspace_agent_profile() -> None:
 def test_agent_request_rejects_task_step_from_another_task() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+    )
     other_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Other task",
@@ -5515,8 +5629,11 @@ def test_agent_request_rejects_task_step_from_another_task() -> None:
         status=RunStatus.QUEUED.value,
         input={
             "authorization_snapshot": _authorization_snapshot(
-                workspace_id=str(workspace.id), task_id=str(task.id),
-                task_step_id=str(step.id), agent_profile_id=str(agent.id),
+                session,
+                workspace_id=str(workspace.id),
+                task_id=str(task.id),
+                task_step_id=str(step.id),
+                agent_profile_id=str(agent.id),
             )
         },
     )
@@ -5544,7 +5661,12 @@ def test_agent_request_rejects_task_step_from_another_task() -> None:
 def test_agent_request_rejects_worker_job_scope_mismatch() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+    )
     agent = AgentProfile(workspace_id=workspace.id, name="Writer", role="writer")
     session.add_all([task, agent])
     session.flush()
@@ -5578,30 +5700,44 @@ def test_agent_request_rejects_worker_job_scope_mismatch() -> None:
 
 @pytest.mark.parametrize(
     ("snapshot", "message"),
-    [({}, "Authorization snapshot is required"),
-     ({"version": 1}, "Authorization snapshot version is unsupported")],
+    [
+        ({}, "Authorization snapshot is required"),
+        ({"version": 1}, "Authorization snapshot version is unsupported"),
+    ],
 )
 def test_agent_request_rejects_missing_or_obsolete_authorization_snapshot(
-    snapshot: dict[str, object], message: str,
+    snapshot: dict[str, object],
+    message: str,
 ) -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Denied run")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Denied run",
+    )
     agent = AgentProfile(workspace_id=workspace.id, name="Writer", role="writer")
     session.add_all([task, agent])
     session.flush()
     run = AgentRun(
-        workspace_id=workspace.id, task_id=task.id, agent_profile_id=agent.id,
-        status=RunStatus.QUEUED.value, input={"authorization_snapshot": snapshot},
+        workspace_id=workspace.id,
+        task_id=task.id,
+        agent_profile_id=agent.id,
+        status=RunStatus.QUEUED.value,
+        input={"authorization_snapshot": snapshot},
     )
     session.add(run)
     session.flush()
     with pytest.raises(ValueError, match=message):
         _build_agent_request(
-            session, run,
+            session,
+            run,
             JobPayload(
-                workspace_id=workspace.id, job_type=JobType.AGENT_RUN,
-                resource_id=run.id, requested_by_user_id=user.id,
+                workspace_id=workspace.id,
+                job_type=JobType.AGENT_RUN,
+                resource_id=run.id,
+                requested_by_user_id=user.id,
                 idempotency_key="invalid-authorization-snapshot",
             ),
         )
@@ -5610,7 +5746,12 @@ def test_agent_request_rejects_missing_or_obsolete_authorization_snapshot(
 def test_agent_request_rejects_authorization_snapshot_scope_mismatch() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+    )
     agent = AgentProfile(workspace_id=workspace.id, name="Writer", role="writer")
     session.add_all([task, agent])
     session.flush()
@@ -5621,6 +5762,7 @@ def test_agent_request_rejects_authorization_snapshot_scope_mismatch() -> None:
         status=RunStatus.QUEUED.value,
         input={
             "authorization_snapshot": _authorization_snapshot(
+                session,
                 workspace_id=str(uuid4()),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -5651,7 +5793,12 @@ def test_agent_request_rejects_authorization_snapshot_scope_mismatch() -> None:
 def test_agent_request_rejects_authorization_snapshot_tool_escalation() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+    )
     agent = AgentProfile(
         workspace_id=workspace.id,
         name="Writer",
@@ -5667,6 +5814,7 @@ def test_agent_request_rejects_authorization_snapshot_tool_escalation() -> None:
         status=RunStatus.QUEUED.value,
         input={
             "authorization_snapshot": _authorization_snapshot(
+                session,
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
                 agent_profile_id=str(agent.id),
@@ -5690,7 +5838,7 @@ def test_agent_request_rejects_authorization_snapshot_tool_escalation() -> None:
             ),
         )
     except ValueError as exc:
-        assert "capability catalog is missing" in str(exc)
+        assert "Authorization snapshot tool manifest mismatch" in str(exc)
     else:
         raise AssertionError("Expected tool escalation snapshot to be rejected")
 
@@ -5698,7 +5846,12 @@ def test_agent_request_rejects_authorization_snapshot_tool_escalation() -> None:
 def test_agent_request_rejects_authorization_snapshot_installed_skill_tampering() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+    )
     agent = AgentProfile(
         workspace_id=workspace.id,
         name="Writer",
@@ -5708,6 +5861,7 @@ def test_agent_request_rejects_authorization_snapshot_installed_skill_tampering(
     session.add_all([task, agent])
     session.flush()
     snapshot = _authorization_snapshot(
+        session,
         workspace_id=str(workspace.id),
         task_id=str(task.id),
         agent_profile_id=str(agent.id),
@@ -5745,7 +5899,12 @@ def test_agent_request_rejects_authorization_snapshot_installed_skill_tampering(
 def test_agent_request_rejects_authorization_snapshot_skill_provenance_mismatch() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Draft report")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
+        workspace_id=workspace.id,
+        created_by_user_id=user.id,
+        title="Draft report",
+    )
     agent = AgentProfile(
         workspace_id=workspace.id,
         name="Writer",
@@ -5779,6 +5938,7 @@ def test_agent_request_rejects_authorization_snapshot_skill_provenance_mismatch(
     session.flush()
     agent.skills = {"installed_skill_ids": [str(install.id)]}
     snapshot = _authorization_snapshot(
+        session,
         workspace_id=str(workspace.id),
         task_id=str(task.id),
         agent_profile_id=str(agent.id),
@@ -5875,12 +6035,14 @@ def test_team_agent_runs_share_persistent_sdk_session_across_tasks() -> None:
         )
     )
     first_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
         title="First market question",
     )
     second_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -5934,7 +6096,10 @@ def test_team_agent_runs_share_persistent_sdk_session_across_tasks() -> None:
     assert first_request.session is not None
     assert second_request.session is not None
     assert first_request.session.session_id == second_request.session.session_id
-    assert first_request.session.session_id == f"{workspace.id}:team_agent:{team.id}:{agent.id}"
+    assert (
+        first_request.session.session_id
+        == f"{workspace.id}:{user.id}:team_agent:{team.id}:{agent.id}"
+    )
     assert first_request.context.metadata["persistent_session_mode"] == "sdk_session"
     assert first_request.context.metadata["team_context"]["team_id"] == str(team.id)
     assert first_request.context.metadata["team_context"]["current_member"]["team_role"] == (
@@ -6025,6 +6190,7 @@ def test_agent_request_injects_only_resource_authorized_memory() -> None:
     }
     profile.capabilities = {"resource_ids": [str(memory_resource.id)]}
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -6108,9 +6274,7 @@ def test_agent_request_injects_only_resource_authorized_memory() -> None:
     retrieval = session.scalars(select(WorkspaceMemoryRetrievalEvent)).one()
     assert retrieval.workspace_id == workspace.id
     assert retrieval.agent_run_id == run.id
-    assert retrieval.scope_filters["access_scopes"][0]["resource_id"] == str(
-        memory_resource.id
-    )
+    assert retrieval.scope_filters["access_scopes"][0]["resource_id"] == str(memory_resource.id)
 
 
 def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
@@ -6167,6 +6331,7 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
         ]
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -6250,7 +6415,10 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
         ),
     )
     assert builder_request.session is not None
-    assert builder_request.session.session_id == f"{workspace.id}:team_agent:{team.id}:{builder.id}"
+    assert (
+        builder_request.session.session_id
+        == f"{workspace.id}:{user.id}:team_agent:{team.id}:{builder.id}"
+    )
     assert builder_request.context.metadata["agent_mailbox"]["unread_count"] == 1
     assert (
         builder_request.context.metadata["agent_mailbox"]["latest_unread_messages"][0][
@@ -6274,6 +6442,7 @@ def test_stale_running_runs_are_recovered_as_failed() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Draft report",
@@ -6319,6 +6488,7 @@ def test_stale_run_with_completed_approved_tool_is_requeued_without_replay() -> 
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         title="Resume approved tool",
@@ -6455,29 +6625,22 @@ def _authorized_run_input(
     settings: Settings | None = None,
 ) -> dict[str, object]:
     snapshot = RunAuthorizationSnapshotService(
-        session, RunRequestBuilder(session, settings or Settings(environment="test")),
+        session,
+        RunRequestBuilder(session, settings or Settings(environment="test")),
     ).build_authorization_snapshot(task, step, profile)
     return {"authorization_snapshot": snapshot}
 
 
-def _authorization_snapshot(**values: object) -> dict[str, object]:
-    workspace_id = values.get("workspace_id")
+def _authorization_snapshot(session: Session, **values: object) -> dict[str, object]:
+    task = session.get(Task, UUID(str(values["task_id"])))
+    assert task is not None
     profile_id = values.get("agent_profile_id")
-    snapshot: dict[str, object] = {
-        "version": 3,
-        "allowed_tools": [],
-        "capability_catalog": None,
-        "agent_profile": {
-            "id": profile_id,
-            "workspace_id": workspace_id,
-            "version": 1,
-            "name": "Test Agent" if profile_id is not None else "Default Agent",
-            "role": "worker",
-            "instructions": "Complete the assigned task.",
-            "model": "gpt-4.1",
-            "model_settings": {},
-        },
-    }
+    profile = session.get(AgentProfile, UUID(str(profile_id))) if profile_id else None
+    if profile is not None and profile.workspace_id != task.workspace_id:
+        profile = None
+    snapshot = RunAuthorizationSnapshotService(
+        session, RunRequestBuilder(session, Settings(environment="test"))
+    ).build_authorization_snapshot(task, None, profile)
     snapshot.update(values)
     snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
     return snapshot
@@ -6510,20 +6673,28 @@ def test_run_lifecycle_does_not_transition_foreign_task_references() -> None:
     session.add(other_workspace)
     session.flush()
     task = Task(
-        workspace_id=other_workspace.id, created_by_user_id=user.id,
-        title="Foreign task", status=TaskStatus.QUEUED.value,
+        workspace_id=other_workspace.id,
+        created_by_user_id=user.id,
+        title="Foreign task",
+        status=TaskStatus.QUEUED.value,
     )
     session.add(task)
     session.flush()
     step = TaskStep(
-        workspace_id=other_workspace.id, task_id=task.id,
-        title="Foreign step", status="queued", order_index=1,
+        workspace_id=other_workspace.id,
+        task_id=task.id,
+        title="Foreign step",
+        status="queued",
+        order_index=1,
     )
     session.add(step)
     session.flush()
     run = AgentRun(
-        workspace_id=workspace.id, task_id=task.id, task_step_id=step.id,
-        status=RunStatus.QUEUED.value, input={},
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        status=RunStatus.QUEUED.value,
+        input={},
     )
     session.add(run)
     session.flush()
@@ -6636,6 +6807,7 @@ def _seed_summary_ready_task(
         model="researcher-model",
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace_id, user_id),
         workspace_id=workspace_id,
         created_by_user_id=user_id,
         title="Q2 market analysis",

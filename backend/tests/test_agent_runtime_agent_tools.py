@@ -9,6 +9,7 @@ from agents.tool_context import ToolContext
 
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.core.config import Settings
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
@@ -227,6 +228,7 @@ def test_team_agent_tool_policy_is_frozen_and_hydrated_for_worker_request() -> N
         )
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,
@@ -310,6 +312,7 @@ def test_agent_tool_policy_rejects_target_outside_task_team() -> None:
     session.add(team)
     session.flush()
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,
         agent_team_id=team.id,

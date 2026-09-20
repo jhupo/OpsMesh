@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass
 
-from opsmesh_plugin_sdk.contracts import IncomingMessage
+from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload

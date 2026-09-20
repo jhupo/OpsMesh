@@ -29,6 +29,7 @@ class ApprovalService:
             approval_type=approval_type,
             risk_level=risk_level,
             payload=payload,
+            status="pending",
             created_at=datetime.now(UTC),
         )
         self._session.add(approval)

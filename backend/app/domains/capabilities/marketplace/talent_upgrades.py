@@ -82,15 +82,14 @@ class TalentInstallUpgradeService:
         if target.version <= install.installed_version:
             raise ValueError("Talent install is already at this version or newer")
         agent = self._session.get(AgentProfile, install.installed_agent_profile_id)
-        source = self._session.get(AgentProfile, target.source_agent_profile_id)
-        if agent is None or source is None or source.status != "active":
-            raise ValueError("Published agent profile is not available")
+        if agent is None or agent.workspace_id != workspace_id:
+            raise ValueError("Installed agent profile is not available")
 
-        definition = listing_agent_definition(target, source)
+        definition = listing_agent_definition(target)
         copy_agent_definition(definition, agent)
         agent.version = target.version
         install.current_talent_listing_id = target.id
-        install.source_agent_profile_id = source.id
+        install.source_agent_profile_id = target.source_agent_profile_id
         install.installed_version = target.version
         install.pinned_version = data.keep_pinned
         target.upgrade_count += 1

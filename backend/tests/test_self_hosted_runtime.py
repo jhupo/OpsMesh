@@ -14,6 +14,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.credentials import (
@@ -30,7 +31,6 @@ from backend.app.domains.orchestration.runs.authorization.snapshot import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.domains.platform.admin.models import PlatformPolicy
 from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember, WorkspaceQuota
@@ -103,20 +103,17 @@ def test_self_hosted_runtime_registration_and_job_flow() -> None:
     )
     assert heartbeat.status_code == 200
 
-    task = Task(
-        workspace_id=workspace.id,
-        created_by_user_id=owner.id,
-        title="Private render",
-        status=TaskStatus.QUEUED.value,
-    )
-    session.add(task)
-    session.flush()
-    run = AgentRun(
-        workspace_id=workspace.id,
-        task_id=task.id,
+    run = _agent_run_with_snapshot(
+        session=session,
+        workspace=workspace,
         runtime_id=runtime_id,
-        input={"prompt": "render locally"},
+        model="gpt-4.1",
+        allowed_tools=[],
+        runtime_policy={},
     )
+    run.input = {**run.input, "prompt": "render locally"}
+    task = session.get(Task, run.task_id)
+    assert task is not None
     session.add(run)
     session.commit()
 
@@ -346,15 +343,17 @@ def test_self_hosted_worker_is_limited_to_allowed_runtime_spaces() -> None:
         },
     )
     credential = registered.json()["credential_token"]
-    allowed_run = AgentRun(
-        workspace_id=workspace.id,
+    allowed_run = _seed_run(
+        session=session,
+        workspace=workspace,
         runtime_id=UUID(registered.json()["workspace_runtime_id"]),
         runtime_space_id=allowed_space.id,
         status="queued",
         input={"task": "allowed"},
     )
-    denied_run = AgentRun(
-        workspace_id=workspace.id,
+    denied_run = _seed_run(
+        session=session,
+        workspace=workspace,
         runtime_id=UUID(registered.json()["workspace_runtime_id"]),
         runtime_space_id=denied_space.id,
         status="queued",
@@ -376,7 +375,7 @@ def test_self_hosted_worker_is_limited_to_allowed_runtime_spaces() -> None:
     assert next_job.status_code == 200
     assert next_job.json()["agent_run_id"] == str(allowed_run.id)
     assert denied_claim.status_code == 409
-    assert "runtime space is not allowed" in denied_claim.json()["error"]["message"]
+    assert "runtime_space_id mismatch" in denied_claim.json()["error"]["message"]
     assert allowed_claim.status_code == 200
     runtime = session.get(WorkspaceRuntime, UUID(registered.json()["workspace_runtime_id"]))
     assert runtime is not None
@@ -426,8 +425,9 @@ def test_self_hosted_job_claim_and_completion_reserve_and_release_slots() -> Non
     )
     credential = registered.json()["credential_token"]
     runtime_id = UUID(registered.json()["workspace_runtime_id"])
-    run = AgentRun(
-        workspace_id=workspace.id,
+    run = _seed_run(
+        session=session,
+        workspace=workspace,
         runtime_id=runtime_id,
         runtime_space_id=runtime_space.id,
         status="queued",
@@ -512,8 +512,9 @@ def test_self_hosted_job_claim_rejects_runtime_space_slot_exhaustion() -> None:
         },
     )
     credential = registered.json()["credential_token"]
-    run = AgentRun(
-        workspace_id=workspace.id,
+    run = _seed_run(
+        session=session,
+        workspace=workspace,
         runtime_id=UUID(registered.json()["workspace_runtime_id"]),
         runtime_space_id=runtime_space.id,
         status="queued",
@@ -645,10 +646,14 @@ def test_self_hosted_worker_cleanup_marks_stale_workers_degraded() -> None:
 
     session.refresh(runtime)
     session.refresh(self_hosted_worker)
-    event = session.query(RuntimeSpaceEvent).filter_by(
-        runtime_space_id=runtime_space.id,
-        event_type="self_hosted.worker_degraded",
-    ).one()
+    event = (
+        session.query(RuntimeSpaceEvent)
+        .filter_by(
+            runtime_space_id=runtime_space.id,
+            event_type="self_hosted.worker_degraded",
+        )
+        .one()
+    )
     assert cleanup.status_code == 200
     assert cleanup.json()["degraded"] == 1
     assert cleanup.json()["quarantined"] == 0
@@ -696,7 +701,9 @@ def test_self_hosted_worker_cleanup_quarantines_severely_stale_workers() -> None
     last_heartbeat = datetime.now(UTC) - timedelta(seconds=10_000)
     runtime.last_heartbeat_at = last_heartbeat
     self_hosted_worker.last_heartbeat_at = last_heartbeat
-    queued_run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    queued_run = _seed_run(
+        session=session, workspace=workspace, runtime_id=runtime_id, status="queued"
+    )
     session.add(queued_run)
     session.commit()
 
@@ -717,14 +724,22 @@ def test_self_hosted_worker_cleanup_quarantines_severely_stale_workers() -> None
 
     session.refresh(runtime)
     session.refresh(self_hosted_worker)
-    runtime_event = session.query(RuntimeEvent).filter_by(
-        workspace_runtime_id=runtime_id,
-        event_type="self_hosted.worker_quarantined",
-    ).one()
-    space_event = session.query(RuntimeSpaceEvent).filter_by(
-        runtime_space_id=runtime_space.id,
-        event_type="self_hosted.worker_quarantined",
-    ).one()
+    runtime_event = (
+        session.query(RuntimeEvent)
+        .filter_by(
+            workspace_runtime_id=runtime_id,
+            event_type="self_hosted.worker_quarantined",
+        )
+        .one()
+    )
+    space_event = (
+        session.query(RuntimeSpaceEvent)
+        .filter_by(
+            runtime_space_id=runtime_space.id,
+            event_type="self_hosted.worker_quarantined",
+        )
+        .one()
+    )
     assert cleanup.status_code == 200
     assert cleanup.json()["degraded"] == 0
     assert cleanup.json()["quarantined"] == 1
@@ -757,8 +772,12 @@ def test_self_hosted_worker_enforces_max_concurrent_jobs() -> None:
     )
     credential = registered.json()["credential_token"]
     runtime_id = UUID(registered.json()["workspace_runtime_id"])
-    first_run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
-    second_run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    first_run = _seed_run(
+        session=session, workspace=workspace, runtime_id=runtime_id, status="queued"
+    )
+    second_run = _seed_run(
+        session=session, workspace=workspace, runtime_id=runtime_id, status="queued"
+    )
     session.add_all([first_run, second_run])
     session.commit()
 
@@ -797,7 +816,7 @@ def test_self_hosted_job_duplicate_claim_with_stale_session_returns_existing_cla
     )
     credential = registered.json()["credential_token"]
     runtime_id = UUID(registered.json()["workspace_runtime_id"])
-    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    run = _seed_run(session=session, workspace=workspace, runtime_id=runtime_id, status="queued")
     session.add(run)
     session.commit()
 
@@ -846,8 +865,12 @@ def test_self_hosted_job_claim_capacity_uses_fresh_locked_worker_state() -> None
     )
     credential = registered.json()["credential_token"]
     runtime_id = UUID(registered.json()["workspace_runtime_id"])
-    first_run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
-    second_run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    first_run = _seed_run(
+        session=session, workspace=workspace, runtime_id=runtime_id, status="queued"
+    )
+    second_run = _seed_run(
+        session=session, workspace=workspace, runtime_id=runtime_id, status="queued"
+    )
     session.add_all([first_run, second_run])
     session.commit()
 
@@ -902,62 +925,83 @@ def test_self_hosted_worker_enforces_capability_policy_for_jobs() -> None:
     )
     credential = registered.json()["credential_token"]
     runtime_id = UUID(registered.json()["workspace_runtime_id"])
-    runtime = session.scalar(select(WorkspaceRuntime).where(
-        WorkspaceRuntime.workspace_id == workspace.id, WorkspaceRuntime.id == runtime_id,
-    ))
+    runtime = session.scalar(
+        select(WorkspaceRuntime).where(
+            WorkspaceRuntime.workspace_id == workspace.id,
+            WorkspaceRuntime.id == runtime_id,
+        )
+    )
     assert runtime is not None
     runtime.network_policy = {"disabled": True}
     ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="change-me-credential-encryption-secret", key_id="local"),
     ).create(
-        workspace_id=workspace.id, created_by_user_id=owner.id,
-        name="Policy test provider", provider="openai", api_key="sk-unit-test",
-        default_model="gpt-4.1-mini", base_url=None, is_default=True,
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        name="Policy test provider",
+        provider="openai",
+        api_key="sk-unit-test",
+        default_model="gpt-4.1-mini",
+        base_url=None,
+        is_default=True,
     )
     server = McpServer(
-        workspace_id=workspace.id, name="Policy test tools", server_type="streamable_http",
+        workspace_id=workspace.id,
+        name="Policy test tools",
+        server_type="streamable_http",
         connection={"url": "https://mcp.example.test/rpc"},
+        health_status="healthy",
+        last_health_check_at=datetime.now(UTC),
     )
     session.add(server)
     session.flush()
-    session.add_all([
-        McpToolAllowlist(
-            workspace_id=workspace.id, mcp_server_id=server.id, tool_name=tool_name,
-        )
-        for tool_name in ("runtime_shell", "search_web")
-    ])
+    session.add_all(
+        [
+            McpToolAllowlist(
+                workspace_id=workspace.id,
+                mcp_server_id=server.id,
+                tool_name=tool_name,
+            )
+            for tool_name in ("runtime_shell", "search_web")
+        ]
+    )
     session.flush()
     denied_tool_run = _agent_run_with_snapshot(
-        session=session, workspace=workspace,
+        session=session,
+        workspace=workspace,
         runtime_id=runtime_id,
         model="gpt-4.1-mini",
         allowed_tools=["runtime_shell"],
         runtime_policy={"provider": "self_hosted", "network": {"mode": "none"}},
     )
     denied_model_run = _agent_run_with_snapshot(
-        session=session, workspace=workspace,
+        session=session,
+        workspace=workspace,
         runtime_id=runtime_id,
         model="gpt-5",
         allowed_tools=["search_web"],
         runtime_policy={"provider": "self_hosted", "network": {"mode": "none"}},
     )
     denied_runtime_run = _agent_run_with_snapshot(
-        session=session, workspace=workspace,
+        session=session,
+        workspace=workspace,
         runtime_id=runtime_id,
         model="gpt-4.1-mini",
         allowed_tools=["search_web"],
         runtime_policy={"provider": "cloud_docker", "network": {"mode": "none"}},
     )
     denied_network_run = _agent_run_with_snapshot(
-        session=session, workspace=workspace,
+        session=session,
+        workspace=workspace,
         runtime_id=runtime_id,
         model="gpt-4.1-mini",
         allowed_tools=["search_web"],
         runtime_policy={"provider": "self_hosted", "network": {"mode": "internet"}},
     )
     allowed_run = _agent_run_with_snapshot(
-        session=session, workspace=workspace,
+        session=session,
+        workspace=workspace,
         runtime_id=runtime_id,
         model="gpt-4.1-mini",
         allowed_tools=["search_web"],
@@ -1034,7 +1078,9 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
         server_type="stdio",
         connection={"command": "mcp-image"},
     )
-    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="waiting_runtime")
+    run = _seed_run(
+        session=session, workspace=workspace, runtime_id=runtime_id, status="waiting_runtime"
+    )
     session.add_all([server, run])
     session.flush()
     queued_job = SelfHostedMcpJob(
@@ -1153,7 +1199,9 @@ def test_self_hosted_mcp_job_duplicate_claim_with_stale_session_is_idempotent() 
         server_type="stdio",
         connection={"command": "mcp-image"},
     )
-    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="waiting_runtime")
+    run = _seed_run(
+        session=session, workspace=workspace, runtime_id=runtime_id, status="waiting_runtime"
+    )
     session.add_all([server, run])
     session.flush()
     job = SelfHostedMcpJob(
@@ -1222,7 +1270,9 @@ def test_self_hosted_mcp_job_poll_skips_incompatible_head_of_queue() -> None:
         server_type="stdio",
         connection={"command": "mcp-image"},
     )
-    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="waiting_runtime")
+    run = _seed_run(
+        session=session, workspace=workspace, runtime_id=runtime_id, status="waiting_runtime"
+    )
     session.add_all([server, run])
     session.flush()
     blocked_job = SelfHostedMcpJob(
@@ -1282,7 +1332,9 @@ def test_self_hosted_worker_cleanup_expires_stale_mcp_jobs_idempotently() -> Non
         server_type="stdio",
         connection={"command": "mcp-image"},
     )
-    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="waiting_runtime")
+    run = _seed_run(
+        session=session, workspace=workspace, runtime_id=runtime_id, status="waiting_runtime"
+    )
     session.add_all([server, run])
     session.flush()
     stale_job = SelfHostedMcpJob(
@@ -1330,10 +1382,14 @@ def test_self_hosted_worker_cleanup_expires_stale_mcp_jobs_idempotently() -> Non
     session.refresh(stale_job)
     session.refresh(fresh_job)
     session.refresh(run)
-    event = session.query(RunEvent).filter_by(
-        agent_run_id=run.id,
-        event_type="self_hosted.mcp_job_expired",
-    ).one()
+    event = (
+        session.query(RunEvent)
+        .filter_by(
+            agent_run_id=run.id,
+            event_type="self_hosted.mcp_job_expired",
+        )
+        .one()
+    )
     assert cleanup.status_code == 200
     assert cleanup.json()["expired_mcp_jobs"] == 1
     assert cleanup_again.status_code == 200
@@ -1372,7 +1428,7 @@ def test_self_hosted_service_creates_scoped_mcp_job() -> None:
         server_type="stdio",
         connection={"command": "mcp-image"},
     )
-    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="running")
+    run = _seed_run(session=session, workspace=workspace, runtime_id=runtime_id, status="running")
     session.add_all([server, run])
     session.commit()
 
@@ -1450,7 +1506,7 @@ def test_self_hosted_revoke_records_runtime_evidence_and_blocks_jobs() -> None:
     )
     credential_token = registered.json()["credential_token"]
     runtime_id = UUID(registered.json()["workspace_runtime_id"])
-    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    run = _seed_run(session=session, workspace=workspace, runtime_id=runtime_id, status="queued")
     session.add(run)
     session.commit()
     claim = client.post(
@@ -1471,12 +1527,14 @@ def test_self_hosted_revoke_records_runtime_evidence_and_blocks_jobs() -> None:
     runtime = session.get(WorkspaceRuntime, runtime_id)
     worker = session.query(SelfHostedWorker).one()
     claim_record = session.query(SelfHostedJobClaim).one()
-    runtime_event = session.query(RuntimeEvent).filter_by(
-        event_type="self_hosted.credential_revoked"
-    ).one()
-    space_event = session.query(RuntimeSpaceEvent).filter_by(
-        event_type="self_hosted.credential_revoked"
-    ).one()
+    runtime_event = (
+        session.query(RuntimeEvent).filter_by(event_type="self_hosted.credential_revoked").one()
+    )
+    space_event = (
+        session.query(RuntimeSpaceEvent)
+        .filter_by(event_type="self_hosted.credential_revoked")
+        .one()
+    )
     assert revoked.status_code == 204
     assert denied.status_code == 401
     assert runtime is not None
@@ -1517,7 +1575,7 @@ def test_self_hosted_worker_control_quarantines_resumes_and_revokes_machine() ->
     credential_token = registered.json()["credential_token"]
     runtime_id = UUID(registered.json()["workspace_runtime_id"])
     worker_id = UUID(registered.json()["worker_id"])
-    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    run = _seed_run(session=session, workspace=workspace, runtime_id=runtime_id, status="queued")
     session.add(run)
     session.commit()
     claimed = client.post(
@@ -1593,7 +1651,7 @@ def test_self_hosted_worker_cleanup_expires_stale_job_claims_idempotently() -> N
     )
     runtime_id = UUID(registered.json()["workspace_runtime_id"])
     credential_token = registered.json()["credential_token"]
-    run = AgentRun(workspace_id=workspace.id, runtime_id=runtime_id, status="queued")
+    run = _seed_run(session=session, workspace=workspace, runtime_id=runtime_id, status="queued")
     session.add(run)
     session.commit()
     claimed = client.post(
@@ -1763,9 +1821,9 @@ def test_self_hosted_capability_attestation_is_untrusted_by_default() -> None:
 
     assert denied.status_code == 409
     assert "platform-verified host isolation" in denied.json()["error"]["message"]
-    evidence = session.query(SecurityEvent).filter_by(
-        action="self_hosted.attestation.untrusted"
-    ).one()
+    evidence = (
+        session.query(SecurityEvent).filter_by(action="self_hosted.attestation.untrusted").one()
+    )
     assert evidence.event_metadata["runtime_id"] == str(runtime_id)
     assert evidence.event_metadata["reason"] == "attestation_missing"
 
@@ -1984,9 +2042,7 @@ def test_self_hosted_connector_manifest_exposes_bootstrap_contract_without_secre
         "upgrade_url": "https://downloads.example.test/connector",
     }
     assert payload["endpoints"]["register"] == "/api/v1/self-hosted/register"
-    assert payload["endpoints"]["claim_job"].endswith(
-        "/self-hosted/jobs/{agent_run_id}/claim"
-    )
+    assert payload["endpoints"]["claim_job"].endswith("/self-hosted/jobs/{agent_run_id}/claim")
     assert payload["endpoints"]["project_archive"].endswith(
         "/self-hosted/jobs/{agent_run_id}/project/archive"
     )
@@ -2146,35 +2202,75 @@ def _agent_run_with_snapshot(
     runtime_policy: dict[str, object],
 ) -> AgentRun:
     resource = CapabilityResource(
-        workspace_id=workspace.id, key=f"runtime-{uuid4()}", name="Worker runtime",
-        resource_type="runtime", access_mode="execute",
+        workspace_id=workspace.id,
+        key=f"runtime-{uuid4()}",
+        name="Worker runtime",
+        resource_type="runtime",
+        access_mode="execute",
         locator={"workspace_runtime_id": str(runtime_id)},
     )
     session.add(resource)
     session.flush()
     task = Task(
-        workspace_id=workspace.id, created_by_user_id=workspace.owner_user_id,
-        title="Worker policy job", status="queued",
+        workspace_id=workspace.id,
+        created_by_user_id=workspace.owner_user_id,
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        title="Worker policy job",
+        status="queued",
     )
     agent = AgentProfile(
-        workspace_id=workspace.id, name="Policy agent", role="worker", model=model,
+        workspace_id=workspace.id,
+        name="Policy agent",
+        role="worker",
+        model=model,
         capabilities={"resource_ids": [str(resource.id)]},
-        tool_policy={"allowed_tools": allowed_tools}, runtime_policy=runtime_policy,
+        tool_policy={"allowed_tools": allowed_tools},
+        runtime_policy=runtime_policy,
     )
     session.add_all([task, agent])
     session.flush()
     snapshot = RunAuthorizationSnapshotService(
-        session, RunRequestBuilder(session, Settings(environment="test")),
+        session,
+        RunRequestBuilder(session, Settings(environment="test")),
     ).build_authorization_snapshot(task, None, agent)
     return AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,
         agent_profile_id=agent.id,
         runtime_id=runtime_id,
+        runtime_space_id=(
+            UUID(str(snapshot["runtime_space_id"])) if snapshot["runtime_space_id"] else None
+        ),
         status="queued",
         model=model,
         input={"authorization_snapshot": snapshot},
     )
+
+
+def _seed_run(
+    *,
+    session: Session,
+    workspace: Workspace,
+    runtime_id: UUID,
+    status: str,
+    runtime_space_id: UUID | None = None,
+    input: dict[str, object] | None = None,
+) -> AgentRun:
+    run = _agent_run_with_snapshot(
+        session=session,
+        workspace=workspace,
+        runtime_id=runtime_id,
+        model="gpt-4.1",
+        allowed_tools=[],
+        runtime_policy={},
+    )
+    run.status = status
+    if runtime_space_id is not None:
+        run.runtime_space_id = runtime_space_id
+    run.input = {**run.input, **(input or {})}
+    return run
 
 
 def _seed_risky_policy(

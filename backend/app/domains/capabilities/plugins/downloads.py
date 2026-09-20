@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import UUID, uuid4
 
-from opsmesh_plugin_sdk.distribution import PluginCatalog, SignedPluginRelease
+from opsmesh_plugin_sdk.packaging.distribution import PluginCatalog, SignedPluginRelease
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 

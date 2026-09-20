@@ -4,16 +4,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from opsmesh_plugin_sdk.cards import CardTemplate
-from opsmesh_plugin_sdk.contracts import (
+from opsmesh_plugin_sdk.messaging.contracts import (
     AcceptedEvent,
     AutomationReply,
     AutomationStreamEvent,
     EventState,
     IncomingMessage,
-    PluginManifest,
 )
-from opsmesh_plugin_sdk.distribution import PluginCatalog, SignedPluginRelease
+from opsmesh_plugin_sdk.packaging.distribution import PluginCatalog, SignedPluginRelease
+from opsmesh_plugin_sdk.packaging.manifest import PluginManifest
 from redis import Redis
 from sqlalchemy.orm import Session
 
@@ -61,7 +60,6 @@ def configuration_contracts(
         "plugin_release": SignedPluginRelease.model_json_schema(),
         "plugin_execution_modes": ["remote"],
         "plugin_service_credentials_supported": True,
-        "card_template": CardTemplate.model_json_schema(),
     }
 
 

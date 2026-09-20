@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
@@ -73,7 +74,14 @@ def _approve_semantic_tool_execution_review(monkeypatch: pytest.MonkeyPatch) -> 
 def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, title="Task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Task",
+    )
     server = McpServer(workspace_id=workspace.id, name="image-tools", server_type="hosted")
     session.add_all([task, server])
     session.flush()
@@ -100,6 +108,7 @@ def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
     result = asyncio.run(
         BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
+                user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
                 task_id=task.id,
                 run_id=run.id,
@@ -124,7 +133,14 @@ def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
 def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, title="Team task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Team task",
+    )
     server = McpServer(workspace_id=workspace.id, name="team-tools", server_type="hosted")
     session.add_all([task, server])
     session.flush()
@@ -158,6 +174,7 @@ def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
     result = asyncio.run(
         BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
+                user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
                 task_id=task.id,
                 run_id=run.id,
@@ -221,7 +238,14 @@ def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
 def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, title="Task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Task",
+    )
     server = McpServer(workspace_id=workspace.id, name="image-tools", server_type="hosted")
     session.add_all([task, server])
     session.flush()
@@ -247,6 +271,7 @@ def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
     session.commit()
     executor = BackendToolExecutor(session, StaticMcpAdapter())
     context = AgentRuntimeContext(
+        user_id=workspace.owner_user_id,
         workspace_id=workspace.id,
         task_id=task.id,
         run_id=run.id,
@@ -284,7 +309,14 @@ def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
 def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, title="Task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Task",
+    )
     server = McpServer(workspace_id=workspace.id, name="image-tools", server_type="hosted")
     session.add_all([task, server])
     session.flush()
@@ -324,6 +356,7 @@ def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> N
     first = asyncio.run(
         executor.execute_tool(
             context=AgentRuntimeContext(
+                user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
                 task_id=task.id,
                 run_id=first_run.id,
@@ -338,6 +371,7 @@ def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> N
         asyncio.run(
             executor.execute_tool(
                 context=AgentRuntimeContext(
+                    user_id=workspace.owner_user_id,
                     workspace_id=workspace.id,
                     task_id=task.id,
                     run_id=second_run.id,
@@ -363,7 +397,14 @@ def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> N
 def test_backend_tool_executor_enforces_runtime_allowed_tools() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, title="Task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Task",
+    )
     server = McpServer(workspace_id=workspace.id, name="image-tools")
     session.add_all([task, server])
     session.flush()
@@ -390,6 +431,7 @@ def test_backend_tool_executor_enforces_runtime_allowed_tools() -> None:
     result = asyncio.run(
         BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
+                user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
                 task_id=task.id,
                 run_id=run.id,
@@ -410,7 +452,14 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
     _, other_workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, title="Task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Task",
+    )
     sender = AgentProfile(workspace_id=workspace.id, name="Planner", role="planner")
     recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
     other_agent = AgentProfile(
@@ -436,6 +485,7 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
     session.commit()
     executor = BackendToolExecutor(session, StaticMcpAdapter())
     context = AgentRuntimeContext(
+        user_id=workspace.owner_user_id,
         workspace_id=workspace.id,
         task_id=task.id,
         run_id=run.id,
@@ -502,7 +552,7 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
     assert sensitive.metadata["review_risk_level"] == "high"
     assert blocked.status == "failed"
     assert blocked.error is not None
-    assert blocked.error["code"] == "product_tool_failed"
+    assert blocked.error["code"] == "user_resource_denied"
 
 
 def test_backend_tool_executor_redacts_product_tool_failure_messages(
@@ -511,7 +561,16 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
     session = _session()
     _, workspace = _seed_workspace(session)
     recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
-    task = Task(workspace_id=workspace.id, title="Task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Task",
+    )
+    session.add(task)
+    session.flush()
     run = AgentRun(
         workspace_id=workspace.id,
         task_id=task.id,
@@ -537,6 +596,7 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
     result = asyncio.run(
         BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
+                user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
                 task_id=task.id,
                 run_id=run.id,
@@ -563,7 +623,14 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
 def test_backend_tool_executor_dispatches_agent_inbox_product_tools() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, title="Task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Task",
+    )
     sender = AgentProfile(workspace_id=workspace.id, name="Planner", role="planner")
     recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
     session.add_all([task, sender, recipient])
@@ -596,6 +663,7 @@ def test_backend_tool_executor_dispatches_agent_inbox_product_tools() -> None:
     session.commit()
     executor = BackendToolExecutor(session, StaticMcpAdapter())
     context = AgentRuntimeContext(
+        user_id=workspace.owner_user_id,
         workspace_id=workspace.id,
         task_id=task.id,
         run_id=run.id,
@@ -636,8 +704,22 @@ def test_backend_tool_executor_dispatches_agent_inbox_product_tools() -> None:
 def test_backend_tool_executor_scopes_agent_inbox_to_runtime_metadata() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    current_task = Task(workspace_id=workspace.id, title="Current task")
-    other_task = Task(workspace_id=workspace.id, title="Other task")
+    current_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Current task",
+    )
+    other_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Other task",
+    )
     sender = AgentProfile(workspace_id=workspace.id, name="Planner", role="planner")
     recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
     session.add_all([current_task, other_task, sender, recipient])
@@ -689,6 +771,7 @@ def test_backend_tool_executor_scopes_agent_inbox_to_runtime_metadata() -> None:
     result = asyncio.run(
         BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
+                user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
                 task_id=current_task.id,
                 run_id=run.id,
@@ -715,8 +798,22 @@ def test_backend_tool_executor_scopes_agent_inbox_to_runtime_metadata() -> None:
 def test_backend_tool_executor_scopes_mark_read_to_runtime_metadata() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    current_task = Task(workspace_id=workspace.id, title="Current task")
-    other_task = Task(workspace_id=workspace.id, title="Other task")
+    current_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Current task",
+    )
+    other_task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Other task",
+    )
     sender = AgentProfile(workspace_id=workspace.id, name="Planner", role="planner")
     recipient = AgentProfile(workspace_id=workspace.id, name="Builder", role="builder")
     session.add_all([current_task, other_task, sender, recipient])
@@ -759,6 +856,7 @@ def test_backend_tool_executor_scopes_mark_read_to_runtime_metadata() -> None:
     result = asyncio.run(
         BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
+                user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
                 task_id=current_task.id,
                 run_id=run.id,
@@ -782,7 +880,14 @@ def test_backend_tool_executor_scopes_mark_read_to_runtime_metadata() -> None:
 def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    task = Task(workspace_id=workspace.id, title="Task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Task",
+    )
     agent = AgentProfile(workspace_id=workspace.id, name="Researcher", role="researcher")
     existing_content = "The company positioning is durable multi-agent operations."
     existing = WorkspaceMemoryEntry(
@@ -836,6 +941,7 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
     session.commit()
     executor = BackendToolExecutor(session, StaticMcpAdapter())
     context = AgentRuntimeContext(
+        user_id=workspace.owner_user_id,
         workspace_id=workspace.id,
         task_id=task.id,
         run_id=run.id,
@@ -945,7 +1051,14 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
         status="active",
         connection_status="online",
     )
-    task = Task(workspace_id=workspace.id, title="Task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Task",
+    )
     server = McpServer(
         workspace_id=workspace.id,
         name="image-tools",
@@ -979,12 +1092,13 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
     )
     session.add_all([credential, allow, run])
     session.flush()
-    _set_mcp_snapshot(run, workspace, server, allow)
+    _set_mcp_snapshot(run, workspace, server, allow, credentials=(credential,))
     session.commit()
 
     result = asyncio.run(
         BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
             context=AgentRuntimeContext(
+                user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
                 task_id=task.id,
                 run_id=run.id,
@@ -1041,7 +1155,14 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
         status="running",
         connection_status="online",
     )
-    task = Task(workspace_id=workspace.id, title="Task")
+    task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id, workspace.owner_user_id
+        ),
+        created_by_user_id=workspace.owner_user_id,
+        workspace_id=workspace.id,
+        title="Task",
+    )
     server = McpServer(
         workspace_id=workspace.id,
         name="image-tools",
@@ -1080,7 +1201,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
     )
     session.add_all([credential, allow, run])
     session.flush()
-    _set_mcp_snapshot(run, workspace, server, allow)
+    _set_mcp_snapshot(run, workspace, server, allow, credentials=(credential,))
     session.commit()
     docker = RecordingDockerClient(
         [
@@ -1109,6 +1230,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
             secret_service=secret_service,
         ).execute_tool(
             context=AgentRuntimeContext(
+                user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
                 task_id=task.id,
                 run_id=run.id,
@@ -1231,6 +1353,8 @@ def _product_definitions(*names: str) -> tuple[AgentRuntimeToolDefinition, ...]:
 def _mcp_definition(
     server: McpServer,
     allow: McpToolAllowlist,
+    *,
+    credentials: tuple[McpCredentialReference, ...] = (),
 ) -> AgentRuntimeToolDefinition:
     return AgentRuntimeToolDefinition(
         name=allow.tool_name,
@@ -1249,10 +1373,12 @@ def _set_mcp_snapshot(
     workspace: Workspace,
     server: McpServer,
     allow: McpToolAllowlist,
+    *,
+    credentials: tuple[McpCredentialReference, ...] = (),
 ) -> None:
     server.health_status = "healthy"
     server.last_health_check_at = datetime.now(UTC)
-    server.connection = {**server.connection, "requires_credentials": False}
+    server.connection = {**server.connection, "requires_credentials": bool(credentials)}
     catalog: dict[str, object] = {
         "catalog_version": 1,
         "workspace_id": str(workspace.id),
@@ -1278,8 +1404,19 @@ def _set_mcp_snapshot(
                     "mcp_server_type": server.server_type,
                     "mcp_server_configuration_version": server.configuration_version,
                     "mcp_tool_configuration_version": allow.configuration_version,
-                    "mcp_requires_credentials": False,
-                    "mcp_credential_references": [],
+                    "mcp_requires_credentials": bool(credentials),
+                    "mcp_credential_references": [
+                        {
+                            "credential_reference_id": str(item.id),
+                            "mcp_server_id": str(server.id),
+                            "configuration_version": item.configuration_version,
+                            "provider": item.provider,
+                            "scopes": item.scopes,
+                            "secret_fingerprint": item.secret_fingerprint,
+                            "encryption_key_id": item.encryption_key_id,
+                        }
+                        for item in credentials
+                    ],
                     "mcp_blocked_reasons": [],
                     "policy": allow.policy,
                     "required_resource_type": None,

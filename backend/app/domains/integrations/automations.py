@@ -3,7 +3,12 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from opsmesh_plugin_sdk.contracts import AcceptedEvent, AutomationReply, EventState, IncomingMessage
+from opsmesh_plugin_sdk.messaging.contracts import (
+    AcceptedEvent,
+    AutomationReply,
+    EventState,
+    IncomingMessage,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -170,7 +175,8 @@ class AutomationService:
         model_message(config, message)
         identity = ExternalIdentityService(self._session).resolve(item, message.sender_id)
         PluginAttachmentService(self._session).require_references(
-            item, message,
+            item,
+            message,
             ExecutionIdentityService(self._session).restore(workspace_id, identity),
             source_install_id,
         )

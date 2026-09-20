@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunResult,
@@ -67,6 +68,7 @@ def planning() -> Iterator[tuple[Session, Task, AgentProfile, AgentRun]]:
             )
         )
         task = Task(
+            execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
             workspace_id=workspace.id,
             agent_team_id=team.id,
             created_by_user_id=user.id,

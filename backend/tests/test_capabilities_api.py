@@ -49,8 +49,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm."
-        "LlmResourceReviewer.review",
+        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -184,6 +183,7 @@ def test_capability_skill_and_mcp_control_plane() -> None:
             "server_id": server.json()["id"],
             "server_name": "image-tools",
             "tool_name": "generate_image",
+            "title": "",
             "description": "",
             "input_schema": {
                 "type": "object",
@@ -191,6 +191,7 @@ def test_capability_skill_and_mcp_control_plane() -> None:
                 "additionalProperties": False,
             },
             "capability_key": "image.generate",
+            "output_schema": {},
             "requires_approval": True,
             "risk_level": "medium",
             "policy": {"write_artifact": True},
@@ -271,8 +272,7 @@ def test_llm_resource_review_can_require_admin_approval(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm."
-        "LlmResourceReviewer.review",
+        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -333,8 +333,7 @@ def test_operator_cannot_approve_resource_review(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm."
-        "LlmResourceReviewer.review",
+        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -418,7 +417,7 @@ def test_resource_review_uses_admin_configured_review_model(monkeypatch) -> None
                 "model": "workspace-review-large",
                 "timeout_seconds": 7,
                 "fail_closed": True,
-            }
+            },
         }
     }
     session.commit()
@@ -438,8 +437,7 @@ def test_resource_review_uses_admin_configured_review_model(monkeypatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm."
-        "LlmResourceReviewer.review",
+        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -501,8 +499,7 @@ def test_resource_review_defaults_to_codex_auto_review_model(monkeypatch) -> Non
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm."
-        "LlmResourceReviewer.review",
+        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -1056,7 +1053,7 @@ def test_mcp_server_scope_is_enforced() -> None:
         json={"tool_name": "steal_data"},
     )
 
-    assert denied.status_code == 404
+    assert denied.status_code == 403
 
 
 def test_mcp_catalog_summarizes_tools_credentials_and_agent_scope() -> None:
@@ -1245,20 +1242,22 @@ def test_remote_mcp_discovery_requires_enablement_and_revokes_changed_tools(monk
 
     async def list_tools(**kwargs):  # noqa: ANN003, ANN202
         assert kwargs["headers"]["authorization"] == "Bearer secret-token"
-        return [{
-            "name": "fetch_logs",
-            "title": "Fetch logs",
-            "description": description,
-            "inputSchema": {
-                "type": "object",
-                "properties": {"service": {"type": "string"}},
-                "required": ["service"],
-            },
-            "outputSchema": {
-                "type": "object",
-                "properties": {"records": {"type": "array"}},
-            },
-        }]
+        return [
+            {
+                "name": "fetch_logs",
+                "title": "Fetch logs",
+                "description": description,
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"service": {"type": "string"}},
+                    "required": ["service"],
+                },
+                "outputSchema": {
+                    "type": "object",
+                    "properties": {"records": {"type": "array"}},
+                },
+            }
+        ]
 
     monkeypatch.setattr(
         "backend.app.domains.capabilities.mcp.catalog.discovery.list_remote_mcp_tools_async",
@@ -1281,7 +1280,7 @@ def test_remote_mcp_discovery_requires_enablement_and_revokes_changed_tools(monk
         f"{server_id}/discovered-tools",
         headers=_headers(other.id),
     )
-    assert foreign.status_code == 404
+    assert foreign.status_code == 403
     before_enable = client.get(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tools",
         headers=_headers(owner.id),
@@ -1322,8 +1321,7 @@ def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
         },
     )
     allowed = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
-        f"{server.json()['id']}/tools",
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
         json={"tool_name": "search_docs"},
     )
@@ -1388,10 +1386,14 @@ def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
         headers=_headers(owner.id),
     )
-    audit = session.query(AuditEvent).filter_by(
-        workspace_id=workspace.id,
-        action="mcp_server.health_check_recorded",
-    ).one()
+    audit = (
+        session.query(AuditEvent)
+        .filter_by(
+            workspace_id=workspace.id,
+            action="mcp_server.health_check_recorded",
+        )
+        .one()
+    )
 
     assert refreshed.status_code == 200
     refreshed_body = refreshed.json()
@@ -1438,10 +1440,14 @@ def test_mcp_unhealthy_health_check_redacts_error_code_in_responses_and_audit() 
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
         headers=_headers(owner.id),
     )
-    audit = session.query(AuditEvent).filter_by(
-        workspace_id=workspace.id,
-        action="mcp_server.health_check_recorded",
-    ).one()
+    audit = (
+        session.query(AuditEvent)
+        .filter_by(
+            workspace_id=workspace.id,
+            action="mcp_server.health_check_recorded",
+        )
+        .one()
+    )
     stored_server = session.get(McpServer, UUID(server.json()["id"]))
 
     assert server.status_code == 201
@@ -1477,8 +1483,7 @@ def test_workspace_capability_governance_can_refresh_stale_mcp_health_checks() -
         },
     )
     allowed = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
-        f"{server.json()['id']}/tools",
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
         json={"tool_name": "search_docs"},
     )
@@ -1513,10 +1518,14 @@ def test_workspace_capability_governance_can_refresh_stale_mcp_health_checks() -
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
         headers=_headers(owner.id),
     )
-    audit = session.query(AuditEvent).filter_by(
-        workspace_id=workspace.id,
-        action="capability_governance.mcp_health_check_refreshed",
-    ).one()
+    audit = (
+        session.query(AuditEvent)
+        .filter_by(
+            workspace_id=workspace.id,
+            action="capability_governance.mcp_health_check_refreshed",
+        )
+        .one()
+    )
 
     assert server.status_code == 201
     assert allowed.status_code == 201
@@ -1892,14 +1901,12 @@ def test_mcp_tool_call_log_enforces_agent_policy_and_binds_run_context() -> None
         json={"name": "image-tools"},
     )
     allowed = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
-        f"{server.json()['id']}/tools",
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
         json={"tool_name": "generate_image"},
     )
     denied_tool = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
-        f"{server.json()['id']}/tools",
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
         json={"tool_name": "delete_image"},
     )
@@ -2295,8 +2302,7 @@ def test_agent_tool_policy_diagnostics_explain_skill_and_mcp_effective_access() 
         },
     )
     allowed = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
-        f"{server.json()['id']}/tools",
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
         json={
             "tool_name": "generate_image",
@@ -2385,7 +2391,7 @@ def test_agent_tool_policy_diagnostics_explain_skill_and_mcp_effective_access() 
     } <= set(body["blocked_reasons"])
     assert "hidden" not in str(body)
     assert "private" not in str(body)
-    assert foreign_diagnostics.status_code == 404
+    assert foreign_diagnostics.status_code == 403
 
 
 def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
@@ -2407,8 +2413,7 @@ def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
         },
     )
     allowed = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
-        f"{server.json()['id']}/tools",
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
         json={
             "tool_name": "generate_image",
@@ -2473,9 +2478,7 @@ def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
     assert designer_tools["generate_image"]["allowed_by_agent_policy"] is True
     assert designer_tools["generate_image"]["available"] is False
     assert designer_tools["generate_image"]["credential_status"] == "missing_required"
-    assert designer_tools["generate_image"]["blocked_reasons"] == [
-        "missing_required_credentials"
-    ]
+    assert designer_tools["generate_image"]["blocked_reasons"] == ["missing_required_credentials"]
     assert reviewer_tools["delete_image"]["allowed_by_agent_policy"] is True
     assert reviewer_tools["delete_image"]["allowed_in_workspace"] is False
     assert set(reviewer_tools["delete_image"]["blocked_reasons"]) == {"tool_not_allowed"}
@@ -2534,8 +2537,7 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
     )
     assert checked.status_code == 200
     allowed = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
-        f"{server.json()['id']}/tools",
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
         json={
             "tool_name": "generate_image",
@@ -2844,9 +2846,7 @@ def test_workspace_capability_governance_actions_apply_safe_quarantine() -> None
 
     audit_actions = {
         event.action
-        for event in session.query(AuditEvent)
-        .filter(AuditEvent.workspace_id == workspace.id)
-        .all()
+        for event in session.query(AuditEvent).filter(AuditEvent.workspace_id == workspace.id).all()
     }
     assert {
         "capability_governance.actions_applied",
@@ -2871,8 +2871,7 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
         },
     )
     allowed = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
-        f"{server.json()['id']}/tools",
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
         json={"tool_name": "generate_image"},
     )
@@ -2954,9 +2953,7 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
 
     audit_actions = {
         event.action
-        for event in session.query(AuditEvent)
-        .filter(AuditEvent.workspace_id == workspace.id)
-        .all()
+        for event in session.query(AuditEvent).filter(AuditEvent.workspace_id == workspace.id).all()
     }
     assert {
         "capability_governance.actions_applied",
@@ -2997,8 +2994,7 @@ def test_workspace_capability_governance_reenables_disabled_mcp_tools() -> None:
         },
     )
     allowed = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
-        f"{server.json()['id']}/tools",
+        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
         json={"tool_name": "generate_image", "risk_level": "low"},
     )
@@ -3053,12 +3049,8 @@ def test_workspace_capability_governance_reenables_disabled_mcp_tools() -> None:
     assert disabled.status_code == 200
     assert disabled.json()["status"] == "disabled"
     assert governance_before.status_code == 200
-    assert governance_before.json()["mcp_servers"][0]["blocked_reasons"] == [
-        "no_allowed_tools"
-    ]
-    assert governance_before.json()["mcp_servers"][0]["recommended_actions"] == [
-        "allow_mcp_tools"
-    ]
+    assert governance_before.json()["mcp_servers"][0]["blocked_reasons"] == ["no_allowed_tools"]
+    assert governance_before.json()["mcp_servers"][0]["recommended_actions"] == ["allow_mcp_tools"]
 
     assert dry_run.status_code == 200
     dry_body = dry_run.json()
@@ -3084,9 +3076,7 @@ def test_workspace_capability_governance_reenables_disabled_mcp_tools() -> None:
 
     audit_actions = {
         event.action
-        for event in session.query(AuditEvent)
-        .filter(AuditEvent.workspace_id == workspace.id)
-        .all()
+        for event in session.query(AuditEvent).filter(AuditEvent.workspace_id == workspace.id).all()
     }
     assert {
         "capability_governance.actions_applied",
@@ -3239,8 +3229,7 @@ def test_skill_install_by_id_endpoint_and_disabled_history() -> None:
         },
     )
     installed = client.post(
-        f"/api/v1/workspaces/{other_workspace.id}/capabilities/skills/"
-        f"{skill.json()['id']}/install",
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/skills/{skill.json()['id']}/install",
         headers=_headers(other.id),
         json={"config": {"region": "sg"}},
     )
@@ -3259,8 +3248,7 @@ def test_skill_install_by_id_endpoint_and_disabled_history() -> None:
         headers=_headers(other.id),
     )
     duplicate = client.post(
-        f"/api/v1/workspaces/{other_workspace.id}/capabilities/skills/"
-        f"{skill.json()['id']}/install",
+        f"/api/v1/workspaces/{other_workspace.id}/capabilities/skills/{skill.json()['id']}/install",
         headers=_headers(other.id),
         json={},
     )

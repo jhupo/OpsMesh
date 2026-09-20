@@ -6,8 +6,6 @@ on:
     paths:
       - 'operator/**'
       - 'deploy/**'
-      - 'Dockerfile*'
-      - 'docker-compose.yml'
       - 'backend/app/domains/platform/updates/**'
       - 'backend/app/runtime/**'
       - 'backend/app/domains/capabilities/mcp/**'
@@ -17,8 +15,6 @@ on:
     paths:
       - 'operator/**'
       - 'deploy/**'
-      - 'Dockerfile*'
-      - 'docker-compose.yml'
       - 'backend/app/domains/platform/updates/**'
       - 'backend/app/runtime/**'
       - 'backend/app/domains/capabilities/mcp/**'
@@ -60,10 +56,10 @@ jobs:
           uv run python scripts/ci_command.py uv run pytest backend/tests/test_delivery_postgres.py
       - name: Fresh container deployment and runtime probe
         run: |
-          cp .env.example .env
-          docker compose up --build --wait --wait-timeout 180
+          cp deploy/local/env.example .env
+          docker compose -f deploy/local/compose.yml up --build --wait --wait-timeout 180
           curl --fail http://127.0.0.1:8000/api/v1/health/ready
-          docker build -f Dockerfile.runtime -t opsmesh-runtime:ci .
+          docker build -f deploy/images/Dockerfile.runtime -t opsmesh-runtime:ci .
           uv run python scripts/check_runtime_image.py \
             --image opsmesh-runtime:ci \
             --fixture backend/tests/fixtures/mcp_stdio_server.py
@@ -75,4 +71,4 @@ jobs:
       - name: Tear down disposable CI deployment
         if: always()
         run: |
-          if [ -f .env ]; then docker compose down --volumes; fi
+          if [ -f .env ]; then docker compose -f deploy/local/compose.yml down --volumes; fi
