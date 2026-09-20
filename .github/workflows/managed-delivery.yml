@@ -56,7 +56,7 @@ jobs:
           docker run -d --name acceptance-redis -p 127.0.0.1:6379:6379 redis:7-alpine
       - name: Signed native install, cross-version upgrade and real interruption recovery
         run: |
-          sudo env "PATH=$PATH" "GH_TOKEN=$GH_TOKEN" GITHUB_ACTIONS=true \
+          sudo env "PATH=$PATH" "OPSMESH_RELEASE_TOKEN=$GH_TOKEN" GITHUB_ACTIONS=true \
             "ACCEPTANCE_POSTGRES_PASSWORD=${ACCEPTANCE_POSTGRES_PASSWORD:-}" \
             .venv/bin/python scripts/ci_command.py .venv/bin/python scripts/check_managed_delivery.py \
             --tag "$RELEASE_TAG" --previous "$PREVIOUS_TAG" --mode "$DEPLOYMENT_MODE"

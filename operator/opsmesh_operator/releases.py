@@ -43,24 +43,46 @@ class ReleaseSource:
         return path
 
     def _download(self, tag: str, name: str, path: Path, *, limit: int) -> None:
+        token = os.environ.get("OPSMESH_RELEASE_TOKEN")
+        headers: dict[str, str] = {}
+        metadata_headers: dict[str, str] = {}
         url = f"https://github.com/{self.repository}/releases/download/{tag}/{name}"
+        if token:
+            headers = {
+                "Accept": "application/octet-stream",
+                "Authorization": f"Bearer {token}",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            metadata_headers = {**headers, "Accept": "application/vnd.github+json"}
         deadline = time.monotonic() + 300
-        with (
-            httpx.Client(timeout=60, follow_redirects=True) as client,
-            client.stream("GET", url) as response,
-            path.open("wb") as stream,
-        ):
-            response.raise_for_status()
-            total = 0
-            for chunk in response.iter_bytes():
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("Release download exceeded its total time budget")
-                total += len(chunk)
-                if total > limit:
-                    raise ValueError("Release download exceeds declared size")
-                stream.write(chunk)
-            stream.flush()
-            os.fsync(stream.fileno())
+        with httpx.Client(timeout=60, follow_redirects=True) as client:
+            if token:
+                release = client.get(
+                    f"https://api.github.com/repos/{self.repository}/releases/tags/{tag}",
+                    headers=metadata_headers,
+                )
+                release.raise_for_status()
+                matches = [
+                    asset
+                    for asset in release.json().get("assets", [])
+                    if asset.get("name") == name
+                ]
+                if len(matches) != 1 or not isinstance(matches[0].get("url"), str):
+                    raise ValueError("Release asset identity mismatch")
+                url = matches[0]["url"]
+            with client.stream("GET", url, headers=headers) as response:
+                response.raise_for_status()
+                with path.open("wb") as stream:
+                    total = 0
+                    for chunk in response.iter_bytes():
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError("Release download exceeded its total time budget")
+                        total += len(chunk)
+                        if total > limit:
+                            raise ValueError("Release download exceeds declared size")
+                        stream.write(chunk)
+                    stream.flush()
+                    os.fsync(stream.fileno())
 
 
 def extract_bundle(bundle: Path, target: Path) -> None:
