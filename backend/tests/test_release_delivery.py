@@ -108,8 +108,10 @@ def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
     assert workflow["jobs"]["gate"]["with"]["tag"] == "${{ github.ref_name }}"
     assert workflow["jobs"]["gate"]["permissions"] == {"contents": "read"}
     assert workflow["jobs"]["candidate"]["needs"] == "gate"
-    assert workflow["jobs"]["publish"]["needs"] == ["gate", "candidate", "standalone"]
     assert workflow["jobs"]["standalone"]["needs"] == "gate"
+    assert workflow["jobs"]["stage"]["needs"] == ["gate", "candidate", "standalone"]
+    assert workflow["jobs"]["managed-acceptance"]["needs"] == "stage"
+    assert workflow["jobs"]["publish"]["needs"] == ["stage", "managed-acceptance"]
     assert "if" not in workflow["jobs"]["publish"]
     assert "workflow_dispatch" not in publish
     gate = yaml.load(
