@@ -198,7 +198,7 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     assert events[1].event_metadata["runtime_lease_id"] == str(lease.id)
     assert events[2].event_metadata["runtime_lease_id"] == str(lease.id)
     assert events[-1].event_metadata["cleanup"]["action"] == "delete"
-    assert events[-1].event_metadata["cleanup"]["container_id"] == "container-123"
+    assert events[-1].event_metadata["cleanup"]["container_id"] == "[redacted]"
     assert events[-1].event_metadata["cleanup"]["success"] is True
     assert [event.event_type for event in space_events] == [
         "runtime_space.reserved",
@@ -1275,7 +1275,7 @@ def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme", settings={})
     template = RuntimeTemplate(
         name="python",
-        image="python:3.12-slim",
+        image="python@sha256:" + "0" * 64,
         default_limits={
             "cpu_count": 4,
             "memory_mb": 4096,

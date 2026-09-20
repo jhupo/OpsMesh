@@ -11,7 +11,10 @@ from backend.app.core.db.base import Base
 from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeResumeState
-from backend.app.domains.agents.runtime.state import AgentRunStateStore
+from backend.app.domains.agents.runtime.state import (
+    MAX_SERIALIZED_RUN_STATE_BYTES,
+    AgentRunStateStore,
+)
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
@@ -83,7 +86,7 @@ def test_agent_run_state_store_rejects_oversized_state() -> None:
             run_id=run.id,
             state=AgentRuntimeResumeState(
                 provider="openai_agents",
-                serialized_state="x" * (8 * 1024 * 1024 + 1),
+                serialized_state="x" * (MAX_SERIALIZED_RUN_STATE_BYTES + 1),
             ),
         )
 

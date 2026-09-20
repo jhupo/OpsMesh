@@ -10,6 +10,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
@@ -1104,6 +1105,11 @@ def _seed_task_step(
 ) -> tuple[Task, TaskStep]:
     task = Task(
         workspace_id=workspace.id,
+        created_by_user_id=workspace.owner_user_id,
+        execution_identity=ExecutionIdentityService(session).capture(
+            workspace.id,
+            workspace.owner_user_id,
+        ),
         title=title,
         priority=priority,
         status=TaskStatus.QUEUED.value,

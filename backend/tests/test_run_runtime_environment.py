@@ -215,7 +215,7 @@ def test_pooled_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
     assert len(docker.started) == 0
     assert len(docker.removed) == 0
     assert len(docker.removed_volumes) == 0
-    assert len(docker.exec_command_calls) == 2
+    assert len(docker.exec_command_calls) == 3
 
 
 def test_pooled_runs_use_distinct_pool_members_until_a_member_is_released() -> None:

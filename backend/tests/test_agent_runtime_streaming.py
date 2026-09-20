@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 
 import backend.app.domains.agents.runtime.providers.openai.streaming as openai_streaming
 from backend.app.core.db.base import Base
+from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.access.models import User
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
@@ -24,7 +25,8 @@ from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAge
 from backend.app.domains.orchestration.runs.cancellation import DatabaseRunCancellation
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
 
 
 class TriggerCancellation:
@@ -260,10 +262,24 @@ def test_database_run_cancellation_observes_external_commit() -> None:
     with sessions() as session:
         owner = User(email="cancel@example.com", display_name="Owner")
         workspace = Workspace(owner=owner, name="Cancel", slug="cancel", settings={})
-        session.add_all([owner, workspace])
+        membership = WorkspaceMember(workspace=workspace, user=owner, role="owner")
+        session.add_all([owner, workspace, membership])
+        session.flush()
+        task = Task(
+            workspace_id=workspace.id,
+            created_by_user_id=owner.id,
+            execution_identity=ExecutionIdentityService(session).capture(
+                workspace.id,
+                owner.id,
+            ),
+            title="Cancellation",
+            status="running",
+        )
+        session.add(task)
         session.flush()
         run = AgentRun(
             workspace_id=workspace.id,
+            task_id=task.id,
             status=RunStatus.RUNNING.value,
             input={},
         )

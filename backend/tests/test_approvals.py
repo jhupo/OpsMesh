@@ -193,6 +193,7 @@ def test_approval_approve_activates_pending_resource_review_target() -> None:
             "kind": "resource_review",
             "target_type": "mcp_server",
             "target_id": str(server.id),
+            "snapshot": {"configuration_version": server.configuration_version},
         },
     )
     session.commit()
@@ -225,6 +226,7 @@ def test_approval_reject_marks_pending_resource_review_target_rejected() -> None
             "kind": "resource_review",
             "target_type": "mcp_server",
             "target_id": str(server.id),
+            "snapshot": {"configuration_version": server.configuration_version},
         },
     )
     session.commit()
