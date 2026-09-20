@@ -1,13 +1,13 @@
 [project]
 name = "opsmesh"
-version = "0.1.0rc17"
+version = "0.1.0rc18"
 description = "Run AI agent teams with control, isolation, and auditability."
 readme = "README.md"
 license = "LGPL-3.0-only"
 license-files = ["LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"]
 requires-python = ">=3.11.8"
 dependencies = [
-    "opsmesh-operator[host]==0.1.0rc17",
+    "opsmesh-operator[host]==0.1.0rc18",
     "opsmesh-plugin-sdk @ https://github.com/jhupo/opsmesh-plugin-center/releases/download/sdk/v0.5.0/opsmesh_plugin_sdk-0.5.0-py3-none-any.whl#sha256=527942f297330fe0f482722a97b06b0fa72b73bbca6c716b496a2bc5cf128858",
     "alembic>=1.18.4",
     "anthropic>=1.4.0,<2.0.0",
@@ -70,6 +70,9 @@ members = ["operator", "runtime"]
 
 [tool.uv.sources]
 opsmesh-operator = { workspace = true }
+
+[tool.setuptools]
+include-package-data = false
 
 [tool.setuptools.packages.find]
 include = ["backend*"]
