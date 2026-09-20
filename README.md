@@ -28,15 +28,16 @@ product contract.
 2026-09-20: the plugin center is now `jhupo/opsmesh-plugin-center`. SDK 0.5 source separates
 platform services, messaging and packaging; card templates and mappings belong to plugins.
 This change adds delegated identity, authorized resource discovery and knowledge/memory access.
-SDK 0.5.0 and DingTalk plugin 0.3.0 packages are published. Platform `v0.1.0rc17` is published and
-passed the complete release and managed-delivery gates; the rc18 source adds recoverable public
-downloads and leaner Python packages. Current plugin container acceptance remains pending. Catalog
+SDK 0.5.0 and DingTalk plugin 0.3.0 packages are published. Platform `v0.1.0rc18` is published and
+passed the complete release and managed-delivery gates; the rc19 source resolves public assets
+through the unauthenticated GitHub Release API and resumes interrupted CDN transfers. Current plugin
+container acceptance remains pending. Catalog
 sync only fetches metadata and never implicitly installs a plugin. Release work also preserves
 tenant-wide budget enforcement and keeps archive restore drills separate from the source request's resource scope. See
 [plugin integration evidence](docs/plugin-service-integration.md) for the remaining external checks.
 
 Release delivery provides attested GHCR images, native CLI/server archives and a durable host
-updater. In `v0.1.0rc17`, both Compose and systemd pass real managed installation, cross-version
+updater. In `v0.1.0rc18`, both Compose and systemd pass real managed installation, cross-version
 upgrade/rollback, killed-updater recovery, startup-failure rollback, and acknowledged restoration
 after loss of the application database, followed by another successful upgrade. See
 [delivery operations](docs/delivery-operations.md) and the
@@ -496,9 +497,10 @@ the Linux amd64 server archive includes CPython and locked production dependenci
 `.whl`/source packages are separate assets. Follow [Delivery Operations](docs/delivery-operations.md)
 for checksum validation and managed installation.
 
-The public bootstrap retries and resumes transient HTTP, DNS, connection and TLS download
-failures, then verifies the completed native CLI archive before executing it. It never clones or
-builds the repository on the installation host.
+The public bootstrap resolves immutable assets through the unauthenticated GitHub Release API,
+retries and resumes transient HTTP, DNS, connection and TLS failures, then verifies the completed
+native CLI archive before executing it. It never clones or builds the repository on the
+installation host and does not require GitHub CLI or login.
 
 The current production model uses the managed release package with Compose by default and systemd
 as an explicit alternative. The worker uses Docker for isolated task runtimes; the API has no
