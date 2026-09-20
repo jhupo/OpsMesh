@@ -15,7 +15,7 @@
 
 `uv` 配置维护根锁文件及其本地 operator/runtime 依赖。独立 SDK 的固定发布 URL 和
 SHA-256 仍需要维护者在核实发布内容后更新，不能认为 Dependabot 会自动追踪该 URL。
-`docker` 负责根目录 Dockerfile；`docker-compose` 显式覆盖根目录开发环境、
+`docker` 负责 `deploy/images` 下的 Dockerfile；`docker-compose` 显式覆盖 `deploy/local` 下的开发环境、
 `deploy/server` 生产环境和 `deploy/server/monitoring` 监控栈。由运行时环境变量提供的
 OpsMesh 发布镜像仍由签名发布清单和更新器管理，不由 Dependabot 选择版本。
 Dependency Review 比较 GitHub 依赖图；它不是容器镜像漏洞扫描，也不能证明外部插件安全。

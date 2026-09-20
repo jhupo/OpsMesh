@@ -64,7 +64,7 @@ jobs:
         id: backend
         with:
           context: .
-          file: Dockerfile
+          file: deploy/images/Dockerfile
           push: true
           platforms: linux/amd64
           tags: ghcr.io/jhupo/opsmesh:candidate-${{ github.run_id }}-${{ github.run_attempt }}
@@ -77,7 +77,7 @@ jobs:
         id: runtime
         with:
           context: .
-          file: Dockerfile.runtime
+          file: deploy/images/Dockerfile.runtime
           push: true
           platforms: linux/amd64
           tags: ghcr.io/jhupo/opsmesh-runtime:candidate-${{ github.run_id }}-${{ github.run_attempt }}

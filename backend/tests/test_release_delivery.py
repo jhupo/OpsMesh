@@ -169,10 +169,10 @@ def test_native_builder_rejects_wrong_identity_before_writing(tmp_path: Path, ta
 
 
 def test_images_use_locked_dependencies_and_explicit_migrations() -> None:
-    for name in ("Dockerfile", "Dockerfile.runtime"):
+    for name in ("deploy/images/Dockerfile", "deploy/images/Dockerfile.runtime"):
         dockerfile = (ROOT / name).read_text("utf-8")
         assert "uv sync --frozen --no-dev --no-editable" in dockerfile
         assert "pip install ." not in dockerfile
         assert "USER opsmesh" in dockerfile
         assert "uv.lock" in dockerfile
-    assert "alembic upgrade" not in (ROOT / "Dockerfile").read_text("utf-8")
+    assert "alembic upgrade" not in (ROOT / "deploy/images/Dockerfile").read_text("utf-8")

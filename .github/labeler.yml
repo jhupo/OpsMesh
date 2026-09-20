@@ -9,7 +9,7 @@
       - any-glob-to-any-file: ['backend/app/domains/access/**', 'backend/app/core/security/**', 'SECURITY.md', '.github/workflows/codeql.yml', '.github/workflows/dependency-review.yml']
 'area:delivery':
   - changed-files:
-      - any-glob-to-any-file: ['.github/**', 'deploy/**', 'scripts/**', 'Dockerfile*', 'compose*.yml']
+      - any-glob-to-any-file: ['.github/**', 'deploy/**', 'scripts/**']
 documentation:
   - changed-files:
       - any-glob-to-any-file: ['docs/**', '*.md']

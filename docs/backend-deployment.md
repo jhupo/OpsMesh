@@ -11,18 +11,28 @@ for isolated task runtimes and the separately managed observability stack.
 
 Postgres remains the source of truth. Redis is used for queues, locks, pub/sub, and short-lived cache. User-controlled execution must still happen in Docker runtimes or self-hosted isolated machines, never inside the API or worker process.
 
+## Deployment asset layout (2026-09-20)
+
+- `deploy/images/`: backend and isolated runtime Dockerfiles. Build context is the repository root.
+- `deploy/local/`: development Compose and `env.example`; copy the template to the untracked root `.env` for local CLI and Compose use.
+- `deploy/server/`: production Compose, environment template, systemd units and monitoring configuration.
+
+Python package configuration (`pyproject.toml`, `uv.lock`), migration configuration (`alembic.ini`)
+and `.dockerignore` stay at the repository/build-context root. Live server secrets remain outside
+release assets in `/opt/opsmesh/.env`.
+
 ## Local Container Stack
 
 Create an environment file from the template:
 
 ```bash
-cp .env.example .env
+cp deploy/local/env.example .env
 ```
 
 For local development, the defaults are enough to boot the local compose stack:
 
 ```bash
-docker compose up --build
+docker compose -f deploy/local/compose.yml up --build
 ```
 
 The API is exposed at `http://localhost:8000`. Health checks are available at:
@@ -30,14 +40,14 @@ The API is exposed at `http://localhost:8000`. Health checks are available at:
 - `GET /api/v1/health`
 - `GET /api/v1/health/ready`
 
-The root Compose file is for development and CI. Production Compose uses
+`deploy/local/compose.yml` is for development and CI. Production Compose uses
 `deploy/server/compose.yml`; direct systemd deployment is the other managed mode.
 
 Build the dedicated isolated runtime image before enabling Docker-backed agent or stdio MCP
 execution:
 
 ```bash
-docker build -f Dockerfile.runtime -t opsmesh-runtime:local .
+docker build -f deploy/images/Dockerfile.runtime -t opsmesh-runtime:local .
 docker run --rm opsmesh-runtime:local \
   python -m opsmesh_runtime.mcp_stdio_client --check
 ```
@@ -138,7 +148,7 @@ Compose file is Linux-specific: it uses host networking so Prometheus can scrape
 
 The official packaged deployment is a prebuilt GHCR backend image and a separate runtime image.
 The backend image is shared by the API, worker and explicit migration job. Production Compose is
-`deploy/server/compose.yml`; the root Compose file remains a source-build development environment.
+`deploy/server/compose.yml`; `deploy/local/compose.yml` remains a source-build development environment.
 Neither API startup nor worker startup runs migrations automatically.
 Systemd and the independent updater use the verified self-contained runtime without downloading
 Python packages at installation time. Migration is explicit: `opsmesh-server migrate`.

@@ -32,7 +32,7 @@ def test_self_hosted_connector_smoke_script_is_packaged_and_redacted() -> None:
 
 
 def test_compose_declares_api_worker_and_dependencies() -> None:
-    compose = read_repo_file("docker-compose.yml")
+    compose = read_repo_file("deploy/local/compose.yml")
 
     for service in ("api:", "worker:", "postgres:", "redis:"):
         assert service in compose
@@ -44,7 +44,7 @@ def test_compose_declares_api_worker_and_dependencies() -> None:
 
 
 def test_env_template_lists_required_runtime_settings() -> None:
-    env_example = read_repo_file(".env.example")
+    env_example = read_repo_file("deploy/local/env.example")
 
     for setting in (
         "OPSMESH_ENABLE_API_DOCS",

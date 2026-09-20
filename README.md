@@ -447,9 +447,9 @@ is run only by the tag-triggered release gate, before artifact publication.
 Start the API, worker, Postgres, and Redis:
 
 ```bash
-cp .env.example .env
-docker build -f Dockerfile.runtime -t opsmesh-runtime:local .
-docker compose up --build
+cp deploy/local/env.example .env
+docker build -f deploy/images/Dockerfile.runtime -t opsmesh-runtime:local .
+docker compose -f deploy/local/compose.yml up --build
 ```
 
 Install and run the self-hosted MCP connector after registering a runtime and receiving its runtime
@@ -468,7 +468,7 @@ without repeating a recorded tool result. See the
 [self-hosted connector guide](docs/self-hosted-connector.md) for registration, security, recovery,
 and service deployment details.
 
-On PowerShell, use `Copy-Item .env.example .env` instead of `cp`.
+On PowerShell, use `Copy-Item deploy/local/env.example .env` instead of `cp`.
 
 The API listens on `http://localhost:8000` by default:
 

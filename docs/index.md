@@ -50,7 +50,7 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 - [Platform Productionization Plan](platform-productionization-plan.md)：当前平台收口、可靠性和运维阶段。
 - [Release Delivery Plan](release-delivery-plan.md)：tag 门禁、构建、签名、发布和公共下载验证。
 - [Standalone Distributions](standalone-distributions.md)：CLI 与 server bundle 的构建和验证。
-- [Backend Deployment](backend-deployment.md)：Compose/systemd 部署、更新、回滚和恢复。
+- [Backend Deployment](backend-deployment.md)：Compose/systemd 部署、更新、回滚和恢复；镜像构建集中在 `deploy/images`，开发配置在 `deploy/local`，生产配置在 `deploy/server`（2026-09-20）。
 - [Delivery Operations](delivery-operations.md)：发布后交付、托管安装和运维操作。
 
 ## 文档规则
