@@ -49,15 +49,34 @@ class UserRegisterRequest(BaseModel):
 
 
 class UserLoginRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
+    email: str | None = Field(default=None, min_length=3, max_length=320)
+    username: str | None = Field(default=None, min_length=1, max_length=80)
     password: str = Field(min_length=1, max_length=4096)
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "UserLoginRequest":
+        if (self.email is None) == (self.username is None):
+            raise ValueError("Provide exactly one of email or username")
+        return self
 
     @field_validator("email")
     @classmethod
-    def validate_email(cls, value: str) -> str:
+    def validate_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         candidate = value.strip().lower()
         if "@" not in candidate:
             raise ValueError("Email must contain @")
+        return candidate
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("Username is required")
         return candidate
 
 

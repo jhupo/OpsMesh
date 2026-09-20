@@ -71,6 +71,7 @@ async def login_user(
     try:
         created = AuthorizationService(session).login_with_password(
             email=request.email,
+            username=request.username,
             password=request.password,
             settings=settings,
         )

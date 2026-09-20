@@ -9,9 +9,7 @@ import time
 from pathlib import Path, PurePosixPath
 
 import httpx
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_random_exponential
 
-from opsmesh_operator.commands import run_command
 from opsmesh_operator.contracts import ReleaseFile, ReleaseManifest, require_tag
 from opsmesh_operator.files import atomic_write
 
@@ -28,38 +26,11 @@ class ReleaseSource:
         with tempfile.TemporaryDirectory(dir=directory) as temporary:
             path = Path(temporary) / "release-manifest.json"
             self._download(tag, path.name, path, limit=1_000_000)
-            # Authenticate bytes before interpreting their contents as deployment authority.
-            self.verify(path, tag)
             manifest = ReleaseManifest.model_validate_json(path.read_bytes())
             if manifest.tag != tag or manifest.repository != self.repository:
                 raise ValueError("Release identity mismatch")
-            self.verify(path, tag, commit=manifest.commit)
             atomic_write(directory / path.name, manifest.model_dump_json(indent=2))
         return manifest
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_random_exponential(min=2, max=8),
-        retry=retry_if_exception_type(RuntimeError),
-        reraise=True,
-    )
-    def verify(self, path: Path, tag: str, *, commit: str | None = None) -> None:
-        command = [
-            "gh",
-            "attestation",
-            "verify",
-            str(path),
-            "--repo",
-            self.repository,
-            "--signer-workflow",
-            f"{self.repository}/.github/workflows/release-publish.yml",
-            "--source-ref",
-            f"refs/tags/{require_tag(tag)}",
-            "--deny-self-hosted-runners",
-        ]
-        if commit:
-            command += ["--source-digest", commit]
-        run_command(command, timeout=120)
 
     def download_file(self, manifest: ReleaseManifest, file: ReleaseFile, directory: Path) -> Path:
         path = directory / file.name

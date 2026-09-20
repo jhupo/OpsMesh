@@ -24,12 +24,12 @@ def doctor(root: Path) -> dict[str, object]:
         "installed": (root / "installation.json").is_file(),
         "commands": {
             name: shutil.which(name) is not None
-            for name in ("docker", "gh", "systemctl", "pg_dump", "pg_restore")
+            for name in ("docker", "systemctl", "pg_dump", "pg_restore")
         },
     }
 
 
-def install(installation: Installation, tag: str, origin: str) -> None:
+def install(installation: Installation, tag: str, origin: str) -> dict[str, str]:
     if platform.system() != "Linux" or os.geteuid() != 0:
         raise ValueError("Host installation requires a Linux administrator")
     root = require_install_root(installation.root)
@@ -57,7 +57,7 @@ def install(installation: Installation, tag: str, origin: str) -> None:
                 status_path,
                 json.dumps({"phase": "installing", "tag": tag, "mode": installation.mode}),
             )
-        for name in ("gh", "systemctl", "pg_dump", "pg_restore"):
+        for name in ("systemctl", "pg_dump", "pg_restore"):
             if shutil.which(name) is None:
                 raise ValueError(f"Install prerequisite {name} before continuing")
         _service_accounts(installation)
@@ -138,9 +138,21 @@ def install(installation: Installation, tag: str, origin: str) -> None:
         if installation.mode == "systemd":
             run_command(["systemctl", "enable", "opsmesh-api", "opsmesh-worker"])
         run_command(["systemctl", "enable", "--now", "opsmesh-updater.service"])
+        output = deployment.bootstrap_admin(manifest)
+        try:
+            credentials = json.loads(output.strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Platform administrator bootstrap returned invalid JSON") from exc
+        if set(credentials) != {"username", "email", "password", "message"}:
+            raise RuntimeError("Platform administrator bootstrap returned an invalid response")
         atomic_write(
             status_path, json.dumps({"phase": "ready", "tag": tag, "mode": installation.mode})
         )
+        return {
+            "username": str(credentials["username"]),
+            "email": str(credentials["email"]),
+            "password": str(credentials["password"]),
+        }
 
 
 def provision_updater(directory: Path, target: Path) -> None:

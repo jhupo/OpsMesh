@@ -11,6 +11,7 @@ class AuthenticatedUser:
     user_id: UUID
     email: str
     display_name: str
+    platform_admin: bool = False
     token_id: UUID | None = None
     token_scopes: dict[str, object] | None = None
 
@@ -26,6 +27,7 @@ class AuthenticatedUser:
             user_id=user.id,
             email=user.email,
             display_name=user.display_name,
+            platform_admin=user.platform_admin,
             token_id=token_id,
             token_scopes=token_scopes,
         )

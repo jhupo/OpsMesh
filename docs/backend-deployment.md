@@ -92,8 +92,9 @@ capability object preserves the capabilities established at registration; pass
 
 ## VPS Layout
 
-Provision a Linux amd64 VPS with Postgres, Redis, Docker, systemd, GitHub CLI and PostgreSQL client
-tools. The release supplies Python and application dependencies. The managed installer owns:
+Provision a Linux amd64 VPS with Postgres, Redis, Docker, systemd and PostgreSQL client tools. The
+public-release installer does not require GitHub CLI or GitHub authentication. The release supplies
+Python and application dependencies. The managed installer owns:
 
 ```text
 /opt/opsmesh/.env
@@ -150,7 +151,7 @@ The official packaged deployment is a prebuilt GHCR backend image and a separate
 The backend image is shared by the API, worker and explicit migration job. Production Compose is
 `deploy/server/compose.yml`; `deploy/local/compose.yml` remains a source-build development environment.
 Neither API startup nor worker startup runs migrations automatically.
-Systemd and the independent updater use the verified self-contained runtime without downloading
+Systemd and the independent updater use the checksummed self-contained runtime without downloading
 Python packages at installation time. Migration is explicit: `opsmesh-server migrate`.
 
 See [Delivery operations](delivery-operations.md) for installation, CLI commands, verification,
@@ -158,7 +159,8 @@ upgrade approval, maintenance, backup verification and offline recovery. The old
 PID-returning update endpoints have been removed. Do not use source-directory switching commands
 from earlier releases.
 
-A platform administrator submits a durable plan. A separate host updater verifies its release,
+A platform administrator submits a durable plan. A separate host updater validates its fixed
+repository release manifest, package hashes and image digests,
 records its fingerprint and waits for explicit approval. It then drains work, stops application
 services, verifies a backup by restoring it into a temporary database, applies migrations, switches
 the release, checks readiness and resumes admission. An ambiguous failure remains in maintenance
@@ -295,6 +297,21 @@ Run one-shot migrations:
 cd /opt/opsmesh/current
 ./opsmesh-server migrate
 ```
+
+## 安装管理员账号
+
+首次安装在迁移、启动并通过就绪检查后，会创建唯一的平台管理员账号 `superadmin`。安装
+命令最后打印一次随机密码；密码不写入 `.env`、发布包、安装状态或日志，请立即保存到密码
+管理器。普通用户仍然只能通过邮箱注册和登录。
+
+忘记密码时，在安装主机上执行本地重置命令（需要 root；已有管理员 API 令牌会被撤销）：
+
+```bash
+sudo opsmesh --root /opt/opsmesh admin reset-password
+```
+
+重置命令会在终端打印新的随机密码。平台接口接受 `superadmin` 登录后得到的用户令牌；
+`OPSMESH_PLATFORM_ADMIN_TOKEN` 仍可用于无人值守的机器管理。
 
 The updater runs migrations before restarting services.
 

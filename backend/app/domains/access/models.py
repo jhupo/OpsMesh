@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -22,12 +23,17 @@ if TYPE_CHECKING:
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
-    __table_args__ = (UniqueConstraint("email", name="uq_users_email"),)
+    __table_args__ = (
+        UniqueConstraint("email", name="uq_users_email"),
+        UniqueConstraint("username", name="uq_users_username"),
+    )
 
     email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    username: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
+    platform_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
     workspace_memberships: Mapped[list["WorkspaceMember"]] = relationship(
         back_populates="user",

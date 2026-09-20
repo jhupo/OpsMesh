@@ -2,7 +2,9 @@
 
 Backend service for OpsMesh: the API, orchestration layer, worker runtime, marketplace, approvals, files, audit, and operations control plane.
 
-Production API and worker processes run on a VPS through systemd and a release-local virtual environment. Docker is not used to deploy the backend services in production; it is only the worker-managed substrate for isolated dangerous-task runtimes.
+Production API and worker processes use the managed release package in either Compose (default) or
+systemd mode. Docker also remains the worker-managed substrate for isolated runtime workloads; the
+API never receives Docker authority.
 
 ## Local Development
 
@@ -57,9 +59,10 @@ uv run pytest backend/tests/test_runtime_manager.py backend/tests/test_worker_ru
 
 ## Deployment Assets
 
-- `deploy/server/systemd/` contains the production systemd units.
-- `deploy/server/env.example` contains the VPS environment template.
-- `scripts/server-update.sh` installs GitHub release bundles by tag.
+- `deploy/install.sh` bootstraps a fixed GitHub Release tag without cloning or building source.
+- `deploy/server/compose.yml` is the default packaged topology.
+- `deploy/server/systemd/` contains the alternative production systemd units.
+- `deploy/server/env.example` documents VPS configuration.
 - `scripts/server-smoke-test.sh` verifies API, worker, migrations, and optional worker-user Docker runtime access.
 
 Local `docker compose -f deploy/local/compose.yml up --build` remains available for development and CI checks only.

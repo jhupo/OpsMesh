@@ -225,8 +225,9 @@ before claiming the delivery system is complete.
 - API processes never obtain Docker or systemd authority and never spawn update commands.
 - A host-managed updater accepts only validated release identities and fixed operations. Remote
   clients cannot supply commands, arbitrary URLs, filesystem paths or service names.
-- Deployment policy uses typed product contracts. Docker SDK, Compose, uv, Alembic, GitHub CLI and
-  official build/attestation Actions own their existing infrastructure capabilities.
+- Deployment policy uses typed product contracts. Docker SDK, Compose, uv, Alembic and official
+  build/attestation Actions own their existing infrastructure capabilities. Host installation does
+  not require GitHub CLI or a GitHub credential.
 - The operator CLI is a separate lightweight package: no model SDK or backend dependency tree.
 - Compose is the primary packaged deployment; systemd uses the same release contract and update
   engine, not a second shell updater. No legacy endpoint shims or silent deployment fallbacks.
@@ -241,9 +242,10 @@ before claiming the delivery system is complete.
 
 The release tag, package versions, commit, OCI digests and migration head form one release identity.
 The release manifest is published only after all required assets pass their checks. GitHub build
-attestations authenticate provenance, not just file integrity. A checksum downloaded next to an
-archive is not a signature. The updater verifies the repository/workflow identity using the
-official GitHub CLI. Stable channels exclude prereleases; production pins digests, never latest.
+attestations remain release-pipeline evidence and are verified before the workflow reports success.
+The host updater deliberately uses no GitHub credential: it downloads from its fixed repository,
+validates repository/tag/platform/protocol fields, checks every package hash and pins image digests.
+Stable channels exclude prereleases; production pins digests, never latest.
 
 Use official Docker build Actions (https://docs.docker.com/build/ci/github-actions/) and GitHub
 attestations (https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations).

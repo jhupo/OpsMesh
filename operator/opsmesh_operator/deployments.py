@@ -38,7 +38,6 @@ class Deployment(ABC):
             raise ValueError("At least 2 GB of free space is required before staging")
         if manifest.connector_protocol != 2:
             raise ValueError("This updater does not support the target connector protocol")
-        run_command(["gh", "--version"], timeout=15)
 
     def stage(self, manifest: ReleaseManifest) -> Path:
         source = ReleaseSource(self.installation.repository)
@@ -61,7 +60,6 @@ class Deployment(ABC):
             if file.name == f"opsmesh-server-{manifest.tag}-linux-amd64.tar.gz"
         )
         archive = source.download_file(manifest, record, cache)
-        source.verify(archive, manifest.tag, commit=manifest.commit)
         staging = self.root / "releases" / f".{manifest.tag}.staging"
         # An interrupted stage is quarantined, never recursively deleted or reused.
         if staging.exists():
@@ -126,6 +124,12 @@ class Deployment(ABC):
     @abstractmethod
     def start(self, manifest: ReleaseManifest) -> None: ...
 
+    @abstractmethod
+    def bootstrap_admin(self, manifest: ReleaseManifest) -> str: ...
+
+    @abstractmethod
+    def reset_admin_password(self) -> str: ...
+
 
 class ComposeDeployment(Deployment):
     def command(self, directory: Path) -> list[str]:
@@ -169,6 +173,35 @@ class ComposeDeployment(Deployment):
             timeout=self.installation.timeout_seconds,
         )
 
+    def bootstrap_admin(self, manifest: ReleaseManifest) -> str:
+        return self._run_admin_command(manifest, "bootstrap-admin")
+
+    def reset_admin_password(self) -> str:
+        manifest = ReleaseManifest.model_validate_json(
+            (self.root / "current/release-manifest.json").read_bytes()
+        )
+        return self._run_admin_command(manifest, "reset-admin-password")
+
+    def _run_admin_command(self, manifest: ReleaseManifest, command: str) -> str:
+        return run_command(
+            self.command(self.installation.release_dir(manifest.tag))
+            + [
+                "run",
+                "--rm",
+                "--no-deps",
+                "-T",
+                "--entrypoint",
+                "python",
+                "api",
+                "-m",
+                "backend.app.delivery",
+                "--directory",
+                "/app",
+                command,
+            ],
+            timeout=self.installation.timeout_seconds,
+        )
+
     def stop(self) -> None:
         run_command(self.command(self.root / "current") + ["stop", "api", "worker"])
 
@@ -201,6 +234,20 @@ class SystemdDeployment(Deployment):
 
     def start(self, manifest: ReleaseManifest) -> None:
         run_command(["systemctl", "start", "opsmesh-api", "opsmesh-worker"])
+
+    def bootstrap_admin(self, manifest: ReleaseManifest) -> str:
+        directory = self.installation.release_dir(manifest.tag)
+        return run_command(
+            [str(directory / "opsmesh-server"), "bootstrap-admin"],
+            cwd=directory,
+        )
+
+    def reset_admin_password(self) -> str:
+        directory = self.root / "current"
+        return run_command(
+            [str(directory / "opsmesh-server"), "reset-admin-password"],
+            cwd=directory,
+        )
 
 
 def deployment_for(installation: Installation) -> Deployment:

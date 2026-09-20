@@ -18,7 +18,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="opsmesh-server")
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument(
-        "command", choices=["version", "check", "api", "worker", "migrate", "updater"]
+        "command",
+        choices=[
+            "version",
+            "check",
+            "api",
+            "worker",
+            "migrate",
+            "bootstrap-admin",
+            "reset-admin-password",
+            "updater",
+        ],
     )
     args, remaining = parser.parse_known_args()
     if args.command in {"version", "check"}:
@@ -29,6 +39,28 @@ def main() -> None:
             with redirect_stdout(sys.stderr):
                 check_runtime(args.directory)
         print(json.dumps({"version": version("opsmesh"), "python": sys.version.split()[0]}))
+        return
+    if args.command in {"bootstrap-admin", "reset-admin-password"}:
+        from backend.app.core.db.session import SessionLocal
+        from backend.app.domains.access.service import AuthorizationService
+
+        with SessionLocal() as session:
+            service = AuthorizationService(session)
+            if args.command == "bootstrap-admin":
+                user, password = service.create_platform_admin()
+            else:
+                user, password = service.reset_platform_admin_password()
+        payload = json.dumps(
+            {
+                "username": user.username,
+                "email": user.email,
+                "password": password,
+                "message": "Store this password securely; it is not persisted by OpsMesh.",
+            },
+            ensure_ascii=False,
+        )
+        # This is an intentional one-time terminal handoff, bypassing all application loggers.
+        os.write(sys.stdout.fileno(), f"{payload}\n".encode())
         return
     if args.command == "api":
         sys.argv = [

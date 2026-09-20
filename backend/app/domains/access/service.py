@@ -24,6 +24,8 @@ from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMem
 
 _PASSWORD_HASH = PasswordHash.recommended()
 _DUMMY_PASSWORD_HASH = _PASSWORD_HASH.hash("opsmesh-dummy-authentication-password")
+PLATFORM_ADMIN_USERNAME = "superadmin"
+PLATFORM_ADMIN_EMAIL = "superadmin@localhost.invalid"
 
 
 @dataclass(frozen=True)
@@ -68,15 +70,72 @@ class AuthorizationService:
         self._session.refresh(user)
         return user
 
+    def create_platform_admin(self) -> tuple[User, str]:
+        existing = self._session.scalar(
+            select(User).where(User.username == PLATFORM_ADMIN_USERNAME)
+        )
+        if existing is not None:
+            raise ConflictError("The platform administrator is already initialized")
+        password = token_urlsafe(32)
+        user = User(
+            email=PLATFORM_ADMIN_EMAIL,
+            username=PLATFORM_ADMIN_USERNAME,
+            display_name="Platform Administrator",
+            password_hash=self.hash_password(password),
+            platform_admin=True,
+        )
+        self._session.add(user)
+        try:
+            self._session.commit()
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise ConflictError("The platform administrator is already initialized") from exc
+        self._session.refresh(user)
+        return user, password
+
+    def reset_platform_admin_password(self) -> tuple[User, str]:
+        user = self._session.scalar(
+            select(User).where(
+                User.username == PLATFORM_ADMIN_USERNAME,
+                User.platform_admin.is_(True),
+            )
+        )
+        if user is None or user.status != "active":
+            raise AuthenticationError("The platform administrator was not found or is inactive")
+        password = token_urlsafe(32)
+        user.password_hash = self.hash_password(password)
+        now = datetime.now(UTC)
+        tokens = self._session.scalars(
+            select(UserAPIToken).where(
+                UserAPIToken.user_id == user.id,
+                UserAPIToken.status == "active",
+            )
+        ).all()
+        for token in tokens:
+            token.status = "revoked"
+            token.revoked_at = now
+        self._session.commit()
+        self._session.refresh(user)
+        return user, password
+
     def login_with_password(
         self,
         *,
-        email: str,
+        email: str | None = None,
+        username: str | None = None,
         password: str,
         settings: Settings,
         token_name: str = "password login",
     ) -> CreatedUserAPIToken:
-        user = self._session.scalar(select(User).where(User.email == self.normalize_email(email)))
+        if (email is None) == (username is None):
+            raise ValueError("Exactly one login identifier is required")
+        if email is not None:
+            user = self._session.scalar(
+                select(User).where(User.email == self.normalize_email(email))
+            )
+        else:
+            assert username is not None
+            user = self._session.scalar(select(User).where(User.username == username.strip()))
         active_hash = (
             user.password_hash
             if user is not None and user.status == "active" and user.password_hash

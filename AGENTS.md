@@ -1,8 +1,53 @@
 # Repository Instructions
 
-Before changing this repository, read `.codex/AGENTS.md`. It contains the project mission,
-architecture invariants, dependency policy, development workflow, and validation requirements that
-apply to the entire repository.
+This file is the single repository-wide source for project mission, architecture invariants,
+dependency policy, development workflow, and validation requirements.
+
+## Mission
+
+OpsMesh is an open-source enterprise agent framework. It provides the control plane around agent
+SDKs: workspaces, authorization, agent teams, durable tasks, workers, capabilities, isolated
+execution, credentials, approvals, artifacts, operations, and auditability.
+
+The backend is the active product surface. Frontend work begins only when explicitly requested and
+must remain contract-driven; do not couple backend domains to a UI framework.
+
+## Read First
+
+Use these current documents as the project map, while treating code, migrations and focused tests
+as the final evidence of implemented behavior:
+
+- `README.md`: product position, capabilities, target architecture, and near-term goals.
+- `docs/architecture.md`: system boundaries and durable-state model.
+- `docs/backend-service-architecture.md`: service and dependency boundaries.
+- `docs/agent-runtime-contract.md`: supported provider Agent SDK boundary.
+- `docs/capabilities-and-runtime.md`: skill, tool, MCP, and runtime model.
+- `docs/isolation-and-security.md`: tenant and runtime isolation rules.
+- `docs/threat-model.md`: threats and required mitigations.
+- `docs/open-source-sdk-strategy.md`: dependency adoption and replacement strategy.
+- `docs/platform-productionization-plan.md`: productionization status and remaining gates.
+
+Documents containing “should”, “planned”, or “future” describe intent and are not proof of current
+support.
+
+## Non-negotiable invariants
+
+1. A workspace is the tenant boundary for data, agents, tasks, files, memory, tools, and runtimes.
+2. Never authorize or load workspace-owned resources by resource ID alone; include workspace scope
+   in API, service, query, worker, cache, storage, and tool paths.
+3. Postgres is the durable source of truth. Redis owns queues, locks, pub-sub, idempotency windows,
+   and short-lived derived data.
+4. API requests persist intent and enqueue long-running work; they do not execute Agent work inline.
+5. User-controlled or Agent-controlled code never runs in the API or worker host process. Use an
+   approved hosted sandbox, Docker runtime, or trusted self-hosted isolated runtime.
+6. Models propose plans and actions; product services validate authorization, policy, state
+   transitions, quotas, and side effects.
+7. Decrypt credentials only at the narrow execution boundary. Never log, serialize, return, or
+   persist raw secrets, complete authorization headers, or secret-bearing provider URLs.
+8. Risky actions fail closed and create approval, audit, or security evidence as appropriate.
+9. Product audit evidence remains durable and independent of model-provider tracing.
+10. Public marketplace resources require review. Private workspace resources remain private and
+    workspace-scoped by default.
 
 ## Platform, plugin, and business boundaries
 
@@ -84,3 +129,126 @@ apply to the entire repository.
 - During architecture or code-organization refactors, do not add or repeatedly run tests when
   runtime behavior is unchanged. Update an existing flow test only when a changed contract makes
   it stale; otherwise rely on static checks and leave the functional-flow suite untouched.
+
+## Open-source first policy
+
+Do not implement a protocol, infrastructure client, retry engine, telemetry format, authorization
+engine, workflow engine, parser, or storage driver until maintained libraries and official SDKs
+have been evaluated.
+
+Before adding infrastructure code:
+
+1. Search the current dependency graph and official upstream SDKs.
+2. Compare protocol coverage, security model, maintenance, license, Python support, async support,
+   typing, observability, failure semantics, and operational cost.
+3. Record the decision and rejected alternatives when a dependency changes an architecture boundary.
+4. Wrap third-party SDKs behind a small OpsMesh-owned infrastructure protocol. Domain services must
+   not depend on vendor response objects.
+5. Cover observable behavior changes through an existing product-flow test, including rejection,
+   recovery, tenant isolation, and redaction where relevant.
+6. Delete superseded custom code after migration; do not keep parallel default implementations.
+
+Adopt dependencies in this order:
+
+- Use `openai-agents` and the official `claude-agent-sdk` as provider execution cores for turns,
+  tools, sessions, run state, and HITL when their stable public contracts satisfy the requirement.
+- Prefer the official MCP Python SDK and Agent SDK MCP integrations over custom transports or RPC.
+- Prefer Docker SDK for Python over constructing Docker CLI commands.
+- Prefer OpenTelemetry and the official Prometheus client over custom telemetry protocols.
+- Prefer pgvector with Postgres full-text search before adding another vector store.
+- Use Authlib for future OAuth/OIDC integration rather than building an identity provider.
+- Evaluate Temporal, OpenFGA, or OPA only against a concrete OpsMesh requirement.
+- Add other model providers only through the product-owned provider contract after an SDK path is
+  stable and contract-tested.
+
+Do not add LangChain, LlamaIndex, or another general Agent framework alongside the provider SDKs.
+A focused library is acceptable when it fills a documented gap without duplicating those SDKs or
+the OpsMesh control plane.
+
+## Architecture and code quality
+
+- Keep dependencies directed from API routes to application/domain services to infrastructure.
+- Define typed contracts at module boundaries; prefer Pydantic models, dataclasses, protocols, and
+  enums over unstructured dictionaries when the shape is stable.
+- Keep transactions and state transitions visible. Avoid unrelated hidden commits and external I/O
+  inside a transaction unless the invariant requires and documents it.
+- Separate pure policy decisions from I/O. Reuse the owning service, repository, error type,
+  redaction helper, and evidence writer before introducing another abstraction.
+- Avoid circular imports and import-time side effects. Compose infrastructure dependencies at the
+  application or worker boundary.
+- Use Alembic for every schema change and preserve downgrade and cross-workspace constraints.
+- Keep public API error envelopes stable and free of internal details and secrets.
+- Add comments for decisions and non-obvious invariants, not narration.
+- Keep a change coherent; do not mix unrelated feature work, architecture cleanup, or formatting.
+
+## Repository map
+
+- `backend/app/api`: transport, schemas, dependencies, and application-facing services. Routes are
+  grouped by functional boundary; routes validate input and call services rather than owning policy.
+- `backend/app/domains/agents`: agent profiles, memory, messages, providers, and SDK runtime domains.
+- `backend/app/domains/capabilities`: catalog, governance, resources, skills, marketplace, tools, and
+  MCP transport/catalog/execution.
+- `backend/app/domains/orchestration`: requests, runs, approvals, tasks, and workflows.
+- `backend/app/runtime`: runtime resources, Docker pools, workers, operations, and self-hosted jobs.
+- `backend/app/domains/workspace`: tenant lifecycle, projects, teams, storage, domains, and reviews.
+- `backend/app/core`: identity, authentication, common foundations, database, Redis, secrets,
+  administration, and external delivery integrations.
+- `backend/app/observability`: audit, cost, trace, and notification evidence.
+- `backend/migrations`: Alembic migrations.
+- `backend/tests`: product-flow tests and retained release/security integration scenarios.
+- `deploy`: installation, VPS/systemd, container, and monitoring assets.
+- `docs`: current architecture and operating documentation.
+- `.agents/skills`: repository-scoped development skills; each skill owns its complete directory,
+  references, scripts, assets, and license notices.
+
+## Development workflow
+
+1. Inspect affected routes, services, models, migrations, worker paths, callers, and flow tests.
+2. Establish only the relevant baseline when behavior changes; organization-only work uses static,
+   import, and build checks.
+3. State the affected invariant and ownership boundary.
+4. Complete the open-source evaluation when adding a significant dependency.
+5. Implement the smallest complete change through the existing architecture.
+6. Extend an existing product flow only for changed observable behavior; do not add per-helper tests.
+7. Run targeted checks and expand only for a concrete cross-boundary risk.
+8. Update README and current architecture/operations documentation when behavior or setup changes.
+9. Finish the active acceptance criteria before moving to another roadmap stage.
+10. Continue within a completed subsystem only for a concrete security/reliability defect, failed
+    release gate, or blocker for the next product goal.
+
+## Validation
+
+The supported baseline is Python 3.11 or newer with dependencies managed by `uv`.
+
+```bash
+uv sync --all-groups
+uv run ruff check .
+uv run mypy
+uv run pytest backend/tests/test_health.py
+```
+
+Normal development uses only affected product-flow tests and relevant static checks. Architecture
+refactors do not repeatedly run behavioral tests. PostgreSQL-specific behavior uses the Postgres
+integration path rather than SQLite alone. The complete pytest suite runs only in the tag-triggered
+release gate. Default tests never require live provider credentials.
+
+## Definition of done
+
+A change is complete only when ownership and dependency direction remain clear; workspace scope,
+denial, idempotency, redaction, recovery, runtime cleanup, configuration, packaging, callers, and
+documentation are reconciled where applicable; relevant checks pass or exact blockers are reported;
+and superseded implementations are removed.
+
+## Independent plugin SDK
+
+The independent `opsmesh-plugin-center` repository owns `sdk/`; each plugin lives under
+`plugins/<name>` with its package, templates, and deployment assets. Do not restore a platform-local
+plugin SDK or source-copy fallback. Pin the external SDK to immutable release content or a full
+commit and preserve license metadata.
+
+Plugin implementations stay outside OpsMesh. Platform catalog synchronization is data-only;
+catalog entries cannot grant publisher trust, auto-approve upgrades, or dynamically import external
+code in API/Worker. Hosted plugin deployment is explicit, admin-approved durable intent and reuses
+the isolated container lifecycle with digest-pinned templates, scoped credentials, quotas, bounded
+recovery, audit, and revocation cleanup. Plugin containers are not Agent sandboxes or interactive
+command targets. Configuration refresh is not in-process hot loading.
