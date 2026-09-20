@@ -58,18 +58,23 @@ class ReleaseSource:
         with httpx.Client(timeout=60, follow_redirects=True) as client:
             if token:
                 release = client.get(
-                    f"https://api.github.com/repos/{self.repository}/releases/tags/{tag}",
+                    f"https://api.github.com/repos/{self.repository}/releases?per_page=100",
                     headers=metadata_headers,
                 )
                 release.raise_for_status()
                 matches = [
-                    asset
-                    for asset in release.json().get("assets", [])
-                    if asset.get("name") == name
+                    item
+                    for item in release.json()
+                    if item.get("tag_name") == tag
                 ]
-                if len(matches) != 1 or not isinstance(matches[0].get("url"), str):
+                if len(matches) != 1:
+                    raise ValueError("Release identity mismatch")
+                assets = [
+                    asset for asset in matches[0].get("assets", []) if asset.get("name") == name
+                ]
+                if len(assets) != 1 or not isinstance(assets[0].get("url"), str):
                     raise ValueError("Release asset identity mismatch")
-                url = matches[0]["url"]
+                url = assets[0]["url"]
             with client.stream("GET", url, headers=headers) as response:
                 response.raise_for_status()
                 with path.open("wb") as stream:
