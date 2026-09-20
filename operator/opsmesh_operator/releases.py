@@ -118,22 +118,8 @@ class ReleaseSource:
         *,
         deadline: float,
     ) -> str:
-        url = f"https://api.github.com/repos/{self.repository}/releases/tags/{tag}"
-        release: dict[str, Any] | None = None
-        for attempt in range(_DOWNLOAD_ATTEMPTS):
-            try:
-                response = client.get(url, headers=headers)
-                response.raise_for_status()
-                payload = response.json()
-                if not isinstance(payload, dict):
-                    raise ValueError("Release metadata is not an object")
-                release = payload
-                break
-            except (httpx.HTTPError, ValueError) as exc:
-                if not self._retryable(exc) or attempt + 1 == _DOWNLOAD_ATTEMPTS:
-                    raise
-                self._wait_before_retry(attempt, deadline)
-        if release is None or release.get("tag_name") != tag:
+        release = self._release_metadata(client, tag, headers, deadline=deadline)
+        if release.get("tag_name") != tag:
             raise ValueError("Release identity mismatch")
         raw_assets = release.get("assets")
         if not isinstance(raw_assets, list):
@@ -155,6 +141,64 @@ class ReleaseSource:
         ).isdigit():
             raise ValueError("Release asset endpoint is outside the repository")
         return asset_url
+
+    def _release_metadata(
+        self,
+        client: httpx.Client,
+        tag: str,
+        headers: dict[str, str],
+        *,
+        deadline: float,
+    ) -> dict[str, Any]:
+        """Resolve a release, including an authenticated draft staged by CI.
+
+        GitHub deliberately returns 404 for ``releases/tags/{tag}`` while a release is
+        still a draft, even when the caller can see that draft. The list endpoint does
+        include drafts for a token with contents write access, so use it only for that
+        explicit 404 case. Public installations continue to use the tag endpoint and
+        never need a GitHub token.
+        """
+        tag_url = f"https://api.github.com/repos/{self.repository}/releases/tags/{tag}"
+        try:
+            payload = self._get_json(client, tag_url, headers, deadline=deadline)
+            if not isinstance(payload, dict):
+                raise ValueError("Release metadata is not an object")
+            return payload
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404 or not headers.get("Authorization"):
+                raise
+
+        list_url = f"https://api.github.com/repos/{self.repository}/releases?per_page=100"
+        payload = self._get_json(client, list_url, headers, deadline=deadline)
+        if not isinstance(payload, list):
+            raise ValueError("Release listing is not an array")
+        matches = [
+            release
+            for release in payload
+            if isinstance(release, dict) and release.get("tag_name") == tag
+        ]
+        if len(matches) != 1:
+            raise ValueError("Release identity mismatch")
+        return matches[0]
+
+    @staticmethod
+    def _get_json(
+        client: httpx.Client,
+        url: str,
+        headers: dict[str, str],
+        *,
+        deadline: float,
+    ) -> Any:
+        for attempt in range(_DOWNLOAD_ATTEMPTS):
+            try:
+                response = client.get(url, headers=headers)
+                response.raise_for_status()
+                return response.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                if not ReleaseSource._retryable(exc) or attempt + 1 == _DOWNLOAD_ATTEMPTS:
+                    raise
+                ReleaseSource._wait_before_retry(attempt, deadline)
+        raise RuntimeError("Release metadata retry loop ended unexpectedly")
 
     @staticmethod
     def _retryable(exc: Exception) -> bool:
