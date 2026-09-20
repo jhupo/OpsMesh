@@ -129,8 +129,8 @@ Redis 保留窗口沿用任务流的约 10,000 条事件，不承诺所有历史
 ## 插件 SDK 边界
 
 `opsmesh-plugin-sdk` 的源码唯一位于 [独立仓库](https://github.com/jhupo/opsmesh-plugin-center)。
-平台通过 pyproject.toml 中的完整提交归档依赖及 uv.lock 摘要安装；不再复制源码，
-也不依赖浮动 master。尚未发布 PyPI 版本，当前固定源码归档需要安装器构建 wheel。
+平台通过 `pyproject.toml` 和 `uv.lock` 安装独立仓库发布的 GitHub Release wheel，并固定 SHA256 摘要；
+部署不会复制源码、构建源码归档或依赖浮动分支。
 外部连接器只依赖 SDK，不导入 backend。SDK 提供签名插件包、能力声明、同步/异步客户端、
 结构化消息与回复、流式订阅、Webhook 验签及作用域校验。
 

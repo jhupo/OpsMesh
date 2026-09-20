@@ -356,10 +356,13 @@ class PluginServices:
         metadata = redact_sensitive_payload(request.metadata)
         if len(json.dumps(metadata)) > 8000:
             raise ValueError("Plugin log metadata exceeds limit")
+        level = {"info": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}.get(
+            request.level
+        )
+        if level is None:
+            raise ValueError("Plugin log level is invalid")
         logging.getLogger("opsmesh.plugins").log(
-            {"info": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}[
-                request.level
-            ],
+            level,
             request.code,
             extra={
                 "plugin_workspace_id": str(principal.workspace_id),
@@ -385,8 +388,15 @@ class PluginServices:
     def context(self, principal: PluginPrincipal) -> PluginContext:
         install = self.require(principal)
         release = self.active_release(install)
-        credential = self.session.get(PluginCredential, principal.credential_id)
-        assert credential is not None
+        credential = self.session.scalar(
+            select(PluginCredential).where(
+                PluginCredential.id == principal.credential_id,
+                PluginCredential.workspace_id == principal.workspace_id,
+                PluginCredential.install_id == principal.install_id,
+            )
+        )
+        if credential is None:
+            raise ResourceAccessDenied()
         return PluginContext(
             workspace_id=principal.workspace_id,
             install_id=principal.install_id,

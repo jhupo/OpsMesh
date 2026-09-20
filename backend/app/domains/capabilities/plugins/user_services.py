@@ -50,6 +50,9 @@ class PluginUserServices:
         labels = {
             "mcp_tool": "tool_name",
             "skill": "installed_name",
+            "task": "title",
+            "session": "session_key",
+            "thread": "subject",
             "file": "filename",
             "memory": "title",
         }
