@@ -2,7 +2,7 @@
 name = "opsmesh-runtime"
 license = "LGPL-3.0-only"
 license-files = ["LICENSE", "COPYING", "LICENSE-MIT", "NOTICE"]
-version = "0.1.0rc11"
+version = "0.1.0rc12"
 description = "Isolated runtime helpers for OpsMesh agent workloads."
 requires-python = ">=3.11"
 dependencies = [
