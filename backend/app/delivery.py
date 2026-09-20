@@ -50,6 +50,8 @@ def main() -> None:
                 user, password = service.create_platform_admin()
             else:
                 user, password = service.reset_platform_admin_password()
+        # lgtm[py/clear-text-logging-sensitive-data] The installer explicitly requests this
+        # one-time terminal delivery; the password is never sent to an application logger.
         print(
             json.dumps(
                 {

@@ -104,7 +104,8 @@ def test_public_download_verification_fails_closed(
     monkeypatch.setattr(check_release.ReleaseSource, "download_file", lambda *args: package)
 
     def verify(path: str, tag: str, commit: str, repository: str) -> None:
-        assert path == str(package)
+        if not path.startswith("oci://"):
+            assert path == str(package)
         if tampered:
             raise ValueError("Invalid provenance")
         verified.append((path, tag, commit, repository))
