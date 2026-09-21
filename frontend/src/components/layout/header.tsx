@@ -54,13 +54,13 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
         <SidebarTrigger aria-label={t('common.toggleSidebar')} />
         <Separator orientation='vertical' className='h-6' />
         {children}
-        <div className='ms-auto flex shrink-0 items-center gap-1 sm:gap-2'>
+        <div className='app-header-actions ms-auto flex shrink-0 items-center gap-1 sm:gap-2'>
           <ThemeSwitch />
           <LanguageSwitch />
           <Button
             variant='ghost'
             size='icon'
-            className='rounded-full border border-transparent transition-colors hover:border-border hover:bg-accent hover:text-accent-foreground'
+            className='rounded-full'
             aria-label={t('common.notifications')}
           >
             <Bell />
@@ -68,7 +68,7 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
           <Button
             variant='ghost'
             size='icon'
-            className='rounded-full border border-transparent transition-colors hover:border-border hover:bg-accent hover:text-accent-foreground'
+            className='rounded-full'
             aria-label={t('common.messages')}
           >
             <Mail />

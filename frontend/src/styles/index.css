@@ -73,14 +73,17 @@
   box-shadow: none;
 }
 
-.app-topbar [data-slot='button'] {
+.app-header-actions > [data-slot='button'],
+.app-header-actions > [data-slot='dropdown-menu-trigger'] {
   transition-property: background-color, color, box-shadow;
   transition-duration: 150ms;
   transition-timing-function: ease-out;
 }
 
-.app-topbar [data-slot='button']:hover:not(:disabled),
-.app-topbar [data-slot='button']:focus-visible {
+.app-header-actions > [data-slot='button']:hover:not(:disabled),
+.app-header-actions > [data-slot='button']:focus-visible,
+.app-header-actions > [data-slot='dropdown-menu-trigger']:hover:not(:disabled),
+.app-header-actions > [data-slot='dropdown-menu-trigger']:focus-visible {
   box-shadow: 0 4px 12px -6px var(--app-shadow);
 }
 
