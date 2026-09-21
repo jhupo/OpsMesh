@@ -35,6 +35,7 @@
   },
   "navigation": {
     "platform": "Platform",
+    "dashboard": "Dashboard",
     "overview": "Overview"
   },
   "overview": {

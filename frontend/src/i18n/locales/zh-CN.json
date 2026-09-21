@@ -35,6 +35,7 @@
   },
   "navigation": {
     "platform": "平台",
+    "dashboard": "看板",
     "overview": "概览"
   },
   "overview": {

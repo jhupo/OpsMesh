@@ -7,7 +7,7 @@ export const sidebarData: SidebarData = {
       titleKey: 'navigation.platform',
       items: [
         {
-          titleKey: 'navigation.overview',
+          titleKey: 'navigation.dashboard',
           url: '/',
           icon: LayoutDashboard,
         },
