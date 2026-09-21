@@ -60,18 +60,16 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
           <Button
             variant='ghost'
             size='icon'
-            className='rounded-full'
+            className='rounded-full border border-transparent transition-colors hover:border-border hover:bg-accent hover:text-accent-foreground'
             aria-label={t('common.notifications')}
-            disabled
           >
             <Bell />
           </Button>
           <Button
             variant='ghost'
             size='icon'
-            className='rounded-full'
+            className='rounded-full border border-transparent transition-colors hover:border-border hover:bg-accent hover:text-accent-foreground'
             aria-label={t('common.messages')}
-            disabled
           >
             <Mail />
           </Button>
