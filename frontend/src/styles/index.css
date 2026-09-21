@@ -1,0 +1,224 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import './theme.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  html {
+    @apply overflow-x-hidden;
+  }
+  html.light {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply min-h-svh w-full bg-background font-sans text-foreground antialiased has-[div[data-variant='inset']]:bg-sidebar;
+  }
+
+  /* Override Radix scroll locking for sticky headers */
+  body[data-scroll-locked] {
+    overflow: unset !important;
+  }
+
+  /* Cursor pointer for buttons */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* Prevent focus zoom on mobile devices */
+  @media screen and (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+}
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 2rem;
+}
+
+/* App surfaces extend the existing SidebarInset, Header and Card primitives. */
+.app-surface[data-slot='sidebar-inset'] {
+  background: var(--app-surface);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 2px 8px -4px var(--app-shadow),
+    inset 0 0 0 1px var(--app-edge);
+}
+
+[data-slot='sidebar-wrapper']:has(.app-surface) {
+  --sidebar: var(--app-canvas);
+  background: var(--app-canvas);
+}
+
+.app-topbar {
+  margin: 0;
+  width: auto;
+  top: 0;
+  border-bottom: 1px solid var(--app-edge);
+  border-radius: 1.25rem 1.25rem 0 0;
+  background: var(--app-header);
+  box-shadow: none;
+}
+
+.app-surface [data-slot='card'] {
+  border-radius: 1rem;
+  border-color: var(--app-edge);
+  background: var(--app-card);
+  box-shadow: 0 2px 6px -2px var(--app-shadow);
+}
+
+.auth-surface {
+  background:
+    radial-gradient(ellipse at 42% 35%, var(--auth-glow), transparent 62%),
+    var(--background);
+}
+
+.auth-card[data-slot='card'] {
+  border-radius: 1.25rem;
+  border-color: color-mix(in oklch, var(--border) 70%, transparent);
+  background: color-mix(in oklch, var(--card) 78%, transparent);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow:
+    0 24px 64px -16px var(--auth-shadow),
+    0 8px 24px -12px var(--auth-shadow),
+    inset 0 1px 0 var(--auth-highlight);
+}
+
+.auth-field[data-slot='field'] {
+  position: relative;
+  gap: 0;
+  color: var(--foreground);
+  border-bottom: 1px solid
+    color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+}
+
+.auth-field [data-slot='input'] {
+  height: 64px;
+  padding: 26px 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--foreground);
+}
+
+.auth-field input[type='password'],
+.auth-field:has(button) [data-slot='input'] {
+  padding-inline-end: 2.75rem;
+}
+
+.auth-field [data-slot='field-label'] {
+  position: absolute;
+  top: 27px;
+  inset-inline-start: 0;
+  z-index: 1;
+  width: auto;
+  max-width: calc(100% - 2.75rem);
+  color: var(--muted-foreground);
+  transform-origin: left top;
+  transform: translateY(0) scale(1);
+  transition:
+    transform 210ms cubic-bezier(0.33, 1, 0.68, 1),
+    color 210ms linear;
+}
+
+.auth-field:focus-within [data-slot='field-label'],
+.auth-field:has(input:not(:placeholder-shown)) [data-slot='field-label'],
+.auth-field:has(input:autofill) [data-slot='field-label'] {
+  transform: translateY(-23px) scale(0.82);
+}
+
+.auth-field:focus-within [data-slot='field-label'] {
+  color: var(--auth-focus);
+}
+
+.auth-field::before,
+.auth-field::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: -1px;
+  height: 2px;
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 310ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.auth-field::before {
+  background: var(--auth-focus);
+  transform-origin: center;
+}
+
+.auth-field::after {
+  background: var(--destructive);
+}
+
+.auth-field:focus-within::before,
+.auth-field[data-invalid='true']::after {
+  transform: scaleX(1);
+}
+
+.auth-field:focus-within::before {
+  transition-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+}
+
+/* These short, user-triggered input transitions are explicitly requested even
+   in reduced-motion mode. Other components retain their reduced-motion policy. */
+
+@utility no-scrollbar {
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  /* Hide scrollbar for IE, Edge and Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+@utility faded-bottom {
+  @apply after:pointer-events-none after:absolute after:inset-s-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl after:bg-[linear-gradient(180deg,transparent_10%,var(--background)_70%)] md:after:block;
+}
+
+/* styles.css */
+.CollapsibleContent {
+  overflow: hidden;
+}
+.CollapsibleContent[data-state='open'] {
+  animation: slideDown 300ms ease-out;
+}
+.CollapsibleContent[data-state='closed'] {
+  animation: slideUp 300ms ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    height: 0;
+  }
+}

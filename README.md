@@ -7,10 +7,12 @@ wrapper. It provides durable task orchestration, workspace isolation, capability
 human approval, isolated execution, operational visibility, and audit evidence around agent
 workflows.
 
-The project is backend-first and pre-1.0. The control plane is the current focus. A Web Portal is
-part of the product direction, but no frontend framework or user interface has been selected or
-implemented yet. This is intentional so the frontend can be designed against stable product and
-API contracts later.
+The project is backend-first and pre-1.0. The control plane is the current focus. The Web Portal
+under `frontend/` now uses a trimmed `shadcn-admin` application skeleton with TanStack Router,
+TanStack Query, theme switching, and Chinese/English locale detection. The first public-API slice
+implements password login, current-user validation, protected routing, token revocation, and the
+401/403/404/500/503 application states; the remaining product screens are implemented later as
+complete vertical slices.
 
 ## Why OpsMesh
 
@@ -52,7 +54,7 @@ Linux amd64/Postgres 16/local-storage maintenance-window topology, not rolling o
 | Docker and self-hosted execution | Implemented |
 | MCP, skills, tools, and marketplace | Implemented; remote HTTP/SSE uses the official MCP Python SDK, with explicit discovery and tool enablement |
 | Files, artifacts, memory, approvals, and audit | Implemented |
-| Web Portal | Planned; intentionally not scaffolded yet |
+| Web Portal | Application skeleton and password-authentication slice implemented; workspace and product flows have not started |
 | Multi-user resource authorization | Implemented: private ownership, per-user action grants, filtered reads, durable execution identity and live revocation; [configuration and migration](docs/multi-user-authorization.md) (2026-09-18) |
 | Enterprise SSO and recursive organization policies | Planned |
 | Knowledge registry and vector/hybrid retrieval | Implemented: workspace-scoped URL/workspace-file registration, immutable revisions, bounded asynchronous ingestion, isolated URL fetching, citation spans, resource-grant-aware citation retrieval, three-layer memory, hybrid retrieval, and authorized context injection |
@@ -67,7 +69,7 @@ and acceptance gates; source code and focused tests remain the implementation au
 
 | Reference layer | Current implementation |
 | --- | --- |
-| Web Portal and result views | Planned; frontend intentionally remains empty |
+| Web Portal and result views | `shadcn-admin`-derived shell, theme, routing, query, i18n, password login and error states implemented; product flows are not implemented |
 | SSO, department identity, WAF, and load balancing | Planned; local API authentication and workspace RBAC exist |
 | API/Agent Gateway | Implemented at the application boundary: authentication, workspace roles, routing, rate limiting, security headers, and audit |
 | Session, configuration, and tool resolution | Implemented, including persistent sessions, effective Agent/team catalogs, fingerprinted authorization snapshot v3 with frozen runtime Profile and provider fallback policy, dynamic SDK tool schemas, and a fail-closed execution gateway |
@@ -386,11 +388,15 @@ publication and managed delivery acceptance. Normal development uses focused che
 - Evaluate OpenFGA for relationship authorization and OPA for runtime/tool policy decisions.
 - Preserve local RBAC as the simple deployment mode.
 
-### 5. Design the Web Portal
+### 5. Build the Web Portal
 
-- Design user journeys for workspace setup, agent/team configuration, task execution, approval,
-  observation, artifacts, capability management, and operations.
-- Select the frontend stack only after API contracts and interaction prototypes are reviewed.
+- The React, TypeScript, Vite, TanStack and shadcn/ui boundary is documented in
+  `docs/frontend-architecture.md` and `frontend/README.md`.
+- Keep the implemented password login, current-user guard, session revocation, and application
+  error routes aligned with the public authentication API.
+- Implement user journeys for workspace setup, agent/team configuration, task execution,
+  approval, observation, artifacts, capability management, and operations as complete product
+  flows.
 - Keep the frontend as a separate client of public APIs; it must not depend on backend internals.
 
 ### 6. Scale from evidence

@@ -1,0 +1,67 @@
+{
+  "common": {
+    "cancel": "取消",
+    "language": "语言",
+    "notifications": "提醒",
+    "messages": "消息",
+    "userMenu": "用户菜单",
+    "skipToMain": "跳到主要内容",
+    "toggleSidebar": "切换侧边栏",
+    "theme": {
+      "label": "主题",
+      "light": "浅色",
+      "dark": "深色",
+      "system": "跟随系统"
+    }
+  },
+  "auth": {
+    "login": {
+      "title": "登录",
+      "identifier": "邮箱或账号",
+      "identifierRequired": "请输入邮箱或账号。",
+      "password": "密码",
+      "passwordRequired": "请输入密码。",
+      "showPassword": "显示密码",
+      "hidePassword": "隐藏密码",
+      "submit": "登录",
+      "invalidCredentials": "账号或密码不正确。",
+      "failed": "暂时无法登录，请稍后重试。"
+    },
+    "signOut": {
+      "title": "退出登录",
+      "description": "确定要退出当前账号吗？再次访问时需要重新登录。",
+      "confirm": "退出登录"
+    }
+  },
+  "navigation": {
+    "platform": "平台",
+    "overview": "概览"
+  },
+  "overview": {
+    "title": "概览",
+    "workspaces": "工作空间",
+    "agents": "智能体",
+    "activeRuns": "运行中任务",
+    "pendingApprovals": "待审批"
+  },
+  "errors": {
+    "goBack": "返回上一步",
+    "home": "返回首页",
+    "signIn": "前往登录",
+    "unauthorized": {
+      "title": "身份验证失败"
+    },
+    "forbidden": {
+      "title": "无权访问"
+    },
+    "notFound": {
+      "title": "页面不存在"
+    },
+    "general": {
+      "title": "页面发生错误"
+    },
+    "maintenance": {
+      "title": "服务维护中"
+    }
+  }
+}
