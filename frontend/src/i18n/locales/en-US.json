@@ -2,6 +2,7 @@
   "common": {
     "cancel": "Cancel",
     "language": "Language",
+    "workspace": "Workspace",
     "notifications": "Notifications",
     "messages": "Messages",
     "userMenu": "User menu",

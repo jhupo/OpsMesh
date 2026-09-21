@@ -17,12 +17,12 @@ export function AppLayout() {
         <AppSidebar />
         <SidebarInset
           className={cn(
-            'app-surface @container/content',
+            '@container/content',
             'has-data-[layout=fixed]:h-svh',
             'peer-data-[variant=inset]:has-data-[layout=fixed]:h-[calc(100svh-(var(--spacing)*4))]'
           )}
         >
-          <Header fixed className='app-topbar' />
+          <Header fixed />
           <Outlet />
         </SidebarInset>
       </SidebarProvider>

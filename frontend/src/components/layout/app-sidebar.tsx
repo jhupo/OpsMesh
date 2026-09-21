@@ -1,8 +1,8 @@
 import { useLayout } from '@/context/layout-provider'
 import { Sidebar, SidebarContent, SidebarHeader } from '@/components/ui/sidebar'
-import { AppTitle } from './app-title'
 import { sidebarData } from './data/sidebar-data'
 import { NavGroup } from './nav-group'
+import { TeamSwitcher } from './team-switcher'
 
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
@@ -10,7 +10,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible={collapsible} variant={variant}>
       <SidebarHeader>
-        <AppTitle />
+        <TeamSwitcher teams={sidebarData.teams} />
       </SidebarHeader>
       <SidebarContent>
         {sidebarData.navGroups.map((group) => (

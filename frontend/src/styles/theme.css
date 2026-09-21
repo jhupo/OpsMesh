@@ -1,33 +1,27 @@
 :root {
   --radius: 0.625rem;
   --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
+  --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
+  --card-foreground: oklch(0.129 0.042 264.695);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
+  --popover-foreground: oklch(0.129 0.042 264.695);
+  --primary: oklch(0.208 0.042 265.755);
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
+  --border: oklch(0.929 0.013 255.508);
+  --input: oklch(0.929 0.013 255.508);
+  --ring: oklch(0.704 0.04 256.788);
   --auth-glow: oklch(0.88 0.025 275 / 38%);
   --auth-focus: oklch(0.52 0.09 210);
   --auth-shadow: oklch(0.25 0.02 275 / 12%);
   --auth-highlight: oklch(1 0 0 / 85%);
-  --app-canvas: oklch(0.965 0.003 275);
-  --app-surface: oklch(0.99 0.001 275);
-  --app-header: oklch(1 0 0);
-  --app-card: oklch(1 0 0);
-  --app-shadow: oklch(0.25 0.015 275 / 8%);
-  --app-edge: oklch(0.25 0.015 275 / 8%);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -45,34 +39,28 @@
 }
 
 .dark {
-  --background: oklch(0.225 0.012 275);
-  --foreground: oklch(0.97 0.004 275);
-  --card: oklch(0.255 0.013 275);
-  --card-foreground: oklch(0.97 0.004 275);
-  --popover: oklch(0.255 0.013 275);
-  --popover-foreground: oklch(0.97 0.004 275);
-  --primary: oklch(0.93 0.006 275);
-  --primary-foreground: oklch(0.235 0.012 275);
-  --secondary: oklch(0.295 0.014 275);
-  --secondary-foreground: oklch(0.97 0.004 275);
-  --muted: oklch(0.285 0.013 275);
-  --muted-foreground: oklch(0.72 0.014 275);
-  --accent: oklch(0.31 0.015 275);
-  --accent-foreground: oklch(0.97 0.004 275);
+  --background: oklch(0.129 0.042 264.695);
+  --foreground: oklch(0.984 0.003 247.858);
+  --card: oklch(0.14 0.04 259.21);
+  --card-foreground: oklch(0.984 0.003 247.858);
+  --popover: oklch(0.208 0.042 265.755);
+  --popover-foreground: oklch(0.984 0.003 247.858);
+  --primary: oklch(0.929 0.013 255.508);
+  --primary-foreground: oklch(0.208 0.042 265.755);
+  --secondary: oklch(0.279 0.041 260.031);
+  --secondary-foreground: oklch(0.984 0.003 247.858);
+  --muted: oklch(0.279 0.041 260.031);
+  --muted-foreground: oklch(0.704 0.04 256.788);
+  --accent: oklch(0.279 0.041 260.031);
+  --accent-foreground: oklch(0.984 0.003 247.858);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.4 0.016 275 / 65%);
-  --input: oklch(0.305 0.014 275);
-  --ring: oklch(0.66 0.02 275);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.551 0.027 264.364);
   --auth-glow: oklch(0.48 0.04 275 / 16%);
   --auth-focus: oklch(0.78 0.1 210);
   --auth-shadow: oklch(0.08 0.01 275 / 45%);
   --auth-highlight: oklch(1 0 0 / 8%);
-  --app-canvas: oklch(0.205 0.012 275);
-  --app-surface: oklch(0.245 0.012 275);
-  --app-header: var(--app-surface);
-  --app-card: oklch(0.27 0.013 275);
-  --app-shadow: oklch(0.08 0.008 275 / 24%);
-  --app-edge: oklch(1 0 0 / 6%);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -83,8 +71,8 @@
 }
 
 @theme inline {
-  --font-sans: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
-  --font-mono: 'Inter', 'Noto Sans SC', ui-monospace, monospace;
+  --font-inter: 'Inter', 'sans-serif';
+  --font-manrope: 'Manrope', 'sans-serif';
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
