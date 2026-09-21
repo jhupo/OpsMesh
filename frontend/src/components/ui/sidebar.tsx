@@ -255,7 +255,7 @@ function Sidebar({
 
   return (
     <div
-      className='group peer hidden text-sidebar-foreground md:block'
+      className='group peer relative hidden text-sidebar-foreground md:block'
       data-state={state}
       data-collapsible={state === 'collapsed' ? collapsible : ''}
       data-variant={variant}
@@ -392,32 +392,12 @@ function SidebarRail({ className, ...props }: React.ComponentProps<'button'>) {
     }
   }
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (isMobile || state === 'collapsed') return
-
-    const step = event.shiftKey ? 32 : 16
-    let nextWidth: number | undefined
-    if (event.key === 'ArrowRight') nextWidth = sidebarWidth + step
-    if (event.key === 'ArrowLeft') nextWidth = sidebarWidth - step
-    if (event.key === 'Home') nextWidth = SIDEBAR_WIDTH_MIN
-    if (event.key === 'End') nextWidth = SIDEBAR_WIDTH_MAX
-    if (nextWidth === undefined) return
-
-    event.preventDefault()
-    persistSidebarWidth(nextWidth)
-  }
-
   return (
     <button
       data-sidebar='rail'
       data-slot='sidebar-rail'
       aria-label='Resize sidebar'
-      aria-orientation='vertical'
-      aria-valuemax={SIDEBAR_WIDTH_MAX}
-      aria-valuemin={SIDEBAR_WIDTH_MIN}
-      aria-valuenow={sidebarWidth}
-      role='separator'
-      tabIndex={0}
+      tabIndex={-1}
       onClick={() => {
         if (resizedRef.current) {
           resizedRef.current = false
@@ -425,24 +405,16 @@ function SidebarRail({ className, ...props }: React.ComponentProps<'button'>) {
         }
         toggleSidebar()
       }}
-      onKeyDown={handleKeyDown}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
       title='Resize sidebar'
       className={cn(
-        'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 touch-none transition-all ease-linear select-none group-data-[side=left]:-inset-e-4 group-data-[side=right]:inset-s-0 after:absolute after:inset-y-0 after:inset-s-1/2 after:w-0.5 hover:after:bg-sidebar-border focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none sm:flex',
+        'absolute inset-y-0 z-20 hidden w-4 touch-none select-none after:absolute after:inset-y-0 after:inset-s-1/2 after:w-0.5 hover:after:bg-sidebar-border sm:flex',
         'in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize',
         '[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize',
-        'group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:start-full hover:group-data-[collapsible=offcanvas]:bg-sidebar',
-        '[[data-side=left][data-collapsible=offcanvas]_&]:-inset-e-2',
-        '[[data-side=right][data-collapsible=offcanvas]_&]:-inset-s-2',
-
-        // RTL support
-        'rtl:translate-x-1/2',
-        'rtl:in-data-[side=left]:cursor-e-resize rtl:in-data-[side=right]:cursor-w-resize',
-        'rtl:[[data-side=left][data-state=collapsed]_&]:cursor-w-resize rtl:[[data-side=right][data-state=collapsed]_&]:cursor-e-resize',
+        'hover:group-data-[collapsible=offcanvas]:bg-sidebar',
         className
       )}
       {...props}

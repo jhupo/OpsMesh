@@ -59,20 +59,54 @@
     inset 0 -1px 0 var(--app-edge);
 }
 
-/* Keep the only vertical divider at the actual sidebar/content boundary. */
-[data-slot='sidebar'][data-variant='inset'][data-side='left']
-  > [data-slot='sidebar-container'] {
-  border-inline-end: 1px solid var(--app-edge);
-}
-
-[data-slot='sidebar'][data-variant='inset'][data-side='right']
-  > [data-slot='sidebar-container'] {
-  border-inline-start: 1px solid var(--app-edge);
-}
-
 [data-slot='sidebar-wrapper']:has(.app-surface) {
   --sidebar: var(--app-canvas);
   background: var(--app-canvas);
+}
+
+/* The rail is the resize target; keep it aligned with the real sidebar edge. */
+[data-slot='sidebar'][data-side='left'] > [data-slot='sidebar-rail'] {
+  inset-inline-start: calc(var(--sidebar-width) - 0.5rem);
+}
+
+[data-slot='sidebar'][data-side='right'] > [data-slot='sidebar-rail'] {
+  inset-inline-end: calc(var(--sidebar-width) - 0.5rem);
+}
+
+[data-slot='sidebar'][data-collapsible='icon'][data-variant='inset']
+  > [data-slot='sidebar-rail'],
+[data-slot='sidebar'][data-collapsible='icon'][data-variant='floating']
+  > [data-slot='sidebar-rail'] {
+  inset-inline-start: calc(var(--sidebar-width-icon) + 1rem - 0.5rem);
+}
+
+[data-slot='sidebar'][data-collapsible='icon'][data-variant='sidebar']
+  > [data-slot='sidebar-rail'] {
+  inset-inline-start: calc(var(--sidebar-width-icon) - 0.5rem);
+}
+
+[data-slot='sidebar'][data-collapsible='icon'][data-side='right']
+  > [data-slot='sidebar-rail'] {
+  inset-inline-start: auto;
+  inset-inline-end: calc(var(--sidebar-width-icon) - 0.5rem);
+}
+
+[data-slot='sidebar'][data-collapsible='icon'][data-variant='inset'][data-side='right']
+  > [data-slot='sidebar-rail'],
+[data-slot='sidebar'][data-collapsible='icon'][data-variant='floating'][data-side='right']
+  > [data-slot='sidebar-rail'] {
+  inset-inline-end: calc(var(--sidebar-width-icon) + 1rem - 0.5rem);
+}
+
+[data-slot='sidebar'][data-collapsible='offcanvas'][data-side='left']
+  > [data-slot='sidebar-rail'] {
+  inset-inline-start: -0.5rem;
+}
+
+[data-slot='sidebar'][data-collapsible='offcanvas'][data-side='right']
+  > [data-slot='sidebar-rail'] {
+  inset-inline-start: auto;
+  inset-inline-end: -0.5rem;
 }
 
 .app-topbar {
