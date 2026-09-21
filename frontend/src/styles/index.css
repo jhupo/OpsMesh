@@ -43,6 +43,65 @@
   padding-inline: 2rem;
 }
 
+/* Keep the shadcn-admin sidebar rail behavior explicit across Tailwind builds. */
+[data-slot='sidebar-rail'] {
+  position: absolute;
+  inset-block: 0;
+  z-index: 20;
+  display: none;
+  width: 1rem;
+  transform: translateX(-50%);
+  cursor: w-resize;
+  transition: all 200ms linear;
+}
+
+[data-slot='sidebar-rail']::after {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 2px;
+  content: '';
+}
+
+[data-slot='sidebar-rail']:hover::after {
+  background: var(--sidebar-border);
+}
+
+[data-side='left'] [data-slot='sidebar-rail'] {
+  right: -1rem;
+}
+
+[data-side='right'] [data-slot='sidebar-rail'] {
+  left: 0;
+  cursor: e-resize;
+}
+
+[data-side='left'][data-state='collapsed'] [data-slot='sidebar-rail'] {
+  cursor: e-resize;
+}
+
+[data-side='right'][data-state='collapsed'] [data-slot='sidebar-rail'] {
+  cursor: w-resize;
+}
+
+[data-collapsible='offcanvas'] [data-slot='sidebar-rail'] {
+  transform: translateX(0);
+}
+
+[data-side='left'][data-collapsible='offcanvas'] [data-slot='sidebar-rail'] {
+  right: -0.5rem;
+}
+
+[data-side='right'][data-collapsible='offcanvas'] [data-slot='sidebar-rail'] {
+  left: -0.5rem;
+}
+
+@media (min-width: 640px) {
+  [data-slot='sidebar-rail'] {
+    display: flex;
+  }
+}
+
 .auth-surface {
   background:
     radial-gradient(ellipse at 42% 35%, var(--auth-glow), transparent 62%),
