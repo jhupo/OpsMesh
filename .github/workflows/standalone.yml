@@ -51,12 +51,12 @@ jobs:
     env:
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           version: '0.12.10'
           python-version: '3.12.14'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: inputs.wheels-artifact != ''
         with:
           name: ${{ inputs.wheels-artifact }}
@@ -67,7 +67,7 @@ jobs:
         run: uv run --no-project python scripts/build_standalone.py --kind cli --tag "$RELEASE_TAG" --wheels wheels
       - name: Verify relocated CLI without system Python
         run: uv run --no-project python scripts/check_standalone.py --kind cli --tag "$RELEASE_TAG" --archive "dist/opsmesh-cli-$RELEASE_TAG-${{ matrix.target }}.${{ matrix.extension }}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: standalone-cli-${{ matrix.target }}-${{ github.run_id }}
           path: dist/*
@@ -93,12 +93,12 @@ jobs:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:opsmesh@127.0.0.1:5432/opsmesh
       OPSMESH_REDIS_URL: redis://127.0.0.1:6379/0
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           version: '0.12.10'
           python-version: '3.12.14'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: inputs.wheels-artifact != ''
         with:
           name: ${{ inputs.wheels-artifact }}
@@ -109,7 +109,7 @@ jobs:
         run: uv run --no-project python scripts/build_standalone.py --kind server --tag "$RELEASE_TAG" --wheels wheels
       - name: Verify relocation, real migrations, API, worker and updater without system Python
         run: uv run --no-project python scripts/check_standalone.py --kind server --tag "$RELEASE_TAG" --archive "dist/opsmesh-server-$RELEASE_TAG-linux-amd64.tar.gz"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: standalone-server-linux-amd64-${{ github.run_id }}
           path: dist/*
