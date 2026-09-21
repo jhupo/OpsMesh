@@ -73,6 +73,17 @@
   box-shadow: none;
 }
 
+.app-topbar [data-slot='button'] {
+  transition-property: background-color, color, box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.app-topbar [data-slot='button']:hover:not(:disabled),
+.app-topbar [data-slot='button']:focus-visible {
+  box-shadow: 0 4px 12px -6px var(--app-shadow);
+}
+
 .app-surface [data-slot='card'] {
   border-radius: 1rem;
   border-color: var(--app-edge);

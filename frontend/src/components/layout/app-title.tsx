@@ -15,16 +15,18 @@ export function AppTitle() {
       <SidebarMenuItem>
         <SidebarMenuButton
           size='lg'
-          className='gap-2 py-0 hover:bg-transparent active:bg-transparent'
+          className='gap-2 py-0 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0! hover:bg-transparent active:bg-transparent'
           asChild
         >
           <Link
             to='/'
             onClick={() => setOpenMobile(false)}
-            className='flex items-center gap-2 text-start text-sm leading-tight'
+            className='flex items-center gap-2 text-start text-sm leading-tight group-data-[collapsible=icon]:justify-center'
           >
             <Boxes />
-            <span className='truncate font-semibold'>OpsMesh</span>
+            <span className='truncate font-semibold group-data-[collapsible=icon]:hidden'>
+              OpsMesh
+            </span>
           </Link>
         </SidebarMenuButton>
       </SidebarMenuItem>
