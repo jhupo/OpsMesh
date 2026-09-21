@@ -1,5 +1,10 @@
 import { useLayout } from '@/context/layout-provider'
-import { Sidebar, SidebarContent, SidebarHeader } from '@/components/ui/sidebar'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarRail,
+} from '@/components/ui/sidebar'
 import { sidebarData } from './data/sidebar-data'
 import { NavGroup } from './nav-group'
 import { TeamSwitcher } from './team-switcher'
@@ -17,6 +22,7 @@ export function AppSidebar() {
           <NavGroup key={group.titleKey} {...group} />
         ))}
       </SidebarContent>
+      <SidebarRail />
     </Sidebar>
   )
 }
