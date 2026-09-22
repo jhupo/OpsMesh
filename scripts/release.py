@@ -24,6 +24,28 @@ def validate_version(tag: str) -> None:
             raise ValueError(f"Tag does not match {directory.name} package version")
 
 
+def validate_release_policy(policy: dict[str, object], revision: str, config: Config) -> None:
+    """Require the release to admit the immediately previous schema revision."""
+    script = ScriptDirectory.from_config(config).get_revision(revision)
+    if script is None:
+        raise ValueError(f"Current database revision is not present: {revision}")
+    raw_down_revision = script.down_revision
+    if raw_down_revision is None:
+        return
+    down_revisions = (
+        {raw_down_revision}
+        if isinstance(raw_down_revision, str)
+        else set(raw_down_revision)
+    )
+    supported = policy.get("upgrade_from_revisions")
+    if not isinstance(supported, list) or not down_revisions.issubset(set(supported)):
+        missing = sorted(down_revisions - set(supported or []))
+        raise ValueError(
+            "release-policy.json must include immediate predecessor revisions: "
+            + ", ".join(missing)
+        )
+
+
 def file_record(path: Path) -> ReleaseFile:
     with path.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
@@ -52,6 +74,10 @@ def main() -> None:
     parser.add_argument("--runtime-digest")
     args = parser.parse_args()
     validate_version(args.tag)
+    policy = json.loads((ROOT / "release-policy.json").read_text("utf-8"))
+    config = Config(str(ROOT / "alembic.ini"))
+    revision = ScriptDirectory.from_config(config).get_current_head()
+    validate_release_policy(policy, revision, config)
     if args.command == "validate":
         return
     args.output.mkdir(parents=True, exist_ok=True)
@@ -64,8 +90,6 @@ def main() -> None:
     if not required <= {path.name for path in args.output.iterdir()}:
         raise ValueError("Release is missing required standalone distributions")
     write_checksums(args.output)
-    policy = json.loads((ROOT / "release-policy.json").read_text("utf-8"))
-    revision = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini"))).get_current_head()
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     files = [
         file_record(path)

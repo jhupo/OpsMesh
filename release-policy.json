@@ -1,5 +1,9 @@
 {
-  "upgrade_from_revisions": ["0071_platform_delivery", "0072_release_schema"],
+  "upgrade_from_revisions": [
+    "0071_platform_delivery",
+    "0072_release_schema",
+    "0102_platform_admin_credentials"
+  ],
   "rollback_database_revisions": ["0101_plugin_deployments"],
   "connector_protocol": 2,
   "platforms": ["linux/amd64"]
