@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    LargeBinary,
     String,
     UniqueConstraint,
 )
@@ -31,6 +32,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
     username: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    avatar_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
     platform_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
@@ -43,6 +45,18 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+
+
+class UserAvatar(Base):
+    __tablename__ = "user_avatars"
+    __table_args__ = (
+        CheckConstraint("length(content) BETWEEN 1 AND 262144", name="avatar_content_size"),
+    )
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
 
 
 class UserAPIToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):

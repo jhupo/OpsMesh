@@ -121,12 +121,7 @@ def _json_safe_validation_errors(
 ) -> list[dict[str, object]]:
     safe_errors: list[dict[str, object]] = []
     for error in errors:
-        safe_error = dict(error)
-        context = safe_error.get("ctx")
-        if isinstance(context, dict):
-            safe_error["ctx"] = {
-                key: str(value) if isinstance(value, Exception) else value
-                for key, value in context.items()
-            }
+        # Pydantic input/ctx may contain passwords or the entire avatar payload.
+        safe_error = {key: error[key] for key in ("type", "loc", "msg") if key in error}
         safe_errors.append(safe_error)
     return safe_errors

@@ -180,6 +180,40 @@ the OpsMesh control plane.
 - Keep public API error envelopes stable and free of internal details and secrets.
 - Add comments for decisions and non-obvious invariants, not narration.
 - Keep a change coherent; do not mix unrelated feature work, architecture cleanup, or formatting.
+- Frontend uses the `shadcn-admin`-derived Vite, React, TypeScript, TanStack Router and TanStack
+  Query application skeleton. Keep route modules thin, product composition in `frontend/src/features`,
+  backend transport in `frontend/src/api`, and user-visible strings in `frontend/src/i18n`.
+- shadcn/ui is the single component contract. Add or refresh source-owned components through
+  `frontend/components.json`, `frontend/src/components/ui`, and `pnpm dlx shadcn@latest`; use
+  semantic CSS variables and the configured Lucide icon family. Do not introduce a second runtime
+  component library or restore copied template demos.
+- Do not hand-build, replace, remove, or simplify a component when shadcn/ui, the adopted frontend
+  foundation, or an approved registry already provides it. Reuse the complete upstream component
+  and its accessibility behavior first. If it cannot meet an approved product requirement, extend
+  or compose it at the owning feature boundary while preserving the upstream primitive. A new
+  component is the last resort and requires a documented gap. Error pages, authentication layouts,
+  password inputs, navigation shells, feedback states, and other reusable application components
+  are foundation code, not demo code, and must not be removed merely to reduce file count.
+- Do not invent or add any user-visible UI copy unless the user explicitly requests that exact
+  content as part of the current interface. This prohibition includes explanatory and functional
+  prose, helper text, descriptions, notices, marketing copy, empty-state guidance, repeated
+  context, labels, status text, and decorative wording. Preserve only user-approved existing copy
+  and the minimum text explicitly required by the requested interaction; do not infer that a phrase
+  is useful. Accessibility names that are not visually rendered remain required. Put explanations
+  in documentation or in an explicitly requested help surface, never into the primary UI by
+  initiative.
+- Adding a feature or control does not authorize adding a new route or page. Keep the behavior in
+  the existing surface unless the user explicitly requests a page, route, or navigation entry.
+- Every change involving frontend layout, styling, visual hierarchy, motion, typography, color,
+  theme tokens, icons, or component composition must use the applicable repository skills under
+  `.agents/skills` before implementation and again for a rendered-page review. At minimum, apply
+  `design-taste-frontend`, `frontend-design`, and `shadcn`; apply `web-design-guidelines` for the
+  final accessibility and interface review. A lint pass or source inspection is not visual proof:
+  inspect the real rendered page in both light and dark themes at desktop and mobile widths, fix
+  the findings, and do not claim the UI change is complete until that review passes.
+- Frontend behavior is validated through complete user flows after backend contracts are connected.
+  For foundation and organization changes, run lint, type checking, and production build only;
+  do not recreate the removed per-component or template-demo tests.
 
 ## Repository map
 
@@ -200,6 +234,8 @@ the OpsMesh control plane.
 - `docs`: current architecture and operating documentation.
 - `.agents/skills`: repository-scoped development skills; each skill owns its complete directory,
   references, scripts, assets, and license notices.
+- `frontend`: contract-driven Web Portal built from the `shadcn-admin` application skeleton;
+  `features` own product slices, `routes` compose them, and `components/ui` owns shadcn/ui source.
 
 ## Development workflow
 

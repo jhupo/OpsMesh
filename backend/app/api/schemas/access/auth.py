@@ -12,10 +12,14 @@ class CurrentUserResponse(ORMModel):
     user_id: UUID
     email: str
     display_name: str
+    platform_admin: bool
+    avatar_version: str | None
 
 
 class CurrentUserUpdateRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=120)
+    avatar_base64: str | None = Field(default=None, max_length=2796204, repr=False)
+    password: "PasswordChangeRequest | None" = None
 
     @field_validator("display_name")
     @classmethod

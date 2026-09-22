@@ -12,6 +12,7 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 ## 当前实现
 
 - [多用户资源权限](multi-user-authorization.md)：默认私有、用户授权、执行身份、渠道绑定、会话隔离、预算及恢复演练边界（2026-09-20）。
+- [Frontend 架构](frontend-architecture.md)：`shadcn-admin` 基线、个人设置布局、头像/原子保存接口、调试权限与待部署验证边界（2026-09-22）。
 
 - [系统架构](architecture.md)：控制面、执行面、状态面和证据面的总览。
 - [Backend 服务架构](backend-service-architecture.md)：API、领域、runtime、worker 与基础设施依赖方向。
@@ -70,4 +71,6 @@ OpsMesh 是一个后端优先的企业级 Agent 控制平面。当前源码已�
 本仓库已删除内置副本。外部插件贡献与发布合同见其
 [架构文档](https://github.com/jhupo/opsmesh-plugin-center/blob/master/docs/architecture.md)。
 平台已有受控 HTTPS 目录和描述文件下载，详见 [分发合同](plugin-distribution.md)。
-当前不包含钉钉适配器、Web 页面、独立公共目录运营仓库或自动部署外部插件服务。
+当前不包含钉钉适配器或自动部署外部插件服务；Web Portal 已建立
+`shadcn-admin` 衍生的应用骨架、主题和中英文国际化基础，并完成密码登录、当前用户校验、
+受保护路由、令牌撤销和应用错误页。其余业务页面和 API 联调仍在后续垂直切片中实现。

@@ -1,10 +1,10 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.client_ip import security_request_context
-from backend.app.api.dependencies.auth import account_action_dependency
+from backend.app.api.dependencies.auth import account_action_dependency, get_current_user
 from backend.app.api.schemas.access.auth import (
     CurrentUserResponse,
     CurrentUserUpdateRequest,
@@ -23,7 +23,7 @@ from backend.app.core.errors import ConflictError
 from backend.app.domains.access.context import AuthenticatedUser
 from backend.app.domains.access.errors import AuthenticationError, PermissionDeniedError
 from backend.app.domains.access.permissions import AccountAction
-from backend.app.domains.access.service import AuthorizationService
+from backend.app.domains.access.service import AuthorizationService, ProfileChange
 from backend.app.observability.audit.security_events import SecurityAuditService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -58,6 +58,8 @@ async def register_user(
         user_id=user.id,
         email=user.email,
         display_name=user.display_name,
+        platform_admin=user.platform_admin,
+        avatar_version=user.avatar_version,
     )
 
 
@@ -107,11 +109,36 @@ async def get_current_user_profile(
         user_id=current_user.user_id,
         email=current_user.email,
         display_name=current_user.display_name,
+        platform_admin=current_user.platform_admin,
+        avatar_version=current_user.avatar_version,
     )
 
 
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout_user(
+    http_request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> Response:
+    if current_user.token_id is not None:
+        token = AuthorizationService(session).revoke_user_api_token(
+            user_id=current_user.user_id,
+            token_id=current_user.token_id,
+        )
+        if token is not None:
+            _record_auth_event(
+                session,
+                http_request,
+                action="auth.logout_succeeded",
+                reason="Current authentication token revoked",
+                user_id=current_user.user_id,
+                metadata={"token_id": str(current_user.token_id)},
+            )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.patch("/me", response_model=CurrentUserResponse)
-async def update_current_user_profile(
+def update_current_user_profile(
     request: CurrentUserUpdateRequest,
     http_request: Request,
     current_user: AuthenticatedUser = Depends(
@@ -119,21 +146,74 @@ async def update_current_user_profile(
     ),
     session: Session = Depends(get_db_session),
 ) -> CurrentUserResponse:
-    user = AuthorizationService(session).update_profile(
-        user_id=current_user.user_id,
-        display_name=request.display_name,
-    )
+    try:
+        user = AuthorizationService(session).update_profile(
+            actor=current_user,
+            change=ProfileChange(
+                display_name=request.display_name,
+                replace_avatar="avatar_base64" in request.model_fields_set,
+                avatar_base64=request.avatar_base64,
+                current_password=request.password.current_password if request.password else None,
+                new_password=request.password.new_password if request.password else None,
+            ),
+        )
+    except (AuthenticationError, PermissionDeniedError) as exc:
+        session.rollback()
+        _record_auth_event(
+            session,
+            http_request,
+            action="identity.profile_update_rejected",
+            reason=exc.message,
+            outcome="denied",
+            severity="warning",
+            user_id=current_user.user_id,
+        )
+        raise HTTPException(
+            status_code=403 if isinstance(exc, PermissionDeniedError) else 401,
+            detail=exc.message,
+        ) from exc
     _record_auth_event(
         session,
         http_request,
         action="identity.profile_updated",
         reason="User profile updated",
         user_id=user.id,
+        metadata={"fields": sorted(request.model_fields_set)},
     )
+    if request.password is not None:
+        _record_auth_event(
+            session,
+            http_request,
+            action="identity.password_changed",
+            reason="Password changed and active tokens revoked",
+            user_id=user.id,
+        )
     return CurrentUserResponse(
         user_id=user.id,
         email=user.email,
         display_name=user.display_name,
+        platform_admin=user.platform_admin,
+        avatar_version=user.avatar_version,
+    )
+
+
+@router.get("/me/avatar", response_class=Response)
+def get_current_user_avatar(
+    current_user: AuthenticatedUser = Depends(
+        account_action_dependency(AccountAction.PROFILE_READ)
+    ),
+    session: Session = Depends(get_db_session),
+) -> Response:
+    content = AuthorizationService(session).get_avatar(actor=current_user)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    return Response(
+        content=content,
+        media_type="image/webp",
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -174,14 +254,14 @@ async def change_current_user_password(
         user_id=user.id,
         email=user.email,
         display_name=user.display_name,
+        platform_admin=user.platform_admin,
+        avatar_version=user.avatar_version,
     )
 
 
 @router.get("/tokens", response_model=list[UserAPITokenResponse])
 async def list_current_user_tokens(
-    current_user: AuthenticatedUser = Depends(
-        account_action_dependency(AccountAction.TOKENS_READ)
-    ),
+    current_user: AuthenticatedUser = Depends(account_action_dependency(AccountAction.TOKENS_READ)),
     session: Session = Depends(get_db_session),
 ) -> list[UserAPITokenResponse]:
     tokens = AuthorizationService(session).list_user_api_tokens(current_user.user_id)

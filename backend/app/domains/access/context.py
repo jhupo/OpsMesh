@@ -12,6 +12,7 @@ class AuthenticatedUser:
     email: str
     display_name: str
     platform_admin: bool = False
+    avatar_version: str | None = None
     token_id: UUID | None = None
     token_scopes: dict[str, object] | None = None
 
@@ -28,6 +29,7 @@ class AuthenticatedUser:
             email=user.email,
             display_name=user.display_name,
             platform_admin=user.platform_admin,
+            avatar_version=user.avatar_version,
             token_id=token_id,
             token_scopes=token_scopes,
         )
