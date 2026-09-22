@@ -202,6 +202,8 @@ the OpsMesh control plane.
   is useful. Accessibility names that are not visually rendered remain required. Put explanations
   in documentation or in an explicitly requested help surface, never into the primary UI by
   initiative.
+- Adding a feature or control does not authorize adding a new route or page. Keep the behavior in
+  the existing surface unless the user explicitly requests a page, route, or navigation entry.
 - Every change involving frontend layout, styling, visual hierarchy, motion, typography, color,
   theme tokens, icons, or component composition must use the applicable repository skills under
   `.agents/skills` before implementation and again for a rendered-page review. At minimum, apply

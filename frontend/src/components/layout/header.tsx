@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { Bell, Mail } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { currentUserQueryOptions } from '@/api/auth'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { LanguageSwitch } from '@/components/language-switch'
 import { ThemeSwitch } from '@/components/theme-switch'
+import { MessageCenter } from '@/features/messages'
+import { NotificationCenter } from '@/features/notifications'
 import { NavUser } from './nav-user'
 
 type HeaderProps = React.HTMLAttributes<HTMLElement> & {
@@ -57,22 +57,8 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
         <div className='app-header-actions ms-auto flex shrink-0 items-center gap-1 sm:gap-2'>
           <ThemeSwitch />
           <LanguageSwitch />
-          <Button
-            variant='ghost'
-            size='icon'
-            className='rounded-full'
-            aria-label={t('common.notifications')}
-          >
-            <Bell />
-          </Button>
-          <Button
-            variant='ghost'
-            size='icon'
-            className='rounded-full'
-            aria-label={t('common.messages')}
-          >
-            <Mail />
-          </Button>
+          <NotificationCenter />
+          <MessageCenter />
           <NavUser user={currentUser} />
         </div>
       </div>

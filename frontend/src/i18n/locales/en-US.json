@@ -15,6 +15,14 @@
       "system": "System"
     }
   },
+  "notifications": {
+    "new": "new",
+    "empty": "No notifications"
+  },
+  "messages": {
+    "new": "new",
+    "empty": "No messages"
+  },
   "auth": {
     "login": {
       "title": "Sign in",
@@ -36,15 +44,7 @@
   },
   "navigation": {
     "platform": "Platform",
-    "dashboard": "Dashboard",
-    "overview": "Overview"
-  },
-  "overview": {
-    "title": "Overview",
-    "workspaces": "Workspaces",
-    "agents": "Agents",
-    "activeRuns": "Active runs",
-    "pendingApprovals": "Pending approvals"
+    "dashboard": "Dashboard"
   },
   "errors": {
     "goBack": "Go back",

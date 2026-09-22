@@ -15,6 +15,14 @@
       "system": "跟随系统"
     }
   },
+  "notifications": {
+    "new": "条新提醒",
+    "empty": "暂无提醒"
+  },
+  "messages": {
+    "new": "条新消息",
+    "empty": "暂无消息"
+  },
   "auth": {
     "login": {
       "title": "登录",
@@ -36,15 +44,7 @@
   },
   "navigation": {
     "platform": "平台",
-    "dashboard": "看板",
-    "overview": "概览"
-  },
-  "overview": {
-    "title": "概览",
-    "workspaces": "工作空间",
-    "agents": "智能体",
-    "activeRuns": "运行中任务",
-    "pendingApprovals": "待审批"
+    "dashboard": "看板"
   },
   "errors": {
     "goBack": "返回上一步",

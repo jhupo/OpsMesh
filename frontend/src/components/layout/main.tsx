@@ -6,9 +6,16 @@ type MainProps = React.HTMLAttributes<HTMLElement> & {
   ref?: React.Ref<HTMLElement>
 }
 
-export function Main({ fixed, className, fluid, ...props }: MainProps) {
+export function Main({
+  fixed,
+  className,
+  fluid,
+  id = 'content',
+  ...props
+}: MainProps) {
   return (
     <main
+      id={id}
       data-layout={fixed ? 'fixed' : 'auto'}
       className={cn(
         'px-4 py-6',
