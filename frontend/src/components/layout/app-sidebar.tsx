@@ -5,22 +5,31 @@ import {
   SidebarHeader,
   SidebarRail,
 } from '@/components/ui/sidebar'
-// import { AppTitle } from './app-title'
-import { useSidebarData } from './data/sidebar-data'
+import { AppTitle } from './app-title'
+import {
+  usePlatformAdminSidebarData,
+  useSidebarData,
+} from './data/sidebar-data'
 import { NavGroup } from './nav-group'
 import { TeamSwitcher } from './team-switcher'
 
-export function AppSidebar() {
+type AppSidebarProps = {
+  platformAdmin: boolean
+}
+
+export function AppSidebar({ platformAdmin }: AppSidebarProps) {
   const { collapsible, variant } = useLayout()
-  const sidebarData = useSidebarData()
+  const workspaceSidebarData = useSidebarData()
+  const platformSidebarData = usePlatformAdminSidebarData()
+  const sidebarData = platformAdmin ? platformSidebarData : workspaceSidebarData
   return (
     <Sidebar collapsible={collapsible} variant={variant}>
       <SidebarHeader>
-        <TeamSwitcher teams={sidebarData.teams} />
-
-        {/* Replace <TeamSwitch /> with the following <AppTitle />
-         /* if you want to use the normal app title instead of TeamSwitch dropdown */}
-        {/* <AppTitle /> */}
+        {platformAdmin ? (
+          <AppTitle />
+        ) : (
+          <TeamSwitcher teams={sidebarData.teams} />
+        )}
       </SidebarHeader>
       <SidebarContent>
         {sidebarData.navGroups.map((props) => (
