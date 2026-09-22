@@ -6,6 +6,7 @@ export type CurrentUser = {
   email: string
   display_name: string
   platform_admin: boolean
+  avatar_version: string | null
 }
 
 type LoginResponse = {
@@ -43,20 +44,27 @@ export async function revokeToken(tokenId: string): Promise<void> {
   await apiRequest(`/auth/tokens/${tokenId}`, { method: 'DELETE' })
 }
 
-export function updateProfile(displayName: string) {
+export type ProfileUpdate = {
+  display_name: string
+  avatar_base64?: string | null
+  password?: { current_password: string; new_password: string }
+}
+
+export function updateProfile(update: ProfileUpdate) {
   return apiRequest<CurrentUser>('/auth/me', {
     method: 'PATCH',
-    body: JSON.stringify({ display_name: displayName }),
+    clearSessionOnUnauthorized: !update.password,
+    body: JSON.stringify(update),
   })
 }
 
-export function changePassword(currentPassword: string, newPassword: string) {
-  return apiRequest<CurrentUser>('/auth/password', {
-    method: 'PUT',
-    clearSessionOnUnauthorized: false,
-    body: JSON.stringify({
-      current_password: currentPassword,
-      new_password: newPassword,
-    }),
+export function avatarQueryOptions(user: CurrentUser) {
+  return queryOptions({
+    queryKey: ['auth', 'avatar', user.user_id, user.avatar_version],
+    queryFn: () =>
+      apiRequest<Blob>('/auth/me/avatar', { responseType: 'blob' }),
+    enabled: Boolean(user.avatar_version),
+    staleTime: Infinity,
+    retry: false,
   })
 }

@@ -1,8 +1,11 @@
+from base64 import b64encode
 from collections.abc import Generator
+from io import BytesIO
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -284,6 +287,146 @@ def test_profile_update_and_token_rotation_invalidate_the_old_token() -> None:
     assert client.get("/api/v1/auth/me", headers=_user_token_headers(new_token)).status_code == 200
 
 
+def test_profile_avatar_and_password_save_is_atomic_and_private() -> None:
+    client, session = _client()
+    for email in ("avatar@example.com", "other@example.com"):
+        assert (
+            client.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": email,
+                    "display_name": "Original",
+                    "password": "original-password",
+                },
+            ).status_code
+            == 201
+        )
+    login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "avatar@example.com",
+            "password": "original-password",
+        },
+    ).json()
+    headers = _user_token_headers(login["token"])
+    image = BytesIO()
+    Image.new("RGB", (600, 400), "blue").save(image, format="PNG")
+    encoded = b64encode(image.getvalue()).decode()
+    payload = {"display_name": "Updated", "avatar_base64": encoded}
+    invalid = client.patch(
+        "/api/v1/auth/me",
+        headers=headers,
+        json={
+            **payload,
+            "password": {"current_password": "wrong", "new_password": "new-password"},
+        },
+    )
+    assert invalid.status_code == 401
+    assert client.get("/api/v1/auth/me", headers=headers).json()["display_name"] == "Original"
+    assert client.get("/api/v1/auth/me/avatar", headers=headers).status_code == 404
+    for bad_image in ("not-base64", b64encode(b"<svg>not an image</svg>").decode()):
+        rejected = client.patch(
+            "/api/v1/auth/me",
+            headers=headers,
+            json={
+                **payload,
+                "avatar_base64": bad_image,
+            },
+        )
+        assert rejected.status_code == 400
+        assert bad_image not in rejected.text
+    invalid_password = client.patch(
+        "/api/v1/auth/me",
+        headers=headers,
+        json={
+            **payload,
+            "password": {"current_password": "original-password", "new_password": "short"},
+        },
+    )
+    assert invalid_password.status_code == 422
+    assert "original-password" not in invalid_password.text
+    assert encoded not in invalid_password.text
+    saved = client.patch("/api/v1/auth/me", headers=headers, json=payload)
+    assert saved.status_code == 200
+    assert saved.json()["avatar_version"]
+    avatar = client.get("/api/v1/auth/me/avatar", headers=headers)
+    assert avatar.status_code == 200
+    assert avatar.headers["content-type"] == "image/webp"
+    assert avatar.headers["cache-control"] == "private, no-store"
+    with Image.open(BytesIO(avatar.content)) as thumbnail:
+        assert max(thumbnail.size) == 256
+        assert not thumbnail.getexif()
+    other_login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "other@example.com",
+            "password": "original-password",
+        },
+    ).json()
+    assert (
+        client.get(
+            "/api/v1/auth/me/avatar", headers=_user_token_headers(other_login["token"])
+        ).status_code
+        == 404
+    )
+    assert client.get("/api/v1/auth/me/avatar").status_code == 401
+    scoped = client.post(
+        "/api/v1/auth/tokens",
+        headers=headers,
+        json={
+            "name": "profile only",
+            "scopes": {"account_actions": ["profile:write"]},
+        },
+    ).json()
+    password_payload = {"current_password": "original-password", "new_password": "new-password"}
+    denied = client.patch(
+        "/api/v1/auth/me",
+        headers=_user_token_headers(scoped["token"]),
+        json={
+            **payload,
+            "password": password_payload,
+        },
+    )
+    assert denied.status_code == 403
+    removed = client.patch(
+        "/api/v1/auth/me",
+        headers=headers,
+        json={
+            "display_name": "Updated",
+            "avatar_base64": None,
+        },
+    )
+    assert removed.status_code == 200
+    assert removed.json()["avatar_version"] is None
+    assert client.get("/api/v1/auth/me/avatar", headers=headers).status_code == 404
+    combined = client.patch(
+        "/api/v1/auth/me",
+        headers=headers,
+        json={
+            **payload,
+            "password": password_payload,
+        },
+    )
+    assert combined.status_code == 200
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 401
+    replacement = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "avatar@example.com",
+            "password": "new-password",
+        },
+    )
+    assert replacement.status_code == 200
+    assert (
+        client.get(
+            "/api/v1/auth/me/avatar", headers=_user_token_headers(replacement.json()["token"])
+        ).content
+        == avatar.content
+    )
+    events = session.scalars(select(SecurityEvent)).all()
+    assert encoded not in str([event.event_metadata for event in events])
+
+
 def test_platform_admin_disables_user_and_revokes_active_tokens() -> None:
     client, session = _client()
     user = User(email="managed@example.com", display_name="Managed")
@@ -384,6 +527,7 @@ def test_auth_me_returns_current_user_for_user_and_internal_tokens() -> None:
         "email": "me@example.com",
         "display_name": "Me User",
         "platform_admin": False,
+        "avatar_version": None,
     }
     assert via_internal_token.status_code == 200
     assert via_internal_token.json() == via_user_token.json()

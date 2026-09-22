@@ -3,9 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { Bell, LogOut, Settings, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { currentUserQueryOptions } from '@/api/auth'
-import { getDisplayNameInitials } from '@/lib/utils'
 import useDialogState from '@/hooks/use-dialog-state'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -17,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { SignOutDialog } from '@/components/sign-out-dialog'
+import { UserAvatar } from '@/components/user-avatar'
 
 export function ProfileDropdown() {
   const [open, setOpen] = useDialogState()
@@ -31,11 +30,7 @@ export function ProfileDropdown() {
             className='relative size-8 rounded-full'
             aria-label={t('profile_dropdown.profile')}
           >
-            <Avatar className='size-8'>
-              <AvatarFallback>
-                {getDisplayNameInitials(user.display_name)}
-              </AvatarFallback>
-            </Avatar>
+            <UserAvatar user={user} className='size-8' />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className='w-56' align='end'>

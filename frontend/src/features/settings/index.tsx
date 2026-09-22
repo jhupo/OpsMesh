@@ -29,8 +29,8 @@ export function Settings() {
       : []),
   ]
   return (
-    <Main>
-      <div className='mx-auto flex w-full max-w-5xl flex-col gap-8 py-2 md:py-6'>
+    <Main fluid className='px-4 md:px-8 xl:px-10'>
+      <div className='mx-auto flex w-full max-w-[1080px] flex-col gap-6 py-2 md:py-4'>
         <h1 className='text-2xl font-semibold tracking-tight'>
           {t('settings.title')}
         </h1>

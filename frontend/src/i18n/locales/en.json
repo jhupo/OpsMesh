@@ -7,7 +7,10 @@
     },
     "notifications": "Notifications",
     "messages": "Messages",
-    "developerTools": "Developer tools",
+    "developerTools": "TanStack Router / Query",
+    "changeAvatar": "Change avatar",
+    "removeAvatar": "Remove avatar",
+    "avatarInvalid": "Choose a PNG, JPEG or WebP image under 2 MB.",
     "notificationPreferences": {
       "taskUpdates": "Task updates",
       "approvals": "Approvals",

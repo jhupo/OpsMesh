@@ -395,6 +395,9 @@ publication and managed delivery acceptance. Normal development uses focused che
   `docs/frontend-architecture.md` and `frontend/README.md`.
 - Keep the implemented password login, current-user guard, session revocation, and application
   error routes aligned with the public authentication API.
+- Personal settings now use one profile save for name, avatar and optional password changes;
+  account avatar storage is implemented locally but deployment and new API verification remain
+  deferred. See `docs/frontend-architecture.md` for the contract and validation boundary.
 - Implement user journeys for workspace setup, agent/team configuration, task execution,
   approval, observation, artifacts, capability management, and operations as complete product
   flows.

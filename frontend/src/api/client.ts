@@ -17,6 +17,7 @@ const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(
 type ApiRequestInit = RequestInit & {
   authenticated?: boolean
   clearSessionOnUnauthorized?: boolean
+  responseType?: 'json' | 'blob'
 }
 
 export async function apiRequest<T>(
@@ -26,6 +27,7 @@ export async function apiRequest<T>(
   const {
     authenticated = true,
     clearSessionOnUnauthorized = true,
+    responseType = 'json',
     ...requestInit
   } = init
   const headers = new Headers(requestInit.headers)
@@ -63,6 +65,7 @@ export async function apiRequest<T>(
   }
 
   if (response.status === 204) return undefined as T
+  if (responseType === 'blob') return (await response.blob()) as T
   return (await response.json()) as T
 }
 

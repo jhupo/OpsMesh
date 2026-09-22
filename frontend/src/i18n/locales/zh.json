@@ -7,7 +7,10 @@
     },
     "notifications": "通知",
     "messages": "消息",
-    "developerTools": "调试面板",
+    "developerTools": "TanStack Router / Query",
+    "changeAvatar": "更换头像",
+    "removeAvatar": "移除头像",
+    "avatarInvalid": "请选择不超过 2 MB 的 PNG、JPEG 或 WebP 图片",
     "notificationPreferences": {
       "taskUpdates": "任务进度",
       "approvals": "审批",

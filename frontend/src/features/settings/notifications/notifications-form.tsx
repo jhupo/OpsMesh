@@ -21,7 +21,7 @@ export function NotificationsForm() {
         <FieldLegend variant='label'>
           {t('settings_form.notify_about')}
         </FieldLegend>
-        <RadioGroup disabled className='grid gap-4 sm:grid-cols-3'>
+        <RadioGroup disabled className='gap-4'>
           {(
             ['all_new_messages', 'direct_messages_mentions', 'nothing'] as const
           ).map((key) => (
@@ -37,7 +37,7 @@ export function NotificationsForm() {
         <FieldLegend variant='label'>
           {t('settings_form.email_notifications')}
         </FieldLegend>
-        <FieldGroup className='grid gap-6 sm:grid-cols-2'>
+        <FieldGroup className='gap-5'>
           {categories.map((key) => (
             <Field key={key} orientation='horizontal' data-disabled>
               <FieldLabel htmlFor={key}>
