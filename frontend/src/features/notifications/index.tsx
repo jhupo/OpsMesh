@@ -16,8 +16,8 @@ import {
   markNotificationRead,
   type NotificationItem,
 } from '@/api/notifications'
-import { workspacesQueryOptions } from '@/api/workspaces'
 import { cn } from '@/lib/utils'
+import { useWorkspace } from '@/context/workspace-provider'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -159,11 +159,10 @@ function NotificationList({
   )
 }
 
-export function NotificationCenter() {
-  const { t } = useTranslation()
+function useWorkspaceNotifications() {
   const queryClient = useQueryClient()
-  const { data: workspacePage } = useQuery(workspacesQueryOptions())
-  const workspaceId = workspacePage?.items[0]?.id
+  const { activeWorkspace } = useWorkspace()
+  const workspaceId = activeWorkspace?.id
   const { data: notifications, isPending } = useQuery(
     notificationsQueryOptions(workspaceId)
   )
@@ -180,6 +179,36 @@ export function NotificationCenter() {
   const unreadCount = counts?.unread_count ?? 0
   const loading = Boolean(workspaceId) && isPending
   const itemCount = notifications?.items.length ?? 0
+
+  return {
+    workspaceId,
+    items: notifications?.items ?? [],
+    unreadCount,
+    loading,
+    itemCount,
+    markRead: (item: NotificationItem) => markReadMutation.mutate(item),
+  }
+}
+
+export function NotificationFeed({ className }: { className?: string }) {
+  const { workspaceId, items, loading, markRead } = useWorkspaceNotifications()
+
+  return (
+    <ScrollArea className={cn('h-[min(32rem,60vh)]', className)}>
+      <NotificationList
+        workspaceId={workspaceId}
+        items={items}
+        pending={loading}
+        onRead={markRead}
+      />
+    </ScrollArea>
+  )
+}
+
+export function NotificationCenter() {
+  const { t } = useTranslation()
+  const { workspaceId, items, unreadCount, loading, itemCount, markRead } =
+    useWorkspaceNotifications()
   const hasContent = loading || itemCount > 0
   const listHeight = loading ? 288 : Math.min(Math.max(itemCount * 64, 96), 352)
 
@@ -224,9 +253,9 @@ export function NotificationCenter() {
         <ScrollArea style={{ height: listHeight }}>
           <NotificationList
             workspaceId={workspaceId}
-            items={notifications?.items ?? []}
+            items={items}
             pending={loading}
-            onRead={(item) => markReadMutation.mutate(item)}
+            onRead={markRead}
           />
         </ScrollArea>
       </PopoverContent>

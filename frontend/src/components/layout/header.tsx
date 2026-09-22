@@ -9,6 +9,7 @@ import { LanguageSwitch } from '@/components/language-switch'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { MessageCenter } from '@/features/messages'
 import { NotificationCenter } from '@/features/notifications'
+import { ProjectSwitcher } from '@/features/projects/project-switcher'
 import { NavUser } from './nav-user'
 
 type HeaderProps = React.HTMLAttributes<HTMLElement> & {
@@ -53,6 +54,7 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
       >
         <SidebarTrigger aria-label={t('common.toggleSidebar')} />
         <Separator orientation='vertical' className='h-6' />
+        <ProjectSwitcher />
         {children}
         <div className='app-header-actions ms-auto flex shrink-0 items-center gap-1 sm:gap-2'>
           <ThemeSwitch />

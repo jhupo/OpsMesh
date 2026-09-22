@@ -10,7 +10,7 @@ Tailwind CSS, and source-owned shadcn/ui components.
 - `src/api`: backend transport and typed API errors; no domain policy.
 - `src/components/ui`: shadcn/ui source components managed through `components.json`.
 - `src/components/layout`: application shell, navigation, and responsive layout.
-- `src/context`: global visual and layout providers.
+- `src/context`: global visual, layout, workspace, and project selection providers.
 - `src/features`: product slices; a feature owns its page composition and local contracts.
 - `src/i18n`: locale registry, detection, persistence, and translations.
 - `src/routes`: TanStack Router transport boundaries that compose features.
@@ -44,13 +44,18 @@ The frontend remains local and the API, database and worker remain on the server
 Reconnect the tunnel if its SSH process exits; do not expose the API port just for development.
 
 Password login uses the public `/auth/login`, `/auth/me`, and token revocation contracts. The raw
-bearer token is kept in tab-scoped `sessionStorage`, cleared on authentication failure and logout,
-and never written to persistent browser storage. Protected routes validate the current user before
-rendering. The application also owns explicit 401, 403, 404, 500, and 503 routes.
+bearer token is kept in tab-scoped `sessionStorage`, cleared when the bearer credential is rejected
+or the user logs out, and never written to persistent browser storage. A rejected current password
+does not discard a valid session. A successful password change follows the backend's token
+revocation contract and returns the browser to login. Protected routes validate the current user
+before rendering. The application also owns explicit 401, 403, 404, 500, and 503 routes.
 
 On 2026-09-21, browser verification against the installed server passed password login,
 `/auth/me`, protected-route refresh, logout with server-side token revocation, and login again.
-Overview counters remain placeholders and are not evidence of connected workspace/product flows.
+On 2026-09-22, the account settings route, workspace/team creation dialog, project creation and
+selection, and workspace-scoped notification/message queries were connected to backend contracts.
+The current checkout passes frontend lint and production build; rendered-page verification still
+requires an authenticated browser session against the installed server.
 
 ## Attribution
 

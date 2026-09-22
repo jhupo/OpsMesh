@@ -1,6 +1,6 @@
-import * as React from 'react'
-import { ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronsUpDown, Command } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useWorkspace } from '@/context/workspace-provider'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,18 +14,11 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar'
-import { type Team } from './types'
 
-type TeamSwitcherProps = {
-  teams: Team[]
-}
-
-export function TeamSwitcher({ teams }: TeamSwitcherProps) {
+export function TeamSwitcher() {
   const { isMobile } = useSidebar()
   const { t } = useTranslation()
-  const [activeTeam, setActiveTeam] = React.useState(teams[0])
-
-  if (!activeTeam) return null
+  const { workspaces, activeWorkspace, selectWorkspace } = useWorkspace()
 
   return (
     <SidebarMenu>
@@ -37,13 +30,15 @@ export function TeamSwitcher({ teams }: TeamSwitcherProps) {
               className='data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground'
             >
               <div className='flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground'>
-                <activeTeam.logo className='size-4' />
+                <Command className='size-4' />
               </div>
               <div className='grid flex-1 text-start text-sm leading-tight'>
                 <span className='truncate font-semibold'>
-                  {activeTeam.name}
+                  {activeWorkspace?.name ?? 'OpsMesh'}
                 </span>
-                <span className='truncate text-xs'>{activeTeam.plan}</span>
+                <span className='truncate text-xs'>
+                  {activeWorkspace?.slug ?? t('common.teams')}
+                </span>
               </div>
               <ChevronsUpDown className='ms-auto' />
             </SidebarMenuButton>
@@ -57,16 +52,21 @@ export function TeamSwitcher({ teams }: TeamSwitcherProps) {
             <DropdownMenuLabel className='text-xs text-muted-foreground'>
               {t('common.teams')}
             </DropdownMenuLabel>
-            {teams.map((team) => (
+            {workspaces.map((workspace) => (
               <DropdownMenuItem
-                key={team.name}
-                onClick={() => setActiveTeam(team)}
+                key={workspace.id}
+                onClick={() => selectWorkspace(workspace.id)}
                 className='gap-2 p-2'
               >
                 <div className='flex size-6 items-center justify-center rounded-sm border'>
-                  <team.logo className='size-4 shrink-0' />
+                  <Command className='size-4 shrink-0' />
                 </div>
-                {team.name}
+                <span className='min-w-0 flex-1 truncate'>
+                  {workspace.name}
+                </span>
+                {workspace.id === activeWorkspace?.id && (
+                  <Check className='size-4' aria-hidden='true' />
+                )}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

@@ -16,13 +16,18 @@ const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(
 
 type ApiRequestInit = RequestInit & {
   authenticated?: boolean
+  clearSessionOnUnauthorized?: boolean
 }
 
 export async function apiRequest<T>(
   path: `/${string}`,
   init: ApiRequestInit = {}
 ): Promise<T> {
-  const { authenticated = true, ...requestInit } = init
+  const {
+    authenticated = true,
+    clearSessionOnUnauthorized = true,
+    ...requestInit
+  } = init
   const headers = new Headers(requestInit.headers)
   if (requestInit.body && !headers.has('content-type')) {
     headers.set('content-type', 'application/json')
@@ -40,7 +45,13 @@ export async function apiRequest<T>(
 
   if (!response.ok) {
     const envelope = await parseErrorEnvelope(response)
-    if (authenticated && response.status === 401) clearAuthSession()
+    if (
+      authenticated &&
+      clearSessionOnUnauthorized &&
+      response.status === 401
+    ) {
+      clearAuthSession()
+    }
     throw new ApiError(envelope.error?.message || response.statusText, {
       status: response.status,
       code: envelope.error?.code,

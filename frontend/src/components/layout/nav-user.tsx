@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { LogOut } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Bell, LogOut, Settings, UserRound, UsersRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { type CurrentUser } from '@/api/auth'
 import { getDisplayNameInitials } from '@/lib/utils'
@@ -15,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { SignOutDialog } from '@/components/sign-out-dialog'
+import { NewTeamDialog } from '@/features/teams/new-team-dialog'
 
 type NavUserProps = {
   user: CurrentUser
@@ -23,6 +25,7 @@ type NavUserProps = {
 export function NavUser({ user }: NavUserProps) {
   const { t } = useTranslation()
   const [signOutOpen, setSignOutOpen] = useState(false)
+  const [newTeamOpen, setNewTeamOpen] = useState(false)
   const initials = getDisplayNameInitials(user.display_name)
 
   return (
@@ -63,9 +66,37 @@ export function NavUser({ user }: NavUserProps) {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
+            <DropdownMenuItem asChild>
+              <Link to='/settings' search={{ tab: 'profile' }}>
+                <UserRound />
+                {t('settings.tabs.profile')}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to='/settings' search={{ tab: 'notifications' }}>
+                <Bell />
+                {t('settings.tabs.notifications')}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to='/settings' search={{ tab: 'settings' }}>
+                <Settings />
+                {t('settings.tabs.settings')}
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem onSelect={() => setNewTeamOpen(true)}>
+              <UsersRound />
+              {t('teams.new')}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
             <DropdownMenuItem
               variant='destructive'
-              onClick={() => setSignOutOpen(true)}
+              onSelect={() => setSignOutOpen(true)}
             >
               <LogOut />
               {t('auth.signOut.confirm')}
@@ -73,6 +104,7 @@ export function NavUser({ user }: NavUserProps) {
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      <NewTeamDialog open={newTeamOpen} onOpenChange={setNewTeamOpen} />
       <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
     </>
   )

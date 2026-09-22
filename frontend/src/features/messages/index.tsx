@@ -6,8 +6,8 @@ import {
   markAgentMessageRead,
   type AgentMessage,
 } from '@/api/messages'
-import { workspacesQueryOptions } from '@/api/workspaces'
 import { cn } from '@/lib/utils'
+import { useWorkspace } from '@/context/workspace-provider'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -74,8 +74,8 @@ function MessageRow({
 export function MessageCenter() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const { data: workspacePage } = useQuery(workspacesQueryOptions())
-  const workspaceId = workspacePage?.items[0]?.id
+  const { activeWorkspace } = useWorkspace()
+  const workspaceId = activeWorkspace?.id
   const { data: summary, isPending } = useQuery(
     agentMailboxSummaryQueryOptions(workspaceId)
   )

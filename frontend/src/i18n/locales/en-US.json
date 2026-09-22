@@ -1,6 +1,9 @@
 {
   "common": {
     "cancel": "Cancel",
+    "create": "Create",
+    "save": "Save",
+    "slug": "Slug",
     "language": "Language",
     "teams": "Teams",
     "notifications": "Notifications",
@@ -22,6 +25,44 @@
   "messages": {
     "new": "new",
     "empty": "No messages"
+  },
+  "teams": {
+    "new": "New Team",
+    "name": "Team name",
+    "nameRequired": "Enter a team name.",
+    "slugRequired": "Enter a slug.",
+    "slugInvalid": "Use lowercase letters, numbers, and hyphens."
+  },
+  "projects": {
+    "all": "All Projects",
+    "find": "Find Project…",
+    "empty": "No projects, yet!",
+    "create": "Create Project",
+    "name": "Project name",
+    "nameRequired": "Enter a project name.",
+    "slugRequired": "Enter a slug.",
+    "slugInvalid": "Use lowercase letters, numbers, and hyphens."
+  },
+  "settings": {
+    "tabs": {
+      "profile": "Profile",
+      "notifications": "Notifications",
+      "settings": "Settings"
+    },
+    "profile": {
+      "displayName": "Display name",
+      "email": "Email",
+      "nameRequired": "Enter a display name."
+    },
+    "security": {
+      "currentPassword": "Current password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm password",
+      "currentPasswordRequired": "Enter your current password.",
+      "passwordLength": "Use at least 8 characters.",
+      "confirmPasswordRequired": "Confirm your new password.",
+      "passwordMismatch": "Passwords do not match."
+    }
   },
   "auth": {
     "login": {
