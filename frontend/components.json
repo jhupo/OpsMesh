@@ -17,8 +17,5 @@
     "lib": "@/lib",
     "hooks": "@/hooks"
   },
-  "iconLibrary": "lucide",
-  "registries": {
-    "@shadcn-space": "https://shadcnspace.com/r/{name}.json"
-  }
+  "iconLibrary": "lucide"
 }

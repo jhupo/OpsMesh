@@ -1,5 +1,4 @@
-import { LanguageSwitch } from '@/components/language-switch'
-import { ThemeSwitch } from '@/components/theme-switch'
+import { Logo } from '@/assets/logo'
 
 type AuthLayoutProps = {
   children: React.ReactNode
@@ -7,14 +6,14 @@ type AuthLayoutProps = {
 
 export function AuthLayout({ children }: AuthLayoutProps) {
   return (
-    <main className='auth-surface relative grid min-h-svh overflow-hidden px-6 py-16 sm:px-8'>
-      <div className='absolute end-4 top-4 z-10 flex items-center gap-1'>
-        <ThemeSwitch />
-        <LanguageSwitch />
-      </div>
-      <div className='relative m-auto flex w-full max-w-md flex-col justify-center'>
+    <div className='container grid h-svh max-w-none items-center justify-center'>
+      <div className='mx-auto flex w-full flex-col justify-center space-y-2 py-8 sm:p-8'>
+        <div className='mb-4 flex items-center justify-center'>
+          <Logo className='me-2' />
+          <h1 className='text-xl font-medium'>Shadcn Admin</h1>
+        </div>
         {children}
       </div>
-    </main>
+    </div>
   )
 }

@@ -15,27 +15,11 @@ export type PageResponse<T> = {
   offset: number
 }
 
-export type WorkspaceCreate = {
-  name: string
-  slug: string
-}
-
 export function workspacesQueryOptions() {
   return queryOptions({
     queryKey: ['workspaces', 'accessible'],
     queryFn: () =>
       apiRequest<PageResponse<Workspace>>('/workspaces?limit=50&offset=0'),
     staleTime: 60_000,
-  })
-}
-
-export async function createWorkspace(
-  input: WorkspaceCreate,
-  idempotencyKey: string
-) {
-  return apiRequest<Workspace>('/workspaces', {
-    method: 'POST',
-    headers: { 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify({ ...input, settings: {} }),
   })
 }

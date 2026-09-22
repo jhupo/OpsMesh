@@ -1,11 +1,15 @@
-import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Bell, LogOut, Settings, UserRound, UsersRound } from 'lucide-react'
+import {
+  BadgeCheck,
+  Bell,
+  ChevronsUpDown,
+  CreditCard,
+  LogOut,
+  Sparkles,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { type CurrentUser } from '@/api/auth'
-import { getDisplayNameInitials } from '@/lib/utils'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
+import useDialogState from '@/hooks/use-dialog-state'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,97 +19,108 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+} from '@/components/ui/sidebar'
 import { SignOutDialog } from '@/components/sign-out-dialog'
-import { NewTeamDialog } from '@/features/teams/new-team-dialog'
 
 type NavUserProps = {
-  user: CurrentUser
+  user: {
+    name: string
+    email: string
+    avatar: string
+  }
 }
 
 export function NavUser({ user }: NavUserProps) {
+  const { isMobile } = useSidebar()
+  const [open, setOpen] = useDialogState()
   const { t } = useTranslation()
-  const [signOutOpen, setSignOutOpen] = useState(false)
-  const [newTeamOpen, setNewTeamOpen] = useState(false)
-  const initials = getDisplayNameInitials(user.display_name)
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant='ghost'
-            size='icon'
-            className='rounded-full'
-            aria-label={t('common.userMenu')}
-          >
-            <Avatar className='size-8'>
-              <AvatarFallback>{initials}</AvatarFallback>
-            </Avatar>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          className='w-64 max-w-[calc(100vw-2rem)] rounded-lg'
-          side='bottom'
-          align='end'
-          sideOffset={8}
-        >
-          <DropdownMenuLabel className='p-0 font-normal'>
-            <div className='flex items-center gap-2 px-1 py-1.5 text-start text-sm'>
-              <Avatar className='size-8 rounded-lg'>
-                <AvatarFallback className='rounded-lg'>
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-              <div className='grid min-w-0 flex-1 text-start text-sm leading-tight'>
-                <span className='truncate font-semibold'>
-                  {user.display_name}
-                </span>
-                <span className='truncate text-xs'>{user.email}</span>
-              </div>
-            </div>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            <DropdownMenuItem asChild>
-              <Link to='/settings' search={{ tab: 'profile' }}>
-                <UserRound />
-                {t('settings.tabs.profile')}
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to='/settings' search={{ tab: 'notifications' }}>
-                <Bell />
-                {t('settings.tabs.notifications')}
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to='/settings' search={{ tab: 'settings' }}>
-                <Settings />
-                {t('settings.tabs.settings')}
-              </Link>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            <DropdownMenuItem onSelect={() => setNewTeamOpen(true)}>
-              <UsersRound />
-              {t('teams.new')}
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            <DropdownMenuItem
-              variant='destructive'
-              onSelect={() => setSignOutOpen(true)}
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <SidebarMenuButton
+                size='lg'
+                className='data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground'
+              >
+                <Avatar className='h-8 w-8 rounded-lg'>
+                  <AvatarImage src={user.avatar} alt={user.name} />
+                  <AvatarFallback className='rounded-lg'>SN</AvatarFallback>
+                </Avatar>
+                <div className='grid flex-1 text-start text-sm leading-tight'>
+                  <span className='truncate font-semibold'>{user.name}</span>
+                  <span className='truncate text-xs'>{user.email}</span>
+                </div>
+                <ChevronsUpDown className='ms-auto size-4' />
+              </SidebarMenuButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              className='w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg'
+              side={isMobile ? 'bottom' : 'right'}
+              align='end'
+              sideOffset={4}
             >
-              <LogOut />
-              {t('auth.signOut.confirm')}
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <NewTeamDialog open={newTeamOpen} onOpenChange={setNewTeamOpen} />
-      <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
+              <DropdownMenuLabel className='p-0 font-normal'>
+                <div className='flex items-center gap-2 px-1 py-1.5 text-start text-sm'>
+                  <Avatar className='h-8 w-8 rounded-lg'>
+                    <AvatarImage src={user.avatar} alt={user.name} />
+                    <AvatarFallback className='rounded-lg'>SN</AvatarFallback>
+                  </Avatar>
+                  <div className='grid flex-1 text-start text-sm leading-tight'>
+                    <span className='truncate font-semibold'>{user.name}</span>
+                    <span className='truncate text-xs'>{user.email}</span>
+                  </div>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem>
+                  <Sparkles />
+                  {t('nav_user.upgrade_to_pro')}
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem asChild>
+                  <Link to='/settings/account'>
+                    <BadgeCheck />
+                    {t('nav_user.account')}
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to='/settings'>
+                    <CreditCard />
+                    {t('nav_user.billing')}
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to='/settings/notifications'>
+                    <Bell />
+                    {t('nav_user.notifications')}
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant='destructive'
+                onClick={() => setOpen(true)}
+              >
+                <LogOut />
+                {t('nav_user.log_out')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SidebarMenuItem>
+      </SidebarMenu>
+
+      <SignOutDialog open={!!open} onOpenChange={setOpen} />
     </>
   )
 }

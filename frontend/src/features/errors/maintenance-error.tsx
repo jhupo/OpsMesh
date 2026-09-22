@@ -1,22 +1,20 @@
-import { useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
 export function MaintenanceError() {
   const { t } = useTranslation()
-  const navigate = useNavigate()
-
   return (
-    <main className='grid min-h-svh place-items-center p-6'>
-      <div className='flex w-full max-w-md flex-col items-center gap-2 text-center'>
-        <h1 className='text-8xl leading-none font-bold tracking-tighter'>
-          503
-        </h1>
-        <h2 className='text-lg font-medium'>{t('errors.maintenance.title')}</h2>
-        <Button className='mt-6' onClick={() => void navigate({ to: '/' })}>
-          {t('errors.home')}
-        </Button>
+    <div className='h-svh'>
+      <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
+        <h1 className='text-[7rem] leading-tight font-bold'>503</h1>
+        <span className='font-medium'>{t('errors.maintenance_title')}</span>
+        <p className='text-center text-muted-foreground'>
+          {t('errors.maintenance_desc')}
+        </p>
+        <div className='mt-6 flex gap-4'>
+          <Button variant='outline'>{t('errors.learn_more')}</Button>
+        </div>
       </div>
-    </main>
+    </div>
   )
 }

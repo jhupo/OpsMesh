@@ -1,55 +1,53 @@
-import {
-  normalizeLanguage,
-  supportedLanguages,
-  type SupportedLanguage,
-} from '@/i18n/languages'
 import { Check, Languages } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-export function LanguageSwitch() {
-  const { i18n, t } = useTranslation()
-  const currentLanguage = normalizeLanguage(
-    i18n.resolvedLanguage || i18n.language
-  )
+const languages = [
+  { label: 'Chinese', value: 'zh' },
+  { label: 'English', value: 'en' },
+  { label: 'French', value: 'fr' },
+  { label: 'German', value: 'de' },
+  { label: 'Japanese', value: 'ja' },
+  { label: 'Korean', value: 'ko' },
+  { label: 'Portuguese', value: 'pt' },
+  { label: 'Russian', value: 'ru' },
+  { label: 'Spanish', value: 'es' },
+] as const
 
-  const changeLanguage = (language: SupportedLanguage) => {
-    void i18n.changeLanguage(language)
-  }
+export function LanguageSwitch() {
+  const { i18n } = useTranslation()
 
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant='ghost'
-          size='icon'
-          className='rounded-full'
-          aria-label={t('common.language')}
-        >
-          <Languages data-icon='inline-start' />
+        <Button variant='ghost' size='icon' className='scale-95 rounded-full'>
+          <Languages className='size-[1.2rem]' />
+          <span className='sr-only'>Switch language</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end'>
-        <DropdownMenuGroup>
-          {supportedLanguages.map((language) => (
-            <DropdownMenuItem
-              key={language.value}
-              onClick={() => changeLanguage(language.value)}
-            >
-              {language.label}
-              {currentLanguage === language.value && (
-                <Check className='ms-auto' />
+        {languages.map((lang) => (
+          <DropdownMenuItem
+            key={lang.value}
+            onClick={() => i18n.changeLanguage(lang.value)}
+          >
+            {lang.label}
+            <Check
+              size={14}
+              className={cn(
+                'ms-auto',
+                i18n.language !== lang.value && 'hidden'
               )}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
+            />
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   )

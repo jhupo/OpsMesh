@@ -1,18 +1,25 @@
 # OpsMesh Web
 
-OpsMesh Web uses the application skeleton and layout patterns from
-[`shadcn-admin`](https://github.com/satnaing/shadcn-admin), adapted to the OpsMesh domain model.
-The application is a Vite SPA built with React, TypeScript, TanStack Router, TanStack Query,
-Tailwind CSS, and source-owned shadcn/ui components.
+OpsMesh Web vendors the complete [`shadcn-admin`](https://github.com/satnaing/shadcn-admin)
+application source at upstream commit `e16c87f`, with the internationalization implementation from
+pull request [#311](https://github.com/satnaing/shadcn-admin/pull/311) at commit `95b8f5a` applied on
+top. The upstream navigation, pages, components, layouts, and example data remain available as the
+frontend baseline. OpsMesh integrations are added at product boundaries instead of rewriting the
+foundation components.
+
+The first OpsMesh integration layer provides real password login and protected sessions, accessible
+workspace/project loading, an `All Projects` selector, and the shared header actions. The application
+remains a Vite SPA built with React, TypeScript, TanStack Router, TanStack Query, Tailwind CSS, and
+source-owned shadcn/ui components.
 
 ## Source layout
 
-- `src/api`: backend transport and typed API errors; no domain policy.
+- `src/api`: OpsMesh backend transport and typed API errors; no domain policy.
 - `src/components/ui`: shadcn/ui source components managed through `components.json`.
 - `src/components/layout`: application shell, navigation, and responsive layout.
 - `src/context`: global visual, layout, workspace, and project selection providers.
-- `src/features`: product slices; a feature owns its page composition and local contracts.
-- `src/i18n`: locale registry, detection, persistence, and translations.
+- `src/features`: complete upstream examples plus OpsMesh-owned product slices.
+- `src/i18n`: PR #311 locale registry, browser detection, persistence, and translations.
 - `src/routes`: TanStack Router transport boundaries that compose features.
 - `src/styles`: semantic tokens and global styles.
 
@@ -43,7 +50,8 @@ Set `VITE_API_PROXY_TARGET=http://127.0.0.1:18000` in the ignored `.env.local`.
 The frontend remains local and the API, database and worker remain on the server.
 Reconnect the tunnel if its SSH process exits; do not expose the API port just for development.
 
-Password login uses the public `/auth/login`, `/auth/me`, and token revocation contracts. The raw
+Password login replaces the upstream mock sign-in action and uses the public `/auth/login`,
+`/auth/me`, and token revocation contracts. The raw
 bearer token is kept in tab-scoped `sessionStorage`, cleared when the bearer credential is rejected
 or the user logs out, and never written to persistent browser storage. A rejected current password
 does not discard a valid session. A successful password change follows the backend's token
@@ -52,13 +60,12 @@ before rendering. The application also owns explicit 401, 403, 404, 500, and 503
 
 On 2026-09-21, browser verification against the installed server passed password login,
 `/auth/me`, protected-route refresh, logout with server-side token revocation, and login again.
-On 2026-09-22, the account settings route, workspace/team creation dialog, project creation and
-selection, and workspace-scoped notification/message queries were connected to backend contracts.
-The current checkout passes frontend lint and production build; rendered-page verification still
-requires an authenticated browser session against the installed server.
+On 2026-09-22, the frontend source was reset to the complete upstream application and PR #311 i18n
+baseline. The first retained OpsMesh integrations are authentication, workspace/project context,
+the `All Projects` selector, and the shared header actions. Further product replacement should be
+performed feature by feature without deleting the upstream examples first.
 
 ## Attribution
 
-The retained `shadcn-admin` source and the Shadcn Space `toggle-01` component are used under their
-MIT licenses. See `licenses/shadcn-admin-MIT.txt` and `licenses/shadcn-space-MIT.txt`. OpsMesh
-changes remain under the repository's LGPL-3.0 license.
+The retained `shadcn-admin` source is used under its MIT license. See
+`licenses/shadcn-admin-MIT.txt`. OpsMesh changes remain under the repository's LGPL-3.0 license.

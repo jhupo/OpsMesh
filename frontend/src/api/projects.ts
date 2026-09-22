@@ -11,11 +11,6 @@ export type Project = {
   status: string
 }
 
-export type ProjectCreate = {
-  name: string
-  slug: string
-}
-
 export function projectsQueryOptions(workspaceId: string | undefined) {
   return queryOptions({
     queryKey: ['projects', workspaceId, 'active'],
@@ -25,19 +20,5 @@ export function projectsQueryOptions(workspaceId: string | undefined) {
       ),
     enabled: Boolean(workspaceId),
     staleTime: 60_000,
-  })
-}
-
-export async function createProject(workspaceId: string, input: ProjectCreate) {
-  return apiRequest<Project>(`/workspaces/${workspaceId}/projects`, {
-    method: 'POST',
-    body: JSON.stringify({
-      ...input,
-      description: '',
-      input_path: 'inputs',
-      work_path: 'work',
-      output_path: 'outputs',
-      configuration: {},
-    }),
   })
 }

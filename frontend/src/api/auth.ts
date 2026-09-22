@@ -38,27 +38,6 @@ export function currentUserQueryOptions() {
   })
 }
 
-export async function updateCurrentUser(displayName: string) {
-  return apiRequest<CurrentUser>('/auth/me', {
-    method: 'PATCH',
-    body: JSON.stringify({ display_name: displayName }),
-  })
-}
-
-export async function changePassword(
-  currentPassword: string,
-  newPassword: string
-): Promise<void> {
-  await apiRequest('/auth/password', {
-    method: 'PUT',
-    clearSessionOnUnauthorized: false,
-    body: JSON.stringify({
-      current_password: currentPassword,
-      new_password: newPassword,
-    }),
-  })
-}
-
 export async function revokeToken(tokenId: string): Promise<void> {
   await apiRequest(`/auth/tokens/${tokenId}`, { method: 'DELETE' })
 }

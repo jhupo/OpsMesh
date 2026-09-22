@@ -7,14 +7,13 @@ const ACTIVE_WORKSPACE_KEY = 'opsmesh.active-workspace'
 type WorkspaceContextValue = {
   workspaces: Workspace[]
   activeWorkspace: Workspace | undefined
-  isPending: boolean
   selectWorkspace: (workspaceId: string) => void
 }
 
 const WorkspaceContext = React.createContext<WorkspaceContextValue | null>(null)
 
 export function WorkspaceProvider({ children }: React.PropsWithChildren) {
-  const { data, isPending } = useQuery(workspacesQueryOptions())
+  const { data } = useQuery(workspacesQueryOptions())
   const [selectedWorkspaceId, setSelectedWorkspaceId] = React.useState(() =>
     window.localStorage.getItem(ACTIVE_WORKSPACE_KEY)
   )
@@ -34,8 +33,8 @@ export function WorkspaceProvider({ children }: React.PropsWithChildren) {
   }, [])
 
   const value = React.useMemo(
-    () => ({ workspaces, activeWorkspace, isPending, selectWorkspace }),
-    [workspaces, activeWorkspace, isPending, selectWorkspace]
+    () => ({ workspaces, activeWorkspace, selectWorkspace }),
+    [workspaces, activeWorkspace, selectWorkspace]
   )
 
   return (
@@ -48,8 +47,7 @@ export function WorkspaceProvider({ children }: React.PropsWithChildren) {
 // eslint-disable-next-line react-refresh/only-export-components
 export function useWorkspace() {
   const context = React.useContext(WorkspaceContext)
-  if (!context) {
+  if (!context)
     throw new Error('useWorkspace must be used within WorkspaceProvider')
-  }
   return context
 }

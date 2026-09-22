@@ -1,7 +1,19 @@
 import { type LinkProps } from '@tanstack/react-router'
 
+type User = {
+  name: string
+  email: string
+  avatar: string
+}
+
+type Team = {
+  name: string
+  logo: React.ElementType
+  plan: string
+}
+
 type BaseNavItem = {
-  titleKey: string
+  title: string
   badge?: string
   icon?: React.ElementType
 }
@@ -19,11 +31,13 @@ type NavCollapsible = BaseNavItem & {
 type NavItem = NavCollapsible | NavLink
 
 type NavGroup = {
-  titleKey: string
+  title: string
   items: NavItem[]
 }
 
 type SidebarData = {
+  user: User
+  teams: Team[]
   navGroups: NavGroup[]
 }
 

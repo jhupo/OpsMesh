@@ -1,36 +1,40 @@
 import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
-type GeneralErrorProps = {
+type GeneralErrorProps = React.HTMLAttributes<HTMLDivElement> & {
   minimal?: boolean
 }
 
-export function GeneralError({ minimal = false }: GeneralErrorProps) {
-  const { t } = useTranslation()
+export function GeneralError({
+  className,
+  minimal = false,
+}: GeneralErrorProps) {
   const navigate = useNavigate()
   const { history } = useRouter()
-
+  const { t } = useTranslation()
   return (
-    <main className='grid min-h-svh place-items-center p-6'>
-      <div className='flex w-full max-w-md flex-col items-center gap-2 text-center'>
+    <div className={cn('h-svh w-full', className)}>
+      <div className='m-auto flex h-full w-full flex-col items-center justify-center gap-2'>
         {!minimal && (
-          <h1 className='text-8xl leading-none font-bold tracking-tighter'>
-            500
-          </h1>
+          <h1 className='text-[7rem] leading-tight font-bold'>500</h1>
         )}
-        <h2 className='text-lg font-medium'>{t('errors.general.title')}</h2>
+        <span className='font-medium'>{t('errors.server_error_title')}</span>
+        <p className='text-center text-muted-foreground'>
+          {t('errors.server_error_desc')}
+        </p>
         {!minimal && (
-          <div className='mt-6 flex gap-3'>
+          <div className='mt-6 flex gap-4'>
             <Button variant='outline' onClick={() => history.go(-1)}>
-              {t('errors.goBack')}
+              {t('errors.go_back')}
             </Button>
-            <Button onClick={() => void navigate({ to: '/' })}>
-              {t('errors.home')}
+            <Button onClick={() => navigate({ to: '/' })}>
+              {t('errors.back_to_home')}
             </Button>
           </div>
         )}
       </div>
-    </main>
+    </div>
   )
 }

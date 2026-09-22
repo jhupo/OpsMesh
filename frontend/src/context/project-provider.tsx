@@ -57,8 +57,7 @@ export function ProjectProvider({ children }: React.PropsWithChildren) {
 // eslint-disable-next-line react-refresh/only-export-components
 export function useProject() {
   const context = React.useContext(ProjectContext)
-  if (!context) {
+  if (!context)
     throw new Error('useProject must be used within ProjectProvider')
-  }
   return context
 }
