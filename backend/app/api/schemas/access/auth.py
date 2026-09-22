@@ -12,6 +12,7 @@ class CurrentUserResponse(ORMModel):
     user_id: UUID
     email: str
     display_name: str
+    platform_admin: bool
 
 
 class CurrentUserUpdateRequest(BaseModel):

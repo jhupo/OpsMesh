@@ -1,5 +1,6 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { Bell, LogOut, Settings, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { currentUserQueryOptions } from '@/api/auth'
 import { getDisplayNameInitials } from '@/lib/utils'
@@ -13,7 +14,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { SignOutDialog } from '@/components/sign-out-dialog'
@@ -22,25 +22,29 @@ export function ProfileDropdown() {
   const [open, setOpen] = useDialogState()
   const { t } = useTranslation()
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
-  const initials = getDisplayNameInitials(user.display_name)
-
   return (
     <>
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
-          <Button variant='ghost' className='relative h-8 w-8 rounded-full'>
-            <Avatar className='h-8 w-8'>
-              <AvatarFallback>{initials}</AvatarFallback>
+          <Button
+            variant='ghost'
+            className='relative size-8 rounded-full'
+            aria-label={t('profile_dropdown.profile')}
+          >
+            <Avatar className='size-8'>
+              <AvatarFallback>
+                {getDisplayNameInitials(user.display_name)}
+              </AvatarFallback>
             </Avatar>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className='w-56' align='end' forceMount>
+        <DropdownMenuContent className='w-56' align='end'>
           <DropdownMenuLabel className='font-normal'>
             <div className='flex flex-col gap-1.5'>
-              <p className='text-sm leading-none font-medium'>
+              <p className='truncate text-sm leading-none font-medium'>
                 {user.display_name}
               </p>
-              <p className='text-xs leading-none text-muted-foreground'>
+              <p className='truncate text-xs leading-none text-muted-foreground'>
                 {user.email}
               </p>
             </div>
@@ -49,36 +53,41 @@ export function ProfileDropdown() {
           <DropdownMenuGroup>
             <DropdownMenuItem asChild>
               <Link to='/settings'>
+                <UserRound />
                 {t('profile_dropdown.profile')}
-                <DropdownMenuShortcut>⇧⌘P</DropdownMenuShortcut>
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link to='/settings'>
-                {t('profile_dropdown.billing')}
-                <DropdownMenuShortcut>⌘B</DropdownMenuShortcut>
+              <Link to='/settings/notifications'>
+                <Bell />
+                {t('settings.notifications')}
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link to='/settings'>
+              <Link
+                to={
+                  import.meta.env.DEV && user.platform_admin === true
+                    ? '/settings/display'
+                    : '/settings'
+                }
+              >
+                <Settings />
                 {t('profile_dropdown.settings')}
-                <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
               </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              {t('profile_dropdown.new_team')}
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant='destructive' onClick={() => setOpen(true)}>
-            {t('profile_dropdown.sign_out')}
-            <DropdownMenuShortcut className='text-current'>
-              ⇧⌘Q
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              variant='destructive'
+              onClick={() => setOpen(true)}
+            >
+              <LogOut />
+              {t('profile_dropdown.sign_out')}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-
       <SignOutDialog open={!!open} onOpenChange={setOpen} />
     </>
   )

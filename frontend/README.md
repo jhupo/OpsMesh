@@ -62,10 +62,32 @@ On 2026-09-21, browser verification against the installed server passed password
 `/auth/me`, protected-route refresh, logout with server-side token revocation, and login again.
 On 2026-09-22, the frontend source was reset to the complete upstream application and PR #311 i18n
 baseline. The first retained OpsMesh integrations are authentication, workspace/project context,
-the `All Projects` selector, and the shared header actions. Further product replacement should be
+the `All Projects` selector, and the shared header actions. The login form uses the Shadcn Space
+`label-06` floating-label component; its Email/Password labels stay English by request. Only Chinese
+and English locales are enabled. The theme button toggles light/dark directly. Settings and user
+actions live in the header avatar menu, not the sidebar; the duplicate dashboard top navigation
+and sidebar user footer are removed. The authenticated layout owns one fixed header with a bottom
+divider; routes replace only the independently scrolling content. Settings use registry `tabs-06`
+vertical animated navigation (horizontal at mobile widths). Further product replacement should be
 performed feature by feature without deleting the upstream examples first.
+
+Profile combines name/email and password settings, using `PATCH /auth/me` and `PUT /auth/password`.
+Biography and notification preferences are disabled placeholders; they do not persist browser-only
+data or report simulated saves. Birthday, profile links, appearance and the separate account page
+have been removed. Only a development session with authoritative `/auth/me.platform_admin === true`
+can enable the Router/Query debug panels in Settings → Display. That display preference is local
+and per-user; login and non-admin sessions never mount the panels. An installed backend without
+this response field keeps the panels hidden until its release is updated.
+
+Verification on 2026-09-22: installed-server login and profile save passed through the SSH tunnel.
+An isolated in-memory instance of the real auth API verified the admin toggle and ordinary-user
+rejection without changing server roles. Desktop/mobile light/dark review covered login, settings,
+the persistent header, content scrolling and route changes. Five affected backend auth flows,
+Ruff, frontend lint, TypeScript and the production build passed. Notification preference storage
+and biography storage remain explicitly reserved, not implemented.
 
 ## Attribution
 
 The retained `shadcn-admin` source is used under its MIT license. See
-`licenses/shadcn-admin-MIT.txt`. OpsMesh changes remain under the repository's LGPL-3.0 license.
+`licenses/shadcn-admin-MIT.txt`. The `label-06` and `tabs-06` source retains the Shadcn Space MIT notice in
+`licenses/shadcn-space-MIT.txt`. OpsMesh changes remain under the repository's LGPL-3.0 license.

@@ -6,7 +6,20 @@
       "empty": "No projects, yet!"
     },
     "notifications": "Notifications",
-    "messages": "Messages"
+    "messages": "Messages",
+    "developerTools": "Developer tools",
+    "notificationPreferences": {
+      "taskUpdates": "Task updates",
+      "approvals": "Approvals",
+      "security": "Account security"
+    },
+    "passwordMismatch": "Passwords do not match.",
+    "changePassword": "Change password",
+    "password": {
+      "current": "Current password",
+      "next": "New password",
+      "confirmation": "Confirm password"
+    }
   },
   "sidebar": {
     "general": "General",
@@ -54,9 +67,6 @@
     "since_last_hour": "+{{value}} since last hour",
     "recent_sales": "Recent Sales",
     "recent_sales_desc": "You made {{count}} sales this month.",
-    "customers": "Customers",
-    "products": "Products",
-    "settings": "Settings",
     "traffic_overview": "Traffic Overview",
     "weekly_clicks_visitors": "Weekly clicks and unique visitors",
     "total_clicks": "Total Clicks",
@@ -444,7 +454,7 @@
     "search_language": "Search language...",
     "no_language_found": "No language found.",
     "update_account": "Update account",
-    "notify_about": "Notify me about...",
+    "notify_about": "Notification scope",
     "all_new_messages": "All new messages",
     "direct_messages_mentions": "Direct messages and mentions",
     "nothing": "Nothing",
@@ -487,7 +497,7 @@
     "email_required": "Please enter your email.",
     "email_invalid": "Please enter a valid email address.",
     "password_required": "Please enter your password.",
-    "password_min_length": "Password must be at least 7 characters long.",
+    "password_min_length": "Password must be at least 8 characters long.",
     "confirm_password_required": "Please confirm your password.",
     "passwords_not_match": "Passwords don't match.",
     "first_name_required": "First Name is required.",

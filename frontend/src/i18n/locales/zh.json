@@ -6,7 +6,20 @@
       "empty": "暂无项目"
     },
     "notifications": "通知",
-    "messages": "消息"
+    "messages": "消息",
+    "developerTools": "调试面板",
+    "notificationPreferences": {
+      "taskUpdates": "任务进度",
+      "approvals": "审批",
+      "security": "账号安全"
+    },
+    "passwordMismatch": "两次密码不一致",
+    "changePassword": "修改密码",
+    "password": {
+      "current": "当前密码",
+      "next": "新密码",
+      "confirmation": "确认密码"
+    }
   },
   "sidebar": {
     "general": "通用",
@@ -54,9 +67,6 @@
     "since_last_hour": "较上小时 +{{value}}",
     "recent_sales": "最近销售",
     "recent_sales_desc": "本月完成 {{count}} 笔销售",
-    "customers": "客户",
-    "products": "产品",
-    "settings": "设置",
     "traffic_overview": "流量概览",
     "weekly_clicks_visitors": "每周点击量和独立访客",
     "total_clicks": "总点击量",
@@ -444,7 +454,7 @@
     "search_language": "搜索语言...",
     "no_language_found": "未找到语言。",
     "update_account": "更新账户",
-    "notify_about": "通知方式...",
+    "notify_about": "通知范围",
     "all_new_messages": "所有新消息",
     "direct_messages_mentions": "私信和提及",
     "nothing": "无",
@@ -487,7 +497,7 @@
     "email_required": "请输入您的邮箱。",
     "email_invalid": "请输入有效的邮箱地址。",
     "password_required": "请输入您的密码。",
-    "password_min_length": "密码长度至少为 7 个字符。",
+    "password_min_length": "密码长度至少为 8 个字符。",
     "confirm_password_required": "请确认您的密码。",
     "passwords_not_match": "两次输入的密码不一致。",
     "first_name_required": "名字为必填项。",

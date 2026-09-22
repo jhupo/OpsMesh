@@ -8,9 +8,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
-import { TopNav } from '@/components/layout/top-nav'
 import { Analytics } from './components/analytics'
 import { Overview } from './components/overview'
 import { RecentSales } from './components/recent-sales'
@@ -18,39 +16,9 @@ import { RecentSales } from './components/recent-sales'
 export function Dashboard() {
   const { t } = useTranslation()
 
-  const topNav = [
-    {
-      title: t('dashboard.overview'),
-      href: 'dashboard/overview',
-      isActive: true,
-      disabled: false,
-    },
-    {
-      title: t('dashboard.customers'),
-      href: 'dashboard/customers',
-      isActive: false,
-      disabled: true,
-    },
-    {
-      title: t('dashboard.products'),
-      href: 'dashboard/products',
-      isActive: false,
-      disabled: true,
-    },
-    {
-      title: t('dashboard.settings'),
-      href: 'dashboard/settings',
-      isActive: false,
-      disabled: true,
-    },
-  ]
-
   return (
     <>
       {/* ===== Top Heading ===== */}
-      <Header>
-        <TopNav links={topNav} className='me-auto' />
-      </Header>
 
       {/* ===== Main ===== */}
       <Main>

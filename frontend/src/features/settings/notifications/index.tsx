@@ -5,10 +5,7 @@ import { NotificationsForm } from './notifications-form'
 export function SettingsNotifications() {
   const { t } = useTranslation()
   return (
-    <ContentSection
-      title={t('settings.notifications')}
-      desc={t('settings.notifications_desc')}
-    >
+    <ContentSection title={t('settings.notifications')}>
       <NotificationsForm />
     </ContentSection>
   )

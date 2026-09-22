@@ -58,6 +58,7 @@ async def register_user(
         user_id=user.id,
         email=user.email,
         display_name=user.display_name,
+        platform_admin=user.platform_admin,
     )
 
 
@@ -107,6 +108,7 @@ async def get_current_user_profile(
         user_id=current_user.user_id,
         email=current_user.email,
         display_name=current_user.display_name,
+        platform_admin=current_user.platform_admin,
     )
 
 
@@ -134,6 +136,7 @@ async def update_current_user_profile(
         user_id=user.id,
         email=user.email,
         display_name=user.display_name,
+        platform_admin=user.platform_admin,
     )
 
 
@@ -174,6 +177,7 @@ async def change_current_user_password(
         user_id=user.id,
         email=user.email,
         display_name=user.display_name,
+        platform_admin=user.platform_admin,
     )
 
 

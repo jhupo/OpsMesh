@@ -12,7 +12,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { useAppsData } from './data/use-apps-data'
 
@@ -83,7 +82,6 @@ export function Apps() {
   return (
     <>
       {/* ===== Top Heading ===== */}
-      <Header />
 
       {/* ===== Content ===== */}
       <Main fixed>

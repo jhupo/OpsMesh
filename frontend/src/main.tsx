@@ -9,7 +9,9 @@ import {
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import i18n from '@/i18n'
 import { toast } from 'sonner'
+import { ApiError } from '@/api/errors'
 import { useAuthStore } from '@/stores/auth-store'
+import { clearAuthSession, safeRedirectPath } from '@/lib/auth-session'
 import { handleServerError } from '@/lib/handle-server-error'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -29,6 +31,8 @@ const queryClient = new QueryClient({
         if (failureCount >= 0 && import.meta.env.DEV) return false
         if (failureCount > 3 && import.meta.env.PROD) return false
 
+        if (error instanceof ApiError && [401, 403].includes(error.status))
+          return false
         return !(
           error instanceof AxiosError &&
           [401, 403].includes(error.response?.status ?? 0)
@@ -51,6 +55,20 @@ const queryClient = new QueryClient({
   },
   queryCache: new QueryCache({
     onError: (error) => {
+      if (error instanceof ApiError && error.status === 401) {
+        clearAuthSession()
+        if (router.history.location.pathname === '/sign-in') return
+        void router
+          .navigate({
+            to: '/sign-in',
+            search: {
+              redirect: safeRedirectPath(router.history.location.href),
+            },
+            replace: true,
+          })
+          .then(() => queryClient.clear())
+        return
+      }
       if (error instanceof AxiosError) {
         if (error.response?.status === 401) {
           toast.error(i18n.t('errors.session_expired'))
@@ -79,6 +97,8 @@ const router = createRouter({
   context: { queryClient },
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0,
+  scrollRestoration: true,
+  scrollToTopSelectors: ['#content'],
 })
 
 // Register the router instance for type safety

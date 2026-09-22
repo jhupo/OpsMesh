@@ -1,172 +1,134 @@
 import { z } from 'zod'
-import { useFieldArray, useForm } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import {
+  useMutation,
+  useQueryClient,
+  useSuspenseQuery,
+} from '@tanstack/react-query'
+import { Check, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { showSubmittedData } from '@/lib/show-submitted-data'
-import { cn } from '@/lib/utils'
+import { currentUserQueryOptions, updateProfile } from '@/api/auth'
+import { getDisplayNameInitials } from '@/lib/utils'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { PasswordForm } from './password-form'
 
 export function ProfileForm() {
   const { t } = useTranslation()
-
-  const profileFormSchema = z.object({
-    username: z
-      .string(t('validation.username_required'))
-      .min(2, t('validation.username_min'))
-      .max(30, t('validation.username_max')),
-    email: z.email({
-      error: (iss) =>
-        iss.input === undefined ? t('validation.select_email') : undefined,
-    }),
-    bio: z.string().max(160).min(4),
-    urls: z
-      .array(
-        z.object({
-          value: z.url(t('validation.url_invalid')),
-        })
-      )
-      .optional(),
+  const { data: user } = useSuspenseQuery(currentUserQueryOptions())
+  const queryClient = useQueryClient()
+  const schema = z.object({
+    name: z.string().trim().min(1, t('validation.name_required')).max(120),
   })
-
-  type ProfileFormValues = z.infer<typeof profileFormSchema>
-
-  // This can come from your database or API.
-  const defaultValues: Partial<ProfileFormValues> = {
-    bio: 'I own a computer.',
-    urls: [
-      { value: 'https://shadcn.com' },
-      { value: 'http://twitter.com/shadcn' },
-    ],
-  }
-
-  const form = useForm<ProfileFormValues>({
-    resolver: zodResolver(profileFormSchema),
-    defaultValues,
-    mode: 'onChange',
+  const form = useForm<z.infer<typeof schema>>({
+    resolver: zodResolver(schema),
+    defaultValues: { name: user.display_name },
   })
-
-  const { fields, append } = useFieldArray({
-    name: 'urls',
-    control: form.control,
+  const save = useMutation({
+    mutationFn: (data: z.infer<typeof schema>) => updateProfile(data.name),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(currentUserQueryOptions().queryKey, updated)
+      form.reset({ name: updated.display_name })
+    },
+    onError: (error) => {
+      form.setError('root', { message: error.message })
+    },
   })
-
   return (
-    <Form {...form}>
-      <form
-        onSubmit={form.handleSubmit((data) => showSubmittedData(data))}
-        className='space-y-8'
-      >
-        <FormField
-          control={form.control}
-          name='username'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('settings_form.username')}</FormLabel>
-              <FormControl>
-                <Input placeholder='shadcn' {...field} />
-              </FormControl>
-              <FormDescription>
-                {t('settings_form.username_desc')}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name='email'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('settings_form.email')}</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={t('settings_form.select_email')}
-                    />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value='m@example.com'>m@example.com</SelectItem>
-                  <SelectItem value='m@google.com'>m@google.com</SelectItem>
-                  <SelectItem value='m@support.com'>m@support.com</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>{t('settings_form.email_desc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name='bio'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('settings_form.bio')}</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder={t('settings_form.bio_placeholder')}
-                  className='resize-none'
-                  {...field}
-                />
-              </FormControl>
-              <FormDescription>{t('settings_form.bio_desc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <div>
-          {fields.map((field, index) => (
+    <div className='flex flex-col gap-8'>
+      <Form {...form}>
+        <form
+          className='flex flex-col gap-6'
+          onSubmit={form.handleSubmit((data) => save.mutate(data))}
+        >
+          <div className='flex items-center gap-4'>
+            <Avatar className='size-14'>
+              <AvatarFallback>
+                {getDisplayNameInitials(user.display_name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className='min-w-0'>
+              <p className='truncate font-medium'>{user.display_name}</p>
+              <p className='truncate text-sm text-muted-foreground'>
+                {user.email}
+              </p>
+            </div>
+          </div>
+          <FieldGroup className='grid gap-6 md:grid-cols-2'>
             <FormField
               control={form.control}
-              key={field.id}
-              name={`urls.${index}.value`}
+              name='name'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className={cn(index !== 0 && 'sr-only')}>
-                    {t('settings_form.urls')}
-                  </FormLabel>
-                  <FormDescription className={cn(index !== 0 && 'sr-only')}>
-                    {t('settings_form.urls_desc')}
-                  </FormDescription>
-                  <FormControl className={cn(index !== 0 && 'mt-1.5')}>
-                    <Input {...field} />
+                  <FormLabel>{t('settings_form.name')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      autoComplete='name'
+                      disabled={save.isPending}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-          ))}
-          <Button
-            type='button'
-            variant='outline'
-            size='sm'
-            className='mt-2'
-            onClick={() => append({ value: '' })}
-          >
-            {t('settings_form.add_url')}
-          </Button>
-        </div>
-        <Button type='submit'>{t('settings_form.update_profile')}</Button>
-      </form>
-    </Form>
+            <Field>
+              <FieldLabel htmlFor='profile-email'>
+                {t('settings_form.email')}
+              </FieldLabel>
+              <Input
+                id='profile-email'
+                value={user.email}
+                readOnly
+                autoComplete='email'
+              />
+            </Field>
+            <Field className='md:col-span-2' data-disabled>
+              <FieldLabel htmlFor='profile-bio'>
+                {t('settings_form.bio')}
+              </FieldLabel>
+              {/* Reserved until the profile API exposes biography storage. */}
+              <Textarea
+                id='profile-bio'
+                value=''
+                disabled
+                className='min-h-24 resize-none'
+              />
+            </Field>
+          </FieldGroup>
+          {form.formState.errors.root && (
+            <p role='alert' className='text-sm text-destructive'>
+              {form.formState.errors.root.message}
+            </p>
+          )}
+          <div className='flex justify-end'>
+            <Button
+              type='submit'
+              disabled={save.isPending || !form.formState.isDirty}
+            >
+              {save.isPending ? (
+                <Loader2 className='animate-spin' />
+              ) : save.isSuccess && !form.formState.isDirty ? (
+                <Check />
+              ) : null}
+              {t('settings_form.update_profile')}
+            </Button>
+          </div>
+        </form>
+      </Form>
+      <PasswordForm />
+    </div>
   )
 }

@@ -6,17 +6,13 @@ import {
   useNavigate,
   useRouter,
 } from '@tanstack/react-router'
-import { useAuth, UserButton } from '@clerk/react'
+import { useAuth } from '@clerk/react'
 import { ExternalLink, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ClerkLogo } from '@/assets/clerk-logo'
 import { Button } from '@/components/ui/button'
-import { ConfigDrawer } from '@/components/config-drawer'
-import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { LearnMore } from '@/components/learn-more'
-import { Search } from '@/components/search'
-import { ThemeSwitch } from '@/components/theme-switch'
 import { UsersDialogs } from '@/features/users/components/users-dialogs'
 import { UsersPrimaryButtons } from '@/features/users/components/users-primary-buttons'
 import { UsersProvider } from '@/features/users/components/users-provider'
@@ -49,13 +45,6 @@ function UserManagement() {
 
   return (
     <UsersProvider>
-      <Header fixed>
-        <Search className='me-auto' />
-        <ThemeSwitch />
-        <ConfigDrawer />
-        <UserButton />
-      </Header>
-
       <Main className='flex flex-1 flex-col gap-4 sm:gap-6'>
         <div className='flex flex-wrap items-end justify-between gap-2'>
           <div>

@@ -1,64 +1,47 @@
-import { Outlet } from '@tanstack/react-router'
-import { Monitor, Bell, Palette, Wrench, UserCog } from 'lucide-react'
+import { useSuspenseQuery } from '@tanstack/react-query'
+import { Outlet, useLocation, useNavigate } from '@tanstack/react-router'
+import { Bell, Monitor, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Separator } from '@/components/ui/separator'
-import { Header } from '@/components/layout/header'
+import { currentUserQueryOptions } from '@/api/auth'
 import { Main } from '@/components/layout/main'
-import { SidebarNav } from './components/sidebar-nav'
+import TabsVertical from '@/components/shadcn-space/tabs/tabs-06'
 
 export function Settings() {
   const { t } = useTranslation()
-
-  const sidebarNavItems = [
+  const { pathname } = useLocation()
+  const navigate = useNavigate()
+  const { data: user } = useSuspenseQuery(currentUserQueryOptions())
+  const items = [
+    { id: '/settings', label: t('settings.profile'), icon: UserRound },
     {
-      title: t('settings.profile'),
-      href: '/settings',
-      icon: <UserCog size={18} />,
+      id: '/settings/notifications',
+      label: t('settings.notifications'),
+      icon: Bell,
     },
-    {
-      title: t('settings.account'),
-      href: '/settings/account',
-      icon: <Wrench size={18} />,
-    },
-    {
-      title: t('settings.appearance'),
-      href: '/settings/appearance',
-      icon: <Palette size={18} />,
-    },
-    {
-      title: t('settings.notifications'),
-      href: '/settings/notifications',
-      icon: <Bell size={18} />,
-    },
-    {
-      title: t('settings.display'),
-      href: '/settings/display',
-      icon: <Monitor size={18} />,
-    },
+    ...(import.meta.env.DEV && user.platform_admin === true
+      ? [
+          {
+            id: '/settings/display',
+            label: t('settings.display'),
+            icon: Monitor,
+          },
+        ]
+      : []),
   ]
-
   return (
-    <>
-      {/* ===== Top Heading ===== */}
-      <Header />
-
-      <Main fixed>
-        <div className='space-y-0.5'>
-          <h1 className='text-2xl font-bold tracking-tight md:text-3xl'>
-            {t('settings.title')}
-          </h1>
-          <p className='text-muted-foreground'>{t('settings.desc')}</p>
-        </div>
-        <Separator className='my-4 lg:my-6' />
-        <div className='flex flex-1 flex-col space-y-2 overflow-hidden md:space-y-2 lg:flex-row lg:space-y-0 lg:space-x-12'>
-          <aside className='top-0 lg:sticky lg:w-1/5'>
-            <SidebarNav items={sidebarNavItems} />
-          </aside>
-          <div className='flex w-full overflow-y-hidden p-1'>
-            <Outlet />
-          </div>
-        </div>
-      </Main>
-    </>
+    <Main>
+      <div className='mx-auto flex w-full max-w-5xl flex-col gap-8 py-2 md:py-6'>
+        <h1 className='text-2xl font-semibold tracking-tight'>
+          {t('settings.title')}
+        </h1>
+        <TabsVertical
+          items={items}
+          value={pathname.replace(/\/$/, '')}
+          onValueChange={(to) => void navigate({ to })}
+        >
+          <Outlet />
+        </TabsVertical>
+      </div>
+    </Main>
   )
 }

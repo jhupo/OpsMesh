@@ -35,6 +35,18 @@ export function clearAuthSession(): void {
 }
 
 export function safeRedirectPath(value: string | undefined): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/'
-  return value
+  if (
+    !value ||
+    !value.startsWith('/') ||
+    value.startsWith('//') ||
+    value.includes('\\')
+  )
+    return '/'
+  const target = new URL(value, 'https://opsmesh.invalid')
+  if (
+    target.origin !== 'https://opsmesh.invalid' ||
+    /^\/sign-in(?:-2)?\/?$/.test(target.pathname)
+  )
+    return '/'
+  return target.pathname + target.search + target.hash
 }

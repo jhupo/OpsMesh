@@ -35,7 +35,7 @@ export function SignUpForm({
       password: z
         .string()
         .min(1, t('validation.password_required'))
-        .min(7, t('validation.password_min_length')),
+        .min(8, t('validation.password_min_length')),
       confirmPassword: z
         .string()
         .min(1, t('validation.confirm_password_required')),

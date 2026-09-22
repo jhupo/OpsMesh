@@ -8,9 +8,10 @@ human approval, isolated execution, operational visibility, and audit evidence a
 workflows.
 
 The project is backend-first and pre-1.0. The control plane is the current focus. The Web Portal
-under `frontend/` now uses a trimmed `shadcn-admin` application skeleton with TanStack Router,
+under `frontend/` uses the complete `shadcn-admin` foundation with TanStack Router,
 TanStack Query, theme switching, and Chinese/English locale detection. The first public-API slice
-implements password login, current-user validation, protected routing, token revocation, and the
+implements password login, current-user validation, protected routing, profile/password updates,
+superadmin-only development diagnostics, token revocation, and the
 401/403/404/500/503 application states; the remaining product screens are implemented later as
 complete vertical slices.
 

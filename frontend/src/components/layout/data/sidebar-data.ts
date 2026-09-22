@@ -1,19 +1,13 @@
 import {
   Construction,
   LayoutDashboard,
-  Monitor,
   Bug,
   ListTodo,
   FileX,
   HelpCircle,
   Lock,
-  Bell,
   Package,
-  Palette,
   ServerOff,
-  Settings,
-  Wrench,
-  UserCog,
   UserX,
   Users,
   MessagesSquare,
@@ -30,11 +24,6 @@ export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
 
   return {
-    user: {
-      name: 'satnaing',
-      email: 'satnaingdev@gmail.com',
-      avatar: '/avatars/shadcn.jpg',
-    },
     teams: [
       {
         name: 'Shadcn Admin',
@@ -167,37 +156,6 @@ export function useSidebarData(): SidebarData {
       {
         title: t('sidebar.other'),
         items: [
-          {
-            title: t('sidebar.settings'),
-            icon: Settings,
-            items: [
-              {
-                title: t('sidebar.profile'),
-                url: '/settings',
-                icon: UserCog,
-              },
-              {
-                title: t('sidebar.account'),
-                url: '/settings/account',
-                icon: Wrench,
-              },
-              {
-                title: t('sidebar.appearance'),
-                url: '/settings/appearance',
-                icon: Palette,
-              },
-              {
-                title: t('sidebar.notifications'),
-                url: '/settings/notifications',
-                icon: Bell,
-              },
-              {
-                title: t('sidebar.display'),
-                url: '/settings/display',
-                icon: Monitor,
-              },
-            ],
-          },
           {
             title: t('sidebar.help_center'),
             url: '/help-center',

@@ -2,7 +2,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useLocation } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { revokeToken } from '@/api/auth'
-import { clearAuthSession, getAuthSession } from '@/lib/auth-session'
+import {
+  clearAuthSession,
+  getAuthSession,
+  safeRedirectPath,
+} from '@/lib/auth-session'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 
 interface SignOutDialogProps {
@@ -17,17 +21,18 @@ export function SignOutDialog({ open, onOpenChange }: SignOutDialogProps) {
   const { t } = useTranslation()
 
   const handleSignOut = async () => {
+    await queryClient.cancelQueries()
     const session = getAuthSession()
     if (session) await revokeToken(session.tokenId).catch(() => undefined)
     clearAuthSession()
-    queryClient.clear()
     // Preserve current location for redirect after sign-in
-    const currentPath = location.href
-    navigate({
+    const currentPath = safeRedirectPath(location.href)
+    await navigate({
       to: '/sign-in',
       search: { redirect: currentPath },
       replace: true,
     })
+    queryClient.clear()
   }
 
   return (
@@ -35,7 +40,7 @@ export function SignOutDialog({ open, onOpenChange }: SignOutDialogProps) {
       open={open}
       onOpenChange={onOpenChange}
       title={t('sign_out.title')}
-      desc={t('sign_out.desc')}
+      desc={<span className='sr-only'>{t('sign_out.title')}</span>}
       confirmText={t('sign_out.confirm')}
       destructive
       handleConfirm={handleSignOut}

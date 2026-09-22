@@ -134,6 +134,7 @@ def test_password_login_issues_user_token_and_auth_me_accepts_it() -> None:
 
     assert me.status_code == 200
     assert me.json() == registered.json()
+    assert me.json()["platform_admin"] is False
 
 
 def test_bootstrapped_superadmin_can_login_and_reset_platform_access() -> None:
@@ -146,6 +147,9 @@ def test_bootstrapped_superadmin_can_login_and_reset_platform_access() -> None:
     )
     assert logged_in.status_code == 200
     first_token = logged_in.json()["token"]
+    profile = client.get("/api/v1/auth/me", headers=_user_token_headers(first_token))
+    assert profile.status_code == 200
+    assert profile.json()["platform_admin"] is True
     platform_users = client.get(
         "/api/v1/admin/users?limit=50&offset=0",
         headers=_user_token_headers(first_token),
@@ -379,6 +383,7 @@ def test_auth_me_returns_current_user_for_user_and_internal_tokens() -> None:
         "user_id": str(user.id),
         "email": "me@example.com",
         "display_name": "Me User",
+        "platform_admin": False,
     }
     assert via_internal_token.status_code == 200
     assert via_internal_token.json() == via_user_token.json()

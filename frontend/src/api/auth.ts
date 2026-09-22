@@ -5,6 +5,7 @@ export type CurrentUser = {
   user_id: string
   email: string
   display_name: string
+  platform_admin: boolean
 }
 
 type LoginResponse = {
@@ -40,4 +41,22 @@ export function currentUserQueryOptions() {
 
 export async function revokeToken(tokenId: string): Promise<void> {
   await apiRequest(`/auth/tokens/${tokenId}`, { method: 'DELETE' })
+}
+
+export function updateProfile(displayName: string) {
+  return apiRequest<CurrentUser>('/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify({ display_name: displayName }),
+  })
+}
+
+export function changePassword(currentPassword: string, newPassword: string) {
+  return apiRequest<CurrentUser>('/auth/password', {
+    method: 'PUT',
+    clearSessionOnUnauthorized: false,
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  })
 }

@@ -11,10 +11,11 @@ export const Route = createFileRoute('/_authenticated')({
     }
 
     try {
-      await context.queryClient.ensureQueryData(currentUserQueryOptions())
+      await context.queryClient.fetchQuery(currentUserQueryOptions())
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         clearAuthSession()
+        context.queryClient.clear()
         throw redirect({ to: '/sign-in', search: { redirect: location.href } })
       }
       throw error

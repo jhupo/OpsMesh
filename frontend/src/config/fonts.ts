@@ -1,5 +1,5 @@
 /**
- * List of available font names (visit the url `/settings/appearance`).
+ * Font choices provided by the upstream application foundation.
  * This array is used to generate dynamic font classes (e.g., `font-inter`, `font-manrope`).
  *
  * 📝 How to Add a New Font (Tailwind v4+):
