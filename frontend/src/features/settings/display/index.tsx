@@ -5,7 +5,7 @@ import { DisplayForm } from './display-form'
 export function SettingsDisplay() {
   const { t } = useTranslation()
   return (
-    <ContentSection title={t('settings.display')} className='max-w-xl'>
+    <ContentSection title={t('settings.display')}>
       <DisplayForm />
     </ContentSection>
   )
