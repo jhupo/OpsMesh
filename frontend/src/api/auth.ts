@@ -32,16 +32,16 @@ export async function login(credentials: LoginCredentials) {
   })
 }
 
+export async function logout(): Promise<void> {
+  await apiRequest('/auth/logout', { method: 'POST' })
+}
+
 export function currentUserQueryOptions() {
   return queryOptions({
     queryKey: ['auth', 'current-user'],
     queryFn: () => apiRequest<CurrentUser>('/auth/me'),
     staleTime: 60_000,
   })
-}
-
-export async function revokeToken(tokenId: string): Promise<void> {
-  await apiRequest(`/auth/tokens/${tokenId}`, { method: 'DELETE' })
 }
 
 export type ProfileUpdate = {

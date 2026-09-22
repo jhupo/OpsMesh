@@ -139,6 +139,11 @@ def test_password_login_issues_user_token_and_auth_me_accepts_it() -> None:
     assert me.json() == registered.json()
     assert me.json()["platform_admin"] is False
 
+    logged_out = client.post("/api/v1/auth/logout", headers=_user_token_headers(raw_token))
+
+    assert logged_out.status_code == 204
+    assert client.get("/api/v1/auth/me", headers=_user_token_headers(raw_token)).status_code == 401
+
 
 def test_bootstrapped_superadmin_can_login_and_reset_platform_access() -> None:
     client, session = _client()

@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useLocation } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
-import { revokeToken } from '@/api/auth'
+import { logout } from '@/api/auth'
 import {
   clearAuthSession,
   getAuthSession,
@@ -22,8 +22,7 @@ export function SignOutDialog({ open, onOpenChange }: SignOutDialogProps) {
 
   const handleSignOut = async () => {
     await queryClient.cancelQueries()
-    const session = getAuthSession()
-    if (session) await revokeToken(session.tokenId).catch(() => undefined)
+    if (getAuthSession()) await logout().catch(() => undefined)
     clearAuthSession()
     // Preserve current location for redirect after sign-in
     const currentPath = safeRedirectPath(location.href)

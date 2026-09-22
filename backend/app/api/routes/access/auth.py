@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.client_ip import security_request_context
-from backend.app.api.dependencies.auth import account_action_dependency
+from backend.app.api.dependencies.auth import account_action_dependency, get_current_user
 from backend.app.api.schemas.access.auth import (
     CurrentUserResponse,
     CurrentUserUpdateRequest,
@@ -112,6 +112,29 @@ async def get_current_user_profile(
         platform_admin=current_user.platform_admin,
         avatar_version=current_user.avatar_version,
     )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout_user(
+    http_request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> Response:
+    if current_user.token_id is not None:
+        token = AuthorizationService(session).revoke_user_api_token(
+            user_id=current_user.user_id,
+            token_id=current_user.token_id,
+        )
+        if token is not None:
+            _record_auth_event(
+                session,
+                http_request,
+                action="auth.logout_succeeded",
+                reason="Current authentication token revoked",
+                user_id=current_user.user_id,
+                metadata={"token_id": str(current_user.token_id)},
+            )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/me", response_model=CurrentUserResponse)
