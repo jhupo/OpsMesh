@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Main } from '@/components/layout/main'
 import { NotFoundError } from '@/features/errors/not-found-error'
+import { PlatformAdminOverview } from './overview'
 
 type AdminPageProps = {
   section: string
@@ -130,6 +131,10 @@ export function PlatformAdminPage({ section, view }: AdminPageProps) {
   const tabbed = tabbedSections[section]
   const directTitle = view ? undefined : directSections[section]
   const nestedTitle = view ? nestedSections[section]?.[view] : undefined
+
+  if (section === 'overview' && !view) {
+    return <PlatformAdminOverview />
+  }
 
   if (tabbed) {
     const activeTab = tabbed.tabs.find((tab) => tab.value === view)
