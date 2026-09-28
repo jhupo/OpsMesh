@@ -199,6 +199,7 @@ class RunResourceReservationService:
             workspace_id=task.workspace_id,
             task_id=task.id,
             task_step_id=step.id,
+            project_id=task.workspace_project_id,
             reservation_key=f"task_step:{step.id}:workspace_run",
             resource_usage=self.workspace_usage(task.workspace_id, step),
         )

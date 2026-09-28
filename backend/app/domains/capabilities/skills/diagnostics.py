@@ -37,7 +37,7 @@ from backend.app.domains.capabilities.skills.manifest import (
     agent_installed_skill_ids,
     manifest_mcp_tools,
 )
-from backend.app.domains.capabilities.skills.models import WorkspaceSkillInstall
+from backend.app.domains.capabilities.skills.models import Skill, WorkspaceSkillInstall
 
 
 @dataclass(frozen=True)
@@ -66,6 +66,11 @@ class SkillToolDiagnosticsService:
             required_tools,
         )
         blocked_reasons: list[str] = []
+        source = self._session.scalar(select(Skill).where(Skill.id == install.skill_id))
+        if install.platform_blocked or source is None or source.platform_blocked:
+            blocked_reasons.append("platform_blocked")
+        elif source.status != "active":
+            blocked_reasons.append("source_skill_disabled")
         if not plugin_resource_available(self._session, workspace_id, "skill", install_id):
             blocked_reasons.append("plugin_unavailable")
         if install.status != "active":
@@ -359,8 +364,13 @@ class SkillToolDiagnosticsService:
         workspace_id: UUID,
         install_id: UUID,
     ) -> WorkspaceSkillInstall:
-        install = self._session.get(WorkspaceSkillInstall, install_id)
-        if install is None or install.workspace_id != workspace_id:
+        install = self._session.scalar(
+            select(WorkspaceSkillInstall).where(
+                WorkspaceSkillInstall.id == install_id,
+                WorkspaceSkillInstall.workspace_id == workspace_id,
+            )
+        )
+        if install is None:
             raise ValueError("Workspace skill install not found")
         return install
 

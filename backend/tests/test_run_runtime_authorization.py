@@ -22,6 +22,7 @@ from backend.app.domains.capabilities.mcp.models import (
     McpToolAllowlist,
 )
 from backend.app.domains.capabilities.resources.models import CapabilityResource
+from backend.app.domains.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from backend.app.domains.orchestration.runs.authorization.policy import (
     RunRuntimeAuthorizationError,
 )
@@ -324,6 +325,58 @@ def test_runtime_revocation_blocks_worker_request_and_records_audit() -> None:
     assert event.event_metadata["reason"] == "runtime_unavailable"
     assert security_event is not None
     assert security_event.reason == "runtime_unavailable"
+
+
+def test_queued_run_rechecks_installed_skill_platform_blocks() -> None:
+    session = _session()
+    user, workspace = _seed_workspace(session)
+    profile = AgentProfile(workspace_id=workspace.id, name="Agent", role="worker")
+    task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Task")
+    skill = Skill(key="review", name="Review", version="1.0.0")
+    session.add_all([profile, task, skill])
+    session.flush()
+    step = TaskStep(
+        workspace_id=workspace.id, task_id=task.id,
+        assigned_agent_profile_id=profile.id, title="Step",
+    )
+    install = WorkspaceSkillInstall(
+        workspace_id=workspace.id, skill_id=skill.id,
+        installed_key=skill.key, installed_name=skill.name,
+        installed_version=skill.version,
+    )
+    session.add_all([step, install])
+    session.flush()
+    catalog = _catalog(workspace.id, agent_profile_id=profile.id, resources=[])
+    binding = RunRuntimeAuthorizationService(session).resolve_for_snapshot(
+        task=task, step=step, capability_catalog=catalog, runtime_policy={}
+    )
+    snapshot = _snapshot(
+        workspace_id=workspace.id, task=task, step=step, profile=profile,
+        catalog=catalog, binding=binding.as_snapshot(),
+    )
+    snapshot["installed_skills"] = [{"install_id": str(install.id)}]
+    snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
+    run = AgentRun(
+        workspace_id=workspace.id, task_id=task.id, task_step_id=step.id,
+        agent_profile_id=profile.id, input={"authorization_snapshot": snapshot},
+    )
+    session.add(run)
+    session.commit()
+    authorization = RunAuthorizationService(session)
+    authorization.validate_authorization_snapshot(run, task, profile, snapshot)
+
+    install.platform_blocked = True
+    install.status = "disabled"
+    session.flush()
+    with pytest.raises(ValueError, match="disabled installed skill"):
+        authorization.validate_authorization_snapshot(run, task, profile, snapshot)
+    install.platform_blocked = False
+    install.status = "active"
+    skill.platform_blocked = True
+    skill.status = "disabled"
+    session.flush()
+    with pytest.raises(ValueError, match="disabled installed skill"):
+        authorization.validate_authorization_snapshot(run, task, profile, snapshot)
 
 
 def test_file_grant_without_frozen_runtime_binding_is_rejected() -> None:

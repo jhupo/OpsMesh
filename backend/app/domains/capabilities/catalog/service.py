@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars
+from backend.app.core.errors import PolicyDeniedError
 from backend.app.core.pagination import PageParams
 from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityCreateRequest,
@@ -47,7 +48,9 @@ class CapabilityService:
         page: PageParams,
         category: str | None = None,
     ) -> tuple[list[Capability], int]:
-        statement = select(Capability).where(Capability.status == "active")
+        statement = select(Capability).where(
+            Capability.status == "active", Capability.platform_blocked.is_(False)
+        )
         if category is not None:
             statement = statement.where(Capability.category == category)
         return self._page(statement.order_by(Capability.category.asc(), Capability.key.asc()), page)
@@ -103,6 +106,8 @@ class CapabilityService:
         capability = self._session.get(Capability, capability_id)
         if capability is None:
             raise ValueError("Capability not found")
+        if capability.platform_blocked:
+            raise PolicyDeniedError("Capability is blocked by the platform")
         next_name = data.name or capability.name
         next_category = data.category or capability.category
         next_description = (
@@ -168,7 +173,7 @@ class CapabilityService:
         page: PageParams,
         workspace_id: UUID | None = None,
     ) -> tuple[list[Skill], int]:
-        statement = select(Skill).where(Skill.status == "active")
+        statement = select(Skill).where(Skill.status == "active", Skill.platform_blocked.is_(False))
         if workspace_id is not None:
             statement = statement.where(
                 or_(
@@ -236,6 +241,8 @@ class CapabilityService:
         skill = self._session.get(Skill, skill_id)
         if skill is None or skill.owner_workspace_id != workspace_id:
             raise ValueError("Workspace-owned skill not found")
+        if skill.platform_blocked:
+            raise PolicyDeniedError("Skill is blocked by the platform")
         next_manifest = data.manifest if data.manifest is not None else skill.manifest
         next_capability_keys = (
             data.capability_keys
@@ -302,6 +309,8 @@ class CapabilityService:
         group = self._session.get(ToolGroup, group_id)
         if group is None:
             raise ValueError("Tool group not found")
+        if group.platform_blocked:
+            raise PolicyDeniedError("Tool group is blocked by the platform")
         if data.tool_names is not None:
             _validate_tool_names(data.tool_names)
         before = _tool_group_snapshot(group)
@@ -325,7 +334,9 @@ class CapabilityService:
 
     def list_tool_groups(self, page: PageParams) -> tuple[list[ToolGroup], int]:
         statement = (
-            select(ToolGroup).where(ToolGroup.status == "active").order_by(ToolGroup.key.asc())
+            select(ToolGroup)
+            .where(ToolGroup.status == "active", ToolGroup.platform_blocked.is_(False))
+            .order_by(ToolGroup.key.asc())
         )
         return self._page(statement, page)
 

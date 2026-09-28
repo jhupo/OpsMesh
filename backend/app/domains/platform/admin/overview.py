@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from backend.app.core.pagination import PageParams
 from backend.app.domains.platform.admin.base import AdminSessionService
 from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.security_models import SecurityEvent
@@ -41,14 +40,3 @@ class AdminOverviewService(AdminSessionService):
                 select(SecurityEvent).where(SecurityEvent.severity == "critical")
             ),
         }
-
-    def list_workspaces(
-        self,
-        page: PageParams,
-        *,
-        status: str | None = None,
-    ) -> tuple[list[Workspace], int]:
-        statement = select(Workspace)
-        if status is not None:
-            statement = statement.where(Workspace.status == status)
-        return self._page(statement.order_by(Workspace.created_at.desc()), page)

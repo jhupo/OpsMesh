@@ -69,6 +69,7 @@ class McpToolDiscoveryService:
                 McpServer.workspace_id == workspace_id,
                 McpServer.id == server_id,
                 McpServer.status == "active",
+                McpServer.platform_blocked.is_(False),
             )
         )
         if server is None:

@@ -1,6 +1,7 @@
 """Transactions for signed remote plugin installation and release lifecycle."""
 
 import base64
+from datetime import UTC, datetime
 from uuid import UUID
 
 from opsmesh_plugin_sdk.packaging.packages import verify_package
@@ -21,6 +22,8 @@ from backend.app.domains.capabilities.plugins.contracts import (
 from backend.app.domains.capabilities.plugins.dependencies import binding_dependents
 from backend.app.domains.capabilities.plugins.models import (
     PluginBinding,
+    PluginCredential,
+    PluginDeployment,
     PluginInstall,
     PluginRelease,
     PluginTrustKey,
@@ -70,10 +73,152 @@ class PluginService:
         )
         if key is None:
             raise NotFoundError("Publisher key not found")
-        key.status = "revoked"
-        self._audit(workspace_id, user_id, "plugin.key_revoked", key.id, {})
+        if key.status != "revoked":
+            key.status = "revoked"
+            self._stop_current_key_deployments(workspace_id, key.id, platform_block=False)
+            self._audit(workspace_id, user_id, "plugin.key_revoked", key.id, {})
         self.session.commit()
         return key
+
+    def platform_revoke_key(
+        self, workspace_id: UUID, key_id: UUID, *, reason: str
+    ) -> PluginTrustKey:
+        self._lock_workspace(workspace_id)
+        key = self.session.scalar(
+            select(PluginTrustKey)
+            .where(PluginTrustKey.workspace_id == workspace_id, PluginTrustKey.id == key_id)
+            .with_for_update()
+        )
+        if key is None:
+            raise NotFoundError("Publisher key not found")
+        key.status = "revoked"
+        affected_installs = self._stop_current_key_deployments(
+            workspace_id, key.id, platform_block=True
+        )
+        AuditService(self.session).record_system_action(
+            workspace_id=workspace_id,
+            action="platform.plugin.publisher_key_revoked",
+            target_type="plugin_trust_key",
+            target_id=key.id,
+            metadata={
+                "plugin_key": key.plugin_key,
+                "key_id": key.key_id,
+                "affected_install_ids": [str(install_id) for install_id in affected_installs],
+                "reason": reason,
+            },
+            actor_id="platform_admin",
+        )
+        self.session.commit()
+        self.session.refresh(key)
+        return key
+
+    def platform_disable(
+        self, workspace_id: UUID, install_id: UUID, *, reason: str
+    ) -> PluginInstall:
+        self._lock_workspace(workspace_id)
+        install = self.require(workspace_id, install_id, lock=True)
+        if install.status == "uninstalled":
+            raise ConflictError("Uninstalled plugin cannot be platform disabled")
+        before = install.status
+        if not install.platform_blocked:
+            install.platform_blocked = True
+            install.status = "disabled"
+            install.generation += 1
+        self._stop_install(workspace_id, install.id)
+        self._sync_marketplace_status(workspace_id, install)
+        AuditService(self.session).record_system_action(
+            workspace_id=workspace_id,
+            action="platform.plugin.disabled",
+            target_type="plugin_install",
+            target_id=install.id,
+            metadata={"before": before, "after": install.status, "reason": reason},
+            actor_id="platform_admin",
+        )
+        self.session.commit()
+        self.session.refresh(install)
+        return install
+
+    def platform_release(
+        self, workspace_id: UUID, install_id: UUID, *, reason: str
+    ) -> PluginInstall:
+        self._lock_workspace(workspace_id)
+        install = self.require(workspace_id, install_id, lock=True)
+        if install.platform_blocked:
+            install.platform_blocked = False
+            AuditService(self.session).record_system_action(
+                workspace_id=workspace_id,
+                action="platform.plugin.released",
+                target_type="plugin_install",
+                target_id=install.id,
+                metadata={"status": install.status, "reason": reason},
+                actor_id="platform_admin",
+            )
+        self.session.commit()
+        self.session.refresh(install)
+        return install
+
+    def _stop_current_key_deployments(
+        self, workspace_id: UUID, key_id: UUID, *, platform_block: bool
+    ) -> list[UUID]:
+        affected: list[UUID] = []
+        releases = self.session.scalars(
+            select(PluginRelease).where(
+                PluginRelease.workspace_id == workspace_id,
+                PluginRelease.trust_key_id == key_id,
+            )
+        ).all()
+        for release in releases:
+            install = self.session.scalar(
+                select(PluginInstall).where(
+                    PluginInstall.workspace_id == workspace_id,
+                    PluginInstall.id == release.install_id,
+                    PluginInstall.current_version == release.version,
+                )
+            )
+            if install is not None:
+                affected.append(install.id)
+                if platform_block and not install.platform_blocked:
+                    install.platform_blocked = True
+                    install.status = "disabled"
+                    install.generation += 1
+                    self._sync_marketplace_status(workspace_id, install)
+                self._stop_install(workspace_id, install.id)
+        return affected
+
+    def _stop_install(self, workspace_id: UUID, install_id: UUID) -> None:
+        for credential in self.session.scalars(
+            select(PluginCredential).where(
+                PluginCredential.workspace_id == workspace_id,
+                PluginCredential.install_id == install_id,
+                PluginCredential.status == "active",
+            )
+        ):
+            credential.status = "revoked"
+        deployment = self.session.scalar(
+            select(PluginDeployment).where(
+                PluginDeployment.workspace_id == workspace_id,
+                PluginDeployment.install_id == install_id,
+            )
+        )
+        if deployment is not None:
+            if deployment.desired_state != "stopped":
+                deployment.desired_state = "stopped"
+                deployment.revision += 1
+            if deployment.status != "stopped" or deployment.runtime_id is not None:
+                deployment.status = "pending"
+                deployment.attempts = 0
+                deployment.error_code = None
+                deployment.next_check_at = datetime.now(UTC)
+
+    def _sync_marketplace_status(self, workspace_id: UUID, install: PluginInstall) -> None:
+        for market_install in self.session.scalars(
+            select(WorkspaceMarketplaceInstall).where(
+                WorkspaceMarketplaceInstall.workspace_id == workspace_id,
+                WorkspaceMarketplaceInstall.listing_type == "plugin",
+                WorkspaceMarketplaceInstall.installed_resource_id == install.id,
+            )
+        ):
+            market_install.status = install.status
 
     def install(
         self,
@@ -127,6 +272,8 @@ class PluginService:
             self.session.flush()
         else:
             self._check_generation(install, request.expected_generation)
+            if install.platform_blocked:
+                raise PolicyDeniedError("Plugin installation is blocked by the platform")
             if install.status == "uninstalled":
                 raise ConflictError("Uninstalled plugin identity cannot be reused")
             install.generation += 1
@@ -212,6 +359,8 @@ class PluginService:
         self.require_admin(workspace_id, user_id)
         install = self.require(workspace_id, install_id, lock=True)
         self._check_generation(install, request.expected_generation)
+        if install.platform_blocked and request.action in {"enable", "switch_version"}:
+            raise PolicyDeniedError("Plugin installation is blocked by the platform")
         if install.status == "uninstalled":
             raise ConflictError("Plugin was uninstalled")
         release = None
@@ -321,7 +470,7 @@ class PluginService:
 
     def require_admin(self, workspace_id: UUID, user_id: UUID) -> None:
         # Use the audit writer's workspace-first lock order for every plugin mutation.
-        self.session.scalar(select(Workspace).where(Workspace.id == workspace_id).with_for_update())
+        self._lock_workspace(workspace_id)
         member = self.session.scalar(
             select(WorkspaceMember)
             .join(User, User.id == WorkspaceMember.user_id)
@@ -334,6 +483,11 @@ class PluginService:
         )
         if member is None or not role_allows(member.role, WorkspaceAction.ADMIN):
             raise PolicyDeniedError("Plugin trust and lifecycle require a workspace administrator")
+
+    def _lock_workspace(self, workspace_id: UUID) -> None:
+        self.session.scalar(
+            select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()
+        )
 
     def _audit(
         self,

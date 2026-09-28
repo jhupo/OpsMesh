@@ -1,4 +1,4 @@
-from sqlalchemy import Index, String, UniqueConstraint
+from sqlalchemy import Boolean, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,6 +18,8 @@ class Capability(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(String, nullable=False, default="")
     default_policy: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    platform_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    platform_previous_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class ToolGroup(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -32,3 +34,5 @@ class ToolGroup(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(String, nullable=False, default="")
     tool_names: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    platform_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    platform_previous_status: Mapped[str | None] = mapped_column(String(32), nullable=True)

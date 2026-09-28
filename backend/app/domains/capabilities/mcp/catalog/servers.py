@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.core.errors import DomainError
+from backend.app.core.errors import DomainError, PolicyDeniedError
 from backend.app.core.pagination import PageParams
 from backend.app.domains.capabilities.mcp.catalog.catalog import McpCatalogServer
 from backend.app.domains.capabilities.mcp.catalog.contracts import (
@@ -134,6 +134,8 @@ class McpServerService:
             mcp_server_id,
             for_update=True,
         )
+        if server.platform_blocked:
+            raise PolicyDeniedError("MCP server is blocked by the platform")
         if data.connection is None and data.visibility is None:
             raise ValueError("Provide connection or visibility to update MCP server")
 
@@ -252,6 +254,8 @@ class McpServerService:
         commit: bool = True,
     ) -> McpToolAllowlist:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
+        if server.platform_blocked:
+            raise PolicyDeniedError("MCP server is blocked by the platform")
         try:
             normalized_schema = normalize_object_schema(data.input_schema)
             normalized_output_schema = dict(data.output_schema)
@@ -344,6 +348,8 @@ class McpServerService:
         actor_user_id: UUID | None = None,
     ) -> McpToolAllowlist:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
+        if server.platform_blocked:
+            raise PolicyDeniedError("MCP server is blocked by the platform")
         allow = self._session.scalar(
             select(McpToolAllowlist)
             .where(
@@ -356,6 +362,8 @@ class McpServerService:
         )
         if allow is None:
             raise ValueError("Discovered MCP tool not found")
+        if allow.platform_blocked:
+            raise PolicyDeniedError("MCP tool is blocked by the platform")
         if server.status != "active" or server.discovery_status != "succeeded":
             raise DomainError(
                 "MCP server must be active and rediscovered before tools can be enabled",
@@ -435,6 +443,8 @@ class McpServerService:
         actor_user_id: UUID | None = None,
     ) -> McpToolAllowlist:
         server = require_mcp_server(self._session, workspace_id, mcp_server_id)
+        if server.platform_blocked:
+            raise PolicyDeniedError("MCP server is blocked by the platform")
         allow = self._session.scalar(
             select(McpToolAllowlist)
             .where(
@@ -446,6 +456,8 @@ class McpServerService:
         )
         if allow is None:
             raise ValueError("MCP tool allowlist entry not found")
+        if allow.platform_blocked:
+            raise PolicyDeniedError("MCP tool is blocked by the platform")
         changes = data.model_dump(exclude_unset=True)
         if allow.discovery_source == "mcp":
             if server.discovery_status != "succeeded" or allow.discovery_status in {
@@ -575,6 +587,8 @@ class McpServerService:
             mcp_server_id,
             for_update=True,
         )
+        if server.platform_blocked:
+            raise PolicyDeniedError("MCP server is blocked by the platform")
         server.status = "disabled"
         server.configuration_version += 1
         if actor_user_id is not None:
@@ -639,14 +653,18 @@ class McpServerService:
     ) -> McpToolAllowlist:
         require_mcp_server(self._session, workspace_id, mcp_server_id)
         allow = self._session.scalar(
-            select(McpToolAllowlist).where(McpToolAllowlist.id == allowlist_id).with_for_update()
+            select(McpToolAllowlist)
+            .where(
+                McpToolAllowlist.id == allowlist_id,
+                McpToolAllowlist.workspace_id == workspace_id,
+                McpToolAllowlist.mcp_server_id == mcp_server_id,
+            )
+            .with_for_update()
         )
-        if (
-            allow is None
-            or allow.workspace_id != workspace_id
-            or allow.mcp_server_id != mcp_server_id
-        ):
+        if allow is None:
             raise ValueError("MCP tool allowlist entry not found")
+        if allow.platform_blocked:
+            raise PolicyDeniedError("MCP tool is blocked by the platform")
         allow.status = "disabled"
         allow.configuration_version += 1
         if actor_user_id is not None:

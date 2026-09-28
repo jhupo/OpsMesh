@@ -349,6 +349,23 @@ persistence.
 
 ## Tool Catalog
 
+### Platform Capability Governance (2026-09-28)
+
+The platform administrator can block and release global capabilities, tool groups and Skills, plus
+workspace-owned Skills, Skill installs, capability resources, MCP servers, MCP tools and Marketplace
+listings. Workspace-owned commands require both a resource ID and `workspace_id`; global Skills
+omit `workspace_id`. A block stores the previous status and disables the resource. Release restores
+that status, so a withdrawn public listing becomes public again and a pending review stays pending.
+Global changes write security events; workspace changes write durable workspace audit records.
+
+The active workspace catalogs exclude blocked entries. Skill installation and upgrade reject
+blocked sources and installs; Marketplace withdrawal removes a listing from the public catalog and
+denies new installs. MCP discovery, enablement and invocation, capability resource grants, review
+approval, and queued Run preflight recheck current platform state. Existing runs cannot recall
+instructions already sent to an external model provider, but future tool calls remain subject to
+the live resource and MCP execution gates. These controls do not delete resources or revoke a
+provider-side action that already completed.
+
 The product exposes a workspace-scoped dynamic catalog for product tools, allowed MCP tools, and
 configured resources. Tool entries include their source, description, JSON Schema input contract,
 risk level, approval requirement, MCP provenance when applicable, and sanitized policy. Resource

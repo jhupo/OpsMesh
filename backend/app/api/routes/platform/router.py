@@ -1,8 +1,15 @@
 from fastapi import APIRouter, Depends
 
 from backend.app.api.dependencies.admin import require_platform_admin
+from backend.app.api.routes.platform.announcements import router as announcements_router
+from backend.app.api.routes.platform.capability_governance import (
+    router as capability_governance_router,
+)
+from backend.app.api.routes.platform.catalog import router as catalog_router
 from backend.app.api.routes.platform.leases import router as leases_router
+from backend.app.api.routes.platform.management import router as management_router
 from backend.app.api.routes.platform.overview import router as overview_router
+from backend.app.api.routes.platform.plugin_governance import router as plugin_governance_router
 from backend.app.api.routes.platform.policies import router as policies_router
 from backend.app.api.routes.platform.queues import router as queues_router
 from backend.app.api.routes.platform.runtime_spaces import router as runtime_spaces_router
@@ -19,6 +26,11 @@ router = APIRouter(
     dependencies=[Depends(require_platform_admin)],
 )
 router.include_router(overview_router)
+router.include_router(announcements_router)
+router.include_router(catalog_router)
+router.include_router(capability_governance_router)
+router.include_router(plugin_governance_router)
+router.include_router(management_router)
 router.include_router(workers_router)
 router.include_router(runtime_spaces_router)
 router.include_router(leases_router)

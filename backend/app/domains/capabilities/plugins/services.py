@@ -84,6 +84,7 @@ class PluginServices:
                 PluginInstall.workspace_id == workspace_id,
                 PluginInstall.id == install_id,
                 PluginInstall.status == "active",
+                PluginInstall.platform_blocked.is_(False),
                 Workspace.status == "active",
             )
             .execution_options(populate_existing=True)

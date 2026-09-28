@@ -148,6 +148,18 @@ class CapabilityGovernanceMcpActionService:
                 )
                 continue
             for allow in disabled_tools:
+                if allow.platform_blocked:
+                    skipped.append(
+                        governance_skipped(
+                            action="allow_mcp_tools",
+                            resource_type="mcp_tool_allowlist",
+                            resource_id=allow.id,
+                            resource_name=allow.tool_name,
+                            reason="platform_blocked",
+                            blocked_reasons=blocked_reasons,
+                        )
+                    )
+                    continue
                 if len(results) >= limit:
                     skipped.append(
                         governance_skipped(

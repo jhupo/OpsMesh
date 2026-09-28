@@ -1,8 +1,9 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, false, func, not_, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
+from sqlalchemy.sql import ColumnElement
 
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
@@ -10,7 +11,10 @@ from backend.app.core.security.redaction import redact_sensitive_payload, redact
 from backend.app.observability.audit.models import AuditIntegrityCheck
 from backend.app.observability.costs.models import ModelUsageRecord
 from backend.app.observability.notifications.contracts import NotificationCreateRequest
-from backend.app.observability.notifications.models import WorkspaceNotification
+from backend.app.observability.notifications.models import (
+    UserNotificationPreference,
+    WorkspaceNotification,
+)
 
 
 class NotificationCenterService:
@@ -21,6 +25,8 @@ class NotificationCenterService:
         self,
         workspace_id: UUID,
         data: NotificationCreateRequest,
+        *,
+        recipient_user_id: UUID | None = None,
     ) -> WorkspaceNotification:
         notification = WorkspaceNotification(
             workspace_id=workspace_id,
@@ -28,6 +34,7 @@ class NotificationCenterService:
             severity=data.severity,
             source_type=data.source_type,
             source_id=data.source_id,
+            recipient_user_id=recipient_user_id,
             title=redact_sensitive_text(data.title),
             body=redact_sensitive_text(data.body),
             metadata_=redact_sensitive_payload(data.metadata),
@@ -58,6 +65,7 @@ class NotificationCenterService:
         workspace_id: UUID,
         page: PageParams,
         *,
+        user_id: UUID | None = None,
         include_archived: bool = False,
         read: bool | None = None,
         severity: str | None = None,
@@ -66,6 +74,7 @@ class NotificationCenterService:
     ) -> tuple[list[WorkspaceNotification], int]:
         statement = self._filtered_statement(
             workspace_id,
+            user_id=user_id,
             include_archived=include_archived,
             read=read,
             severity=severity,
@@ -74,35 +83,63 @@ class NotificationCenterService:
         ).order_by(WorkspaceNotification.created_at.desc(), WorkspaceNotification.id.desc())
         return self._page(statement, page)
 
-    def counts(self, workspace_id: UUID) -> dict[str, object]:
+    def counts(self, workspace_id: UUID, *, user_id: UUID | None = None) -> dict[str, object]:
         return {
             "workspace_id": workspace_id,
             "generated_at": datetime.now(UTC),
-            "total_count": self._count(workspace_id),
-            "unread_count": self._count(workspace_id, read=False, include_archived=False),
-            "read_count": self._count(workspace_id, read=True, include_archived=False),
-            "archived_count": self._count_archived(workspace_id),
-            "severity_counts": self._group_counts(workspace_id, WorkspaceNotification.severity),
+            "total_count": self._count(workspace_id, user_id=user_id),
+            "unread_count": self._count(
+                workspace_id,
+                user_id=user_id,
+                read=False,
+                include_archived=False,
+            ),
+            "read_count": self._count(
+                workspace_id,
+                user_id=user_id,
+                read=True,
+                include_archived=False,
+            ),
+            "archived_count": self._count_archived(workspace_id, user_id=user_id),
+            "severity_counts": self._group_counts(
+                workspace_id,
+                WorkspaceNotification.severity,
+                user_id=user_id,
+            ),
             "type_counts": self._group_counts(
                 workspace_id,
                 WorkspaceNotification.notification_type,
+                user_id=user_id,
             ),
             "source_type_counts": self._group_counts(
                 workspace_id,
                 WorkspaceNotification.source_type,
+                user_id=user_id,
             ),
         }
 
-    def mark_read(self, workspace_id: UUID, notification_id: UUID) -> WorkspaceNotification:
-        notification = self._require_notification(workspace_id, notification_id)
+    def mark_read(
+        self,
+        workspace_id: UUID,
+        notification_id: UUID,
+        *,
+        user_id: UUID | None = None,
+    ) -> WorkspaceNotification:
+        notification = self._require_notification(workspace_id, notification_id, user_id=user_id)
         if notification.read_at is None:
             notification.read_at = datetime.now(UTC)
             self._session.commit()
             self._session.refresh(notification)
         return notification
 
-    def archive(self, workspace_id: UUID, notification_id: UUID) -> WorkspaceNotification:
-        notification = self._require_notification(workspace_id, notification_id)
+    def archive(
+        self,
+        workspace_id: UUID,
+        notification_id: UUID,
+        *,
+        user_id: UUID | None = None,
+    ) -> WorkspaceNotification:
+        notification = self._require_notification(workspace_id, notification_id, user_id=user_id)
         now = datetime.now(UTC)
         if notification.read_at is None:
             notification.read_at = now
@@ -116,6 +153,7 @@ class NotificationCenterService:
         self,
         workspace_id: UUID,
         *,
+        user_id: UUID | None = None,
         notification_ids: list[UUID] | None = None,
         include_archived: bool = False,
     ) -> int:
@@ -123,6 +161,14 @@ class NotificationCenterService:
             WorkspaceNotification.workspace_id == workspace_id,
             WorkspaceNotification.read_at.is_(None),
         )
+        statement = statement.where(*self._preference_filters(workspace_id, user_id))
+        if user_id is not None:
+            statement = statement.where(
+                or_(
+                    WorkspaceNotification.recipient_user_id.is_(None),
+                    WorkspaceNotification.recipient_user_id == user_id,
+                )
+            )
         if not include_archived:
             statement = statement.where(WorkspaceNotification.archived_at.is_(None))
         if notification_ids is not None:
@@ -140,6 +186,7 @@ class NotificationCenterService:
         self,
         workspace_id: UUID,
         *,
+        user_id: UUID | None,
         include_archived: bool,
         read: bool | None,
         severity: str | None,
@@ -149,6 +196,14 @@ class NotificationCenterService:
         statement = select(WorkspaceNotification).where(
             WorkspaceNotification.workspace_id == workspace_id,
         )
+        statement = statement.where(*self._preference_filters(workspace_id, user_id))
+        if user_id is not None:
+            statement = statement.where(
+                or_(
+                    WorkspaceNotification.recipient_user_id.is_(None),
+                    WorkspaceNotification.recipient_user_id == user_id,
+                )
+            )
         if not include_archived:
             statement = statement.where(WorkspaceNotification.archived_at.is_(None))
         if read is True:
@@ -169,6 +224,8 @@ class NotificationCenterService:
         self,
         workspace_id: UUID,
         notification_id: UUID,
+        *,
+        user_id: UUID | None,
     ) -> WorkspaceNotification:
         notification = self._session.scalar(
             select(WorkspaceNotification).where(
@@ -176,6 +233,13 @@ class NotificationCenterService:
                 WorkspaceNotification.id == notification_id,
             )
         )
+        if (
+            notification is not None
+            and user_id is not None
+            and notification.recipient_user_id is not None
+            and notification.recipient_user_id != user_id
+        ):
+            notification = None
         if notification is None:
             raise ValueError("Notification not found")
         return notification
@@ -191,10 +255,19 @@ class NotificationCenterService:
         self,
         workspace_id: UUID,
         *,
+        user_id: UUID | None,
         read: bool | None = None,
         include_archived: bool = True,
     ) -> int:
         statement = select(func.count()).where(WorkspaceNotification.workspace_id == workspace_id)
+        statement = statement.where(*self._preference_filters(workspace_id, user_id))
+        if user_id is not None:
+            statement = statement.where(
+                or_(
+                    WorkspaceNotification.recipient_user_id.is_(None),
+                    WorkspaceNotification.recipient_user_id == user_id,
+                )
+            )
         if not include_archived:
             statement = statement.where(WorkspaceNotification.archived_at.is_(None))
         if read is True:
@@ -204,24 +277,98 @@ class NotificationCenterService:
         total = self._session.scalar(statement)
         return int(total or 0)
 
-    def _count_archived(self, workspace_id: UUID) -> int:
-        total = self._session.scalar(
-            select(func.count()).where(
-                WorkspaceNotification.workspace_id == workspace_id,
-                WorkspaceNotification.archived_at.is_not(None),
-            )
+    def _count_archived(self, workspace_id: UUID, *, user_id: UUID | None) -> int:
+        statement = select(func.count()).where(
+            WorkspaceNotification.workspace_id == workspace_id,
+            WorkspaceNotification.archived_at.is_not(None),
         )
+        statement = statement.where(*self._preference_filters(workspace_id, user_id))
+        if user_id is not None:
+            statement = statement.where(
+                or_(
+                    WorkspaceNotification.recipient_user_id.is_(None),
+                    WorkspaceNotification.recipient_user_id == user_id,
+                )
+            )
+        total = self._session.scalar(statement)
         return int(total or 0)
 
     def _group_counts(
-        self, workspace_id: UUID, column: InstrumentedAttribute[str]
+        self,
+        workspace_id: UUID,
+        column: InstrumentedAttribute[str],
+        *,
+        user_id: UUID | None,
     ) -> dict[str, int]:
-        rows = self._session.execute(
-            select(column, func.count())
-            .where(WorkspaceNotification.workspace_id == workspace_id)
-            .group_by(column)
+        statement = select(column, func.count()).where(
+            WorkspaceNotification.workspace_id == workspace_id
         )
+        statement = statement.where(*self._preference_filters(workspace_id, user_id))
+        if user_id is not None:
+            statement = statement.where(
+                or_(
+                    WorkspaceNotification.recipient_user_id.is_(None),
+                    WorkspaceNotification.recipient_user_id == user_id,
+                )
+            )
+        rows = self._session.execute(statement.group_by(column))
         return {str(key): int(count) for key, count in rows}
+
+    def _preference_filters(
+        self,
+        workspace_id: UUID,
+        user_id: UUID | None,
+    ) -> list[ColumnElement[bool]]:
+        if user_id is None:
+            return []
+        preference = self.get_preferences(workspace_id, user_id)
+        if preference is None:
+            return []
+        if not preference.in_app_enabled:
+            return [false()]
+        filters: list[ColumnElement[bool]] = []
+        if not preference.announcement_enabled:
+            filters.append(not_(WorkspaceNotification.notification_type.like("announcement%")))
+        if not preference.task_enabled:
+            filters.append(not_(WorkspaceNotification.notification_type.like("task%")))
+        if not preference.approval_enabled:
+            filters.append(not_(WorkspaceNotification.notification_type.like("approval%")))
+        if not preference.security_enabled:
+            filters.append(not_(WorkspaceNotification.notification_type.like("security%")))
+        return filters
+
+    def get_preferences(
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+    ) -> UserNotificationPreference | None:
+        return self._session.scalar(
+            select(UserNotificationPreference).where(
+                UserNotificationPreference.workspace_id == workspace_id,
+                UserNotificationPreference.user_id == user_id,
+            )
+        )
+
+    def upsert_preferences(
+        self,
+        workspace_id: UUID,
+        user_id: UUID,
+        values: dict[str, bool | None],
+    ) -> UserNotificationPreference:
+        preference = self.get_preferences(workspace_id, user_id)
+        if preference is None:
+            preference = UserNotificationPreference(
+                workspace_id=workspace_id,
+                user_id=user_id,
+            )
+            self._session.add(preference)
+            self._session.flush()
+        for field, value in values.items():
+            if value is not None:
+                setattr(preference, field, value)
+        self._session.commit()
+        self._session.refresh(preference)
+        return preference
 
 
 class GovernanceNotificationService:

@@ -1,9 +1,10 @@
 from collections.abc import Generator
-from datetime import UTC, datetime
-from uuid import uuid4
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import fakeredis
 from fastapi.testclient import TestClient
+from pytest import raises
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -18,14 +19,36 @@ from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
+from backend.app.core.errors import PolicyDeniedError
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.models import User
+from backend.app.domains.access.models import User, UserAPIToken
+from backend.app.domains.access.resources import ResourceAccessDenied
+from backend.app.domains.capabilities.catalog.models import Capability, ToolGroup
+from backend.app.domains.capabilities.marketplace.models import MarketplaceListing
+from backend.app.domains.capabilities.mcp.models import McpServer, McpToolAllowlist
+from backend.app.domains.capabilities.plugins.contracts import PluginAction
+from backend.app.domains.capabilities.plugins.models import (
+    PluginCredential,
+    PluginDeployment,
+    PluginInstall,
+    PluginRelease,
+    PluginTrustKey,
+)
+from backend.app.domains.capabilities.plugins.service import PluginService
+from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
+from backend.app.domains.capabilities.resources.models import CapabilityResource
+from backend.app.domains.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.platform.admin.models import PlatformPolicy, PlatformPolicyEvent
+from backend.app.domains.workspace.projects.models import WorkspaceProject, WorkspaceProjectQuota
 from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.workspace.tenants.reservations import (
+    WorkspaceQuotaService as WorkspaceQuotaReservationService,
+)
 from backend.app.main import create_app
+from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
@@ -162,6 +185,649 @@ def test_admin_api_exposes_global_control_plane_metadata() -> None:
     assert events.json()["total"] == 1
     assert workspaces.status_code == 200
     assert workspaces.json()["total"] == 2
+
+
+def test_admin_can_manage_workspace_members_projects_and_system_logs() -> None:
+    client, session, _ = _client()
+    owner, workspace = _seed_workspace(session)
+    invited, _ = _seed_workspace(session, email="member@example.com", slug="member-space")
+    member = WorkspaceMember(
+        workspace_id=workspace.id,
+        user_id=invited.id,
+        role="viewer",
+        status="active",
+    )
+    project = WorkspaceProject(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        name="Control Plane",
+        slug="control-plane",
+        description="Platform project",
+        input_path="inputs",
+        work_path="work",
+        output_path="outputs",
+        configuration={},
+        configuration_version=1,
+        status="active",
+    )
+    capability = Capability(
+        key="runtime.shell",
+        name="Runtime Shell",
+        category="runtime",
+        default_policy={},
+        status="active",
+    )
+    tool_group = ToolGroup(
+        key="runtime-tools",
+        name="Runtime Tools",
+        tool_names=["runtime.shell"],
+        status="active",
+    )
+    session.add_all([member, project, capability, tool_group])
+    session.commit()
+
+    detail = client.get(
+        f"/api/v1/admin/workspaces/{workspace.id}",
+        headers=_admin_headers(),
+    )
+    members = client.get(
+        f"/api/v1/admin/workspaces/{workspace.id}/members",
+        headers=_admin_headers(),
+    )
+    assert detail.status_code == 200
+    assert detail.json()["member_count"] == 2
+    assert detail.json()["project_count"] == 1
+    assert members.status_code == 200
+    member_id = next(
+        item["id"] for item in members.json()["items"] if item["user_id"] == str(invited.id)
+    )
+
+    updated_member = client.patch(
+        f"/api/v1/admin/workspaces/{workspace.id}/members/{member_id}",
+        headers=_admin_headers(),
+        json={"role": "operator"},
+    )
+    projects = client.get(
+        f"/api/v1/admin/workspaces/{workspace.id}/projects",
+        headers=_admin_headers(),
+    )
+    catalog = client.get(
+        f"/api/v1/admin/catalog/project?workspace_id={workspace.id}",
+        headers=_admin_headers(),
+    )
+    catalog_detail = client.get(
+        f"/api/v1/admin/catalog/project/{project.id}?workspace_id={workspace.id}",
+        headers=_admin_headers(),
+    )
+    catalog_cross_workspace = client.get(
+        f"/api/v1/admin/catalog/project/{project.id}?workspace_id={invited.id}",
+        headers=_admin_headers(),
+    )
+    capabilities = client.get(
+        "/api/v1/admin/catalog/capability",
+        headers=_admin_headers(),
+    )
+    capability_detail = client.get(
+        f"/api/v1/admin/catalog/capability/{capability.id}",
+        headers=_admin_headers(),
+    )
+    tools = client.get(
+        "/api/v1/admin/catalog/tool",
+        headers=_admin_headers(),
+    )
+    archived = client.patch(
+        f"/api/v1/admin/workspaces/{workspace.id}/projects/{project.id}/status",
+        headers=_admin_headers(),
+        json={"status": "archived", "reason": "Platform archive"},
+    )
+    logs = client.get(
+        "/api/v1/admin/system/logs"
+        f"?workspace_id={workspace.id}&action=platform.workspace.project_status_updated",
+        headers=_admin_headers(),
+    )
+
+    assert updated_member.status_code == 200
+    assert updated_member.json()["role"] == "operator"
+    assert projects.status_code == 200
+    assert projects.json()["items"][0]["id"] == str(project.id)
+    assert catalog.status_code == 200
+    assert catalog.json()["total"] == 1
+    assert catalog.json()["items"][0]["workspace_id"] == str(workspace.id)
+    assert catalog_detail.status_code == 200
+    assert catalog_detail.json()["resource_id"] == str(project.id)
+    assert catalog_cross_workspace.status_code == 404
+    assert capabilities.status_code == 200
+    assert capabilities.json()["items"][0]["resource_id"] == str(capability.id)
+    assert capability_detail.status_code == 200
+    assert capability_detail.json()["workspace_id"] is None
+    assert tools.status_code == 200
+    assert tools.json()["items"][0]["resource_id"] == str(tool_group.id)
+    assert archived.status_code == 200
+    assert archived.json()["status"] == "archived"
+    assert logs.status_code == 200
+    assert logs.json()["total"] == 1
+    assert logs.json()["items"][0]["actor_id"] == "platform_admin"
+
+
+def test_admin_can_manage_project_quotas_and_resource_authorization() -> None:
+    client, session, _ = _client()
+    owner, workspace = _seed_workspace(session)
+    member_user, _ = _seed_workspace(session, email="project-member@example.com", slug="member")
+    foreign_user, foreign_workspace = _seed_workspace(
+        session,
+        email="foreign@example.com",
+        slug="foreign",
+    )
+    session.add(
+        WorkspaceMember(
+            workspace_id=workspace.id,
+            user_id=member_user.id,
+            role="viewer",
+            status="active",
+        )
+    )
+    project = WorkspaceProject(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        name="Quota Project",
+        slug="quota-project",
+        description="Project with a bounded run budget",
+        input_path="inputs",
+        work_path="work",
+        output_path="outputs",
+        configuration={},
+        configuration_version=1,
+        status="active",
+    )
+    foreign_project = WorkspaceProject(
+        workspace_id=foreign_workspace.id,
+        created_by_user_id=foreign_user.id,
+        name="Foreign Project",
+        slug="foreign-project",
+        description="Foreign project",
+        input_path="inputs",
+        work_path="work",
+        output_path="outputs",
+        configuration={},
+        configuration_version=1,
+        status="active",
+    )
+    session.add_all([project, foreign_project])
+    session.commit()
+
+    configured = client.put(
+        f"/api/v1/admin/workspaces/{workspace.id}/projects/{project.id}/quotas",
+        headers=_admin_headers(),
+        json={"quotas": [{"quota_key": "active_runs", "limit_value": 1}]},
+    )
+    listed = client.get(
+        f"/api/v1/admin/workspaces/{workspace.id}/projects/{project.id}/quotas",
+        headers=_admin_headers(),
+    )
+    foreign_quota = client.put(
+        f"/api/v1/admin/workspaces/{workspace.id}/projects/{foreign_project.id}/quotas",
+        headers=_admin_headers(),
+        json={"quotas": [{"quota_key": "active_runs", "limit_value": 1}]},
+    )
+    assert configured.status_code == 200
+    assert configured.json()[0]["project_id"] == str(project.id)
+    assert configured.json()[0]["limit_value"] == 1
+    assert listed.status_code == 200
+    assert listed.json()[0]["quota_key"] == "active_runs"
+    assert foreign_quota.status_code == 404
+    configured_quota = session.query(WorkspaceProjectQuota).filter_by(project_id=project.id).one()
+    assert configured_quota.reserved_value == 0
+    assert configured_quota.limit_value == 1
+    assert configured_quota.status == "active"
+
+    first = WorkspaceQuotaReservationService(session).reserve(
+        workspace_id=workspace.id,
+        project_id=project.id,
+        task_id=None,
+        task_step_id=None,
+        reservation_key="admin-project-quota-1",
+        resource_usage={"active_runs": 1},
+    )
+    second = WorkspaceQuotaReservationService(session).reserve(
+        workspace_id=workspace.id,
+        project_id=project.id,
+        task_id=None,
+        task_step_id=None,
+        reservation_key="admin-project-quota-2",
+        resource_usage={"active_runs": 1},
+    )
+    assert first.reservation is not None
+    assert second.reservation is None
+    assert second.blocked_reason == "workspace_project_quota_exceeded:active_runs"
+    WorkspaceQuotaReservationService(session).release_reservation(first.reservation)
+
+    initial_authorization = client.get(
+        f"/api/v1/admin/workspaces/{workspace.id}/resources/project/{project.id}/authorization",
+        headers=_admin_headers(),
+    )
+    owner_response = client.put(
+        f"/api/v1/admin/workspaces/{workspace.id}/resources/project/{project.id}/owner",
+        headers=_admin_headers(),
+        json={"user_id": str(member_user.id)},
+    )
+    grants_response = client.put(
+        f"/api/v1/admin/workspaces/{workspace.id}/resources/project/{project.id}/grants",
+        headers=_admin_headers(),
+        json={"user_id": str(member_user.id), "actions": ["read", "update"]},
+    )
+    authorization = client.get(
+        f"/api/v1/admin/workspaces/{workspace.id}/resources/project/{project.id}/authorization",
+        headers=_admin_headers(),
+    )
+    foreign_grant = client.put(
+        f"/api/v1/admin/workspaces/{workspace.id}/resources/project/{project.id}/grants",
+        headers=_admin_headers(),
+        json={"user_id": str(foreign_user.id), "actions": ["read"]},
+    )
+
+    assert owner_response.status_code == 200
+    assert initial_authorization.status_code == 200
+    assert initial_authorization.json()["owner_user_id"] is None
+    assert owner_response.json()["owner_user_id"] == str(member_user.id)
+    assert grants_response.status_code == 200
+    assert authorization.status_code == 200
+    assert authorization.json()["grants"] == [
+        {"user_id": str(member_user.id), "actions": ["read", "update"]}
+    ]
+    assert foreign_grant.status_code == 409
+    actions = {
+        event.action
+        for event in session.query(AuditEvent).filter_by(workspace_id=workspace.id).all()
+    }
+    assert "platform.workspace.project_quotas_upserted" in actions
+    assert "platform.resource.owner_assigned" in actions
+    assert "platform.resource.grants_replaced" in actions
+
+
+def test_admin_plugin_governance_blocks_execution_and_tenant_reenable() -> None:
+    client, session, _ = _client()
+    owner, workspace = _seed_workspace(session)
+    _, foreign_workspace = _seed_workspace(
+        session, email="foreign-plugin@example.com", slug="foreign-plugin"
+    )
+    trust_key = PluginTrustKey(
+        workspace_id=workspace.id,
+        key_id="publisher-a",
+        plugin_key="incident-channel",
+        public_key="a" * 64,
+    )
+    install = PluginInstall(
+        workspace_id=workspace.id,
+        plugin_key="incident-channel",
+        current_version="1.0.0",
+        status="active",
+        generation=1,
+    )
+    session.add_all([trust_key, install])
+    session.flush()
+    release = PluginRelease(
+        workspace_id=workspace.id,
+        install_id=install.id,
+        trust_key_id=trust_key.id,
+        version="1.0.0",
+        package={},
+        checksum="a" * 64,
+        approved_permissions=["messages.receive"],
+    )
+    credential = PluginCredential(
+        workspace_id=workspace.id,
+        install_id=install.id,
+        generation=1,
+        token_hash="b" * 64,
+        permissions=["messages.receive"],
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+    )
+    deployment = PluginDeployment(
+        workspace_id=workspace.id,
+        install_id=install.id,
+        template_id=uuid4(),
+        image="example.test/plugin@sha256:" + "c" * 64,
+        desired_state="running",
+        status="running",
+        revision=1,
+        applied_revision=1,
+        generation=1,
+        execution_identity={},
+        configuration={},
+        encrypted_environment="encrypted",
+        encryption_key_id="test",
+        next_check_at=datetime.now(UTC),
+    )
+    session.add_all([release, credential, deployment])
+    session.commit()
+
+    listed = client.get(
+        f"/api/v1/admin/catalog/plugin_trust_key?workspace_id={workspace.id}",
+        headers=_admin_headers(),
+    )
+    releases = client.get(
+        f"/api/v1/admin/catalog/plugin_release?workspace_id={workspace.id}",
+        headers=_admin_headers(),
+    )
+    unauthorized = client.post(
+        f"/api/v1/admin/workspaces/{workspace.id}/plugins/{install.id}/disable",
+        json={"reason": "Security review"},
+    )
+    foreign = client.post(
+        f"/api/v1/admin/workspaces/{foreign_workspace.id}/plugins/{install.id}/disable",
+        headers=_admin_headers(),
+        json={"reason": "Security review"},
+    )
+    disabled = client.post(
+        f"/api/v1/admin/workspaces/{workspace.id}/plugins/{install.id}/disable",
+        headers=_admin_headers(),
+        json={"reason": "Security review"},
+    )
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+    assert "public_key" not in str(listed.json())
+    assert releases.status_code == 200
+    assert releases.json()["items"][0]["metadata"]["trust_key_id"] == str(trust_key.id)
+    assert "package" not in str(releases.json())
+    assert unauthorized.status_code == 401
+    assert foreign.status_code == 404
+    assert disabled.status_code == 200
+    assert disabled.json()["platform_blocked"] is True
+    assert disabled.json()["status"] == "disabled"
+    catalog_install = client.get(
+        f"/api/v1/admin/catalog/plugin/{install.id}?workspace_id={workspace.id}",
+        headers=_admin_headers(),
+    )
+    assert catalog_install.status_code == 200
+    assert catalog_install.json()["metadata"]["platform_blocked"] is True
+    session.refresh(install)
+    session.refresh(credential)
+    session.refresh(deployment)
+    assert install.generation == 2
+    assert credential.status == "revoked"
+    assert deployment.desired_state == "stopped"
+    assert deployment.next_check_at is not None
+    with raises(ResourceAccessDenied):
+        PluginServices(session).require(
+            PluginPrincipal(workspace.id, install.id, credential.id)
+        )
+    with raises(PolicyDeniedError):
+        PluginService(session).action(
+            workspace.id,
+            owner.id,
+            install.id,
+            PluginAction(action="enable", expected_generation=install.generation),
+        )
+    session.rollback()
+
+    released = client.post(
+        f"/api/v1/admin/workspaces/{workspace.id}/plugins/{install.id}/release",
+        headers=_admin_headers(),
+        json={"reason": "Review passed"},
+    )
+    assert released.status_code == 200
+    assert released.json()["platform_blocked"] is False
+    assert released.json()["status"] == "disabled"
+
+    session.refresh(install)
+    PluginService(session).action(
+        workspace.id,
+        owner.id,
+        install.id,
+        PluginAction(action="enable", expected_generation=install.generation),
+    )
+    deployment.desired_state = "running"
+    credential.status = "active"
+    session.commit()
+
+    foreign_revoke = client.post(
+        f"/api/v1/admin/workspaces/{foreign_workspace.id}/plugin-trust-keys/{trust_key.id}/revoke",
+        headers=_admin_headers(),
+        json={"reason": "Publisher compromised"},
+    )
+    revoked = client.post(
+        f"/api/v1/admin/workspaces/{workspace.id}/plugin-trust-keys/{trust_key.id}/revoke",
+        headers=_admin_headers(),
+        json={"reason": "Publisher compromised"},
+    )
+    assert foreign_revoke.status_code == 404
+    assert revoked.status_code == 200
+    assert revoked.json()["status"] == "revoked"
+    assert "public_key" not in revoked.json()
+    session.refresh(trust_key)
+    session.refresh(install)
+    session.refresh(credential)
+    session.refresh(deployment)
+    assert trust_key.status == "revoked"
+    assert install.platform_blocked is True
+    assert install.status == "disabled"
+    assert credential.status == "revoked"
+    assert deployment.desired_state == "stopped"
+    with raises(PolicyDeniedError):
+        PluginService(session).action(
+            workspace.id,
+            owner.id,
+            install.id,
+            PluginAction(action="enable", expected_generation=install.generation),
+        )
+    session.rollback()
+    actions = {
+        event.action for event in session.query(AuditEvent).filter_by(workspace_id=workspace.id)
+    }
+    assert actions >= {
+        "platform.plugin.disabled",
+        "platform.plugin.released",
+        "platform.plugin.publisher_key_revoked",
+    }
+
+
+def test_admin_global_capability_block_removes_tenant_access_and_restores_it() -> None:
+    client, session, _ = _client()
+    owner, workspace = _seed_workspace(session)
+    capability = Capability(key="research", name="Research", category="information")
+    group = ToolGroup(key="research-tools", name="Research tools", tool_names=["search"])
+    skill = Skill(key="research-skill", name="Research skill", version="1.0.0")
+    session.add_all([capability, group, skill])
+    session.commit()
+    base = f"/api/v1/workspaces/{workspace.id}/capabilities"
+    member_headers = {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(owner.id)}
+
+    assert client.get(base, headers=member_headers).json()["total"] == 1
+    assert client.get(f"{base}/tool-groups", headers=member_headers).json()["total"] == 1
+    assert client.get(f"{base}/skills", headers=member_headers).json()["total"] == 1
+    unauthorized = client.post(
+        f"/api/v1/admin/catalog/skill/{skill.id}/block", json={"reason": "Review"}
+    )
+    wrong_scope = client.post(
+        f"/api/v1/admin/catalog/skill/{skill.id}/block?workspace_id={workspace.id}",
+        headers=_admin_headers(),
+        json={"reason": "Review"},
+    )
+    assert unauthorized.status_code == 401
+    assert wrong_scope.status_code == 404
+
+    for kind, resource_id in (
+        ("capability", capability.id),
+        ("tool", group.id),
+        ("skill", skill.id),
+    ):
+        blocked = client.post(
+            f"/api/v1/admin/catalog/{kind}/{resource_id}/block",
+            headers=_admin_headers(),
+            json={"reason": "Security review"},
+        )
+        assert blocked.status_code == 200
+        assert blocked.json()["status"] == "disabled"
+        assert blocked.json()["platform_previous_status"] == "active"
+        assert blocked.json()["platform_blocked"] is True
+
+    assert client.get(base, headers=member_headers).json()["total"] == 0
+    assert client.get(f"{base}/tool-groups", headers=member_headers).json()["total"] == 0
+    assert client.get(f"{base}/skills", headers=member_headers).json()["total"] == 0
+    refused_install = client.post(
+        f"{base}/skills/{skill.id}/install",
+        headers=member_headers,
+        json={},
+    )
+    assert refused_install.status_code == 404
+    detail = client.get(
+        f"/api/v1/admin/catalog/skill/{skill.id}", headers=_admin_headers()
+    )
+    assert detail.status_code == 200
+    assert detail.json()["metadata"]["platform_blocked"] is True
+    assert (
+        session.query(SecurityEvent)
+        .filter_by(action="platform.capability.blocked", workspace_id=None)
+        .count()
+        == 3
+    )
+
+    for kind, resource_id in (
+        ("capability", capability.id),
+        ("tool", group.id),
+        ("skill", skill.id),
+    ):
+        released = client.post(
+            f"/api/v1/admin/catalog/{kind}/{resource_id}/release",
+            headers=_admin_headers(),
+            json={"reason": "Review passed"},
+        )
+        assert released.status_code == 200
+        assert released.json()["status"] == "active"
+        assert released.json()["platform_blocked"] is False
+    assert client.get(f"{base}/skills", headers=member_headers).json()["total"] == 1
+    installed = client.post(
+        f"{base}/skills/{skill.id}/install", headers=member_headers, json={}
+    )
+    assert installed.status_code == 201
+
+
+def test_admin_workspace_capability_block_enforces_scope_and_live_availability() -> None:
+    client, session, _ = _client()
+    owner, workspace = _seed_workspace(session)
+    _, foreign_workspace = _seed_workspace(
+        session, email="foreign-capability@example.com", slug="foreign-capability"
+    )
+    skill = Skill(
+        key="private-research", name="Private research", version="1.0.0",
+        owner_workspace_id=workspace.id, visibility="private",
+    )
+    session.add(skill)
+    session.flush()
+    listing = MarketplaceListing(
+        workspace_id=workspace.id, owner_user_id=owner.id,
+        source_resource_id=skill.id, listing_type="skill", visibility="public",
+        status="public", name="Research skill", version="1.0.0",
+    )
+    install = WorkspaceSkillInstall(
+        workspace_id=workspace.id, skill_id=skill.id, installed_key=skill.key,
+        installed_name=skill.name, installed_version=skill.version,
+    )
+    resource = CapabilityResource(
+        workspace_id=workspace.id, key="knowledge", name="Knowledge",
+        resource_type="file_collection",
+    )
+    server = McpServer(workspace_id=workspace.id, name="research-mcp", server_type="stdio")
+    session.add_all([install, resource, server, listing])
+    session.flush()
+    tool = McpToolAllowlist(
+        workspace_id=workspace.id, mcp_server_id=server.id, tool_name="search"
+    )
+    session.add(tool)
+    session.commit()
+    base = f"/api/v1/workspaces/{workspace.id}/capabilities"
+    member_headers = {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(owner.id)}
+    assert client.get(f"{base}/workspace-skills", headers=member_headers).json()["total"] == 1
+    assert client.get(f"{base}/resources", headers=member_headers).json()["total"] == 1
+    assert len(client.get(f"{base}/mcp-tools", headers=member_headers).json()) == 1
+    assert client.get("/api/v1/marketplace?listing_type=skill").json()["total"] == 1
+
+    wrong_scope = client.post(
+        f"/api/v1/admin/catalog/mcp_server/{server.id}/block"
+        f"?workspace_id={foreign_workspace.id}",
+        headers=_admin_headers(), json={"reason": "Review"},
+    )
+    missing_scope = client.post(
+        f"/api/v1/admin/catalog/mcp_server/{server.id}/block",
+        headers=_admin_headers(), json={"reason": "Review"},
+    )
+    assert wrong_scope.status_code == 404
+    assert missing_scope.status_code == 422
+
+    for kind, resource_id in (
+        ("skill", skill.id),
+        ("skill_install", install.id),
+        ("capability_resource", resource.id),
+        ("mcp_server", server.id),
+        ("mcp_tool", tool.id),
+        ("marketplace_listing", listing.id),
+    ):
+        blocked = client.post(
+            f"/api/v1/admin/catalog/{kind}/{resource_id}/block"
+            f"?workspace_id={workspace.id}",
+            headers=_admin_headers(), json={"reason": "Security review"},
+        )
+        assert blocked.status_code == 200
+        assert blocked.json()["platform_blocked"] is True
+        if kind == "skill":
+            assert client.get("/api/v1/marketplace?listing_type=skill").json()["total"] == 0
+
+    assert client.get(f"{base}/workspace-skills", headers=member_headers).json()["total"] == 0
+    assert client.get(f"{base}/resources", headers=member_headers).json()["total"] == 0
+    assert client.get(f"{base}/mcp-tools", headers=member_headers).json() == []
+    assert client.get("/api/v1/marketplace?listing_type=skill").json()["total"] == 0
+    tenant_disable_install = client.post(
+        f"{base}/workspace-skills/{install.id}/disable", headers=member_headers
+    )
+    tenant_disable_server = client.post(
+        f"{base}/mcp-servers/{server.id}/disable", headers=member_headers
+    )
+    tenant_disable_tool = client.post(
+        f"{base}/mcp-servers/{server.id}/tools/{tool.id}/disable",
+        headers=member_headers,
+    )
+    assert tenant_disable_install.status_code == 403
+    assert tenant_disable_server.status_code == 403
+    assert tenant_disable_tool.status_code == 403
+    refused_listing_install = client.post(
+        f"/api/v1/workspaces/{workspace.id}/marketplace-listings/{listing.id}/install",
+        headers=member_headers, json={},
+    )
+    assert refused_listing_install.status_code == 404
+    availability = client.get(
+        f"{base}/workspace-skills/{install.id}/availability", headers=member_headers
+    )
+    assert availability.status_code == 200
+    assert availability.json()["usable"] is False
+    assert "platform_blocked" in availability.json()["blocked_reasons"]
+    assert (
+        session.query(AuditEvent)
+        .filter_by(workspace_id=workspace.id, action="platform.capability.blocked")
+        .count()
+        == 6
+    )
+
+    for kind, resource_id in (
+        ("skill", skill.id),
+        ("skill_install", install.id),
+        ("capability_resource", resource.id),
+        ("mcp_server", server.id),
+        ("mcp_tool", tool.id),
+        ("marketplace_listing", listing.id),
+    ):
+        released = client.post(
+            f"/api/v1/admin/catalog/{kind}/{resource_id}/release"
+            f"?workspace_id={workspace.id}",
+            headers=_admin_headers(), json={"reason": "Review passed"},
+        )
+        assert released.status_code == 200
+        assert released.json()["status"] == (
+            "public" if kind == "marketplace_listing" else "active"
+        )
+    assert client.get(f"{base}/workspace-skills", headers=member_headers).json()["total"] == 1
+    assert client.get(f"{base}/resources", headers=member_headers).json()["total"] == 1
+    assert len(client.get(f"{base}/mcp-tools", headers=member_headers).json()) == 1
+    assert client.get("/api/v1/marketplace?listing_type=skill").json()["total"] == 1
 
 
 def test_admin_security_event_response_redacts_sensitive_metadata() -> None:
@@ -432,9 +1098,13 @@ def test_admin_can_list_platform_policy_events() -> None:
         headers=_admin_headers(),
     )
 
-    stored_policy = session.query(PlatformPolicy).filter_by(
-        policy_key="global_worker_control",
-    ).one()
+    stored_policy = (
+        session.query(PlatformPolicy)
+        .filter_by(
+            policy_key="global_worker_control",
+        )
+        .one()
+    )
 
     assert policy.status_code == 200
     assert events.status_code == 200
@@ -726,12 +1396,8 @@ def test_admin_operations_summary_aggregates_queue_capacity_and_blockers() -> No
     assert body["approvals"]["runs_waiting"] == 1
     assert body["approvals"]["tasks_waiting"] == 1
     assert body["failures"]["failed_runs"] == 1
-    assert body["failures"]["top_run_error_codes"] == [
-        {"key": "model_timeout", "count": 1}
-    ]
-    assert body["failures"]["top_security_reasons"] == [
-        {"key": "mcp_tool_not_allowed", "count": 1}
-    ]
+    assert body["failures"]["top_run_error_codes"] == [{"key": "model_timeout", "count": 1}]
+    assert body["failures"]["top_security_reasons"] == [{"key": "mcp_tool_not_allowed", "count": 1}]
 
 
 def test_admin_system_configuration_exposes_redacted_resource_summary() -> None:
@@ -836,8 +1502,167 @@ def test_admin_check_updates_returns_latest_release(monkeypatch) -> None:
     assert second.json()["cached"] is True
 
 
+def test_admin_can_manage_user_lifecycle_and_workspace_membership() -> None:
+    client, session, _ = _client()
+    _, workspace = _seed_workspace(session)
 
+    created = client.post(
+        "/api/v1/admin/users",
+        headers=_admin_headers(),
+        json={
+            "email": "managed@example.com",
+            "display_name": "Managed User",
+            "username": "managed-user",
+        },
+    )
+    assert created.status_code == 201
+    created_body = created.json()
+    user_id = created_body["id"]
+    assert created_body["initial_password"]
 
+    login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "managed@example.com",
+            "password": created_body["initial_password"],
+        },
+    )
+    assert login.status_code == 200
+    assert login.json()["user_id"] == user_id
+
+    detail = client.get(f"/api/v1/admin/users/{user_id}", headers=_admin_headers())
+    assert detail.status_code == 200
+    assert detail.json()["workspace_memberships"] == []
+
+    added = client.post(
+        f"/api/v1/admin/workspaces/{workspace.id}/members",
+        headers=_admin_headers(),
+        json={"user_id": user_id, "role": "viewer"},
+    )
+    assert added.status_code == 201
+    member_id = added.json()["id"]
+
+    updated_member = client.patch(
+        f"/api/v1/admin/workspaces/{workspace.id}/members/{member_id}",
+        headers=_admin_headers(),
+        json={"role": "operator"},
+    )
+    assert updated_member.status_code == 200
+    assert updated_member.json()["role"] == "operator"
+
+    token = UserAPIToken(
+        user_id=UUID(user_id),
+        name="test token",
+        token_hash="hash-managed-user",
+        fingerprint="fingerprint-managed-user",
+        status="active",
+    )
+    session.add(token)
+    session.commit()
+    revoked = client.post(
+        f"/api/v1/admin/users/{user_id}/revoke-tokens",
+        headers=_admin_headers(),
+    )
+    assert revoked.status_code == 200
+    assert revoked.json()["revoked"] == 2
+    session.refresh(token)
+    assert token.status == "revoked"
+
+    session.add(
+        UserAPIToken(
+            user_id=UUID(user_id),
+            name="reset token",
+            token_hash="hash-reset-token",
+            fingerprint="fingerprint-reset-token",
+            status="active",
+        )
+    )
+    session.commit()
+    reset = client.post(
+        f"/api/v1/admin/users/{user_id}/reset-password",
+        headers=_admin_headers(),
+    )
+    assert reset.status_code == 200
+    assert reset.json()["temporary_password"]
+    assert (
+        session.query(UserAPIToken)
+        .filter_by(
+            user_id=UUID(user_id),
+            status="active",
+        )
+        .count()
+        == 0
+    )
+    reset_login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "managed@example.com",
+            "password": reset.json()["temporary_password"],
+        },
+    )
+    assert reset_login.status_code == 200
+
+    secondary = client.post(
+        "/api/v1/admin/users",
+        headers=_admin_headers(),
+        json={"email": "secondary@example.com", "display_name": "Secondary User"},
+    )
+    assert secondary.status_code == 201
+    disabled = client.put(
+        f"/api/v1/admin/users/{secondary.json()['id']}/status",
+        headers=_admin_headers(),
+        json={"status": "disabled"},
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["status"] == "disabled"
+
+    promoted = client.patch(
+        f"/api/v1/admin/users/{user_id}",
+        headers=_admin_headers(),
+        json={"display_name": "Managed Admin", "platform_admin": True},
+    )
+    assert promoted.status_code == 200
+    assert promoted.json()["platform_admin"] is True
+    cannot_demote_last_admin = client.patch(
+        f"/api/v1/admin/users/{user_id}",
+        headers=_admin_headers(),
+        json={"platform_admin": False},
+    )
+    cannot_disable_last_admin = client.put(
+        f"/api/v1/admin/users/{user_id}/status",
+        headers=_admin_headers(),
+        json={"status": "disabled"},
+    )
+    assert cannot_demote_last_admin.status_code == 409
+    assert cannot_disable_last_admin.status_code == 409
+
+    removed = client.delete(
+        f"/api/v1/admin/workspaces/{workspace.id}/members/{member_id}",
+        headers=_admin_headers(),
+    )
+    assert removed.status_code == 200
+    assert removed.json()["status"] == "disabled"
+
+    actions = {
+        event.action
+        for event in session.query(SecurityEvent)
+        if event.action.startswith("identity.")
+    }
+    assert actions >= {
+        "identity.user_created",
+        "identity.user_updated",
+        "identity.user_password_reset",
+        "identity.user_tokens_revoked",
+        "identity.user_status_changed",
+    }
+    workspace_actions = {
+        event.action for event in session.query(AuditEvent) if event.workspace_id == workspace.id
+    }
+    assert workspace_actions >= {
+        "platform.workspace.member_added",
+        "platform.workspace.member_updated",
+        "platform.workspace.member_removed",
+    }
 
 
 def _client() -> tuple[TestClient, Session, fakeredis.FakeRedis]:

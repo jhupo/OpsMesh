@@ -161,6 +161,8 @@ class MarketplaceListing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     listing_type: Mapped[str] = mapped_column(String(32), nullable=False)
     visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="private")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    platform_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    platform_previous_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     summary: Mapped[str] = mapped_column(String(2_000), nullable=False, default="")
     version: Mapped[str] = mapped_column(String(64), nullable=False, default="1.0.0")

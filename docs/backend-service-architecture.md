@@ -72,6 +72,39 @@ Responsibilities:
 
 This layer should be fast and request/response oriented. It should enqueue long-running work instead of executing it inline.
 
+Platform administrator management is a separate cross-workspace control-plane surface under
+`/admin`. It may list and inspect workspaces, members and projects, update their lifecycle state,
+manage user identity and workspace membership lifecycles, revoke tokens, reset passwords, configure
+project-scoped quotas, explicitly assign resource owners and member action grants, and query redacted
+append-only audit evidence through `/admin/system/logs`. It also exposes a redacted global catalog for
+projects, agents, teams, tasks, approvals, runs, global capabilities, capability resources, tool
+groups, MCP servers/tools, skills, skill installs, Marketplace listings, model providers, plugin
+installs, plugin releases and publisher trust keys through
+`/admin/catalog/{kind}`. Workspace-scoped catalog detail queries require both the resource ID and
+`workspace_id`; global catalog entries may omit it. The catalog never turns a workspace resource ID
+into a cross-tenant lookup. The same control-plane surface publishes and retracts targeted
+announcements, records user-level delivery/read statistics, and preserves announcement audit
+evidence. User notification preferences are workspace-scoped and filter the in-app inbox by
+category; email preference values are persisted for a future delivery adapter. Platform plugin
+governance can block an installation or revoke a publisher key within an explicit workspace scope.
+Publisher-key revocation also blocks current-release installations signed by that key.
+It revokes active installation credentials and persists a stop request for the isolated plugin
+process; cleanup is completed by the plugin-process worker. A platform block prevents workspace
+administrators from re-enabling or upgrading the installation until it is released. Capability
+governance uses
+`/admin/catalog/{kind}/{resource_id}/block` and `/release` for global capabilities, tool groups and
+skills, plus workspace-owned skills, skill installs, capability resources, MCP servers/tools and
+Marketplace listings. It stores the prior status so release restores the original state, including
+`public` listings and pending resources. Workspace-owned mutations require `workspace_id` and write
+workspace audit evidence; global mutations write security events. Tenant mutation, listing,
+installation, review and execution paths enforce platform blocks. Worker preflight rechecks both
+the source Skill and workspace install for a queued Run; already-running model turns cannot retract
+content previously sent to a provider. Identity changes are recorded as global security events;
+workspace membership, quota, owner and grant changes remain workspace-scoped audit events.
+Workspace-scoped endpoints retain workspace IDs in every request and response; they do not
+replace workspace-scoped authorization or grant platform administrators implicit ownership of
+workspace resources.
+
 ## Worker Layer
 
 Workers are required. They are not optional.

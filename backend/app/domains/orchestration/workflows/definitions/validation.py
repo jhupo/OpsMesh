@@ -156,6 +156,7 @@ class DefinitionValidationService:
                 CapabilityResource.workspace_id == workspace_id,
                 CapabilityResource.id.in_(resource_ids),
                 CapabilityResource.status == "active",
+                CapabilityResource.platform_blocked.is_(False),
             )
         ).all()
         if {resource.id for resource in resources} != resource_ids:
@@ -171,6 +172,7 @@ class DefinitionValidationService:
                 McpServer.workspace_id == workspace_id,
                 McpServer.id.in_(server_ids),
                 McpServer.status == "active",
+                McpServer.platform_blocked.is_(False),
             )
         ).all() if server_ids else []
         if {server.id for server in servers} != server_ids:
@@ -186,6 +188,7 @@ class DefinitionValidationService:
                         McpToolAllowlist.mcp_server_id == item.mcp_server_id,
                         McpToolAllowlist.tool_name == item.tool_name,
                         McpToolAllowlist.status == "active",
+                        McpToolAllowlist.platform_blocked.is_(False),
                     )
                 )
                 if allowlist is None or (

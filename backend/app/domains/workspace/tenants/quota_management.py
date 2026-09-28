@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.domains.workspace.projects.models import WorkspaceProject, WorkspaceProjectQuota
 from backend.app.domains.workspace.tenants.contracts import WorkspaceQuotaUpsertPayload
 from backend.app.domains.workspace.tenants.models import WorkspaceQuota, WorkspaceReservation
 from backend.app.domains.workspace.tenants.snapshots import quota_snapshot
@@ -112,6 +113,128 @@ class WorkspaceQuotaService:
                     "over_reserved": quota.reserved_value > quota.limit_value,
                 },
             )
+        self._session.commit()
+        self._session.refresh(quota)
+        return quota
+
+    def list_project_quotas(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> list[WorkspaceProjectQuota]:
+        return list(
+            self._session.scalars(
+                select(WorkspaceProjectQuota)
+                .where(
+                    WorkspaceProjectQuota.workspace_id == workspace_id,
+                    WorkspaceProjectQuota.project_id == project_id,
+                )
+                .order_by(WorkspaceProjectQuota.quota_key)
+            ).all()
+        )
+
+    def upsert_project_quotas(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        data: WorkspaceQuotaUpsertPayload,
+        *,
+        actor_id: str = "platform_admin",
+    ) -> list[WorkspaceProjectQuota] | None:
+        project = self._session.scalar(
+            select(WorkspaceProject)
+            .where(
+                WorkspaceProject.workspace_id == workspace_id,
+                WorkspaceProject.id == project_id,
+            )
+            .with_for_update()
+        )
+        if project is None:
+            return None
+        existing = {
+            quota.quota_key: quota
+            for quota in self._session.scalars(
+                select(WorkspaceProjectQuota)
+                .where(
+                    WorkspaceProjectQuota.workspace_id == workspace_id,
+                    WorkspaceProjectQuota.project_id == project_id,
+                )
+                .with_for_update()
+            ).all()
+        }
+        updated: list[WorkspaceProjectQuota] = []
+        audit_items: list[dict[str, object]] = []
+        for item in data.quotas:
+            quota = existing.get(item.quota_key)
+            before = quota_snapshot(quota) if quota is not None else None
+            if quota is None:
+                quota = WorkspaceProjectQuota(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    quota_key=item.quota_key,
+                    limit_value=item.limit_value,
+                    unit=item.unit,
+                )
+                self._session.add(quota)
+            else:
+                quota.limit_value = item.limit_value
+                quota.unit = item.unit
+                quota.status = "active"
+            updated.append(quota)
+            audit_items.append(
+                {
+                    "quota_key": item.quota_key,
+                    "before": before,
+                    "after": {
+                        "quota_key": item.quota_key,
+                        "limit_value": item.limit_value,
+                        "unit": item.unit,
+                        "status": "active",
+                    },
+                }
+            )
+        AuditService(self._session).record_system_action(
+            workspace_id=workspace_id,
+            action="platform.workspace.project_quotas_upserted",
+            target_type="workspace_project",
+            target_id=project_id,
+            metadata={"quotas": audit_items, "actor_id": actor_id},
+            actor_id=actor_id,
+        )
+        self._session.commit()
+        for quota in updated:
+            self._session.refresh(quota)
+        return sorted(updated, key=lambda quota: quota.quota_key)
+
+    def disable_project_quota(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        quota_key: str,
+        *,
+        actor_id: str = "platform_admin",
+    ) -> WorkspaceProjectQuota | None:
+        quota = self._session.scalar(
+            select(WorkspaceProjectQuota)
+            .where(
+                WorkspaceProjectQuota.workspace_id == workspace_id,
+                WorkspaceProjectQuota.project_id == project_id,
+                WorkspaceProjectQuota.quota_key == quota_key,
+            )
+            .with_for_update()
+        )
+        if quota is None:
+            return None
+        before = quota_snapshot(quota)
+        quota.status = "disabled"
+        AuditService(self._session).record_system_action(
+            workspace_id=workspace_id,
+            action="platform.workspace.project_quota_disabled",
+            target_type="workspace_project_quota",
+            target_id=quota.id,
+            metadata={"before": before, "after": quota_snapshot(quota)},
+            actor_id=actor_id,
+        )
         self._session.commit()
         self._session.refresh(quota)
         return quota
