@@ -159,7 +159,9 @@ class McpToolCallLogQueryService:
                 McpToolAllowlist.workspace_id == workspace_id,
                 McpToolAllowlist.tool_name == tool_name,
                 McpToolAllowlist.status == "active",
+                McpToolAllowlist.platform_blocked.is_(False),
                 McpServer.status == "active",
+                McpServer.platform_blocked.is_(False),
             )
         )
 

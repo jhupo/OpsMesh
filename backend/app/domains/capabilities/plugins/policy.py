@@ -13,7 +13,7 @@ from backend.app.domains.capabilities.plugins.models import (
     PluginRelease,
     PluginTrustKey,
 )
-from backend.app.domains.capabilities.skills.models import WorkspaceSkillInstall
+from backend.app.domains.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from backend.app.domains.integrations.automation_models import Automation
 from backend.app.domains.integrations.webhooks.models import WebhookSubscription
 
@@ -48,6 +48,11 @@ def resource_configuration(
         )
         if skill is None:
             raise ValueError("Plugin skill binding not found")
+        source = session.scalar(
+            select(Skill).where(Skill.id == skill.skill_id, Skill.platform_blocked.is_(False))
+        )
+        if skill.platform_blocked or source is None:
+            raise ValueError("Plugin skill binding is blocked by the platform")
         return {
             "manifest": skill.installed_manifest,
             "config": skill.config,
@@ -105,7 +110,12 @@ def plugin_resource_available(
     if row is None:
         return True
     binding, install, release, key = row
-    if install.status != "active" or release.status != "available" or key.status != "active":
+    if (
+        install.status != "active"
+        or install.platform_blocked
+        or release.status != "available"
+        or key.status != "active"
+    ):
         return False
     try:
         return bool(

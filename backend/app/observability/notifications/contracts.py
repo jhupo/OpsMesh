@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from backend.app.core.contracts import TimestampedModel
 from backend.app.core.security.redaction import redact_sensitive_payload
@@ -42,6 +42,34 @@ class NotificationResponse(TimestampedModel):
 class NotificationMarkReadResponse(BaseModel):
     workspace_id: UUID
     updated_count: int
+
+
+class NotificationPreferenceUpdateRequest(BaseModel):
+    in_app_enabled: bool | None = None
+    email_enabled: bool | None = None
+    announcement_enabled: bool | None = None
+    task_enabled: bool | None = None
+    approval_enabled: bool | None = None
+    security_enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def _require_update(self) -> "NotificationPreferenceUpdateRequest":
+        if not self.model_fields_set:
+            raise ValueError("at least one notification preference is required")
+        return self
+
+
+class NotificationPreferenceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    workspace_id: UUID
+    user_id: UUID
+    in_app_enabled: bool
+    email_enabled: bool
+    announcement_enabled: bool
+    task_enabled: bool
+    approval_enabled: bool
+    security_enabled: bool
 
 
 class NotificationCountsResponse(BaseModel):

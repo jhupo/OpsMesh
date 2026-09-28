@@ -1,5 +1,11 @@
 # OpsMesh
 
+Frontend status (2026-09-23): superadmin navigation is organized into platform, execution,
+capabilities, data, operations, security and system administration. New management entries currently
+establish navigation and titles only. The capability center includes descriptive resource cards,
+detail/edit surfaces and a single expert authoring canvas. Saves are tab-scoped drafts; platform
+resource mutations, publication and execution are not connected. See [frontend architecture](docs/frontend-architecture.md).
+
 Open-source enterprise agent framework for building, operating, and governing teams of AI agents.
 
 OpsMesh is a backend framework and control plane for organizations that need more than a chat
@@ -50,6 +56,7 @@ Linux amd64/Postgres 16/local-storage maintenance-window topology, not rolling o
 | Area | Status |
 | --- | --- |
 | Backend API and control plane | Implemented and actively evolving |
+| Platform administrator management | Workspace/member/project controls, user lifecycle management, token/password controls, project quota enforcement, resource owner/grant management, redacted cross-workspace catalog views, targeted announcements, notification preferences, plugin and capability-resource platform blocks, Marketplace listing withdrawal, publisher-key revocation, and global system audit-log query implemented |
 | Agent and team orchestration | Implemented |
 | Worker queues and scheduling | Implemented |
 | Docker and self-hosted execution | Implemented |
@@ -272,6 +279,16 @@ sequenceDiagram
   public HTTPS egress, publisher signatures and platform/SDK compatibility; explicit permission
   and configuration previews lead into the existing install/upgrade lifecycle. See
   [plugin distribution](docs/plugin-distribution.md) (2026-09-18).
+- Platform administrators can inspect plugin installs, releases and publisher trust keys across
+  workspaces. A platform block revokes installation credentials and requests hosted-process cleanup;
+  workspace administrators cannot re-enable the install until the platform releases the block.
+  Revoking a publisher key also blocks affected current-release installations, revokes their
+  credentials and requests cleanup.
+- Platform administrators can block and release global capabilities/tool groups/skills and
+  workspace-owned skills, installs, capability resources, MCP servers/tools, and Marketplace
+  listings. Workspace-owned changes require `workspace_id`, persist audit evidence, and prevent
+  workspace-side reactivation. Worker preflight rechecks installed skills against current source
+  and install state; MCP/resource execution gates recheck current platform blocks.
 - Run authorization snapshots that freeze the capabilities allowed for a concrete execution.
 
 ### Isolated execution

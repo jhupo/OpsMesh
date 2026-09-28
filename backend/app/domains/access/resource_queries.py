@@ -88,6 +88,8 @@ _WORKSPACE_METADATA = frozenset(
         "secured_resources",
         "resource_grants",
         "external_identity_bindings",
+        "user_notification_preferences",
+        "workspace_notifications",
     }
 )
 

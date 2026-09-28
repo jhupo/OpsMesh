@@ -119,6 +119,7 @@ class PluginInstall(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
     plugin_key: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(32), default="active")
+    platform_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     generation: Mapped[int] = mapped_column(Integer, default=1)
     current_version: Mapped[str] = mapped_column(String(64))
 

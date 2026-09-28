@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from backend.app.domains.workspace.projects.models import WorkspaceProjectQuota
 from backend.app.domains.workspace.tenants.models import (
     WorkspaceInvite,
     WorkspaceMember,
@@ -9,7 +10,7 @@ from backend.app.domains.workspace.tenants.models import (
 )
 
 
-def quota_snapshot(quota: WorkspaceQuota) -> dict[str, object]:
+def quota_snapshot(quota: WorkspaceQuota | WorkspaceProjectQuota) -> dict[str, object]:
     return {
         "quota_key": quota.quota_key,
         "limit_value": quota.limit_value,

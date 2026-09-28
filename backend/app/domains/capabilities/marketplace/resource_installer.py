@@ -124,6 +124,6 @@ class MarketplaceResourceInstaller:
     def _source_skill_for_listing(self, listing: MarketplaceListing) -> Skill:
         if listing.source_resource_id is not None:
             source = self._session.get(Skill, listing.source_resource_id)
-            if source is not None:
+            if source is not None and source.status == "active" and not source.platform_blocked:
                 return source
         raise ValueError("Marketplace skill source not found")

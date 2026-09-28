@@ -61,6 +61,7 @@ class PluginInstallResponse(TimestampedModel):
     workspace_id: UUID
     plugin_key: str
     status: str
+    platform_blocked: bool
     generation: int
     current_version: str
 

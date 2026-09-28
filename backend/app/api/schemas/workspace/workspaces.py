@@ -290,6 +290,7 @@ class WorkspaceQuotaResponse(TimestampedModel):
 
 class WorkspaceExecutionSlotReservationResponse(TimestampedModel):
     id: UUID
+    workspace_project_id: UUID | None
     reservation_key: str
     task_id: UUID | None
     task_step_id: UUID | None

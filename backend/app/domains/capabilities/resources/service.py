@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.core.errors import DomainError, NotFoundError
+from backend.app.core.errors import DomainError, NotFoundError, PolicyDeniedError
 from backend.app.core.pagination import PageParams
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.catalog.contracts import (
@@ -63,8 +63,14 @@ class CapabilityResourceService:
             .where(CapabilityResource.workspace_id == workspace_id)
         )
         if not include_disabled:
-            statement = statement.where(CapabilityResource.status == "active")
-            count_statement = count_statement.where(CapabilityResource.status == "active")
+            statement = statement.where(
+                CapabilityResource.status == "active",
+                CapabilityResource.platform_blocked.is_(False),
+            )
+            count_statement = count_statement.where(
+                CapabilityResource.status == "active",
+                CapabilityResource.platform_blocked.is_(False),
+            )
         total = int(self._session.scalar(count_statement) or 0)
         resources = list(
             self._session.scalars(
@@ -82,6 +88,7 @@ class CapabilityResourceService:
                 .where(
                     CapabilityResource.workspace_id == workspace_id,
                     CapabilityResource.status == "active",
+                    CapabilityResource.platform_blocked.is_(False),
                 )
                 .order_by(CapabilityResource.key.asc())
             ).all()
@@ -137,6 +144,8 @@ class CapabilityResourceService:
         actor_user_id: UUID,
     ) -> CapabilityResource:
         resource = self._require_resource(workspace_id, resource_id, for_update=True)
+        if resource.platform_blocked:
+            raise PolicyDeniedError("Capability resource is blocked by the platform")
         next_access_mode = data.access_mode or resource.access_mode
         next_locator = data.locator if data.locator is not None else resource.locator
         next_schema = (

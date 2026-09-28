@@ -6,12 +6,13 @@ from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars
+from backend.app.core.errors import PolicyDeniedError
 from backend.app.core.pagination import PageParams
 from backend.app.domains.capabilities.skills.contracts import (
     WorkspaceSkillInstallRequest,
@@ -32,21 +33,29 @@ def require_workspace_install(
     workspace_id: UUID,
     install_id: UUID,
 ) -> WorkspaceSkillInstall:
-    install = session.get(WorkspaceSkillInstall, install_id)
-    if install is None or install.workspace_id != workspace_id:
+    install = session.scalar(
+        select(WorkspaceSkillInstall).where(
+            WorkspaceSkillInstall.id == install_id,
+            WorkspaceSkillInstall.workspace_id == workspace_id,
+        )
+    )
+    if install is None:
         raise ValueError("Workspace skill install not found")
     return install
 
 
 def require_installable_skill(session: Session, workspace_id: UUID, skill_id: UUID) -> Skill:
-    skill = session.get(Skill, skill_id)
-    if skill is None or skill.status != "active" or not can_use_skill(workspace_id, skill):
+    skill = session.scalar(
+        select(Skill).where(
+            Skill.id == skill_id,
+            Skill.status == "active",
+            Skill.platform_blocked.is_(False),
+            or_(Skill.visibility == "public", Skill.owner_workspace_id == workspace_id),
+        )
+    )
+    if skill is None:
         raise ValueError("Skill not found")
     return skill
-
-
-def can_use_skill(workspace_id: UUID, skill: Skill) -> bool:
-    return skill.visibility == "public" or skill.owner_workspace_id == workspace_id
 
 
 def copy_skill_snapshot(install: WorkspaceSkillInstall, skill: Skill) -> None:
@@ -201,6 +210,8 @@ class WorkspaceSkillLifecycleService:
         data: WorkspaceSkillUpgradeRequest,
     ) -> WorkspaceSkillInstall:
         install = require_workspace_install(self._session, workspace_id, install_id)
+        if install.platform_blocked:
+            raise PolicyDeniedError("Skill installation is blocked by the platform")
         skill = require_installable_skill(self._session, workspace_id, data.skill_id)
         require_same_skill_key(install, skill)
         lifecycle_config = append_skill_install_history(
@@ -243,6 +254,8 @@ class WorkspaceSkillLifecycleService:
         data: WorkspaceSkillRollbackRequest,
     ) -> WorkspaceSkillInstall:
         install = require_workspace_install(self._session, workspace_id, install_id)
+        if install.platform_blocked:
+            raise PolicyDeniedError("Skill installation is blocked by the platform")
         target_skill_id = data.skill_id or latest_history_skill_id(install.config)
         if target_skill_id is None:
             raise ValueError("Workspace skill install has no rollback history")
@@ -287,6 +300,8 @@ class WorkspaceSkillLifecycleService:
         install_id: UUID,
     ) -> WorkspaceSkillInstall:
         install = require_workspace_install(self._session, workspace_id, install_id)
+        if install.platform_blocked:
+            raise PolicyDeniedError("Skill installation is blocked by the platform")
         install.status = "disabled"
         install.disabled_at = datetime.now(UTC)
         AuditService(self._session).record_user_action(
@@ -318,7 +333,12 @@ class WorkspaceSkillLifecycleService:
             WorkspaceSkillInstall.workspace_id == workspace_id,
         )
         if not include_disabled:
-            statement = statement.where(WorkspaceSkillInstall.status == "active")
+            statement = statement.join(Skill, Skill.id == WorkspaceSkillInstall.skill_id).where(
+                WorkspaceSkillInstall.status == "active",
+                WorkspaceSkillInstall.platform_blocked.is_(False),
+                Skill.status == "active",
+                Skill.platform_blocked.is_(False),
+            )
         statement = statement.order_by(
             WorkspaceSkillInstall.created_at.desc(),
             WorkspaceSkillInstall.id.desc(),

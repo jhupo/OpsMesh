@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -5,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from backend.app.domains.workspace.projects.models import WorkspaceProject, WorkspaceProjectQuota
 from backend.app.domains.workspace.tenants.models import WorkspaceQuota, WorkspaceReservation
 
 ACTIVE_RUNS_QUOTA_KEY = "active_runs"
@@ -26,6 +28,7 @@ class WorkspaceQuotaService:
         workspace_id: UUID,
         task_id: UUID | None,
         task_step_id: UUID | None,
+        project_id: UUID | None = None,
         reservation_key: str,
         resource_usage: dict[str, int],
         ensure_active_run: bool = True,
@@ -44,6 +47,7 @@ class WorkspaceQuotaService:
                 reservation=reservation,
                 task_id=task_id,
                 task_step_id=task_step_id,
+                project_id=project_id,
                 resource_usage=usage,
             ):
                 return WorkspaceReservationResult(
@@ -52,6 +56,33 @@ class WorkspaceQuotaService:
                 )
             return WorkspaceReservationResult(reservation=reservation)
 
+        project_quotas: dict[str, WorkspaceProjectQuota] = {}
+        if project_id is not None:
+            project = self._session.scalar(
+                select(WorkspaceProject).where(
+                    WorkspaceProject.workspace_id == workspace_id,
+                    WorkspaceProject.id == project_id,
+                    WorkspaceProject.status == "active",
+                )
+            )
+            if project is None:
+                return WorkspaceReservationResult(
+                    reservation=None,
+                    blocked_reason="workspace_project_not_found",
+                )
+            project_quotas = {
+                quota.quota_key: quota
+                for quota in self._session.scalars(
+                    select(WorkspaceProjectQuota)
+                    .where(
+                        WorkspaceProjectQuota.workspace_id == workspace_id,
+                        WorkspaceProjectQuota.project_id == project_id,
+                        WorkspaceProjectQuota.status == "active",
+                        WorkspaceProjectQuota.quota_key.in_(usage),
+                    )
+                    .with_for_update()
+                ).all()
+            }
         quotas = {
             quota.quota_key: quota
             for quota in self._session.scalars(
@@ -70,8 +101,14 @@ class WorkspaceQuotaService:
                 reservation=None,
                 blocked_reason=f"workspace_quota_exceeded:{exceeded.quota_key}",
             )
+        exceeded_project = _first_exceeded_quota(project_quotas, usage)
+        if exceeded_project is not None:
+            return WorkspaceReservationResult(
+                reservation=None,
+                blocked_reason=f"workspace_project_quota_exceeded:{exceeded_project.quota_key}",
+            )
 
-        incremented: list[tuple[WorkspaceQuota, int]] = []
+        incremented: list[tuple[WorkspaceQuota | WorkspaceProjectQuota, int]] = []
         for quota_key, amount in usage.items():
             quota = quotas.get(quota_key)
             if quota is None:
@@ -83,10 +120,22 @@ class WorkspaceQuotaService:
                     blocked_reason=f"workspace_quota_exceeded:{quota.quota_key}",
                 )
             incremented.append((quota, amount))
+        for quota_key, amount in usage.items():
+            project_quota = project_quotas.get(quota_key)
+            if project_quota is None:
+                continue
+            if not self._try_increment_quota(project_quota, amount):
+                self._rollback_quota_increments(incremented)
+                return WorkspaceReservationResult(
+                    reservation=None,
+                    blocked_reason=f"workspace_project_quota_exceeded:{project_quota.quota_key}",
+                )
+            incremented.append((project_quota, amount))
 
         if reservation is None:
             reservation = WorkspaceReservation(
                 workspace_id=workspace_id,
+                workspace_project_id=project_id,
                 task_id=task_id,
                 task_step_id=task_step_id,
                 reservation_key=reservation_key,
@@ -96,6 +145,7 @@ class WorkspaceQuotaService:
         else:
             reservation.task_id = task_id
             reservation.task_step_id = task_step_id
+            reservation.workspace_project_id = project_id
             reservation.agent_run_id = None
             reservation.resource_usage = dict(usage)
             reservation.status = "active"
@@ -104,28 +154,46 @@ class WorkspaceQuotaService:
         self._session.flush([reservation, *quotas.values()])
         return WorkspaceReservationResult(reservation=reservation)
 
-    def _try_increment_quota(self, quota: WorkspaceQuota, amount: int) -> bool:
+    def _try_increment_quota(
+        self,
+        quota: WorkspaceQuota | WorkspaceProjectQuota,
+        amount: int,
+    ) -> bool:
+        quota_model = (
+            WorkspaceProjectQuota if isinstance(quota, WorkspaceProjectQuota) else WorkspaceQuota
+        )
         reserved_id = self._session.scalar(
-            update(WorkspaceQuota)
+            update(quota_model)
             .where(
-                WorkspaceQuota.id == quota.id,
-                WorkspaceQuota.workspace_id == quota.workspace_id,
-                WorkspaceQuota.reserved_value + amount <= WorkspaceQuota.limit_value,
+                quota_model.id == quota.id,
+                quota_model.workspace_id == quota.workspace_id,
+                quota_model.reserved_value + amount <= quota_model.limit_value,
             )
-            .values(reserved_value=WorkspaceQuota.reserved_value + amount)
-            .returning(WorkspaceQuota.id)
+            .values(reserved_value=quota_model.reserved_value + amount)
+            .returning(quota_model.id)
         )
         if reserved_id is None:
             return False
         self._session.expire(quota, ["reserved_value"])
         return True
 
-    def _rollback_quota_increments(self, increments: list[tuple[WorkspaceQuota, int]]) -> None:
+    def _rollback_quota_increments(
+        self,
+        increments: list[tuple[WorkspaceQuota | WorkspaceProjectQuota, int]],
+    ) -> None:
         for quota, amount in reversed(increments):
+            quota_model = (
+                WorkspaceProjectQuota
+                if isinstance(quota, WorkspaceProjectQuota)
+                else WorkspaceQuota
+            )
             self._session.execute(
-                update(WorkspaceQuota)
-                .where(WorkspaceQuota.id == quota.id)
-                .values(reserved_value=WorkspaceQuota.reserved_value - amount)
+                update(quota_model)
+                .where(
+                    quota_model.id == quota.id,
+                    quota_model.workspace_id == quota.workspace_id,
+                )
+                .values(reserved_value=quota_model.reserved_value - amount)
             )
             self._session.expire(quota, ["reserved_value"])
 
@@ -188,9 +256,25 @@ class WorkspaceQuotaService:
             quota = quotas.get(quota_key)
             if quota is not None:
                 quota.reserved_value = max(0, quota.reserved_value - amount)
+        project_quotas = {
+            quota.quota_key: quota
+            for quota in self._session.scalars(
+                select(WorkspaceProjectQuota)
+                .where(
+                    WorkspaceProjectQuota.workspace_id == reservation.workspace_id,
+                    WorkspaceProjectQuota.project_id == reservation.workspace_project_id,
+                    WorkspaceProjectQuota.quota_key.in_(_reservation_usage(reservation)),
+                )
+                .with_for_update()
+            ).all()
+        } if reservation.workspace_project_id is not None else {}
+        for quota_key, amount in _reservation_usage(reservation).items():
+            project_quota = project_quotas.get(quota_key)
+            if project_quota is not None:
+                project_quota.reserved_value = max(0, project_quota.reserved_value - amount)
         reservation.status = "released"
         reservation.released_at = released_at or datetime.now(UTC)
-        self._session.flush([reservation, *quotas.values()])
+        self._session.flush([reservation, *quotas.values(), *project_quotas.values()])
 
     def release_reservations_for_run(
         self,
@@ -209,33 +293,8 @@ class WorkspaceQuotaService:
             )
             .with_for_update()
         ).all()
-        if not reservations:
-            return 0
-
-        quota_keys = {
-            key
-            for reservation in reservations
-            for key in _reservation_usage(reservation)
-        }
-        quotas = {
-            quota.quota_key: quota
-            for quota in self._session.scalars(
-                select(WorkspaceQuota)
-                .where(
-                    WorkspaceQuota.workspace_id == workspace_id,
-                    WorkspaceQuota.quota_key.in_(quota_keys),
-                )
-                .with_for_update()
-            ).all()
-        }
         for reservation in reservations:
-            for quota_key, amount in _reservation_usage(reservation).items():
-                quota = quotas.get(quota_key)
-                if quota is not None:
-                    quota.reserved_value = max(0, quota.reserved_value - amount)
-            reservation.status = "released"
-            reservation.released_at = release_time
-        self._session.flush([*reservations, *quotas.values()])
+            self.release_reservation(reservation, released_at=release_time)
         return len(reservations)
 
 
@@ -259,9 +318,9 @@ def _reservation_usage(reservation: WorkspaceReservation) -> dict[str, int]:
 
 
 def _first_exceeded_quota(
-    quotas: dict[str, WorkspaceQuota],
+    quotas: Mapping[str, WorkspaceQuota | WorkspaceProjectQuota],
     usage: dict[str, int],
-) -> WorkspaceQuota | None:
+) -> WorkspaceQuota | WorkspaceProjectQuota | None:
     for quota_key, amount in usage.items():
         quota = quotas.get(quota_key)
         if quota is not None and quota.reserved_value + amount > quota.limit_value:
@@ -274,11 +333,14 @@ def _active_reservation_matches(
     reservation: WorkspaceReservation,
     task_id: UUID | None,
     task_step_id: UUID | None,
+    project_id: UUID | None,
     resource_usage: dict[str, int],
 ) -> bool:
     if reservation.task_id != task_id:
         return False
     if reservation.task_step_id != task_step_id:
+        return False
+    if reservation.workspace_project_id != project_id:
         return False
     existing_usage = {
         key: value

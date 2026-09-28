@@ -25,6 +25,7 @@ from backend.app.observability.notifications.models import WorkspaceNotification
 from backend.app.runtime.workers.queue import RedisQueue
 
 TOKEN = "test-token"
+ADMIN_TOKEN = "admin-token"
 
 
 def test_notifications_are_workspace_scoped_counted_and_redacted() -> None:
@@ -198,6 +199,120 @@ def test_notifications_mark_read_archive_and_cross_workspace_ids_are_scoped() ->
     assert forbidden_archive.status_code == 403
 
 
+def test_platform_admin_can_publish_target_and_retract_announcements() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    member = User(email="viewer@example.com", display_name="viewer")
+    session.add(member)
+    session.flush()
+    session.add(
+        WorkspaceMember(
+            workspace_id=workspace.id,
+            user_id=member.id,
+            role="viewer",
+            status="active",
+        )
+    )
+    session.commit()
+
+    preference = client.put(
+        f"/api/v1/workspaces/{workspace.id}/notifications/preferences",
+        headers=_headers(member.id),
+        json={"announcement_enabled": False},
+    )
+    assert preference.status_code == 200, preference.text
+    assert preference.json()["announcement_enabled"] is False
+
+    admin_headers = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
+    workspace_announcement = client.post(
+        "/api/v1/admin/announcements",
+        headers=admin_headers,
+        json={
+            "title": "Maintenance window",
+            "body": "The control plane will be updated tonight.",
+            "severity": "warning",
+            "workspace_ids": [str(workspace.id)],
+        },
+    )
+    assert workspace_announcement.status_code == 201
+    announcement = workspace_announcement.json()
+    assert announcement["recipient_count"] == 1
+    assert announcement["workspace_ids"] == [str(workspace.id)]
+
+    owner_notifications = client.get(
+        f"/api/v1/workspaces/{workspace.id}/notifications",
+        headers=_headers(owner.id),
+    )
+    member_notifications = client.get(
+        f"/api/v1/workspaces/{workspace.id}/notifications",
+        headers=_headers(member.id),
+    )
+    assert owner_notifications.status_code == 200
+    assert owner_notifications.json()["total"] == 1
+    assert member_notifications.status_code == 200
+    assert member_notifications.json()["total"] == 0
+
+    enabled = client.put(
+        f"/api/v1/workspaces/{workspace.id}/notifications/preferences",
+        headers=_headers(member.id),
+        json={"announcement_enabled": True},
+    )
+    assert enabled.status_code == 200
+
+    role_announcement = client.post(
+        "/api/v1/admin/announcements",
+        headers=admin_headers,
+        json={
+            "title": "Viewer notice",
+            "roles": ["viewer"],
+        },
+    )
+    assert role_announcement.status_code == 201
+    assert role_announcement.json()["recipient_count"] == 1
+    user_announcement = client.post(
+        "/api/v1/admin/announcements",
+        headers=admin_headers,
+        json={
+            "title": "Owner notice",
+            "user_ids": [str(owner.id)],
+        },
+    )
+    assert user_announcement.status_code == 201
+    assert user_announcement.json()["recipient_count"] == 1
+
+    owner_items = owner_notifications.json()["items"]
+    read = client.post(
+        f"/api/v1/workspaces/{workspace.id}/notifications/{owner_items[0]['id']}/read",
+        headers=_headers(owner.id),
+    )
+    assert read.status_code == 200
+    detail = client.get(
+        f"/api/v1/admin/announcements/{announcement['id']}",
+        headers=admin_headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["read_count"] == 1
+
+    retracted = client.post(
+        f"/api/v1/admin/announcements/{announcement['id']}/retract",
+        headers=admin_headers,
+    )
+    assert retracted.status_code == 200
+    assert retracted.json()["status"] == "retracted"
+    archived = client.get(
+        f"/api/v1/workspaces/{workspace.id}/notifications?include_archived=true",
+        headers=_headers(owner.id),
+    )
+    assert archived.status_code == 200
+    retracted_items = [
+        item
+        for item in archived.json()["items"]
+        if item["source_id"] == announcement["id"]
+    ]
+    assert len(retracted_items) == 1
+    assert retracted_items[0]["archived_at"] is not None
+
+
 def _client() -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
@@ -216,6 +331,7 @@ def _client() -> tuple[TestClient, Session]:
             environment="test",
             log_format="text",
             internal_api_token=TOKEN,
+            platform_admin_token=ADMIN_TOKEN,
             database_url="sqlite+pysqlite:///:memory:",
         )
     )

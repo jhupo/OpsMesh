@@ -227,6 +227,7 @@ class AgentToolGateway:
                 select(CapabilityResource.id).where(
                     CapabilityResource.workspace_id == workspace_id,
                     CapabilityResource.status == "active",
+                    CapabilityResource.platform_blocked.is_(False),
                     CapabilityResource.id.in_([grant.resource_id for grant in grants]),
                 )
             ).all()

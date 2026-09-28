@@ -157,8 +157,10 @@ class McpExecutionValidator:
                 McpToolAllowlist.workspace_id == request.workspace_id,
                 McpToolAllowlist.tool_name == request.tool_name,
                 McpToolAllowlist.status == "active",
+                McpToolAllowlist.platform_blocked.is_(False),
                 McpServer.workspace_id == request.workspace_id,
                 McpServer.status == "active",
+                McpServer.platform_blocked.is_(False),
             )
         )
         if request.mcp_server_id is not None:

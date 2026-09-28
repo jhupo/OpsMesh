@@ -13,6 +13,8 @@ from backend.app.observability.notifications.contracts import (
     NotificationCountsResponse,
     NotificationMarkReadRequest,
     NotificationMarkReadResponse,
+    NotificationPreferenceResponse,
+    NotificationPreferenceUpdateRequest,
     NotificationResponse,
 )
 from backend.app.observability.notifications.service import NotificationCenterService
@@ -37,6 +39,7 @@ async def list_notifications(
     items, total = NotificationCenterService(session).list_notifications(
         workspace_id=context.workspace.id,
         page=page,
+        user_id=context.user.user_id,
         include_archived=include_archived,
         read=read,
         severity=severity,
@@ -51,7 +54,10 @@ async def get_notification_counts(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> NotificationCountsResponse:
-    counts = NotificationCenterService(session).counts(context.workspace.id)
+    counts = NotificationCenterService(session).counts(
+        context.workspace.id,
+        user_id=context.user.user_id,
+    )
     return NotificationCountsResponse.model_validate(counts)
 
 
@@ -63,6 +69,7 @@ async def mark_notifications_read(
 ) -> NotificationMarkReadResponse:
     updated_count = NotificationCenterService(session).mark_matching_read(
         context.workspace.id,
+        user_id=context.user.user_id,
         notification_ids=request.notification_ids,
         include_archived=request.include_archived,
     )
@@ -82,6 +89,7 @@ async def mark_notification_read(
         notification = NotificationCenterService(session).mark_read(
             context.workspace.id,
             notification_id,
+            user_id=context.user.user_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -98,7 +106,45 @@ async def archive_notification(
         notification = NotificationCenterService(session).archive(
             context.workspace.id,
             notification_id,
+            user_id=context.user.user_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return NotificationResponse.model_validate(notification)
+
+
+@router.get("/preferences", response_model=NotificationPreferenceResponse)
+async def get_notification_preferences(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> NotificationPreferenceResponse:
+    preference = NotificationCenterService(session).get_preferences(
+        context.workspace.id,
+        context.user.user_id,
+    )
+    if preference is None:
+        return NotificationPreferenceResponse(
+            workspace_id=context.workspace.id,
+            user_id=context.user.user_id,
+            in_app_enabled=True,
+            email_enabled=True,
+            announcement_enabled=True,
+            task_enabled=True,
+            approval_enabled=True,
+            security_enabled=True,
+        )
+    return NotificationPreferenceResponse.model_validate(preference)
+
+
+@router.put("/preferences", response_model=NotificationPreferenceResponse)
+async def update_notification_preferences(
+    request: NotificationPreferenceUpdateRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> NotificationPreferenceResponse:
+    preference = NotificationCenterService(session).upsert_preferences(
+        context.workspace.id,
+        context.user.user_id,
+        request.model_dump(exclude_unset=True),
+    )
+    return NotificationPreferenceResponse.model_validate(preference)

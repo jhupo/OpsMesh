@@ -21,7 +21,7 @@ from backend.app.domains.capabilities.mcp.models import (
 )
 from backend.app.domains.capabilities.plugins.policy import require_plugin_resource
 from backend.app.domains.capabilities.resources.models import CapabilityResource
-from backend.app.domains.capabilities.skills.models import WorkspaceSkillInstall
+from backend.app.domains.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from backend.app.domains.orchestration.runs.authorization.policy import (
     RunRuntimeAuthorizationError,
 )
@@ -160,6 +160,7 @@ class RunAuthorizationService:
         except RunRuntimeAuthorizationError as exc:
             self.record_runtime_denial(run, exc)
             raise
+        self._require_active_installed_skills(run.workspace_id, snapshot, lock=lock_resources)
         catalog = capability_catalog_for_snapshot(snapshot)
         if catalog is None:
             if snapshot.get("allowed_tools") not in ([], None):
@@ -185,14 +186,44 @@ class RunAuthorizationService:
             resource_grants_for_snapshot(snapshot),
             lock=lock_resources,
         )
+
+    def _require_active_installed_skills(
+        self,
+        workspace_id: UUID,
+        snapshot: dict[str, object],
+        *,
+        lock: bool,
+    ) -> None:
         skills = snapshot.get("installed_skills", [])
         if not isinstance(skills, list):
             raise ValueError("Invalid installed skill snapshot")
-        for skill in skills:
-            install_id = uuid_or_none(skill.get("install_id")) if isinstance(skill, dict) else None
-            if install_id is None:
-                raise ValueError("Invalid installed skill reference")
-            require_plugin_resource(self.session, run.workspace_id, "skill", install_id)
+        install_ids = [
+            uuid_or_none(skill.get("install_id")) if isinstance(skill, dict) else None
+            for skill in skills
+        ]
+        if any(install_id is None for install_id in install_ids):
+            raise ValueError("Invalid installed skill reference")
+        if not install_ids:
+            return
+        statement = (
+            select(WorkspaceSkillInstall.id)
+            .join(Skill, Skill.id == WorkspaceSkillInstall.skill_id)
+            .where(
+                WorkspaceSkillInstall.workspace_id == workspace_id,
+                WorkspaceSkillInstall.id.in_(install_ids),
+                WorkspaceSkillInstall.status == "active",
+                WorkspaceSkillInstall.platform_blocked.is_(False),
+                Skill.status == "active",
+                Skill.platform_blocked.is_(False),
+            )
+        )
+        if lock:
+            statement = statement.with_for_update()
+        active_ids = set(self.session.scalars(statement).all())
+        if active_ids != set(install_ids):
+            raise ValueError("Authorization snapshot references a disabled installed skill")
+        for install_id in active_ids:
+            require_plugin_resource(self.session, workspace_id, "skill", install_id)
 
     def record_runtime_denial(
         self,
@@ -258,6 +289,7 @@ class RunAuthorizationService:
         statement = select(CapabilityResource).where(
             CapabilityResource.workspace_id == workspace_id,
             CapabilityResource.status == "active",
+            CapabilityResource.platform_blocked.is_(False),
             CapabilityResource.id.in_([grant.resource_id for grant in grants]),
         )
         if lock:
@@ -338,9 +370,16 @@ class RunAuthorizationService:
         if not valid_install_ids:
             return []
         installs = self.session.scalars(
-            select(WorkspaceSkillInstall).where(
+            select(WorkspaceSkillInstall)
+            .join(
+                Skill,
+                Skill.id == WorkspaceSkillInstall.skill_id,
+            )
+            .where(
                 WorkspaceSkillInstall.workspace_id == workspace_id,
                 WorkspaceSkillInstall.status == "active",
+                WorkspaceSkillInstall.platform_blocked.is_(False),
+                Skill.platform_blocked.is_(False),
                 WorkspaceSkillInstall.id.in_(valid_install_ids),
             )
         ).all()
@@ -386,7 +425,9 @@ class RunAuthorizationService:
             .where(
                 McpToolAllowlist.workspace_id == workspace_id,
                 McpToolAllowlist.status == "active",
+                McpToolAllowlist.platform_blocked.is_(False),
                 McpServer.status == "active",
+                McpServer.platform_blocked.is_(False),
             )
             .order_by(McpServer.name.asc(), McpToolAllowlist.tool_name.asc())
         ).all()

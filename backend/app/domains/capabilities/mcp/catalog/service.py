@@ -125,7 +125,9 @@ class McpCatalogService:
             .where(
                 McpToolAllowlist.workspace_id == workspace_id,
                 McpToolAllowlist.status == "active",
+                McpToolAllowlist.platform_blocked.is_(False),
                 McpServer.status == "active",
+                McpServer.platform_blocked.is_(False),
             )
             .order_by(McpServer.name.asc(), McpToolAllowlist.tool_name.asc())
         )
@@ -156,6 +158,7 @@ class McpCatalogService:
                 McpToolAllowlist.workspace_id == workspace_id,
                 McpToolAllowlist.mcp_server_id.in_(server_ids),
                 McpToolAllowlist.status == "active",
+                McpToolAllowlist.platform_blocked.is_(False),
             )
             .order_by(McpToolAllowlist.tool_name.asc())
         )

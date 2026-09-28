@@ -139,11 +139,20 @@ class WorkspaceReservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("workspace_id", "reservation_key", name="uq_workspace_reservations_key"),
         Index("ix_workspace_reservations_workspace_status", "workspace_id", "status"),
+        Index(
+            "ix_workspace_reservations_workspace_project_status",
+            "workspace_id",
+            "workspace_project_id",
+            "status",
+        ),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    workspace_project_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("workspace_projects.id", ondelete="SET NULL"), nullable=True
     )
     task_id: Mapped[UUID | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"))
     task_step_id: Mapped[UUID | None] = mapped_column(

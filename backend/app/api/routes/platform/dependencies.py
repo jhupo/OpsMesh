@@ -9,6 +9,7 @@ from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.domains.platform.admin.management import AdminWorkspaceManagementService
 from backend.app.domains.platform.admin.operations_summary import AdminOperationsSummaryService
 from backend.app.domains.platform.admin.overview import AdminOverviewService
 from backend.app.domains.platform.admin.policy_control import AdminPolicyService
@@ -30,6 +31,12 @@ def admin_overview_service(
     session: Session = Depends(get_db_session),
 ) -> AdminOverviewService:
     return AdminOverviewService(session)
+
+
+def admin_workspace_management_service(
+    session: Session = Depends(get_db_session),
+) -> AdminWorkspaceManagementService:
+    return AdminWorkspaceManagementService(session)
 
 
 def admin_policy_service(

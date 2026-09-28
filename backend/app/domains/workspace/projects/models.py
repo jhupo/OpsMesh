@@ -50,6 +50,38 @@ class WorkspaceProject(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 
 
+class WorkspaceProjectQuota(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "workspace_project_quotas"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "project_id",
+            "quota_key",
+            name="uq_workspace_project_quotas_key",
+        ),
+        CheckConstraint("limit_value >= 0", name="project_limit_value_non_negative"),
+        CheckConstraint("reserved_value >= 0", name="project_reserved_value_non_negative"),
+        Index(
+            "ix_workspace_project_quotas_workspace_project_status",
+            "workspace_id",
+            "project_id",
+            "status",
+        ),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[UUID] = mapped_column(
+        ForeignKey("workspace_projects.id", ondelete="CASCADE"), nullable=False
+    )
+    quota_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    limit_value: Mapped[int] = mapped_column(Integer, nullable=False)
+    reserved_value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unit: Mapped[str] = mapped_column(String(32), nullable=False, default="count")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+
+
 class WorkspaceProjectConfigurationVersion(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "workspace_project_configuration_versions"
     __table_args__ = (

@@ -56,6 +56,7 @@ class MarketplaceService:
             MarketplaceListing.listing_type == listing_type,
             MarketplaceListing.visibility == "public",
             MarketplaceListing.status == "public",
+            MarketplaceListing.platform_blocked.is_(False),
         )
         if query is not None:
             pattern = f"%{query}%"
@@ -63,6 +64,15 @@ class MarketplaceService:
                 or_(
                     MarketplaceListing.name.ilike(pattern),
                     MarketplaceListing.summary.ilike(pattern),
+                )
+            )
+        if listing_type == "skill":
+            statement = statement.where(
+                MarketplaceListing.source_resource_id.in_(
+                    select(Skill.id).where(
+                        Skill.status == "active",
+                        Skill.platform_blocked.is_(False),
+                    )
                 )
             )
         return self._page_marketplace_listings(
@@ -77,6 +87,17 @@ class MarketplaceService:
         owner_user_id: UUID,
         data: MarketplaceListingCreateRequest,
     ) -> MarketplaceListing:
+        if data.listing_type == "skill":
+            source = self._session.scalar(
+                select(Skill).where(
+                    Skill.id == data.source_resource_id,
+                    Skill.owner_workspace_id == workspace_id,
+                    Skill.status == "active",
+                    Skill.platform_blocked.is_(False),
+                )
+            )
+            if source is None:
+                raise ValueError("Marketplace skill source not found")
         if data.listing_type == "plugin":
             package = SignedPluginPackage.model_validate(data.manifest)
             reject_embedded_secrets(package.manifest.model_dump(mode="json"))
@@ -282,6 +303,8 @@ class MarketplaceService:
         return page_scalars(self._session, statement, page)
 
     def _listing_installable(self, workspace_id: UUID, listing: MarketplaceListing) -> bool:
+        if listing.platform_blocked:
+            return False
         if listing.visibility == "public":
             return listing.status == "public"
         if listing.workspace_id != workspace_id:
