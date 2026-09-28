@@ -1,11 +1,5 @@
 # OpsMesh
 
-Frontend status (2026-09-23): superadmin navigation is organized into platform, execution,
-capabilities, data, operations, security and system administration. New management entries currently
-establish navigation and titles only. The capability center includes descriptive resource cards,
-detail/edit surfaces and a single expert authoring canvas. Saves are tab-scoped drafts; platform
-resource mutations, publication and execution are not connected. See [frontend architecture](docs/frontend-architecture.md).
-
 Open-source enterprise agent framework for building, operating, and governing teams of AI agents.
 
 OpsMesh is a backend framework and control plane for organizations that need more than a chat
