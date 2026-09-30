@@ -1,8 +1,8 @@
 # OpsMesh 后端目录重新分类方案
 
-日期：2026-09-30。状态：**提案，待确认，尚未执行目录迁移**。
+日期：2026-09-30。状态：**分类方案已修订，首批邮件模块已迁移并完成本地验证；其他模块仍为目标方案**。
 
-范围：以当前工作区 `backend/app` 的代码、路由、模型注册、部署入口和导入约束为依据；同时考虑 `backend/tests`、migration、独立 `runtime` 与 `operator` 包。本文只提出分类与迁移方案，不表示下列目标目录已经存在。
+范围：以 `backend/app` 的代码、路由、模型注册、部署入口和导入约束为依据；同时考虑 `backend/tests`、migration、独立 `runtime` 与 `operator` 包。现有工作已保存为本地基线 `db407a55`。下列目录树是最终目标，首批迁移及验收单独记录在 `docs/backend-directory-migration-mail.md`，未迁移目录不能当作已实现。
 
 ## 一、先给结论
 
@@ -17,11 +17,11 @@
 
 本次建议不改变 API URL、数据库表名、权限语义、队列协议、部署单元和前端导航。目录结构不必与菜单一一对应。
 
-## 二、当前问题到底是什么
+## 二、迁移前的问题与扫描基线
 
 ### 2.1 当前结构的真实规模
 
-本轮扫描 `backend/app/**/*.py`，排除 `__init__.py` 和缓存，共 **861 个 Python 实现文件**。按当前一级目录统计如下，包含工作区中尚未提交的邮件邀请代码：
+迁移前基线扫描 `backend/app/**/*.py`，排除 `__init__.py` 和缓存，共 **861 个 Python 实现文件**。下表是首批迁移前的统计，包含已保存到基线提交的邮件邀请代码，不代表迁移后的实时数量：
 
 | 当前区域 | 实现文件数 | 主要情况 |
 | --- | ---: | --- |
@@ -65,8 +65,8 @@ AST 扫描中，`runtime → domains` 有 197 处导入，`domains → runtime` 
 | `identity` | 用户身份与访问 | `users`、`auth`、`authorization`、`invitations` | 工作空间配额、SMTP 配置 |
 | `workspaces` | 租户与工作空间管理 | `management`、`members`、`quotas`、`projects`、`domain_items` | 所有带 workspace_id 的资源 |
 | `agents` | Agent 定义、会话与执行适配 | `profiles`、`sessions`、`messages`、`providers`、`execution` | Docker 生命周期、Task 状态机 |
-| `teams` | Agent 团队与协作 | `management`、`organization`、`projects`、`execution`、`sessions`、`providers`、`operations` | 人类用户管理、底层 Worker 循环 |
-| `execution` | 任务编排与触发执行 | `tasks`、`planning`、`orchestrations`、`runs`、`approvals`、`requests`、`automations`、`scheduling`、`webhooks` | SMTP、容器后端 |
+| `teams` | Agent 团队与协作 | `management`、`organization`、`projects`、`execution`、`sessions`、`provider_readiness`、`operations` | 人类用户管理、底层 Worker 循环 |
+| `orchestration` | 任务编排与触发执行 | `tasks`、`planning`、`definitions`、`runs`、`approvals`、`requests`、`automations`、`scheduling`、`webhooks` | SMTP、容器后端 |
 | `capabilities` | 可复用能力与治理 | `catalog`、`governance`、`skills`、`tools`、`mcp`、`plugins`、`marketplace`、`references` | 通用文件存储、全平台策略集合 |
 | `resources` | 数据与内容资源 | `files`、`artifacts`、`storage`、`knowledge`、`memory`、`transfers`、`lifecycle` | Runtime 容量、能力引用描述 |
 | `runtime` | 隔离环境与作业基础设施 | `instances`、`spaces`、`pools`、`commands`、`backends`、`workers`、`queues`、`self_hosted`、`recovery`、`operations` | Agent SDK 业务适配、团队业务状态机 |
@@ -108,12 +108,12 @@ backend/
 │   │   ├── projects/
 │   │   ├── execution/
 │   │   ├── sessions/            团队绑定、会话、心跳、mailbox 状态
-│   │   ├── providers/
+│   │   ├── provider_readiness/  团队成员的模型服务配置与就绪诊断
 │   │   └── operations/
-│   ├── execution/
+│   ├── orchestration/
 │   │   ├── tasks/
 │   │   ├── planning/            Task 的内部子流程，不增加独立 /plans 资源
-│   │   ├── orchestrations/      可版本化的可复用执行定义
+│   │   ├── definitions/         可版本化的可复用执行定义
 │   │   ├── runs/
 │   │   ├── approvals/
 │   │   ├── requests/
@@ -196,7 +196,7 @@ backend/
 - **`domains`：** 去掉中间容器层，其内容按功能直接成为 `app` 下的业务目录；不是把 `domains` 改名成 `modules` 后继续套一层。
 - **`core`：** 按职责精简为 `shared`，SMTP 等有明确归属的内容先迁出；不能仅更名后继续当杂物箱。
 - **`observability`：** 技术遥测归 `shared/telemetry`；审计、成本、安全事件归 `governance`；通知归 `messaging`。
-- **`integrations`：** 按实际用途归属：Automation、Webhook 触发归 `execution`；Plugin Runtime 接入归 `capabilities/plugins`。后续有独立集成产品模块再单独评估，不提前建万能集成层。
+- **`integrations`：** 按实际用途归属：Automation、Webhook 触发归 `orchestration`；Plugin Runtime 接入归 `capabilities/plugins`。后续有独立集成产品模块再单独评估，不提前建万能集成层。
 - **`bootstrap`：** 保留。它不是重复业务目录，而是装配根；不过业务代码不应反向依赖它创建默认实现。
 - **`runtime`：** 保留但限定含义，只表示隔离环境与作业基础设施，不再泛指所有“运行中的业务”。
 
@@ -228,9 +228,9 @@ backend/
 6. 不再新增全局 `services/users.py`、`models/users.py`、`schemas/users.py`，否则又恢复技术分层优先。
 7. 公共库必须不依赖业务模块；业务专用工具留在其所有者模块，不靠建立 `common`、`misc`、`helpers2` 规避分类。
 
-## 五、现有代码的归属映射
+## 五、基线代码到目标模块的归属映射
 
-下表中的源路径以 `backend/app/` 为根，目标也位于 `backend/app/`。标注“拆分”的文件不能整文件直接搬迁；执行前须按声明、调用者和 ORM 关系生成精确清单。
+下表源路径以迁移前基线 `db407a55` 为准，均以 `backend/app/` 为根，目标也位于 `backend/app/`。标注“拆分”的文件不能整文件直接搬迁；执行前须按声明、调用者和 ORM 关系生成精确清单。
 
 | 现有位置 | 建议位置 | 处理方式 |
 | --- | --- | --- |
@@ -250,15 +250,16 @@ backend/
 | `domains/agents/profiles`、`sessions`、`messages`、`providers` | `agents` 下同名模块 | 合并对应路由/schema，保留现有执行接口 |
 | `domains/agents/runtime` | `agents/execution` | 更名消除与隔离环境的歧义，保留 Provider 适配子包 |
 | `domains/workspace/teams` 与 workspace/teams 路由/schema | `teams` 下对应模块 | 管理、组织、项目、执行、运维分别归拢 |
+| `domains/workspace/teams/providers` | `teams/provider_readiness` | 团队成员的模型服务就绪视图；凭据和 Provider 实体仍唯一归 agents/providers |
 | `domains/workspace/teams/runtime` | `teams/sessions` | 会话绑定、mailbox、生命周期等归协作会话；迁移时复核各文件语义 |
-| `domains/orchestration/tasks` 与 tasks 路由/schema | `execution/tasks` | 保留控制、交付、协作等必要子包，不强行合成一个 service |
-| `domains/orchestration/workflows/planning` 与 tasks/plans 路由 | `execution/planning` | 内部规划模块；URL 仍在 Task 下 |
-| `domains/orchestration/workflows/definitions` 与 definitions 路由/schema | `execution/orchestrations` | 执行定义及版本管理 |
-| `domains/orchestration/workflows/steps`、`statuses.py`、`domains/orchestration/models.py` | `execution/orchestrations` 或 `execution/runs` 的唯一实体所有者 | 逐声明分类；定义期图校验与执行期步骤状态不能混为一类 |
-| `domains/orchestration/runs`、`approvals`、`requests` | `execution` 下同名模块 | 接入对应路由/schema |
-| `domains/integrations/automation*`、automations 路由 | `execution/automations` | 自动化触发与任务提交 |
-| `runtime/workers/scheduling`、scheduled_jobs 路由/schema | `execution/scheduling` | 定时规则是业务模块；底层队列仍归 runtime |
-| `domains/integrations/webhooks`、webhooks 路由/schema | `execution/webhooks` | 触发入口、验签、去重和投递结果 |
+| `domains/orchestration/tasks` 与 tasks 路由/schema | `orchestration/tasks` | 保留控制、交付、协作等必要子包，不强行合成一个 service |
+| `domains/orchestration/workflows/planning` 与 tasks/plans 路由 | `orchestration/planning` | 内部规划模块；URL 仍在 Task 下 |
+| `domains/orchestration/workflows/definitions` 与 definitions 路由/schema | `orchestration/definitions` | 执行定义及版本管理；API 仍使用原 orchestrations URL |
+| `domains/orchestration/workflows/steps`、`statuses.py`、`domains/orchestration/models.py` | `orchestration/definitions` 或 `orchestration/runs` 的唯一实体所有者 | 逐声明分类；定义期图校验与执行期步骤状态不能混为一类 |
+| `domains/orchestration/runs`、`approvals`、`requests` | `orchestration` 下同名模块 | 接入对应路由/schema |
+| `domains/integrations/automation*`、automations 路由 | `orchestration/automations` | 自动化触发与任务提交 |
+| `runtime/workers/scheduling`、scheduled_jobs 路由/schema | `orchestration/scheduling` | 定时规则是业务模块；底层队列仍归 runtime |
+| `domains/integrations/webhooks`、webhooks 路由/schema | `orchestration/webhooks` | 触发入口、验签、去重和投递结果 |
 | `domains/capabilities` 与 capabilities 路由/schema | `capabilities` 下对应模块 | 主体按模块搬迁；避免无必要重写 |
 | `domains/capabilities/resources` | `capabilities/references` | 资源描述与 locator；不与文件/知识实体混合 |
 | `api/routes/integrations/plugin_runtime.py` | `capabilities/plugins` | 插件专属运行接入协议保留独立文件 |
@@ -266,7 +267,7 @@ backend/
 | `domains/knowledge`、workspace/knowledge 路由/schema | `resources/knowledge` | 知识业务与摄取任务同模块 |
 | `domains/agents/memory`、workspace/memory 路由/schema | `resources/memory` | 记忆是租户内容资源，Agent 通过公开接口访问 |
 | `domains/workspace/data_transfer`、`data_lifecycle`、exports 路由 | `resources/transfers`、`lifecycle` | 保留恢复、导入导出、留存策略和任务审计 |
-| `domains/workspace/reviews` | `governance/reviews` | 安全/语义审查，不与 execution/tasks/delivery 的成果验收简单合并 |
+| `domains/workspace/reviews` | `governance/reviews` | 安全/语义审查，不与 orchestration/tasks/delivery 的成果验收简单合并 |
 | `runtime/environment` | `runtime/instances`、`spaces`、`pools`、`commands`、`backends` | 原环境管理按资源职责归拢，Runtime 租约仍属于实例管理 |
 | `runtime/workers` | `runtime/workers`、`queues`、`recovery` | Worker 生命周期、队列协议、恢复调度分开 |
 | `runtime/workers/handlers/*` | 所属业务模块的 `jobs.py` 或必要子包 | handler 注册由 bootstrap 负责；不在 Worker 核心枚举导入全部业务 |
@@ -310,16 +311,15 @@ identity/
 
 messaging/email/
 ├── routes.py                 管理员邮件设置与测试邮件
-├── schemas.py
+├── schemas.py                HTTP 与服务共用的纯 Pydantic DTO
 ├── service.py                配置、发送策略、错误脱敏
-├── contracts.py              发送接口与结果，不暴露 SMTP 密码
 ├── smtp.py                   SMTP/STARTTLS/TLS 适配
 └── models.py                 PlatformMailSettings
 ```
 
 这样的分离不是重复：**邀请属于身份业务；邮件属于投递通道**。未来告警或其他通知可以使用邮件发送能力，不必反向调用用户邀请服务。邀请文案和链接语义由邀请模块负责，SMTP 连接与凭据解密由邮件模块负责。
 
-现有接口路径保持：
+目标归属如下，API 路径保持不变。当前仅邮件模块已迁移，身份模块的目标路径尚未实施：
 
 - `/admin/users` → `identity/users`。
 - `/admin/user-invitations`、`/admin/users/{user_id}/invitation/resend`、`/auth/invitations/accept` → `identity/invitations`。
@@ -363,6 +363,44 @@ shared：通用设施与原语
 - 发现 A ↔ B 依赖时，先辨别是共同数据类型、协作编排还是所有权错误；优先引入窄接口/回调或把编排放到真实用例所有者，不把整项业务搬到 shared。
 - 纯目录迁移可短暂保留旧路径转发，但只能单向 `旧 → 新`、列入退出清单。新代码不得长期依赖转发层，ORM 模型不能复制定义。
 
+### 7.1.1 模块依赖矩阵
+
+下表是迁移目标，不宣称存量代码已经满足。首批只将 email 相关规则落为可执行的 import-linter 合同；其余规则在对应切片迁移时按文件级调用图落实。模块内部继续遵守 routes/jobs → service/policy → persistence/adapter。
+
+| 调用方 | 可依赖的公开边界 | 禁止的依赖与写入 |
+| --- | --- | --- |
+| `identity/users`、`identity/auth` | 同一身份生命周期的窄服务与 DTO、密码/Token 原语 | 工作空间资源 CRUD、其他资源私有 ORM 写入 |
+| `identity/authorization` | 主体/角色契约、注入的成员与资源权限查询 | 直接导入全部资源服务或 HTTP dependency；工作空间成员写入 |
+| `workspaces/members` | 身份主体查询及角色契约 | 反向调用依赖本模块的授权实现；账号密码与 Token 写入 |
+| `identity/invitations` | 用户激活用例、邮件发送服务与纯 DTO | 邮件密文/SMTP 客户端、工作空间邀请 token |
+| `messaging/email` 的服务、DTO、模型、SMTP | 本模块、core/shared 的配置、数据库和加密原语 | API、bootstrap、其他业务域、Runtime、FastAPI/Starlette |
+| `messaging/email/routes` | 邮件服务/DTO、现有管理员 HTTP 依赖、请求审计 | 被业务服务引用；绕过邮件服务修改配置 |
+| `teams/provider_readiness` | Agent/Provider 的公开只读查询 | 新建第二套 Provider 或凭据实体 |
+| `teams/execution` | 编排提交与控制、Agent 执行契约、Runtime 分配接口 | 直接改变 Task/Run 状态或操作隔离后端 SDK |
+| `orchestration` | Agent、能力、Runtime 的窄契约及资源公开查询 | 引用团队执行循环作为默认实现；直接调用 Docker/模型 SDK |
+| `runtime/workers` | 队列/租约协议、启动时注入的 handler 与维护状态查询 | 导入并构造全部业务 handler |
+| `platform` 的总览、治理入口 | 各资源公开服务；有白名单的只读聚合 | 拥有资源 CRUD 副本或修改其他模块 ORM 状态 |
+| `shared`、`bootstrap` | shared 仅依赖通用机制；bootstrap 可以装配具体模块 | shared 依赖业务；业务反向 import bootstrap |
+
+授权与成员关系可能形成双向依赖，因此应在叶子模块级拆开“主体契约”“成员查询适配”和“授权策略”，由装配层注入查询；不能只靠一级目录图声称已消除循环。跨资源聚合查询允许显式白名单，但必须只读。
+
+### 7.1.2 实体、规则与事务归属
+
+| 实体或规则 | 唯一业务所有者（目标） | 写入与事务边界 |
+| --- | --- | --- |
+| User / UserAvatar | `identity/users` | 用户服务负责账号状态；认证与邀请通过身份内部用例协作，外部模块不直接写入 |
+| UserAPIToken、密码验证 | `identity/auth` | 登录、轮换、撤销由认证用例管理；跨模块不自行提交账号事务 |
+| Workspace / WorkspaceMember | `workspaces/management`、`members` | 工作空间和成员生命周期由各自服务维护；授权只读成员资格 |
+| UserInvitation、激活与有效期规则 | `identity/invitations` | 保留当前先提交 pending、再发送、再提交投递结果的阶段；激活的一次性校验与账号状态一起写入 |
+| PlatformMailSettings | `messaging/email`（首批已迁） | service.save 只 flush；现有邮件路由记录审计后 commit。首批不改变事务提交者 |
+| ModelProviderCredential | `agents/providers` | 凭据写入和解密由 Provider 所有者负责；团队只消费就绪查询 |
+| Task / Plan / Run / Approval | `orchestration` 对应模块 | 明确用例事务协调者；Worker 重试保持相同 job type 与幂等语义 |
+| Runtime / Lease / Worker | `runtime` 对应资源模块 | 原子分配、续约、回收由所属资源服务负责；上层只提交意图 |
+
+当前 `public_base_url` 与 `invitation_expiry_hours` 仍保留在邮件配置 DTO/JSON 中，保持接口和持久数据兼容；邀请服务继续拥有链接含义与有效期计算。SMTP 适配不解释邀请策略。将这些字段搬到独立设置接口或数据表，属于后续单独设计的兼容变更，本批不做。
+
+同一数据库用例继续共享已有 Session，保持原提交/回滚时机；不因为拆目录就为每个服务新增独立 Session 或 commit。首批保留已存在的路由审计提交，后续若迁到 application service，应作为独立行为审查。
+
 ### 7.2 Worker 与业务 handler 的关键边界
 
 当前 `runtime/workers/handlers` 中有 Task 规划、Agent Run、知识摄取、Memory、团队执行等功能。建议将具体 handler 归回功能模块，Worker 只保留：
@@ -371,7 +409,7 @@ shared：通用设施与原语
 2. 稳定的 JobPayload 和 handler 调用协议。
 3. 接受启动时注入的 handler registry。
 
-`bootstrap/job_handlers.py` 显式注册业务 handler，避免形成 `execution → runtime/workers → execution` 的业务导入闭环。handler 移动时不改变已有队列的 job type、payload 字段和恢复语义；对已入队任务先做兼容验证。
+`bootstrap/job_handlers.py` 显式注册业务 handler，避免形成 `orchestration → runtime/workers → orchestration` 的业务导入闭环。handler 移动时不改变已有队列的 job type、payload 字段和恢复语义；对已入队任务先做兼容验证。
 
 ### 7.3 三类“运行”的归属
 
@@ -405,19 +443,21 @@ shared：通用设施与原语
 - 保存规范化 OpenAPI、模型表/约束/索引集合、关键入口和现有失败测试基线。
 - 利用现有 `scripts/audit_app_layout.py` 的 AST/依赖扫描能力，更新清单口径；不要新做一套互相冲突的分类规则。
 
-### 阶段 1：准备装配与公共边界
+### 阶段 1：只迁移邮件设置与发送
 
-- 明确 `bootstrap` 作为唯一组合根；把业务代码对默认工厂的反向引用改为显式依赖。
-- 将真正通用的 core/HTTP/telemetry 内容逐批迁至 shared。必须同时修正依赖路径；未处理区域不强行全改。
-- 保留 `backend.app.main:create_app`、发行版命令等公开入口；优先在入口内部委托，减少部署切换风险。
-- import-linter 新规则先对已迁移模块生效，历史例外明确登记；不通过禁用全部约束来让迁移变绿。
+- 将邮件配置、测试发送路由、DTO、服务、SMTP 适配与 `PlatformMailSettings` 归拢到 `messaging/email`。
+- 将原 platform/mail 文件中的邀请接口和 DTO 留在旧 API 体系的 `invitations.py`，只更新调用邮件服务的路径；本批不迁认证和授权。
+- 邮件 router 自带管理员依赖，再由现有平台 router 显式注册；用脱离父 router 的组装验证权限边界。
+- 更新唯一 ORM 注册、调用方、monkeypatch 路径和本模块的 import-linter 约束；旧邮件实现直接移除，不保留双份实现。
+- 先保存完整 OpenAPI、PostgreSQL DDL 和索引快照，再回归邮件设置、发送、邀请失败/重发、一次性激活及普通用户拒绝流程。
 
-### 阶段 2：先用用户、邀请、邮件完成试点
+### 阶段 2：用户与邀请分批迁移，按需准备公共边界
 
-- 迁移 `identity/users`、`auth`、`invitations` 和 `messaging/email`；必要的授权依赖随切片调整。
-- 拆开混合的 platform/mail 路由和 schema；移动 ORM 类后统一更新模型注册。
-- 验证账号登录、重复密码重置、管理员拒绝边界、邀请失败/重发、一次性激活、停用行为和密码脱敏。
-- 以试点的实际 import 扩散、测试时长和差异量评估下一批规模，不提前承诺固定总工期。
+- 根据邮件试点结果，再分别迁移用户管理、账号邀请；每批列出实际调用者与事务归属，不把认证、授权和公共底座一起搬迁。
+- `identity/auth`、`identity/authorization` 先梳理工作空间成员查询和权限契约，再处理高扇入调用者。
+- `shared/bootstrap` 随切片需要渐进整理，不先全量重命名 core/HTTP/telemetry；保留现有公开进程入口。
+- 对已迁移模块立即执行架构约束；对旧路径保留明确的阶段性依赖说明，不通过禁用全部门禁来让迁移变绿。
+- 每批验证相关登录、密码重置、管理员拒绝、邀请状态和敏感数据脱敏；不提前承诺总工期。
 
 ### 阶段 3：迁移租户与内容资源
 
@@ -433,7 +473,7 @@ shared：通用设施与原语
 
 ### 阶段 5：迁移编排与运行基础设施
 
-- 处理 `execution` 的 Task、Plan、Orchestration、Run、Approval、触发器。
+- 处理 `orchestration` 的 Task、Plan、Orchestration、Run、Approval、触发器。
 - 归拢 runtime 资源，建立由 bootstrap 注入的业务 handler registry；先拆依赖环，再移动形成环的节点。
 - 验证队列旧 payload、重试/死信、租约、暂停/恢复、重启重建、运行隔离和自托管协议。
 - 这是依赖最密集的阶段，不能用一次 import 成功或一次健康检查代替完整流程。
@@ -445,6 +485,10 @@ shared：通用设施与原语
 - 同步 AGENTS 路由位置说明、文档、打包和 import-linter。执行全量差异门禁后才宣布目录迁移完成。
 
 各阶段的依赖调整可以有重叠，但每个切片必须只保留一个实现来源；不要同时创建“新目录实现”和“旧目录实现”再同步维护。
+
+### 8.1 清单粒度与实施控制
+
+阶段 0 的完整清单按实际迁移切片逐批建立，覆盖该切片所有源文件、声明、调用者和动态引用；全仓分类覆盖表逐批汇总。首批无需为了迁移邮件先扫描并重写所有 861 个实现文件。每批的源哈希、规范化接口与表结构快照保存在 `.tmp`，可审阅的映射、边界和验证结论记录到版本控制内的迁移报告。
 
 ## 九、容易漏掉的非 Python 导入点
 
@@ -513,7 +557,7 @@ shared：通用设施与原语
 - `backend/app/api/routes/platform/router.py`：当前 `/admin` 集中鉴权与路由注册。
 - `backend/app/main.py`、`bootstrap/models.py`、`bootstrap/resources.py`、`bootstrap/providers.py`：应用与模型装配。
 - `backend/app/domains/access/models.py`、`admin.py`、`invitations.py`：用户、授权与邀请归属。
-- `backend/app/api/routes/platform/mail.py`、`domains/platform/mail.py`、`core/mail.py`：邮件/邀请边界示例。
+- `backend/app/messaging/email`、`api/routes/platform/invitations.py`、`domains/access/invitations.py`：首批邮件/邀请边界；旧文件路径仅作为基线映射保留。
 - `backend/app/domains/workspace/teams/runtime`、`teams/execution`：团队状态与执行协作。
 - `backend/app/runtime/workers/cli.py`、`runner.py`、`runtime/operations/control_plane_service.py`：Worker 和运维聚合。
 - `backend/app/observability/notifications/service.py`：通知有独立业务状态，不是日志工具。
@@ -526,8 +570,9 @@ FastAPI 官方《Bigger Applications - Multiple Files》说明了通过 `APIRout
 
 ### 状态
 
-- **已完成：** 当前目录/数量扫描、关键依赖和入口核对、本方案写入本地。
-- **未执行：** 文件搬迁、业务拆分、import 改写、数据库修改、部署、分支创建与提交。
-- **待实施前细化：** 每个文件/声明的完整迁移清单、混合模型拆分、跨模块事务与 handler 契约、历史动态路径兼容。
+- **已完成：** 迁移前目录/数量扫描、关键依赖核对、现有工作本地基线提交、分类方案修订。
+- **已实施并本地验证：** `messaging/email` 纵向切片；映射和验证范围见首批迁移报告。
+- **尚未执行：** 其他业务目录迁移、全局 core/shared 调整、数据库变更、部署及远端推送。
+- **后续逐批细化：** 每批文件/声明清单、混合模型拆分、跨模块事务与 handler 契约、历史动态路径兼容。
 
-**建议先确认本分类，再用“用户管理 + 账号邀请 + 邮件设置”做首个纵向迁移试点。目录整理的最终目标是打开一个功能模块就能找到它的接口、规则和数据，而不是把同一个功能在几棵全局目录树里来回寻找。**
+**首批先完成邮件设置与发送，再依据验证结果推进用户与邀请。目录整理的目标是打开一个功能模块就能找到它的接口、规则和数据；其他模块继续按上述边界和切片顺序迁移。**

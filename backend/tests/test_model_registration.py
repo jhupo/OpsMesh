@@ -20,7 +20,8 @@ def test_database_import_does_not_load_business_models() -> None:
         "import sys\n"
         "import backend.app.core.db.session\n"
         "assert not any(name.startswith(('backend.app.domains.', "
-        "'backend.app.runtime.', 'backend.app.api.')) for name in sys.modules)\n"
+        "'backend.app.runtime.', 'backend.app.api.', 'backend.app.messaging.')) "
+        "for name in sys.modules)\n"
     )
 
 

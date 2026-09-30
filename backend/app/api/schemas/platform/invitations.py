@@ -4,10 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from backend.app.core.contracts import ORMModel
-
-
-class EmailRecipient(BaseModel):
-    email: str = Field(min_length=3, max_length=320, pattern=r"^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$")
+from backend.app.messaging.email.schemas import EmailRecipient
 
 
 class UserInvitationRequest(EmailRecipient):

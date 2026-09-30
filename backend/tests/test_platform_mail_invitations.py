@@ -7,9 +7,11 @@ from pytest import MonkeyPatch, raises
 from sqlalchemy import select
 from test_admin_api import _admin_headers, _client
 
-from backend.app.core.mail import send_smtp_message
 from backend.app.domains.access.models import User, UserInvitation
-from backend.app.domains.platform.admin.models import PlatformMailSettings
+from backend.app.domains.access.service import AuthorizationService
+from backend.app.messaging.email.models import PlatformMailSettings
+from backend.app.messaging.email.routes import router as email_router
+from backend.app.messaging.email.smtp import send_smtp_message
 from backend.app.observability.audit.security_models import SecurityEvent
 
 MAIL_SETTINGS = {
@@ -55,7 +57,7 @@ def test_smtp_transport_requires_verified_tls_and_reports_recipient_rejection(
             return {"recipient@example.com": (550, b"rejected")}
 
     monkeypatch.setattr(
-        "backend.app.core.mail.smtplib.SMTP", lambda *args, **kwargs: SMTPConnection()
+        "backend.app.messaging.email.smtp.smtplib.SMTP", lambda *args, **kwargs: SMTPConnection()
     )
     with raises(smtplib.SMTPRecipientsRefused):
         send_smtp_message(
@@ -77,7 +79,8 @@ def test_mail_settings_protect_credentials_and_admin_boundary(monkeypatch: Monke
     client, session, _ = _client()
     sent: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        "backend.app.domains.platform.mail.send_smtp_message", lambda **values: sent.append(values)
+        "backend.app.messaging.email.service.send_smtp_message",
+        lambda **values: sent.append(values),
     )
     assert client.get("/api/v1/admin/system/mail").status_code == 401
     assert client.put("/api/v1/admin/system/mail", json=MAIL_SETTINGS).status_code == 401
@@ -129,7 +132,8 @@ def test_invitation_activation_is_single_use_and_idempotent(monkeypatch: MonkeyP
     client, session, _ = _client()
     sent: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        "backend.app.domains.platform.mail.send_smtp_message", lambda **values: sent.append(values)
+        "backend.app.messaging.email.service.send_smtp_message",
+        lambda **values: sent.append(values),
     )
     assert (
         client.put(
@@ -198,7 +202,7 @@ def test_failed_delivery_can_retry_and_rejects_old_expired_or_disabled_tokens(
         sent.append(values)
         raise smtplib.SMTPAuthenticationError(535, b"sensitive-provider-response")
 
-    monkeypatch.setattr("backend.app.domains.platform.mail.send_smtp_message", fail_delivery)
+    monkeypatch.setattr("backend.app.messaging.email.service.send_smtp_message", fail_delivery)
     client.put("/api/v1/admin/system/mail", headers=_admin_headers(), json=MAIL_SETTINGS)
     response = client.post(
         "/api/v1/admin/user-invitations",
@@ -215,7 +219,8 @@ def test_failed_delivery_can_retry_and_rejects_old_expired_or_disabled_tokens(
     ]
     assert users[0]["invitation_delivery_status"] == "failed"
     monkeypatch.setattr(
-        "backend.app.domains.platform.mail.send_smtp_message", lambda **values: sent.append(values)
+        "backend.app.messaging.email.service.send_smtp_message",
+        lambda **values: sent.append(values),
     )
     resent = client.post(
         f"/api/v1/admin/users/{user_id}/invitation/resend", headers=_admin_headers()
@@ -252,3 +257,46 @@ def test_failed_delivery_can_retry_and_rejects_old_expired_or_disabled_tokens(
     )
     assert enabled.json()["status"] == "invited"
     assert client.post("/api/v1/auth/invitations/accept", json=acceptance).status_code == 200
+
+
+def test_mail_routes_keep_admin_boundary_without_parent_router(monkeypatch: MonkeyPatch) -> None:
+    client, session, _ = _client()
+    client.app.include_router(email_router, prefix="/mail-boundary-probe")
+    sent: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "backend.app.messaging.email.service.send_smtp_message",
+        lambda **values: sent.append(values),
+    )
+    member = User(
+        email="mail-member@example.com",
+        display_name="Mail member",
+        password_hash=AuthorizationService.hash_password("Member-fixture-password-29"),
+        platform_admin=False,
+    )
+    session.add(member)
+    session.commit()
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": member.email, "password": "Member-fixture-password-29"},
+    )
+    assert login.status_code == 200
+    member_headers = {"Authorization": f"Bearer {login.json()['token']}"}
+    for prefix in ("/api/v1/admin", "/mail-boundary-probe"):
+        for headers in ({}, member_headers):
+            assert client.get(f"{prefix}/system/mail", headers=headers).status_code == 401
+            assert (
+                client.put(f"{prefix}/system/mail", headers=headers, json=MAIL_SETTINGS).status_code
+                == 401
+            )
+            assert (
+                client.post(
+                    f"{prefix}/system/mail/test",
+                    headers=headers,
+                    json={"email": "recipient@example.com"},
+                ).status_code
+                == 401
+            )
+    assert session.get(PlatformMailSettings, 1) is None
+    assert sent == []
+    allowed = client.get("/mail-boundary-probe/system/mail", headers=_admin_headers())
+    assert allowed.status_code == 200

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.client_ip import security_request_context
 from backend.app.api.schemas.access.auth import CurrentUserResponse
-from backend.app.api.schemas.platform.mail import AcceptUserInvitationRequest
+from backend.app.api.schemas.platform.invitations import AcceptUserInvitationRequest
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.access.invitations import UserInvitationService

@@ -40,3 +40,12 @@ uv run alembic upgrade head
 ## 验证范围
 
 `backend/tests/test_platform_mail_invitations.py` 覆盖管理员访问边界、SMTP 密码加密与脱敏、重复邀请幂等、失败重试、令牌失效与一次性消费、停用账号拒绝接受邀请、激活后登录。测试使用隔离数据库与捕获邮件的适配器，不向真实邮箱发送邮件。生产 SMTP 连通性与收件箱投递需要管理员使用实际配置验证。
+
+## 当前代码归属
+
+- 邮件接口、DTO、配置模型、服务和 SMTP：`backend/app/messaging/email/`。
+- 管理员创建/重发邀请：`backend/app/api/routes/platform/invitations.py`；接受邀请：`backend/app/api/routes/access/invitations.py`。
+- 邀请 DTO：`backend/app/api/schemas/platform/invitations.py`；状态、有效期、激活与发送协调：`backend/app/domains/access/invitations.py`。
+- 邮件模型由 `bootstrap/models.py` 显式注册；只有一个 `PlatformMailSettings` 定义。
+
+本次归拢不新增数据库迁移，也不改变上述 API。邀请有效期和站点地址仍使用现有配置字段；规则由邀请服务解释，SMTP 仅负责发送。邮件路由即使不经过平台父路由注册，也必须验证管理员身份。

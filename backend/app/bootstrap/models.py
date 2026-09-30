@@ -9,6 +9,7 @@ from backend.app.core.db.base import Base
 
 _MODEL_MODULES = (
     "backend.app.domains.platform.admin.models",
+    "backend.app.messaging.email.models",
     "backend.app.domains.platform.updates.models",
     "backend.app.domains.access.models",
     "backend.app.domains.integrations.webhooks.models",

@@ -6,8 +6,8 @@ from backend.app.api.routes.platform.capability_governance import (
     router as capability_governance_router,
 )
 from backend.app.api.routes.platform.catalog import router as catalog_router
+from backend.app.api.routes.platform.invitations import router as invitations_router
 from backend.app.api.routes.platform.leases import router as leases_router
-from backend.app.api.routes.platform.mail import router as mail_router
 from backend.app.api.routes.platform.management import router as management_router
 from backend.app.api.routes.platform.overview import router as overview_router
 from backend.app.api.routes.platform.plugin_governance import router as plugin_governance_router
@@ -20,6 +20,7 @@ from backend.app.api.routes.platform.system import router as system_router
 from backend.app.api.routes.platform.updates import router as updates_router
 from backend.app.api.routes.platform.users import router as users_router
 from backend.app.api.routes.platform.workers import router as workers_router
+from backend.app.messaging.email.routes import router as mail_router
 
 router = APIRouter(
     prefix="/admin",
@@ -43,3 +44,4 @@ router.include_router(system_router)
 router.include_router(updates_router)
 router.include_router(users_router)
 router.include_router(mail_router)
+router.include_router(invitations_router)

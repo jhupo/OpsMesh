@@ -12,7 +12,7 @@ from backend.app.core.errors import ConflictError, DomainError
 from backend.app.core.utils import ensure_aware_utc
 from backend.app.domains.access.models import User, UserInvitation
 from backend.app.domains.access.service import AuthorizationService
-from backend.app.domains.platform.mail import PlatformMailService
+from backend.app.messaging.email.service import PlatformMailService
 
 
 class UserInvitationService:

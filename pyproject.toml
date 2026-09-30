@@ -178,3 +178,39 @@ name = "Domain and runtime code cannot depend on API application services"
 type = "forbidden"
 source_modules = ["backend.app.domains", "backend.app.runtime"]
 forbidden_modules = ["backend.app.api.services"]
+
+[[tool.importlinter.contracts]]
+id = "email-http-composition"
+name = "Email HTTP routes are only composed by the platform API"
+type = "protected"
+protected_modules = ["backend.app.messaging.email.routes"]
+allowed_importers = ["backend.app.api.routes.platform.router"]
+
+[[tool.importlinter.contracts]]
+id = "email-service-boundary"
+name = "Email application and persistence do not depend on HTTP or other business domains"
+type = "forbidden"
+source_modules = [
+    "backend.app.messaging.email.service",
+    "backend.app.messaging.email.schemas",
+    "backend.app.messaging.email.models",
+    "backend.app.messaging.email.smtp",
+]
+forbidden_modules = [
+    "backend.app.api",
+    "backend.app.bootstrap",
+    "backend.app.domains",
+    "backend.app.runtime",
+    "fastapi",
+    "starlette",
+]
+
+[[tool.importlinter.contracts]]
+id = "email-model-owner"
+name = "Email persistence is private to its service and registration"
+type = "protected"
+protected_modules = ["backend.app.messaging.email.models"]
+allowed_importers = [
+    "backend.app.messaging.email.service",
+    "backend.app.bootstrap.models",
+]

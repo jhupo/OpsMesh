@@ -21,7 +21,9 @@ OpsMesh 是企业级 Agent 控制面。后端负责身份、工作空间、Agent
 | 外部集成 | Webhook、Automation、Plugin Runtime | `backend/app/api/routes/integrations/` |
 | 自托管 Worker | 注册、身份、Worker 控制、Job、MCP Job、Artifact | `backend/app/api/routes/self_hosted/` |
 
-接口实现以当前路由和 schema 为准；旧文档中的计划接口不能当作已实现接口。新增接口应先放入正确的路由族，再由服务层完成业务策略和持久化。
+接口实现以当前路由和 schema 为准；旧文档中的计划接口不能当作已实现接口。存量接口按上表路由族组织；已迁移的功能模块就近放置 routes/schema/service/model，再由总路由显式注册。业务策略和持久化由服务层负责。
+
+首批已迁移模块为 `backend/app/messaging/email/`：邮件配置、测试发送、SMTP 和邮件配置模型归拢于此，管理路由自带管理员依赖，由 `api/routes/platform/router.py` 注册。账号邀请路由仍在 `api/routes/platform/invitations.py`，账号业务仍在 `domains/access/invitations.py`。其他目标目录以 `docs/backend-directory-redesign-proposal.md` 为准，不能当作已迁移。
 
 ## 后端请求任务流
 
