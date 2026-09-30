@@ -13,20 +13,18 @@ import {
 
 type DataTableViewOptionsProps<TData> = {
   table: Table<TData>
+  columnLabels?: (columnId: string) => string
 }
 
 export function DataTableViewOptions<TData>({
   table,
+  columnLabels,
 }: DataTableViewOptionsProps<TData>) {
   const { t } = useTranslation()
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant='outline'
-          size='sm'
-          className='ms-auto hidden h-8 lg:flex'
-        >
+        <Button variant='outline' size='sm' className='ms-auto h-8 shrink-0'>
           <MixerHorizontalIcon className='size-4' />
           {t('data_table.view')}
         </Button>
@@ -48,7 +46,7 @@ export function DataTableViewOptions<TData>({
                 checked={column.getIsVisible()}
                 onCheckedChange={(value) => column.toggleVisibility(!!value)}
               >
-                {column.id}
+                {columnLabels?.(column.id) ?? column.id}
               </DropdownMenuCheckboxItem>
             )
           })}

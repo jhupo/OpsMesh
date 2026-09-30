@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { type Table } from '@tanstack/react-table'
-import { Trash2, UserX, UserCheck, Mail } from 'lucide-react'
+import { Trash2, UserX, UserCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { sleep } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -16,10 +15,15 @@ import { UsersMultiDeleteDialog } from './users-multi-delete-dialog'
 
 type DataTableBulkActionsProps<TData> = {
   table: Table<TData>
+  onStatusChange?: (
+    users: User[],
+    status: 'active' | 'inactive'
+  ) => Promise<void>
 }
 
 export function DataTableBulkActions<TData>({
   table,
+  onStatusChange,
 }: DataTableBulkActionsProps<TData>) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const { t } = useTranslation()
@@ -27,7 +31,9 @@ export function DataTableBulkActions<TData>({
 
   const handleBulkStatusChange = (status: 'active' | 'inactive') => {
     const selectedUsers = selectedRows.map((row) => row.original as User)
-    toast.promise(sleep(2000), {
+    if (!onStatusChange) return
+    const request = onStatusChange(selectedUsers, status)
+    toast.promise(request, {
       loading:
         status === 'active'
           ? t('users.activating_users')
@@ -43,44 +49,11 @@ export function DataTableBulkActions<TData>({
           ? t('users.error_activating')
           : t('users.error_deactivating'),
     })
-    table.resetRowSelection()
-  }
-
-  const handleBulkInvite = () => {
-    const selectedUsers = selectedRows.map((row) => row.original as User)
-    toast.promise(sleep(2000), {
-      loading: t('users.inviting_users'),
-      success: () => {
-        table.resetRowSelection()
-        return t('users.invited_users', { count: selectedUsers.length })
-      },
-      error: t('users.error_inviting'),
-    })
-    table.resetRowSelection()
   }
 
   return (
     <>
-      <BulkActionsToolbar table={table} entityName='user'>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={handleBulkInvite}
-              className='size-8'
-              aria-label={t('users.invite_selected')}
-              title={t('users.invite_selected')}
-            >
-              <Mail />
-              <span className='sr-only'>{t('users.invite_selected')}</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('users.invite_selected')}</p>
-          </TooltipContent>
-        </Tooltip>
-
+      <BulkActionsToolbar table={table} entityName={t('users.entity')}>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -119,24 +92,26 @@ export function DataTableBulkActions<TData>({
           </TooltipContent>
         </Tooltip>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant='destructive'
-              size='icon'
-              onClick={() => setShowDeleteConfirm(true)}
-              className='size-8'
-              aria-label={t('users.delete_selected')}
-              title={t('users.delete_selected')}
-            >
-              <Trash2 />
-              <span className='sr-only'>{t('users.delete_selected')}</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('users.delete_selected')}</p>
-          </TooltipContent>
-        </Tooltip>
+        {!onStatusChange && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant='destructive'
+                size='icon'
+                onClick={() => setShowDeleteConfirm(true)}
+                className='size-8'
+                aria-label={t('users.delete_selected')}
+                title={t('users.delete_selected')}
+              >
+                <Trash2 />
+                <span className='sr-only'>{t('users.delete_selected')}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('users.delete_selected')}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </BulkActionsToolbar>
 
       <UsersMultiDeleteDialog

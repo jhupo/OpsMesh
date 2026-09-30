@@ -17,7 +17,7 @@ def read_repo_file(relative_path: str) -> str:
 
 def test_self_hosted_connector_smoke_script_is_packaged_and_redacted() -> None:
     script = read_repo_file("scripts/self-hosted-connector-smoke.sh")
-    docs = read_repo_file("docs/self-hosted-connector.md")
+    docs = read_repo_file("runtime/CONNECTOR.md")
 
     assert "python3" in script
     assert "-m venv" in script
@@ -69,7 +69,7 @@ def test_env_template_lists_required_runtime_settings() -> None:
 
 
 def test_deployment_docs_cover_processes_and_production_guards() -> None:
-    docs = read_repo_file("docs/backend-deployment.md")
+    docs = read_repo_file("deploy/server/DEPLOYMENT.md")
 
     assert "API process" in docs
     assert "Worker process" in docs

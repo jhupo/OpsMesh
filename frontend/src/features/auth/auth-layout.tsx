@@ -16,7 +16,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       <div className='flex w-full max-w-sm flex-col gap-4'>
         <div className='mb-4 flex items-center justify-center'>
           <Logo className='me-2' />
-          <h1 className='text-xl font-medium'>Shadcn Admin</h1>
+          <h1 className='text-xl font-medium'>OpsMesh</h1>
         </div>
         {children}
       </div>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from secrets import token_urlsafe
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -9,9 +10,16 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.db.errors import DatabaseConflictError, flush_or_raise_conflict
 from backend.app.core.pagination import PageParams
-from backend.app.domains.access.models import User, UserAPIToken
+from backend.app.domains.access.models import User, UserAPIToken, UserInvitation
 from backend.app.domains.access.service import AuthorizationService
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember, WorkspaceQuota
+
+
+class UserOrganizationSummary(TypedDict):
+    invitation_delivery_status: str | None
+    workspace_count: int
+    active_workspace_count: int
+    resource_usage_rate: float
 
 
 class IdentityAdminService:
@@ -41,6 +49,80 @@ class IdentityAdminService:
 
     def get_user(self, user_id: UUID) -> User | None:
         return self._session.get(User, user_id)
+
+    def user_organization_summaries(
+        self,
+        user_ids: list[UUID],
+    ) -> dict[UUID, UserOrganizationSummary]:
+        summaries: dict[UUID, UserOrganizationSummary] = {
+            user_id: {
+                "invitation_delivery_status": None,
+                "workspace_count": 0,
+                "active_workspace_count": 0,
+                "resource_usage_rate": 0.0,
+            }
+            for user_id in user_ids
+        }
+        if not user_ids:
+            return summaries
+
+        memberships = list(
+            self._session.scalars(
+                select(WorkspaceMember).where(WorkspaceMember.user_id.in_(user_ids))
+            ).all()
+        )
+        workspace_ids = {membership.workspace_id for membership in memberships}
+        workspaces_by_user: dict[UUID, set[UUID]] = {}
+        active_workspaces_by_user: dict[UUID, set[UUID]] = {}
+        for membership in memberships:
+            workspaces_by_user.setdefault(membership.user_id, set()).add(membership.workspace_id)
+            if membership.status == "active":
+                active_workspaces_by_user.setdefault(membership.user_id, set()).add(
+                    membership.workspace_id
+                )
+
+        quota_utilization_by_workspace: dict[UUID, float] = {}
+        if workspace_ids:
+            quotas = self._session.scalars(
+                select(WorkspaceQuota).where(
+                    WorkspaceQuota.workspace_id.in_(workspace_ids),
+                    WorkspaceQuota.status == "active",
+                )
+            ).all()
+            for quota in quotas:
+                if quota.limit_value <= 0:
+                    continue
+                utilization = max(quota.reserved_value, 0) / quota.limit_value
+                quota_utilization_by_workspace[quota.workspace_id] = max(
+                    quota_utilization_by_workspace.get(quota.workspace_id, 0.0),
+                    utilization,
+                )
+
+        for user_id in user_ids:
+            workspace_ids_for_user = workspaces_by_user.get(user_id, set())
+            active_workspace_ids = active_workspaces_by_user.get(user_id, set())
+            summaries[user_id] = {
+                "invitation_delivery_status": None,
+                "workspace_count": len(workspace_ids_for_user),
+                "active_workspace_count": len(active_workspace_ids),
+                # Quotas use different units, so a single rate is the highest
+                # active quota utilization across the user's active workspaces.
+                "resource_usage_rate": round(
+                    max(
+                        (
+                            quota_utilization_by_workspace.get(workspace_id, 0.0)
+                            for workspace_id in active_workspace_ids
+                        ),
+                        default=0.0,
+                    ),
+                    4,
+                ),
+            }
+        for invitation in self._session.scalars(
+            select(UserInvitation).where(UserInvitation.user_id.in_(user_ids))
+        ).all():
+            summaries[invitation.user_id]["invitation_delivery_status"] = invitation.delivery_status
+        return summaries
 
     def get_user_memberships(
         self,
@@ -146,6 +228,15 @@ class IdentityAdminService:
         ):
             raise DatabaseConflictError("Cannot disable the last active platform administrator")
         user.status = status
+        if status == "active":
+            pending_invitation = self._session.scalar(
+                select(UserInvitation).where(
+                    UserInvitation.user_id == user_id,
+                    UserInvitation.accepted_at.is_(None),
+                )
+            )
+            if pending_invitation is not None:
+                user.status = "invited"
         if status == "disabled":
             now = datetime.now(UTC)
             tokens = self._session.scalars(

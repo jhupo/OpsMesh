@@ -11,6 +11,7 @@ from backend.app.api.schemas.platform.admin import (
     AdminUserCreateRequest,
     AdminUserCreateResponse,
     AdminUserDetailResponse,
+    AdminUserListResponse,
     AdminUserPasswordResetResponse,
     AdminUserResponse,
     AdminUserStatusUpdateRequest,
@@ -64,15 +65,22 @@ def _user_detail(
     )
 
 
-@router.get("/users", response_model=PageResponse[AdminUserResponse])
+@router.get("/users", response_model=PageResponse[AdminUserListResponse])
 async def list_admin_users(
     page: PageParams = Depends(pagination_params),
-    user_status: Literal["active", "disabled"] | None = Query(default=None, alias="status"),
+    user_status: Literal["active", "disabled", "invited"] | None = Query(
+        default=None, alias="status"
+    ),
     session: Session = Depends(get_db_session),
-) -> PageResponse[AdminUserResponse]:
-    users, total = IdentityAdminService(session).list_users(page, status=user_status)
+) -> PageResponse[AdminUserListResponse]:
+    service = IdentityAdminService(session)
+    users, total = service.list_users(page, status=user_status)
+    summaries = service.user_organization_summaries([user.id for user in users])
     return PageResponse(
-        items=[AdminUserResponse.model_validate(user) for user in users],
+        items=[
+            AdminUserListResponse.model_validate(user).model_copy(update=summaries[user.id])
+            for user in users
+        ],
         total=total,
         limit=page.limit,
         offset=page.offset,

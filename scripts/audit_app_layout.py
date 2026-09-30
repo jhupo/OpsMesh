@@ -15,7 +15,7 @@ import grimp
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "backend/app"
-OUTPUT = ROOT / "docs/reviews/app-layout-2026-09-14"
+OUTPUT = ROOT / ".tmp/app-layout-review"
 
 
 def expression(node: ast.AST | None) -> str:

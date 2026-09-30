@@ -43,7 +43,7 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.platform.admin.models import PlatformPolicy, PlatformPolicyEvent
 from backend.app.domains.workspace.projects.models import WorkspaceProject, WorkspaceProjectQuota
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember, WorkspaceQuota
 from backend.app.domains.workspace.tenants.reservations import (
     WorkspaceQuotaService as WorkspaceQuotaReservationService,
 )
@@ -1541,6 +1541,34 @@ def test_admin_can_manage_user_lifecycle_and_workspace_membership() -> None:
     )
     assert added.status_code == 201
     member_id = added.json()["id"]
+
+    session.add(
+        WorkspaceQuota(
+            workspace_id=workspace.id,
+            quota_key="active_runs",
+            limit_value=10,
+            reserved_value=4,
+            unit="count",
+            status="active",
+        )
+    )
+    session.add(
+        WorkspaceQuota(
+            workspace_id=workspace.id,
+            quota_key="docker_runtimes",
+            limit_value=10,
+            reserved_value=9,
+            unit="count",
+            status="active",
+        )
+    )
+    session.commit()
+    listed = client.get("/api/v1/admin/users", headers=_admin_headers())
+    assert listed.status_code == 200
+    managed_summary = next(item for item in listed.json()["items"] if item["id"] == user_id)
+    assert managed_summary["workspace_count"] == 1
+    assert managed_summary["active_workspace_count"] == 1
+    assert managed_summary["resource_usage_rate"] == 0.9
 
     updated_member = client.patch(
         f"/api/v1/admin/workspaces/{workspace.id}/members/{member_id}",

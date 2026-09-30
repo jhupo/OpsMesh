@@ -202,6 +202,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if path in {
             f"{prefix}/auth/login",
             f"{prefix}/auth/register",
+            f"{prefix}/auth/invitations/accept",
             f"{prefix}/workspaces/invites/accept",
         }:
             return GatewayRateLimitPolicy(

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { showSubmittedData } from '@/lib/show-submitted-data'
+import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,12 +14,14 @@ type UserDeleteDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentRow: User
+  platformOnly?: boolean
 }
 
 export function UsersDeleteDialog({
   open,
   onOpenChange,
   currentRow,
+  platformOnly = false,
 }: UserDeleteDialogProps) {
   const [value, setValue] = useState('')
   const { t } = useTranslation()
@@ -27,8 +29,7 @@ export function UsersDeleteDialog({
   const handleDelete = () => {
     if (value.trim() !== currentRow.username) return
 
-    onOpenChange(false)
-    showSubmittedData(currentRow, t('users.deleted_message'))
+    toast.error(t('users.delete_unavailable'))
   }
 
   return (
@@ -57,8 +58,14 @@ export function UsersDeleteDialog({
         >
           <p className='mb-2'>
             {t('users.delete_confirm', { username: currentRow.username })}
-            <br />
-            {t('users.delete_warning', { role: currentRow.role.toUpperCase() })}
+            {!platformOnly && (
+              <>
+                <br />
+                {t('users.delete_warning', {
+                  role: currentRow.role.toUpperCase(),
+                })}
+              </>
+            )}
           </p>
 
           <Label className='my-2'>

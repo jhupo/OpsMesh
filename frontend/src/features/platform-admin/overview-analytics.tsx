@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
   Activity,
   BadgeDollarSign,
@@ -12,7 +12,11 @@ import { useTranslation } from 'react-i18next'
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
+  ComposedChart,
+  Line,
   Pie,
   PieChart,
   XAxis,
@@ -26,13 +30,7 @@ import type {
 } from '@/api/platform-admin'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   ChartContainer,
   ChartLegend,
@@ -42,15 +40,7 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ReadOnlyDataTable } from '@/components/data-table'
 
 type TrendMetric = 'requests' | 'tokens' | 'latency' | 'cost'
 
@@ -80,29 +70,73 @@ export function PlatformOverviewAnalytics({
 
   if (pending) return <AnalyticsSkeleton />
 
-  if (error || !data) {
-    return (
-      <Card>
-        <CardContent className='flex min-h-32 items-center justify-center text-sm text-muted-foreground'>
-          {t('platformAdmin.overview.analyticsUnavailable')}
-        </CardContent>
-      </Card>
-    )
+  const received = data
+  const fallback: PlatformAnalyticsOverview = {
+    range,
+    generated_at: '',
+    status: {
+      overall: 'healthy',
+      healthy_percent: 0,
+      warning_percent: 0,
+      critical_percent: 0,
+      degraded_percent: 0,
+    },
+    totals: {
+      requests: 0,
+      successful_requests: 0,
+      success_rate: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cached_tokens: 0,
+      total_tokens: 0,
+      average_duration_ms: 0,
+      p95_duration_ms: 0,
+      cost_usd: 0,
+    },
+    timeline: [],
+    models: [],
+    providers: [],
   }
+  const unavailable = !received?.status || !received?.totals
+  // Release skew is expected while the platform aggregate is rolled out. Normalize
+  // every optional collection and metric before rendering cached or older responses.
+  data = unavailable
+    ? fallback
+    : {
+        ...fallback,
+        ...received,
+        status: { ...fallback.status, ...received.status },
+        totals: { ...fallback.totals, ...received.totals },
+        timeline: Array.isArray(received.timeline) ? received.timeline : [],
+        models: Array.isArray(received.models) ? received.models : [],
+        providers: Array.isArray(received.providers) ? received.providers : [],
+      }
 
   return (
     <div className='flex flex-col gap-4'>
-      <HealthStrip status={data.status} />
+      {error || unavailable ? (
+        <div
+          role='status'
+          className='flex items-center gap-2 rounded-lg border px-4 py-3 text-sm text-muted-foreground'
+        >
+          <CircleAlert className='size-4 shrink-0' aria-hidden='true' />
+          {t('platformAdmin.overview.analyticsUnavailable')}
+        </div>
+      ) : (
+        <HealthStrip status={data.status} />
+      )}
 
       <section
         aria-label={t('platformAdmin.overview.usageMetrics')}
-        className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'
+        className='grid grid-cols-2 gap-3 xl:grid-cols-4'
       >
         <AnalyticsMetricCard
           icon={Activity}
           label={t('platformAdmin.overview.requests')}
-          value={formatCompact(data.totals.requests, locale)}
-          meta={formatPercent(data.totals.success_rate, locale)}
+          value={
+            unavailable ? '—' : formatCompact(data.totals.requests, locale)
+          }
+          meta={`${t('platformAdmin.overview.successRate')} ${unavailable ? '—' : formatPercent(data.totals.success_rate, locale)}`}
           points={data.timeline}
           dataKey='requests'
           color='var(--chart-1)'
@@ -110,8 +144,10 @@ export function PlatformOverviewAnalytics({
         <AnalyticsMetricCard
           icon={Coins}
           label={t('platformAdmin.overview.tokens')}
-          value={formatCompact(data.totals.total_tokens, locale)}
-          meta={formatCompact(data.totals.cached_tokens, locale)}
+          value={
+            unavailable ? '—' : formatCompact(data.totals.total_tokens, locale)
+          }
+          meta={`${t('platformAdmin.overview.cachedTokens')} ${unavailable ? '—' : formatCompact(data.totals.cached_tokens, locale)}`}
           points={data.timeline}
           dataKey='total_tokens'
           color='var(--chart-2)'
@@ -119,8 +155,12 @@ export function PlatformOverviewAnalytics({
         <AnalyticsMetricCard
           icon={Clock3}
           label={t('platformAdmin.overview.averageDuration')}
-          value={formatDuration(data.totals.average_duration_ms, locale)}
-          meta={`P95 ${formatDuration(data.totals.p95_duration_ms, locale)}`}
+          value={
+            unavailable
+              ? '—'
+              : formatDuration(data.totals.average_duration_ms, locale)
+          }
+          meta={`P95 ${unavailable ? '—' : formatDuration(data.totals.p95_duration_ms, locale)}`}
           points={data.timeline}
           dataKey='average_duration_ms'
           color='var(--chart-4)'
@@ -128,7 +168,9 @@ export function PlatformOverviewAnalytics({
         <AnalyticsMetricCard
           icon={BadgeDollarSign}
           label={t('platformAdmin.overview.cost')}
-          value={formatCurrency(data.totals.cost_usd, locale)}
+          value={
+            unavailable ? '—' : formatCurrency(data.totals.cost_usd, locale)
+          }
           meta={t(`platformAdmin.overview.ranges.${range}`)}
           points={data.timeline}
           dataKey='cost_usd'
@@ -141,6 +183,7 @@ export function PlatformOverviewAnalytics({
         <ProviderCostCard data={data} locale={locale} />
       </div>
 
+      <PerformanceTrends data={data} range={range} locale={locale} />
       <ModelPerformanceCard data={data} locale={locale} />
     </div>
   )
@@ -244,7 +287,7 @@ function AnalyticsMetricCard({
           {label}
         </CardTitle>
       </CardHeader>
-      <CardContent className='grid grid-cols-[1fr_7rem] items-end gap-3 px-4'>
+      <CardContent className='grid grid-cols-1 items-end gap-3 px-4 sm:grid-cols-[1fr_7rem]'>
         <div className='min-w-0'>
           <div className='truncate text-2xl font-semibold tracking-tight tabular-nums'>
             {value}
@@ -253,7 +296,7 @@ function AnalyticsMetricCard({
             {meta}
           </div>
         </div>
-        <ChartContainer config={config} className='h-14 w-full'>
+        <ChartContainer config={config} className='hidden h-14 w-full sm:block'>
           <AreaChart accessibilityLayer data={points}>
             <defs>
               <linearGradient
@@ -293,7 +336,7 @@ function UsageTrendCard({
   locale: string
 }) {
   const { t } = useTranslation()
-  const [metric, setMetric] = useState<TrendMetric>('requests')
+  const metric = 'tokens' as TrendMetric
   const config = {
     successful_requests: {
       label: t('platformAdmin.overview.successfulRequests'),
@@ -329,99 +372,126 @@ function UsageTrendCard({
   return (
     <Card className='min-w-0 xl:col-span-5'>
       <CardHeader className='min-w-0 gap-3 has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]'>
-        <CardTitle>{t('platformAdmin.overview.usageTrend')}</CardTitle>
-        <CardAction className='col-start-1 row-start-2 w-full min-w-0 justify-self-stretch sm:col-start-2 sm:row-start-1 sm:w-auto sm:justify-self-end'>
-          <Tabs
-            className='w-full min-w-0'
-            value={metric}
-            onValueChange={(value) => setMetric(value as TrendMetric)}
-          >
-            <TabsList className='grid h-8 w-full min-w-0 grid-cols-4 sm:flex sm:w-auto'>
-              {(['requests', 'tokens', 'latency', 'cost'] as const).map(
-                (value) => (
-                  <TabsTrigger
-                    key={value}
-                    value={value}
-                    className='min-w-0 px-1 text-xs sm:px-2.5'
-                  >
-                    {t(`platformAdmin.overview.trends.${value}`)}
-                  </TabsTrigger>
-                )
-              )}
-            </TabsList>
-          </Tabs>
-        </CardAction>
+        <CardTitle className='text-sm'>
+          {t('platformAdmin.overview.usageTrend')}
+        </CardTitle>
       </CardHeader>
       <CardContent>
-        <ChartContainer
-          config={config}
-          className='h-[290px] w-full min-w-0 overflow-hidden'
-          initialDimension={{ width: 240, height: 200 }}
-        >
-          <AreaChart
-            accessibilityLayer
-            data={data}
-            margin={{ left: 2, right: 10 }}
+        <dl className='mb-5 grid grid-cols-3 gap-3 rounded-lg bg-muted/40 p-3 text-xs'>
+          {series.slice(0, 3).map((entry) => (
+            <div key={entry.key}>
+              <dt className='truncate text-muted-foreground'>
+                {config[entry.key].label}
+              </dt>
+              <dd className='mt-1 font-semibold tabular-nums'>
+                {data.length
+                  ? formatAxisValue(
+                      metric,
+                      metric === 'latency'
+                        ? data.reduce(
+                            (sum, point) =>
+                              sum + point.average_duration_ms * point.requests,
+                            0
+                          ) /
+                            Math.max(
+                              1,
+                              data.reduce(
+                                (sum, point) => sum + point.requests,
+                                0
+                              )
+                            )
+                        : data.reduce(
+                            (sum, point) => sum + Number(point[entry.key]),
+                            0
+                          ),
+                      locale
+                    )
+                  : '—'}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        {data.length === 0 ? (
+          <ChartEmpty />
+        ) : (
+          <ChartContainer
+            config={config}
+            className='h-[290px] w-full min-w-0 overflow-hidden'
+            initialDimension={{ width: 240, height: 200 }}
           >
-            <defs>
-              {series.map((entry) => (
-                <linearGradient
-                  key={entry.key}
-                  id={`trend-${entry.key}`}
-                  x1='0'
-                  y1='0'
-                  x2='0'
-                  y2='1'
-                >
-                  <stop offset='8%' stopColor={entry.color} stopOpacity={0.3} />
-                  <stop offset='95%' stopColor={entry.color} stopOpacity={0} />
-                </linearGradient>
-              ))}
-            </defs>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey='timestamp'
-              tickLine={false}
-              axisLine={false}
-              tickMargin={10}
-              minTickGap={28}
-              tickFormatter={(value) =>
-                formatTimelineTick(value, locale, range)
-              }
-            />
-            <YAxis
-              width={48}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(value) =>
-                formatAxisValue(metric, Number(value), locale)
-              }
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  indicator='line'
-                  labelFormatter={(value) =>
-                    formatTimelineLabel(String(value), locale)
-                  }
-                />
-              }
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-            {series.map((entry) => (
-              <Area
-                key={entry.key}
-                dataKey={entry.key}
-                type='monotone'
-                fill={`url(#trend-${entry.key})`}
-                fillOpacity={1}
-                stroke={entry.color}
-                strokeWidth={2}
-                isAnimationActive={false}
+            <AreaChart
+              accessibilityLayer
+              data={data}
+              margin={{ left: 2, right: 10 }}
+            >
+              <defs>
+                {series.map((entry) => (
+                  <linearGradient
+                    key={entry.key}
+                    id={`trend-${entry.key}`}
+                    x1='0'
+                    y1='0'
+                    x2='0'
+                    y2='1'
+                  >
+                    <stop
+                      offset='8%'
+                      stopColor={entry.color}
+                      stopOpacity={0.3}
+                    />
+                    <stop
+                      offset='95%'
+                      stopColor={entry.color}
+                      stopOpacity={0}
+                    />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey='timestamp'
+                tickLine={false}
+                axisLine={false}
+                tickMargin={10}
+                minTickGap={28}
+                tickFormatter={(value) =>
+                  formatTimelineTick(value, locale, range)
+                }
               />
-            ))}
-          </AreaChart>
-        </ChartContainer>
+              <YAxis
+                width={48}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) =>
+                  formatAxisValue(metric, Number(value), locale)
+                }
+              />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    indicator='line'
+                    labelFormatter={(value) =>
+                      formatTimelineLabel(String(value), locale)
+                    }
+                  />
+                }
+              />
+              <ChartLegend content={<ChartLegendContent />} />
+              {series.map((entry) => (
+                <Area
+                  key={entry.key}
+                  dataKey={entry.key}
+                  type='monotone'
+                  fill={`url(#trend-${entry.key})`}
+                  fillOpacity={1}
+                  stroke={entry.color}
+                  strokeWidth={2}
+                  isAnimationActive={false}
+                />
+              ))}
+            </AreaChart>
+          </ChartContainer>
+        )}
       </CardContent>
     </Card>
   )
@@ -449,7 +519,9 @@ function ProviderCostCard({
   return (
     <Card className='xl:col-span-2'>
       <CardHeader>
-        <CardTitle>{t('platformAdmin.overview.providerCost')}</CardTitle>
+        <CardTitle className='text-sm'>
+          {t('platformAdmin.overview.providerCost')}
+        </CardTitle>
       </CardHeader>
       <CardContent className='flex flex-col gap-2'>
         {providerData.length === 0 ? (
@@ -461,7 +533,7 @@ function ProviderCostCard({
             <div className='relative'>
               <ChartContainer
                 config={config}
-                className='mx-auto h-[220px] w-full max-w-[280px]'
+                className='mx-auto h-[250px] w-full max-w-[280px]'
               >
                 <PieChart accessibilityLayer>
                   <ChartTooltip
@@ -491,7 +563,7 @@ function ProviderCostCard({
               </div>
             </div>
             <div className='grid gap-2'>
-              {providerData.slice(0, 6).map((provider) => (
+              {providerData.map((provider) => (
                 <div
                   key={provider.provider}
                   className='flex min-w-0 items-center gap-2 text-xs'
@@ -515,6 +587,246 @@ function ProviderCostCard({
   )
 }
 
+function ChartEmpty() {
+  const { t } = useTranslation()
+  return (
+    <div className='flex h-[250px] items-center justify-center text-sm text-muted-foreground'>
+      {t('platformAdmin.overview.noData')}
+    </div>
+  )
+}
+
+function PerformanceTrends({
+  data,
+  range,
+  locale,
+}: {
+  data: PlatformAnalyticsOverview
+  range: PlatformAnalyticsRange
+  locale: string
+}) {
+  const { t } = useTranslation()
+  const config = {
+    average_duration_ms: {
+      label: t('platformAdmin.overview.averageDuration'),
+      color: 'var(--chart-1)',
+    },
+    error_rate: {
+      label: t('platformAdmin.overview.errorRate'),
+      color: 'var(--destructive)',
+    },
+    cost_usd: {
+      label: t('platformAdmin.overview.cost'),
+      color: 'var(--chart-2)',
+    },
+  } satisfies ChartConfig
+  const timeline = data.timeline.map((point) => ({
+    ...point,
+    error_rate: point.requests
+      ? (point.failed_requests / point.requests) * 100
+      : 0,
+  }))
+  const tick = (value: string) => formatTimelineTick(value, locale, range)
+  return (
+    <div className='grid min-w-0 gap-4 lg:grid-cols-2'>
+      <Card className='min-w-0 gap-4'>
+        <CardHeader>
+          <CardTitle className='text-sm'>
+            {t('platformAdmin.overview.responseHealth')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <dl className='mb-4 flex gap-8 text-xs'>
+            <div>
+              <dt className='text-muted-foreground'>
+                {t('platformAdmin.overview.averageDuration')}
+              </dt>
+              <dd className='mt-1 text-lg font-semibold tabular-nums'>
+                {timeline.length
+                  ? formatDuration(data.totals.average_duration_ms, locale)
+                  : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className='text-muted-foreground'>
+                {t('platformAdmin.overview.errorRate')}
+              </dt>
+              <dd className='mt-1 text-lg font-semibold tabular-nums'>
+                {timeline.length
+                  ? formatPercent(
+                      data.totals.requests
+                        ? ((data.totals.requests -
+                            data.totals.successful_requests) /
+                            data.totals.requests) *
+                            100
+                        : 0,
+                      locale
+                    )
+                  : '—'}
+              </dd>
+            </div>
+          </dl>
+          {!timeline.length ? (
+            <ChartEmpty />
+          ) : (
+            <ChartContainer config={config} className='h-[220px] w-full'>
+              <ComposedChart
+                accessibilityLayer
+                data={timeline}
+                margin={{ right: 0, left: 0 }}
+              >
+                <CartesianGrid vertical={false} strokeDasharray='3 3' />
+                <XAxis
+                  dataKey='timestamp'
+                  tickLine={false}
+                  axisLine={false}
+                  minTickGap={36}
+                  tickFormatter={tick}
+                />
+                <YAxis
+                  yAxisId='latency'
+                  width={42}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) =>
+                    formatDuration(Number(value), locale)
+                  }
+                />
+                <YAxis
+                  yAxisId='error'
+                  orientation='right'
+                  width={36}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) => `${value}%`}
+                />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(value) =>
+                        formatTimelineLabel(String(value), locale)
+                      }
+                      formatter={(value, name) => (
+                        <span className='flex w-full justify-between gap-6'>
+                          <span className='text-muted-foreground'>
+                            {config[name as keyof typeof config]?.label}
+                          </span>
+                          <span className='font-mono tabular-nums'>
+                            {name === 'error_rate'
+                              ? formatPercent(Number(value), locale)
+                              : formatDuration(Number(value), locale)}
+                          </span>
+                        </span>
+                      )}
+                    />
+                  }
+                />
+                <ChartLegend content={<ChartLegendContent />} />
+                <Bar
+                  yAxisId='error'
+                  dataKey='error_rate'
+                  fill='var(--destructive)'
+                  fillOpacity={0.25}
+                  radius={[2, 2, 0, 0]}
+                  isAnimationActive={false}
+                />
+                <Line
+                  yAxisId='latency'
+                  dataKey='average_duration_ms'
+                  type='monotone'
+                  stroke='var(--chart-1)'
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </ComposedChart>
+            </ChartContainer>
+          )}
+        </CardContent>
+      </Card>
+      <Card className='min-w-0 gap-4'>
+        <CardHeader>
+          <CardTitle className='text-sm'>
+            {t('platformAdmin.overview.costTrend')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <dl className='mb-4 flex gap-8 text-xs'>
+            <div>
+              <dt className='text-muted-foreground'>
+                {t('platformAdmin.overview.cost')}
+              </dt>
+              <dd className='mt-1 text-lg font-semibold tabular-nums'>
+                {timeline.length
+                  ? formatCurrency(data.totals.cost_usd, locale)
+                  : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className='text-muted-foreground'>
+                {t('platformAdmin.overview.costPerRequest')}
+              </dt>
+              <dd className='mt-1 text-lg font-semibold tabular-nums'>
+                {timeline.length && data.totals.requests
+                  ? formatCurrency(
+                      data.totals.cost_usd / data.totals.requests,
+                      locale
+                    )
+                  : '—'}
+              </dd>
+            </div>
+          </dl>
+          {!timeline.length ? (
+            <ChartEmpty />
+          ) : (
+            <ChartContainer config={config} className='h-[220px] w-full'>
+              <BarChart accessibilityLayer data={timeline}>
+                <CartesianGrid vertical={false} strokeDasharray='3 3' />
+                <XAxis
+                  dataKey='timestamp'
+                  tickLine={false}
+                  axisLine={false}
+                  minTickGap={36}
+                  tickFormatter={tick}
+                />
+                <YAxis
+                  width={48}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) =>
+                    `$${formatCompact(Number(value), locale)}`
+                  }
+                />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(value) =>
+                        formatTimelineLabel(String(value), locale)
+                      }
+                      formatter={(value) => (
+                        <span className='font-mono tabular-nums'>
+                          {formatCurrency(Number(value), locale)}
+                        </span>
+                      )}
+                    />
+                  }
+                />
+                <Bar
+                  dataKey='cost_usd'
+                  fill='var(--chart-2)'
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={24}
+                  isAnimationActive={false}
+                />
+              </BarChart>
+            </ChartContainer>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 function ModelPerformanceCard({
   data,
   locale,
@@ -527,71 +839,72 @@ function ModelPerformanceCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t('platformAdmin.overview.modelPerformance')}</CardTitle>
+        <CardTitle className='text-sm'>
+          {t('platformAdmin.overview.modelPerformance')}
+        </CardTitle>
       </CardHeader>
       <CardContent className='overflow-x-auto px-0'>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className='ps-6'>
-                {t('platformAdmin.overview.model')}
-              </TableHead>
-              <TableHead>{t('platformAdmin.overview.requests')}</TableHead>
-              <TableHead>{t('platformAdmin.overview.successRate')}</TableHead>
-              <TableHead>P50</TableHead>
-              <TableHead>P95</TableHead>
-              <TableHead>{t('platformAdmin.overview.throughput')}</TableHead>
-              <TableHead>{t('platformAdmin.overview.cost')}</TableHead>
-              <TableHead className='pe-6 text-right'>
-                {t('platformAdmin.overview.state')}
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.models.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className='h-32 text-center text-muted-foreground'
-                >
-                  {t('platformAdmin.overview.noData')}
-                </TableCell>
-              </TableRow>
-            ) : (
-              data.models.map((model) => (
-                <TableRow key={`${model.provider}:${model.model}`}>
-                  <TableCell className='ps-6'>
-                    <div className='font-medium'>{model.model}</div>
-                    <div className='text-xs text-muted-foreground'>
-                      {model.provider}
-                    </div>
-                  </TableCell>
-                  <TableCell className='tabular-nums'>
-                    {formatCompact(model.requests, locale)}
-                  </TableCell>
-                  <TableCell className='tabular-nums'>
-                    {formatPercent(model.success_rate, locale)}
-                  </TableCell>
-                  <TableCell className='tabular-nums'>
-                    {formatDuration(model.p50_duration_ms, locale)}
-                  </TableCell>
-                  <TableCell className='tabular-nums'>
-                    {formatDuration(model.p95_duration_ms, locale)}
-                  </TableCell>
-                  <TableCell className='tabular-nums'>
-                    {formatCompact(model.throughput_per_minute, locale)}/m
-                  </TableCell>
-                  <TableCell className='tabular-nums'>
-                    {formatCurrency(model.cost_usd, locale)}
-                  </TableCell>
-                  <TableCell className='pe-6 text-right'>
-                    <StatusBadge status={model.status} />
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+        <ReadOnlyDataTable
+          data={data.models}
+          columns={[
+            {
+              accessorKey: 'model',
+              header: t('platformAdmin.overview.model'),
+              cell: ({ row }) => (
+                <div className='w-28 sm:w-52'>
+                  <div
+                    className='truncate font-medium'
+                    title={row.original.model}
+                  >
+                    {row.original.model}
+                  </div>
+                  <div className='truncate text-xs text-muted-foreground'>
+                    {row.original.provider}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              accessorKey: 'requests',
+              header: t('platformAdmin.overview.requests'),
+              cell: ({ row }) => formatCompact(row.original.requests, locale),
+            },
+            {
+              accessorKey: 'success_rate',
+              header: t('platformAdmin.overview.successRate'),
+              cell: ({ row }) =>
+                formatPercent(row.original.success_rate, locale),
+            },
+            {
+              accessorKey: 'p50_duration_ms',
+              header: 'P50',
+              cell: ({ row }) =>
+                formatDuration(row.original.p50_duration_ms, locale),
+            },
+            {
+              accessorKey: 'p95_duration_ms',
+              header: 'P95',
+              cell: ({ row }) =>
+                formatDuration(row.original.p95_duration_ms, locale),
+            },
+            {
+              accessorKey: 'throughput_per_minute',
+              header: t('platformAdmin.overview.throughput'),
+              cell: ({ row }) =>
+                `${formatCompact(row.original.throughput_per_minute, locale)}/m`,
+            },
+            {
+              accessorKey: 'cost_usd',
+              header: t('platformAdmin.overview.cost'),
+              cell: ({ row }) => formatCurrency(row.original.cost_usd, locale),
+            },
+            {
+              accessorKey: 'status',
+              header: t('platformAdmin.overview.state'),
+              cell: ({ row }) => <StatusBadge status={row.original.status} />,
+            },
+          ]}
+        />
       </CardContent>
     </Card>
   )
@@ -618,7 +931,7 @@ function AnalyticsSkeleton() {
   return (
     <div className='flex flex-col gap-4' aria-hidden='true'>
       <Skeleton className='h-14 w-full rounded-xl' />
-      <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-4'>
+      <div className='grid grid-cols-2 gap-3 xl:grid-cols-4'>
         {Array.from({ length: 4 }).map((_, index) => (
           <Skeleton key={index} className='h-32 rounded-xl' />
         ))}
@@ -626,6 +939,10 @@ function AnalyticsSkeleton() {
       <div className='grid gap-4 xl:grid-cols-7'>
         <Skeleton className='h-[390px] rounded-xl xl:col-span-5' />
         <Skeleton className='h-[390px] rounded-xl xl:col-span-2' />
+      </div>
+      <div className='grid gap-4 lg:grid-cols-2'>
+        <Skeleton className='h-[360px] rounded-xl' />
+        <Skeleton className='h-[360px] rounded-xl' />
       </div>
       <Skeleton className='h-80 rounded-xl' />
     </div>

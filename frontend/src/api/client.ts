@@ -43,6 +43,9 @@ export async function apiRequest<T>(
     ...requestInit,
     credentials: 'include',
     headers,
+    signal: requestInit.signal
+      ? AbortSignal.any([requestInit.signal, AbortSignal.timeout(30_000)])
+      : AbortSignal.timeout(30_000),
   })
 
   if (!response.ok) {

@@ -123,6 +123,13 @@ class AdminUserResponse(TimestampedModel):
     platform_admin: bool
 
 
+class AdminUserListResponse(AdminUserResponse):
+    invitation_delivery_status: str | None = None
+    workspace_count: int = 0
+    active_workspace_count: int = 0
+    resource_usage_rate: float = Field(default=0.0, ge=0.0)
+
+
 class AdminUserCreateRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     display_name: str = Field(min_length=1, max_length=120)

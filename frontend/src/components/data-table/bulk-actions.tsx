@@ -42,7 +42,7 @@ export function DataTableBulkActions<TData>({
   // Announce selection changes to screen readers
   useEffect(() => {
     if (selectedCount > 0) {
-      const entity = selectedCount > 1 ? `${entityName}s` : entityName
+      const entity = entityName
       const message = t('data_table.selected_announcement', {
         count: selectedCount,
         entity,
@@ -129,7 +129,7 @@ export function DataTableBulkActions<TData>({
     return null
   }
 
-  const entity = selectedCount > 1 ? `${entityName}s` : entityName
+  const entity = entityName
 
   return (
     <>
@@ -164,7 +164,7 @@ export function DataTableBulkActions<TData>({
             'p-2 shadow-xl',
             'rounded-xl border',
             'bg-background/95 backdrop-blur-lg supports-backdrop-filter:bg-background/60',
-            'flex items-center gap-x-2'
+            'flex flex-nowrap items-center justify-center gap-x-2'
           )}
         >
           <Tooltip>
@@ -195,7 +195,7 @@ export function DataTableBulkActions<TData>({
           />
 
           <div
-            className='flex items-center gap-x-1 text-sm'
+            className='flex flex-nowrap items-center gap-x-1 text-sm whitespace-nowrap'
             id='bulk-actions-description'
           >
             <Badge

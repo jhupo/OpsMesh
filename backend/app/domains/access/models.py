@@ -47,6 +47,19 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class UserInvitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "user_invitations"
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivery_status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class UserAvatar(Base):
     __tablename__ = "user_avatars"
     __table_args__ = (
