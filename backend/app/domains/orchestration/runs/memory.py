@@ -2,13 +2,13 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
-from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import AgentRunResult
+from backend.app.agents.execution.contracts import AgentRunResult
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.queries import task_for_run
 from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.resources.memory.episodic import AgentEpisodicMemoryService
+from backend.app.resources.memory.working import AgentWorkingMemoryService
 
 
 @dataclass(slots=True)

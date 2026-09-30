@@ -11,27 +11,27 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
-from backend.app.domains.agents.memory.indexing import WorkspaceMemoryIndexingService
-from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.domains.agents.memory.retrieval_search import MemorySearchHit, MemorySearchRequest
-from backend.app.domains.agents.messages.models import AgentMessage
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.capabilities.tools.contracts import (
+from backend.app.agents.messages.models import AgentMessage
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.capabilities.tools.contracts import (
     ToolContext,
     ToolPermissionError,
     ToolResourceNotFoundError,
 )
-from backend.app.domains.capabilities.tools.service import ProductToolService
-from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
+from backend.app.capabilities.tools.service import ProductToolService
+from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
+from backend.app.core.db.base import Base
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.workspace.storage.artifact_models import Artifact
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.storage.storage import LocalStorage
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.identity.users.models import User
+from backend.app.resources.artifacts.models import Artifact
+from backend.app.resources.files.models import WorkspaceFile
+from backend.app.resources.memory.authorization import AuthorizedMemoryScope
+from backend.app.resources.memory.indexing import WorkspaceMemoryIndexingService
+from backend.app.resources.memory.models import WorkspaceMemoryEntry
+from backend.app.resources.memory.retrieval_search import MemorySearchHit, MemorySearchRequest
+from backend.app.resources.storage.storage import LocalStorage
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

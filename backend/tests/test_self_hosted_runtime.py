@@ -10,19 +10,14 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist
+from backend.app.capabilities.references.models import CapabilityResource
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.capabilities.mcp.models import (
-    McpServer,
-    McpToolAllowlist,
-)
-from backend.app.domains.capabilities.resources.models import CapabilityResource
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.runs.authorization.snapshot import (
     RunAuthorizationSnapshotService,

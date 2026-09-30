@@ -7,18 +7,18 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.types import JSON
 
+from backend.app.agents.execution.contracts import AgentRunResult
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.core.db.base import Base
-from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
-from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.domains.agents.memory.policy import normalized_memory_policy
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import AgentRunResult
-from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.feedback import TaskFeedbackService
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.identity.users.models import User
+from backend.app.resources.memory.episodic import AgentEpisodicMemoryService
+from backend.app.resources.memory.models import WorkspaceMemoryEntry
+from backend.app.resources.memory.policy import normalized_memory_policy
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

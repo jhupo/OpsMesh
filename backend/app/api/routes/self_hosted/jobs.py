@@ -17,9 +17,8 @@ from backend.app.api.schemas.operations.self_hosted import (
     SelfHostedJobResponse,
     SelfHostedProjectContractResponse,
 )
-from backend.app.api.schemas.workspace.files import ArtifactResponse
 from backend.app.domains.orchestration.runs.contracts import RunEventResponse
-from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
+from backend.app.resources.files.schemas import ArtifactResponse
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.dispatch.completion import SelfHostedRunCompletionService
 from backend.app.runtime.self_hosted.dispatch.service import SelfHostedDispatchService
@@ -28,6 +27,7 @@ from backend.app.runtime.self_hosted.projects.files import (
     SelfHostedProjectFileService,
 )
 from backend.app.runtime.self_hosted.worker.progress import SelfHostedProgressService
+from backend.app.workspaces.projects.io.support import ProjectRunIOError
 
 router = APIRouter()
 

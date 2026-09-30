@@ -36,9 +36,9 @@ from backend.app.domains.orchestration.workflows.planning.team_project_plan impo
     ProjectPlanStepMaterializer,
 )
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
 from backend.app.observability.audit.service import AuditService
+from backend.app.teams.management.models import AgentTeam
+from backend.app.teams.sessions.snapshots import build_team_snapshot
 
 
 class OrchestrationDefinitionApplicationService:

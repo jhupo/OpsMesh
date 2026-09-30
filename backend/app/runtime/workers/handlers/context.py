@@ -2,13 +2,10 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.contracts import AgentRuntimeExecutor
+from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.core.config import Settings
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutor
-from backend.app.domains.capabilities.mcp.transport.contracts import (
-    McpToolAdapter,
-    McpToolAdapterResolver,
-)
 from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.workers.queue import RedisQueue

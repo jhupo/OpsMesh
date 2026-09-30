@@ -13,51 +13,46 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.types import JSON
 
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
-from backend.app.domains.agents.memory.configuration import (
+from backend.app.identity.users.models import User
+from backend.app.resources.memory.authorization import AuthorizedMemoryScope
+from backend.app.resources.memory.configuration import (
     MemoryConfigurationConflictError,
     MemoryConfigurationUpdate,
     WorkspaceMemoryConfigurationService,
 )
-from backend.app.domains.agents.memory.embedding_scheduler import WorkspaceMemoryEmbeddingScheduler
-from backend.app.domains.agents.memory.embedding_service import (
+from backend.app.resources.memory.embedding_scheduler import WorkspaceMemoryEmbeddingScheduler
+from backend.app.resources.memory.embedding_service import (
     MemoryEmbeddingResult,
     OpenAIMemoryEmbeddingProvider,
     WorkspaceMemoryEmbeddingProviderResolver,
 )
-from backend.app.domains.agents.memory.lifecycle import WorkspaceMemoryLifecycleService
-from backend.app.domains.agents.memory.models import (
+from backend.app.resources.memory.lifecycle import WorkspaceMemoryLifecycleService
+from backend.app.resources.memory.models import (
     WorkspaceMemoryEmbeddingEvent,
     WorkspaceMemoryEntry,
     WorkspaceMemoryLifecycleEvent,
     WorkspaceMemoryVersion,
     memory_content_fingerprint,
 )
-from backend.app.domains.agents.memory.policy import (
+from backend.app.resources.memory.policy import (
     HybridMemoryRetrievalPolicy,
     MemoryLifecyclePolicy,
     default_lifecycle_policy,
     default_retrieval_policy,
 )
-from backend.app.domains.agents.memory.retrieval_search import (
+from backend.app.resources.memory.retrieval_search import (
     HybridMemorySearchBackend,
     MemorySearchDocument,
     MemorySearchHit,
     MemorySearchRequest,
 )
-from backend.app.domains.agents.memory.semantic import (
-    AgentSemanticMemoryService,
-    SemanticMemoryUpsert,
-)
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.identity.users.models import User
+from backend.app.resources.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
 from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext

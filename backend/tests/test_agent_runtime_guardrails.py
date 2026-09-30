@@ -10,11 +10,8 @@ from agents import RunContextWrapper
 from agents.exceptions import InputGuardrailTripwireTriggered
 from sqlalchemy import select
 
-import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
-from backend.app.core.config import Settings
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.profiles.service import AgentManagementService
-from backend.app.domains.agents.runtime.contracts import (
+import backend.app.agents.execution.providers.openai.runner as openai_runtime
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeGuardrail,
@@ -22,14 +19,17 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeGuardrails,
     AgentRuntimeOutputSchema,
 )
-from backend.app.domains.agents.runtime.errors import (
+from backend.app.agents.execution.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimeOutputValidationError,
     normalize_agent_error,
 )
-from backend.app.domains.agents.runtime.providers.claude.runner import ClaudeAgentSDKRunner
-from backend.app.domains.agents.runtime.providers.openai.guardrails import OpenAIRuntimeOutputSchema
-from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
+from backend.app.agents.execution.providers.claude.runner import ClaudeAgentSDKRunner
+from backend.app.agents.execution.providers.openai.guardrails import OpenAIRuntimeOutputSchema
+from backend.app.agents.execution.providers.openai.runner import OpenAIAgentsRunner
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.profiles.service import AgentManagementService
+from backend.app.core.config import Settings
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.runs.authorization.snapshot import (
     RunAuthorizationSnapshotService,
@@ -330,7 +330,7 @@ def test_policy_failure_appends_redacted_durable_event() -> None:
 def test_guardrail_execution_rejects_invalid_direct_contract(
     kind: str, config: dict[str, object]
 ) -> None:
-    from backend.app.domains.agents.runtime.guardrails import evaluate_guardrail
+    from backend.app.agents.execution.guardrails import evaluate_guardrail
 
     with pytest.raises(ValueError):
         evaluate_guardrail(

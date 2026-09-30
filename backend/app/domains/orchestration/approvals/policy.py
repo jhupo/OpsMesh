@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.domains.platform.admin.policy_reader import PlatformPolicyService
 from backend.app.domains.platform.admin.risky_policy_values import RiskyExecutionPolicy
-from backend.app.domains.workspace.reviews.model_request import ModelRequestReviewService
-from backend.app.domains.workspace.reviews.tool_execution import ToolExecutionReviewService
+from backend.app.governance.reviews.model_request import ModelRequestReviewService
+from backend.app.governance.reviews.tool_execution import ToolExecutionReviewService
 
 
 class ApprovalPolicyOutcome(StrEnum):

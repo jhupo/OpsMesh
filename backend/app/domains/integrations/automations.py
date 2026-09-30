@@ -12,15 +12,15 @@ from opsmesh_plugin_sdk.messaging.contracts import (
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.errors import DomainError
-from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.core.utils import payload_hash
-from backend.app.domains.capabilities.plugins.policy import (
+from backend.app.capabilities.plugins.policy import (
     plugin_resource_available,
     require_plugin_resource,
 )
-from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
-from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
+from backend.app.capabilities.plugins.services import PluginPrincipal, PluginServices
+from backend.app.capabilities.references.schema import reject_embedded_secrets
+from backend.app.core.errors import DomainError
+from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.core.utils import payload_hash
 from backend.app.domains.integrations.automation_authorization import require_automation_principal
 from backend.app.domains.integrations.automation_contracts import (
     AutomationConfiguration,
@@ -48,12 +48,12 @@ from backend.app.domains.orchestration.tasks.state import TERMINAL_TASK_STATUSES
 from backend.app.domains.orchestration.workflows.definitions.service import (
     OrchestrationDefinitionService,
 )
-from backend.app.domains.workspace.projects.models import WorkspaceProject
-from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.scheduling.calendar import next_run_at, utc_datetime
+from backend.app.teams.management.models import AgentTeam
+from backend.app.workspaces.projects.models import WorkspaceProject
 
 
 class AutomationService:

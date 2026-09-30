@@ -4,13 +4,13 @@ from dataclasses import dataclass, field
 from time import monotonic
 from uuid import UUID, uuid4
 
-from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeStreamEvent,
     AgentRuntimeToolExecutor,
     AgentRuntimeToolResult,
 )
+from backend.app.core.security.redaction import redact_sensitive_text
 from backend.app.domains.orchestration.tasks.events import TaskEventBus
 
 

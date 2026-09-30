@@ -7,10 +7,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.core.utils import int_or_zero, string_list
-from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.workspace.storage.artifact_models import Artifact
+from backend.app.resources.artifacts.models import Artifact
 
 
 class TaskDeliveryReviewService:

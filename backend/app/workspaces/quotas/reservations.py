@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from backend.app.domains.workspace.projects.models import WorkspaceProject, WorkspaceProjectQuota
+from backend.app.workspaces.projects.models import WorkspaceProject, WorkspaceProjectQuota
 from backend.app.workspaces.quotas.models import WorkspaceQuota, WorkspaceReservation
 
 ACTIVE_RUNS_QUOTA_KEY = "active_runs"

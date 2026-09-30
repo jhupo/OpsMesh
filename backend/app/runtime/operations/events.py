@@ -7,9 +7,9 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.mcp.models import McpToolCallLog
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
-from backend.app.domains.capabilities.mcp.models import McpToolCallLog
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.security_models import SecurityEvent

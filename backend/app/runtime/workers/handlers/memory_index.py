@@ -1,4 +1,4 @@
-from backend.app.domains.agents.memory.indexing import WorkspaceMemoryIndexingService
+from backend.app.resources.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
 from backend.app.runtime.workers.routing import required_string

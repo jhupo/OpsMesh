@@ -5,9 +5,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.tools.executor import PRODUCT_TOOL_NAMES
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.tools.executor import PRODUCT_TOOL_NAMES
 from backend.app.domains.orchestration.requests.context_budget import (
     ContextFragment,
     ContextPriority,
@@ -19,8 +19,8 @@ from backend.app.domains.orchestration.workflows.definitions.graph import (
     is_pm_summary_step,
 )
 from backend.app.domains.orchestration.workflows.planning.agent_plan import is_agent_planning_step
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
+from backend.app.teams.sessions.service import TeamRuntimeService
 
 
 @dataclass(slots=True)

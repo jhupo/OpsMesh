@@ -10,7 +10,7 @@ from backend.app.domains.orchestration.workflows.scheduling.capacity import (
     TeamMemberCapacityResolver,
     manager_capacity_context,
 )
-from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.teams.management.models import AgentTeam
 
 register_models()
 

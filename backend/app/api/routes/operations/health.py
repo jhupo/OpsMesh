@@ -15,7 +15,7 @@ from backend.app.core.config import Settings
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.utils import ensure_aware_utc
-from backend.app.domains.workspace.storage.storage import create_storage
+from backend.app.resources.storage.storage import create_storage
 from backend.app.runtime.workers.models import WorkerNode
 
 if TYPE_CHECKING:

@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.plugins.policy import plugin_resource_available
 from backend.app.core.errors import DomainError
-from backend.app.domains.capabilities.plugins.policy import plugin_resource_available
 from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
 from backend.app.domains.integrations.identities import ExternalIdentityService

@@ -6,8 +6,8 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.core.db.pagination import page_scalars_by_offset
-from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue

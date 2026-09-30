@@ -9,35 +9,32 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import dict_or_empty, string_list, uuid_or_none
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.policy import (
-    is_anthropic_provider,
-    is_openai_compatible_provider,
-)
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,
     AgentRuntimeAgentTool,
     AgentRuntimeContext,
 )
-from backend.app.domains.capabilities.catalog.effective import (
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.policy import is_anthropic_provider, is_openai_compatible_provider
+from backend.app.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
-from backend.app.domains.capabilities.resources.schema import validate_partial_parameters
+from backend.app.capabilities.references.schema import validate_partial_parameters
+from backend.app.core.utils import dict_or_empty, string_list, uuid_or_none
 from backend.app.domains.orchestration.runs.authorization.validation import (
     resource_grants_for_snapshot,
     tool_definitions_for_snapshot,
 )
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resources import (
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
 )
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 
 MAX_AGENT_TOOL_DEPTH = 3
 MAX_AGENT_TOOL_TURNS = 20

@@ -11,26 +11,22 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.types import JSON
 
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
 from backend.app.api.dependencies.redis import get_redis_client
+from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.memory.configuration import (
-    WorkspaceMemoryConfigurationService,
-)
-from backend.app.domains.agents.memory.semantic import (
+from backend.app.identity.users.models import User
+from backend.app.main import create_app
+from backend.app.resources.memory.configuration import WorkspaceMemoryConfigurationService
+from backend.app.resources.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryConflictError,
     SemanticMemoryUpsert,
 )
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.identity.users.models import User
-from backend.app.main import create_app
+from backend.app.teams.management.models import AgentTeam
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

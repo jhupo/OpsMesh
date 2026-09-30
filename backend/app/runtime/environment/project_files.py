@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.domains.workspace.storage.security import validate_runtime_relative_path
+from backend.app.resources.files.security import validate_runtime_relative_path
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.policies.runtime import require_container

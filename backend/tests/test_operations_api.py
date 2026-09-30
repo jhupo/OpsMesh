@@ -12,30 +12,26 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
 from backend.app.api.dependencies.redis import get_redis_client
+from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.capabilities.mcp.models import (
-    McpServer,
-    McpToolAllowlist,
-)
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.platform.admin.models import PlatformPolicy
-from backend.app.domains.workspace.data_transfer.models import WorkspaceExportJob
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.resources.transfers.models import WorkspaceExportJob
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
@@ -55,6 +51,7 @@ from backend.app.runtime.self_hosted.models import (
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.models import WorkerLease, WorkerNode
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

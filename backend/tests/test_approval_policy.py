@@ -3,11 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
-    AgentRunRequest,
-    AgentRuntimeContext,
-)
+from backend.app.agents.execution.contracts import AgentRunRequest, AgentRuntimeContext
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.approvals.policy import (
     ApprovalPolicyDecision,
@@ -18,7 +15,7 @@ from backend.app.domains.orchestration.approvals.policy import (
 from backend.app.domains.orchestration.requests.request_approval import ModelRequestApprovalService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.workspace.reviews.model_request import ModelRequestReviewService
+from backend.app.governance.reviews.model_request import ModelRequestReviewService
 
 
 def test_identical_policy_inputs_produce_the_same_decision_for_every_action_kind() -> None:

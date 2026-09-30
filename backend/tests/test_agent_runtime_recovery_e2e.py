@@ -9,9 +9,9 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from backend.app.agents.execution.contracts import AgentRunRequest, AgentRunResult
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.execution import (
     RunExecutionDependencies,
@@ -31,7 +31,6 @@ from backend.app.domains.orchestration.workflows.steps.scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.security_models import SecurityEvent
@@ -41,6 +40,7 @@ from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeS
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.teams.management.models import AgentTeam
 from backend.tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
     _seed_workspace,
@@ -69,9 +69,9 @@ class ExplodingRunner:
 
 @pytest.fixture(autouse=True)
 def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
-    from backend.app.domains.workspace.reviews.models import ResourceReview
-    from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
+    from backend.app.governance.reviews.model_request import ModelRequestReview
+    from backend.app.governance.reviews.models import ResourceReview
+    from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 
     monkeypatch.setattr(
         ResourcePolicyReviewBuilder,
@@ -84,7 +84,7 @@ def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         lambda self, **kwargs: ModelRequestReview(
             required=False,
             risk_level="low",

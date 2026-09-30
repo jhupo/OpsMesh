@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.domains.orchestration.runs.queries import active_task_ids_by_agent
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 
 
 @dataclass(frozen=True)

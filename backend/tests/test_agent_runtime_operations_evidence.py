@@ -22,9 +22,9 @@ from backend.tests.test_worker_runner import (
 
 @pytest.fixture(autouse=True)
 def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
-    from backend.app.domains.workspace.reviews.models import ResourceReview
-    from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
+    from backend.app.governance.reviews.model_request import ModelRequestReview
+    from backend.app.governance.reviews.models import ResourceReview
+    from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 
     monkeypatch.setattr(
         ResourcePolicyReviewBuilder,
@@ -37,7 +37,7 @@ def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         lambda self, **kwargs: ModelRequestReview(
             required=False,
             risk_level="low",

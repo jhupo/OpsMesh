@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.tasks.collaboration.contracts import (
     ManagerAgent,
     ManagerDiagnostics,
@@ -31,7 +31,7 @@ from backend.app.domains.orchestration.tasks.control.dependencies import (
     manager_agent_id as resolve_manager_agent_id,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.teams.management.models import AgentTeam
 
 
 class TaskManagerDiagnosticsService:

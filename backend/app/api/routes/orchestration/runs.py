@@ -19,14 +19,14 @@ from backend.app.domains.orchestration.runs.contracts import (
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.queries import RunQueryService
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.workspace.projects.io.support import RunProjectIOQueryService
-from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
 from backend.app.identity.auth.dependencies import workspace_dependency
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.permissions import WorkspaceAction
 from backend.app.identity.authorization.resources import ResourceAction
 from backend.app.observability.audit.queries import AuditQueryService
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.workspaces.projects.io.support import RunProjectIOQueryService
+from backend.app.workspaces.projects.snapshots.service import RunProjectSnapshotService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 

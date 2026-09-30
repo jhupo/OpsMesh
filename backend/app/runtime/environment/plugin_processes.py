@@ -8,15 +8,15 @@ from uuid import UUID, uuid4
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.core.utils import ensure_aware_utc
-from backend.app.domains.capabilities.plugins.deployments import (
+from backend.app.capabilities.plugins.deployments import (
     DeploymentConfiguration,
     deployment_lock_key,
 )
-from backend.app.domains.capabilities.plugins.models import PluginCredential, PluginDeployment
-from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
+from backend.app.capabilities.plugins.models import PluginCredential, PluginDeployment
+from backend.app.capabilities.plugins.services import PluginPrincipal, PluginServices
+from backend.app.core.config import Settings
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.core.utils import ensure_aware_utc
 from backend.app.identity.auth.service import AuthorizationService
 from backend.app.identity.authorization.context import AuthenticatedUser
 from backend.app.identity.authorization.execution import ExecutionIdentityService

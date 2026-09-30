@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.references.schema import validate_json_value
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.capabilities.resources.schema import validate_json_value
 from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
 from backend.app.domains.integrations.automation_models import AutomationEvent
 from backend.app.domains.orchestration.tasks.models import Task

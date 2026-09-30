@@ -8,19 +8,16 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutionBinding
-from backend.app.domains.capabilities.catalog.effective import (
+from backend.app.agents.execution.contracts import AgentRuntimeExecutionBinding
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
-from backend.app.domains.capabilities.mcp.models import (
-    McpServer,
-    McpToolAllowlist,
-)
-from backend.app.domains.capabilities.resources.models import CapabilityResource
-from backend.app.domains.capabilities.skills.models import Skill, WorkspaceSkillInstall
+from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist
+from backend.app.capabilities.references.models import CapabilityResource
+from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
+from backend.app.core.db.base import Base
 from backend.app.domains.orchestration.runs.authorization.policy import (
     RunRuntimeAuthorizationError,
 )
@@ -34,13 +31,13 @@ from backend.app.domains.orchestration.runs.models import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.identity.auth.service import AuthorizationService
 from backend.app.identity.users.models import User
 from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.resources.files.models import WorkspaceFile
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
+from backend.app.teams.management.models import AgentTeam
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

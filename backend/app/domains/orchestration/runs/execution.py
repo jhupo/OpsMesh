@@ -9,10 +9,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.utils import payload_hash
-from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
@@ -21,12 +18,12 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeToolExecutor,
     AgentRuntimeToolResult,
 )
-from backend.app.domains.agents.runtime.errors import (
-    AgentRuntimeCancelledError,
-    AgentRuntimePolicyError,
-)
-from backend.app.domains.agents.runtime.state import AgentRunStateStore
-from backend.app.domains.agents.runtime.tools.gateway import AgentToolGateway
+from backend.app.agents.execution.errors import AgentRuntimeCancelledError, AgentRuntimePolicyError
+from backend.app.agents.execution.state import AgentRunStateStore
+from backend.app.agents.execution.tools.gateway import AgentToolGateway
+from backend.app.agents.providers.contracts import ModelProviderUnavailableError
+from backend.app.core.config import Settings, get_settings
+from backend.app.core.utils import payload_hash
 from backend.app.domains.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,
 )
@@ -58,9 +55,6 @@ from backend.app.domains.orchestration.workflows.definitions.data import resolve
 from backend.app.domains.orchestration.workflows.definitions.subworkflows import (
     SubworkflowExecutionService,
 )
-from backend.app.domains.workspace.projects.io.service import RunProjectIOService
-from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
-from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resource_queries import (
     execution_resource_queries,
@@ -68,12 +62,15 @@ from backend.app.identity.authorization.resource_queries import (
 )
 from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.observability.audit.service import AuditService
+from backend.app.resources.storage.storage import ObjectStorage
 from backend.app.runtime.contracts import RuntimeEnvironmentError
 from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.workspaces.projects.io.service import RunProjectIOService
+from backend.app.workspaces.projects.io.support import ProjectRunIOError
 
 TERMINAL_RUN_STATUSES = {
     RunStatus.COMPLETED,

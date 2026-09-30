@@ -4,8 +4,8 @@ from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.contracts import AgentInputAttachment
 from backend.app.core.config import Settings
-from backend.app.domains.agents.runtime.contracts import AgentInputAttachment
 from backend.app.domains.integrations.automation_authorization import (
     require_automation_principal,
     require_event_principal,
@@ -13,10 +13,10 @@ from backend.app.domains.integrations.automation_authorization import (
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
 from backend.app.domains.integrations.plugin_attachments import PluginAttachmentService
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.storage.content import WorkspaceFileContentReader
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.storage.storage import create_storage
 from backend.app.identity.authorization.resources import ResourceAccessDenied
+from backend.app.resources.files.content import WorkspaceFileContentReader
+from backend.app.resources.files.models import WorkspaceFile
+from backend.app.resources.storage.storage import create_storage
 
 
 def message_attachments(

@@ -5,23 +5,19 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import dict_or_empty, string_list, uuid_or_none
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentRuntimeProfile,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
 )
-from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
-from backend.app.domains.capabilities.mcp.models import (
-    McpCredentialReference,
-    McpServer,
-    McpToolAllowlist,
-)
-from backend.app.domains.capabilities.plugins.policy import require_plugin_resource
-from backend.app.domains.capabilities.resources.models import CapabilityResource
-from backend.app.domains.capabilities.skills.models import Skill, WorkspaceSkillInstall
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.capabilities.catalog.effective import effective_catalog_fingerprint
+from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolAllowlist
+from backend.app.capabilities.plugins.policy import require_plugin_resource
+from backend.app.capabilities.references.models import CapabilityResource
+from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
+from backend.app.core.utils import dict_or_empty, string_list, uuid_or_none
 from backend.app.domains.orchestration.runs.authorization.policy import (
     RunRuntimeAuthorizationError,
 )

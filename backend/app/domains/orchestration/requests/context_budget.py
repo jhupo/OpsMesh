@@ -4,20 +4,17 @@ import json
 from dataclasses import dataclass
 from enum import IntEnum
 
-from backend.app.domains.agents.memory.policy import ContextBudgetPolicy
-from backend.app.domains.agents.providers.capabilities import resolve_model_capability
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentTool,
     AgentRuntimeOutputSchema,
     AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
 )
-from backend.app.domains.agents.runtime.errors import AgentRuntimePolicyError
-from backend.app.domains.agents.runtime.tokens import (
-    estimate_token_upper_bound,
-    truncate_to_token_bound,
-)
+from backend.app.agents.execution.errors import AgentRuntimePolicyError
+from backend.app.agents.execution.tokens import estimate_token_upper_bound, truncate_to_token_bound
+from backend.app.agents.providers.capabilities import resolve_model_capability
+from backend.app.resources.memory.policy import ContextBudgetPolicy
 
 DEFAULT_CONTEXT_WINDOW_TOKENS = 32_768
 MINIMUM_DYNAMIC_CONTEXT_TOKENS = 512

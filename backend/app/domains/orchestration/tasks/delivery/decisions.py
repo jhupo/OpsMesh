@@ -6,7 +6,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.contracts import (
@@ -22,6 +21,7 @@ from backend.app.domains.orchestration.tasks.message_append import TaskMessageAp
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.tasks.state import TaskStateService, TaskStatus
 from backend.app.observability.audit.service import AuditService
+from backend.app.resources.memory.episodic import AgentEpisodicMemoryService
 from backend.app.runtime.workers.queue import RedisQueue
 
 ACTIVE_RUN_STATUSES = {

@@ -14,27 +14,20 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.domains.agents.messages.models import AgentMessage
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.domains.agents.sessions.models import PersistentAgentSession
-from backend.app.domains.capabilities.mcp.models import (
-    McpServer,
-    McpToolAllowlist,
-    McpToolCallLog,
-)
+from backend.app.agents.messages.models import AgentMessage
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.agents.sessions.models import PersistentAgentSession
+from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist, McpToolCallLog
+from backend.app.core.config import Settings
+from backend.app.core.db.base import Base
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.runs.authorization.snapshot import (
     RunAuthorizationSnapshotService,
@@ -53,15 +46,8 @@ from backend.app.domains.orchestration.tasks.models import (
     TaskStep,
 )
 from backend.app.domains.orchestration.tasks.state import TaskStatus
-from backend.app.domains.workspace.data_transfer.models import (
-    WorkspaceExportJob,
-    WorkspaceExportJobStatus,
-)
-from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
-from backend.app.domains.workspace.reviews.service import ResourceReview
-from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoopQueueService
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
+from backend.app.governance.reviews.model_request import ModelRequestReview
+from backend.app.governance.reviews.service import ResourceReview
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.identity.users.models import User
@@ -74,6 +60,8 @@ from backend.app.observability.costs.models import (
 from backend.app.observability.notifications.models import WorkspaceNotification
 from backend.app.observability.telemetry.request_context import current_log_context, log_context
 from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
+from backend.app.resources.memory.models import WorkspaceMemoryEntry
+from backend.app.resources.transfers.models import WorkspaceExportJob, WorkspaceExportJobStatus
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -92,6 +80,9 @@ from backend.app.runtime.workers.runner import (
     WorkerRunner,
     WorkerRunnerConfig,
 )
+from backend.app.teams.execution.loop import TeamExecutionLoopQueueService
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
+from backend.app.teams.sessions.service import TeamRuntimeService
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 
@@ -115,11 +106,11 @@ def approve_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.service.ResourcePolicyReviewBuilder.review_tool_execution",
+        "backend.app.governance.reviews.service.ResourcePolicyReviewBuilder.review_tool_execution",
         fake_resource_review,
     )
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         fake_model_request_review,
     )
 
@@ -729,12 +720,8 @@ def test_worker_maintenance_enqueues_running_team_runtime_without_tasks() -> Non
 
 
 def test_runtime_scheduler_scans_do_not_update_another_workspace_team() -> None:
-    from backend.app.domains.workspace.teams.execution.queue import (
-        TeamExecutionLoopQueueDispatcher,
-    )
-    from backend.app.domains.workspace.teams.execution.runtime_candidates import (
-        _team_loop_candidate,
-    )
+    from backend.app.teams.execution.queue import TeamExecutionLoopQueueDispatcher
+    from backend.app.teams.execution.runtime_candidates import _team_loop_candidate
 
     session_factory = _session_factory()
     _, team_id, user_id = _seed_runtime_team(session_factory)

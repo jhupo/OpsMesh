@@ -6,8 +6,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.core.errors import DomainError
-from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.authorization.policy import (
     RunRuntimeAuthorizationError,
 )
@@ -22,7 +22,7 @@ from backend.app.domains.orchestration.tasks.control.ownership import task_owner
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.scheduling.service import WorkspaceScheduler
 from backend.app.domains.orchestration.workflows.steps.dependencies import dependencies_satisfied
-from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
+from backend.app.workspaces.projects.snapshots.service import RunProjectSnapshotService
 
 STEP_STATUS_QUEUED = "queued"
 

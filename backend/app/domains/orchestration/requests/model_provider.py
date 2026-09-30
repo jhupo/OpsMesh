@@ -4,15 +4,15 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.core.utils import uuid_or_none
-from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
-from backend.app.domains.agents.providers.model_api import (
+from backend.app.agents.providers.contracts import ModelProviderUnavailableError
+from backend.app.agents.providers.model_api import (
     canonical_model_api,
     model_api_options_for_provider,
 )
-from backend.app.domains.agents.providers.resolution import ModelProviderResolutionService
+from backend.app.agents.providers.resolution import ModelProviderResolutionService
+from backend.app.core.config import Settings
+from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.core.utils import uuid_or_none
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 

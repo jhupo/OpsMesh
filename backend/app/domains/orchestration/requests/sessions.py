@@ -4,13 +4,10 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.sessions.models import PersistentAgentSession, PersistentAgentSessionRef
+from backend.app.agents.sessions.store import SQLAlchemyAgentSession
 from backend.app.core.utils import uuid_or_none
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.sessions.models import (
-    PersistentAgentSession,
-    PersistentAgentSessionRef,
-)
-from backend.app.domains.agents.sessions.store import SQLAlchemyAgentSession
 from backend.app.domains.orchestration.runs.authorization.validation import (
     authorized_profile_for_run,
     authorized_task_for_run,

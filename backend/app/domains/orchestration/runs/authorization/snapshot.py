@@ -7,25 +7,22 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.guardrails import runtime_controls_snapshot
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.metadata import budget_is_exhausted
+from backend.app.agents.providers.model_api import canonical_model_api, model_api_for_agent_provider
+from backend.app.agents.providers.models import ModelProviderCredential
+from backend.app.agents.providers.snapshots import ModelProviderResolutionService
+from backend.app.capabilities.catalog.effective import (
+    EffectiveCapabilityCatalogService,
+    effective_catalog_fingerprint,
+)
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.utils import (
     dict_or_empty,
     optional_string,
     positive_int_or_default,
     uuid_or_none,
-)
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.metadata import budget_is_exhausted
-from backend.app.domains.agents.providers.model_api import (
-    canonical_model_api,
-    model_api_for_agent_provider,
-)
-from backend.app.domains.agents.providers.models import ModelProviderCredential
-from backend.app.domains.agents.providers.snapshots import ModelProviderResolutionService
-from backend.app.domains.agents.runtime.guardrails import runtime_controls_snapshot
-from backend.app.domains.capabilities.catalog.effective import (
-    EffectiveCapabilityCatalogService,
-    effective_catalog_fingerprint,
 )
 from backend.app.domains.orchestration.runs.authorization.runtime import (
     ResolvedRunRuntimeBinding,

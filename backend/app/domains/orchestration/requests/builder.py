@@ -5,17 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.memory.context import AgentMemoryContext, AgentMemoryContextService
-from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.domains.agents.memory.policy import context_budget_policy, working_memory_policy
-from backend.app.domains.agents.memory.working import (
-    AgentWorkingMemoryService,
-    working_memory_context,
-)
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentInputAttachment,
     AgentRunRequest,
     AgentRuntimeAgentTool,
@@ -27,12 +17,15 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeToolExecutor,
     AgentRunTracing,
 )
-from backend.app.domains.agents.runtime.guardrails import runtime_controls_from_snapshot
-from backend.app.domains.agents.runtime.state import AgentRunStateStore
-from backend.app.domains.agents.runtime.tools.executor import BackendToolExecutor
-from backend.app.domains.agents.sessions.models import PersistentAgentSessionRef
-from backend.app.domains.agents.sessions.store import SQLAlchemyAgentSession
-from backend.app.domains.capabilities.mcp.transport.resolver import McpAdapterResolver
+from backend.app.agents.execution.guardrails import runtime_controls_from_snapshot
+from backend.app.agents.execution.state import AgentRunStateStore
+from backend.app.agents.execution.tools.executor import BackendToolExecutor
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.sessions.models import PersistentAgentSessionRef
+from backend.app.agents.sessions.store import SQLAlchemyAgentSession
+from backend.app.capabilities.mcp.transport.resolver import McpAdapterResolver
+from backend.app.core.config import Settings, get_settings
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.domains.orchestration.requests.attachments import message_attachments
 from backend.app.domains.orchestration.requests.context import RunRequestContextProvider
@@ -68,12 +61,16 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 from backend.app.domains.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.projects.io.support import project_runtime_context
+from backend.app.resources.memory.context import AgentMemoryContext, AgentMemoryContextService
+from backend.app.resources.memory.models import WorkspaceMemoryEntry
+from backend.app.resources.memory.policy import context_budget_policy, working_memory_policy
+from backend.app.resources.memory.working import AgentWorkingMemoryService, working_memory_context
 from backend.app.runtime.contracts import SandboxBinding, SandboxManifest
 from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.environment.contracts import DockerRuntimeClient
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.workspaces.projects.io.support import project_runtime_context
 
 
 @dataclass(frozen=True, slots=True)

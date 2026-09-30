@@ -11,7 +11,7 @@ from backend.app.core.utils import (
     string_list,
     stringify_or_none,
 )
-from backend.app.domains.workspace.data_lifecycle.service import WorkspaceDataLifecycleService
+from backend.app.resources.lifecycle.service import WorkspaceDataLifecycleService
 
 
 class WorkspaceDataLifecycleRollupService:

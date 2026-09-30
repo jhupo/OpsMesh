@@ -4,14 +4,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.messages.models import AgentMessage
+from backend.app.agents.messages.service import AgentMailboxService
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.domains.agents.messages.models import AgentMessage
-from backend.app.domains.agents.messages.service import AgentMailboxService
-from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
+from backend.app.teams.sessions.service import TeamRuntimeService
 
 
 @dataclass(slots=True)

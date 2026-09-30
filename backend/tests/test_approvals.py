@@ -13,22 +13,22 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agents.execution.contracts import (
+    AgentRuntimeContext,
+    AgentRuntimeInterruption,
+    AgentRuntimeResumeState,
+)
+from backend.app.agents.execution.state import AgentRunStateStore
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
+from backend.app.capabilities.mcp.models import McpServer
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.pagination import PageParams
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.runtime.contracts import (
-    AgentRuntimeContext,
-    AgentRuntimeInterruption,
-    AgentRuntimeResumeState,
-)
-from backend.app.domains.agents.runtime.state import AgentRunStateStore
-from backend.app.domains.capabilities.mcp.models import McpServer
 from backend.app.domains.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,
 )
@@ -45,7 +45,7 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.tasks.state import TaskStatus
-from backend.app.domains.workspace.reviews.policy import (
+from backend.app.governance.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     RESOURCE_STATUS_REJECTED,

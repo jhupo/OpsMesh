@@ -6,12 +6,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.catalog.models import Capability, ToolGroup
+from backend.app.capabilities.marketplace.models import MarketplaceListing
+from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist
+from backend.app.capabilities.references.models import CapabilityResource
+from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from backend.app.core.errors import NotFoundError
-from backend.app.domains.capabilities.catalog.models import Capability, ToolGroup
-from backend.app.domains.capabilities.marketplace.models import MarketplaceListing
-from backend.app.domains.capabilities.mcp.models import McpServer, McpToolAllowlist
-from backend.app.domains.capabilities.resources.models import CapabilityResource
-from backend.app.domains.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from backend.app.observability.audit.security_events import (
     SecurityAuditService,
     SecurityRequestContext,

@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.domains.orchestration.runs.models import AgentRun
@@ -33,9 +33,9 @@ from backend.app.domains.orchestration.workflows.definitions.service import (
     OrchestrationDefinitionService,
 )
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.tests.test_capability_resources import (
     _client as _api_client,
 )
@@ -548,11 +548,11 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
     from opsmesh_plugin_sdk.packaging.packages import SignedPluginPackage, sign_package
     from sqlalchemy.orm import sessionmaker
 
+    from backend.app.capabilities.plugins.downloads import PluginDownloadWorker
+    from backend.app.capabilities.plugins.models import PluginDownload
+    from backend.app.capabilities.plugins.transport import PluginHttpFetcher
     from backend.app.core.config import get_settings
     from backend.app.core.security.secrets import SecretEncryptionService
-    from backend.app.domains.capabilities.plugins.downloads import PluginDownloadWorker
-    from backend.app.domains.capabilities.plugins.models import PluginDownload
-    from backend.app.domains.capabilities.plugins.transport import PluginHttpFetcher
     from backend.app.domains.integrations.automations import AutomationService
     from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
     from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
@@ -1380,21 +1380,18 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     from opsmesh_plugin_sdk.services.observability import PluginLog
     from opsmesh_plugin_sdk.services.storage import StoreWrite
 
+    from backend.app.agents.execution.contracts import AgentRunResult, AgentRuntimeStructuredOutput
+    from backend.app.agents.execution.observer import AgentRuntimeExecutionObserver
     from backend.app.api.dependencies.queue import get_worker_queue
     from backend.app.api.dependencies.redis import get_redis_client
     from backend.app.core.config import get_settings
-    from backend.app.domains.agents.runtime.contracts import (
-        AgentRunResult,
-        AgentRuntimeStructuredOutput,
-    )
-    from backend.app.domains.agents.runtime.observer import AgentRuntimeExecutionObserver
     from backend.app.domains.integrations.automations import AutomationService
-    from backend.app.domains.workspace.reviews.model_request import (
+    from backend.app.governance.reviews.model_request import (
         ModelRequestReview,
         ModelRequestReviewService,
     )
-    from backend.app.domains.workspace.reviews.models import ResourceReview
-    from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
+    from backend.app.governance.reviews.models import ResourceReview
+    from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
     from backend.app.identity.users.models import User
     from backend.app.runtime.workers.contracts import JobPayload, JobType
     from backend.app.workspaces.members.models import WorkspaceMember

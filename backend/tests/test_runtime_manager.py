@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
@@ -45,6 +44,7 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceReservation,
 )
 from backend.app.runtime.environment.spaces.service import RuntimeSpaceService
+from backend.app.teams.management.models import AgentTeam
 from backend.app.workspaces.management.models import Workspace
 
 

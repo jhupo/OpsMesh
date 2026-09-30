@@ -9,10 +9,7 @@ from uuid import UUID
 from opsmesh_plugin_sdk.messaging.contracts import AttachmentKind, MessageAction
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from backend.app.domains.capabilities.resources.schema import (
-    reject_embedded_secrets,
-    validate_json_schema,
-)
+from backend.app.capabilities.references.schema import reject_embedded_secrets, validate_json_schema
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowDataBinding
 from backend.app.runtime.workers.scheduling.calendar import next_run_at
 

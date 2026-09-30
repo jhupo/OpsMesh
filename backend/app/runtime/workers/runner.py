@@ -9,12 +9,9 @@ from threading import Event, Thread
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.contracts import AgentRuntimeExecutor
+from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.core.config import Settings
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutor
-from backend.app.domains.capabilities.mcp.transport.contracts import (
-    McpToolAdapter,
-    McpToolAdapterResolver,
-)
 from backend.app.domains.platform.updates.service import maintenance_enabled
 from backend.app.observability.telemetry.request_context import log_context
 from backend.app.observability.telemetry.trace_context import (

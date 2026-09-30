@@ -10,13 +10,10 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import commit_or_raise_conflict
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
-from backend.app.domains.agents.memory.models import WorkspaceMemoryConfiguration
-from backend.app.domains.agents.memory.policy import (
-    default_lifecycle_policy,
-    default_retrieval_policy,
-)
 from backend.app.identity.authorization.permissions import WorkspaceRole
 from backend.app.observability.audit.service import AuditService
+from backend.app.resources.memory.models import WorkspaceMemoryConfiguration
+from backend.app.resources.memory.policy import default_lifecycle_policy, default_retrieval_policy
 from backend.app.workspaces.management.contracts import (
     WorkspaceCreatePayload,
     WorkspaceUpdatePayload,

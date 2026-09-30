@@ -12,24 +12,18 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.agents.providers.models import ModelProviderCredential
+from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolCallLog
+from backend.app.capabilities.skills.models import Skill
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.agents.providers.models import ModelProviderCredential
-from backend.app.domains.capabilities.mcp.models import (
-    McpCredentialReference,
-    McpServer,
-    McpToolCallLog,
-)
-from backend.app.domains.capabilities.skills.models import Skill
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.workspace.reviews.llm import LlmReviewResult, StructuredResourceReview
+from backend.app.governance.reviews.llm import LlmReviewResult, StructuredResourceReview
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
@@ -50,7 +44,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -273,7 +267,7 @@ def test_llm_resource_review_can_require_admin_approval(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -334,7 +328,7 @@ def test_operator_cannot_approve_resource_review(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -438,7 +432,7 @@ def test_resource_review_uses_admin_configured_review_model(monkeypatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -500,7 +494,7 @@ def test_resource_review_defaults_to_codex_auto_review_model(monkeypatch) -> Non
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review",
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review",
         fake_review,
     )
 
@@ -534,7 +528,7 @@ def test_private_skill_creation_skips_resource_review_by_default(monkeypatch) ->
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review", require_review
     )
 
     response = client.post(
@@ -574,7 +568,7 @@ def test_private_resource_review_can_be_enabled_per_workspace(monkeypatch) -> No
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review", require_review
     )
 
     response = client.post(
@@ -614,7 +608,7 @@ def test_private_agent_creation_skips_resource_review_by_default(monkeypatch) ->
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review", require_review
     )
 
     created = client.post(
@@ -647,7 +641,7 @@ def test_private_agent_review_can_be_enabled_per_workspace(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review", require_review
     )
 
     created = client.post(
@@ -679,7 +673,7 @@ def test_private_mcp_resources_skip_resource_review_by_default(monkeypatch) -> N
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review", require_review
     )
 
     server = client.post(
@@ -732,7 +726,7 @@ def test_private_mcp_server_review_can_be_enabled_per_workspace(monkeypatch) -> 
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.llm.LlmResourceReviewer.review", require_review
+        "backend.app.governance.reviews.llm.LlmResourceReviewer.review", require_review
     )
 
     server = client.post(
@@ -1261,7 +1255,7 @@ def test_remote_mcp_discovery_requires_enablement_and_revokes_changed_tools(monk
         ]
 
     monkeypatch.setattr(
-        "backend.app.domains.capabilities.mcp.catalog.discovery.list_remote_mcp_tools_async",
+        "backend.app.capabilities.mcp.catalog.discovery.list_remote_mcp_tools_async",
         list_tools,
     )
     base = f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server_id}"

@@ -11,22 +11,8 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.memory.models import (
-    WorkspaceMemoryEntry,
-    WorkspaceMemoryRetrievalEvent,
-    memory_content_fingerprint,
-)
-from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.agents.runtime.contracts import (
+import backend.app.agents.execution.providers.openai.runner as openai_runtime
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
@@ -34,19 +20,19 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
-from backend.app.domains.agents.runtime.errors import AgentRuntimeProviderError
-from backend.app.domains.agents.runtime.state import AgentRunStateStore
-from backend.app.domains.agents.sessions.models import PersistentAgentSession
-from backend.app.domains.capabilities.mcp.models import (
-    McpCredentialReference,
-    McpServer,
-    McpToolAllowlist,
-)
-from backend.app.domains.capabilities.resources.models import CapabilityResource
-from backend.app.domains.capabilities.skills.models import (
-    Skill,
-    WorkspaceSkillInstall,
-)
+from backend.app.agents.execution.errors import AgentRuntimeProviderError
+from backend.app.agents.execution.state import AgentRunStateStore
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.agents.sessions.models import PersistentAgentSession
+from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolAllowlist
+from backend.app.capabilities.references.models import CapabilityResource
+from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
+from backend.app.core.config import Settings
+from backend.app.core.db.base import Base
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.domains.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,
 )
@@ -93,16 +79,19 @@ from backend.app.domains.orchestration.workflows.steps.scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
-from backend.app.domains.workspace.reviews.models import ResourceReview
-from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.domains.workspace.storage.artifact_models import Artifact
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
+from backend.app.governance.reviews.model_request import ModelRequestReview
+from backend.app.governance.reviews.models import ResourceReview
+from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.users.models import User
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.costs.models import ModelUsageRecord
+from backend.app.resources.artifacts.models import Artifact
+from backend.app.resources.memory.models import (
+    WorkspaceMemoryEntry,
+    WorkspaceMemoryRetrievalEvent,
+    memory_content_fingerprint,
+)
 from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import (
@@ -114,6 +103,8 @@ from backend.app.runtime.environment.spaces.models import (
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
+from backend.app.teams.sessions.service import TeamRuntimeService
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 from backend.app.workspaces.quotas.models import WorkspaceQuota, WorkspaceReservation
@@ -143,7 +134,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         fake_resource_review,
     )
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         fake_model_request_review,
     )
 
@@ -3189,7 +3180,7 @@ def test_model_request_review_routes_sensitive_input_to_admin_approval(
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         blocking_review,
     )
     session = _session()

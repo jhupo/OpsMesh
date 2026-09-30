@@ -21,24 +21,24 @@ from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.projects.models import (
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
+from backend.app.main import create_app
+from backend.app.resources.artifacts.models import Artifact
+from backend.app.resources.files.models import WorkspaceFile
+from backend.app.resources.storage.storage import LocalStorage
+from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
+from backend.app.workspaces.projects.models import (
     AgentRunProjectIOState,
     WorkspaceProject,
     WorkspaceProjectConfigurationVersion,
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from backend.app.domains.workspace.projects.snapshots.format import sha256_json
-from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
-from backend.app.domains.workspace.storage.artifact_models import Artifact
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.storage.storage import LocalStorage
-from backend.app.identity.authorization.execution import ExecutionIdentityService
-from backend.app.identity.users.models import User
-from backend.app.main import create_app
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.workspaces.management.models import Workspace
-from backend.app.workspaces.members.models import WorkspaceMember
+from backend.app.workspaces.projects.snapshots.format import sha256_json
+from backend.app.workspaces.projects.snapshots.service import RunProjectSnapshotService
 from backend.tests.fixtures.project_authorization import authorize_project_run
 
 TOKEN = "self-hosted-project-token"

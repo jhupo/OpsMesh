@@ -5,12 +5,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.contracts import AgentRuntimeContext, AgentRuntimeInterruption
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.runtime.contracts import (
-    AgentRuntimeContext,
-    AgentRuntimeInterruption,
-)
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.approvals.pending_tools import (
     PendingToolInvocationRequest,

@@ -21,7 +21,6 @@ from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.runtime.environment.models import WorkspaceRuntime
@@ -33,6 +32,7 @@ from backend.app.runtime.environment.spaces.models import (
     RuntimeSpaceReservation,
 )
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.teams.management.models import AgentTeam
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

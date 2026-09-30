@@ -6,11 +6,11 @@ from contextlib import AbstractContextManager
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
 from backend.app.observability.telemetry.trace_context import current_trace_metadata
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.leases import WorkerLeaseWriter
 from backend.app.runtime.workers.models import WorkerRunnerConfig
+from backend.app.teams.sessions.service import TeamRuntimeService
 
 SessionScope = Callable[[], AbstractContextManager[Session]]
 logger = logging.getLogger(__name__)

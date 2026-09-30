@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.messages.models import AgentMessage
+from backend.app.agents.messages.models import AgentMessage
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.operations.timeline.models import (
     TimelineEvent,

@@ -34,11 +34,11 @@ from backend.app.domains.orchestration.workflows.steps.scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
-from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.teams.management.models import AgentTeam
+from backend.app.teams.sessions.snapshots import build_team_snapshot
+from backend.app.workspaces.projects.snapshots.service import RunProjectSnapshotService
 
 __all__ = [
     "RunOrchestrationService",

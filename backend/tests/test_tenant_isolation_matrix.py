@@ -17,6 +17,9 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
@@ -26,23 +29,19 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.integrations.webhooks.models import (
     WebhookDeliveryAttempt,
     WebhookSubscription,
 )
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.workspace.data_transfer.models import WorkspaceExportJob
-from backend.app.domains.workspace.storage.artifact_models import Artifact
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.storage.storage import LocalStorage
-from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.observability.notifications.models import WorkspaceNotification
+from backend.app.resources.artifacts.models import Artifact
+from backend.app.resources.files.models import WorkspaceFile
+from backend.app.resources.storage.storage import LocalStorage
+from backend.app.resources.transfers.models import WorkspaceExportJob
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -52,6 +51,7 @@ from backend.app.runtime.environment.contracts import (
 from backend.app.runtime.environment.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.teams.management.models import AgentTeam
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

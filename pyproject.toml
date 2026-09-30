@@ -107,6 +107,9 @@ select = [
 "backend/app/api/routes/*.py" = ["B008"]
 "backend/app/**/routes.py" = ["B008"]
 "backend/app/**/*_routes.py" = ["B008"]
+"backend/app/**/routes/*.py" = ["B008"]
+"backend/app/**/dependencies.py" = ["B008"]
+"backend/app/**/http_common.py" = ["B008"]
 
 [tool.ruff.lint.isort]
 extra-standard-library = ["operator"]
@@ -165,13 +168,13 @@ id = "s3-sdk-boundary"
 name = "S3 SDK access stays in its storage adapter"
 type = "protected"
 protected_modules = ["boto3"]
-allowed_importers = ["backend.app.domains.workspace.storage.storage"]
+allowed_importers = ["backend.app.resources.storage.storage"]
 
 [[tool.importlinter.contracts]]
 id = "provider-neutral-contracts"
 name = "Agent runtime contracts do not depend on vendor SDKs or HTTP transport"
 type = "forbidden"
-source_modules = ["backend.app.domains.agents.runtime.contracts", "backend.app.runtime.contracts"]
+source_modules = ["backend.app.agents.execution.contracts", "backend.app.runtime.contracts"]
 forbidden_modules = ["agents", "openai", "anthropic", "claude_agent_sdk", "backend.app.api"]
 
 [[tool.importlinter.contracts]]

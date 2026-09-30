@@ -8,9 +8,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.contracts import AgentRunRequest, AgentRunResult
+from backend.app.agents.providers.policy import canonical_model_provider
 from backend.app.core.utils import ensure_aware_utc
-from backend.app.domains.agents.providers.policy import canonical_model_provider
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.observability.audit.service import AuditService
 from backend.app.observability.costs.models import (

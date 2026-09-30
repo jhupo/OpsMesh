@@ -8,9 +8,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.orchestration.tasks.event_outbox import TaskEventOutboxService
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage
+from backend.app.resources.memory.episodic import AgentEpisodicMemoryService
 
 TASK_MESSAGE_CREATED_EVENT_TYPE = "task.message.created"
 

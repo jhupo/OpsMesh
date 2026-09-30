@@ -1,7 +1,7 @@
 from uuid import uuid4
 
-from backend.app.domains.knowledge.models import KnowledgeSourceRevision
-from backend.app.domains.workspace.storage.models import WorkspaceFile
+from backend.app.resources.files.models import WorkspaceFile
+from backend.app.resources.knowledge.models import KnowledgeSourceRevision
 from backend.tests.test_workspace_api import _client, _headers, _seed_workspace
 
 

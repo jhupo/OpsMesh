@@ -7,9 +7,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.utils import dict_list
-from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.approvals.models import Approval, PendingToolInvocation
 from backend.app.domains.orchestration.models import SubworkflowInvocation
 from backend.app.domains.orchestration.runs.models import AgentRun
@@ -25,7 +25,7 @@ from backend.app.domains.orchestration.tasks.observation.execution_views import 
     downstream_map,
     handoff_state,
 )
-from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.teams.management.models import AgentTeam
 
 ACTIVE_RUN_STATUSES = {
     RunStatus.QUEUED.value,

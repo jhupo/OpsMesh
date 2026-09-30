@@ -9,8 +9,8 @@ from uuid import UUID
 from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.providers.policy import canonical_model_provider
 from backend.app.core.utils import ensure_aware_utc
-from backend.app.domains.agents.providers.policy import canonical_model_provider
 from backend.app.observability.audit.service import AuditService
 from backend.app.observability.costs.models import ModelPricingRule
 from backend.app.observability.costs.usage import NormalizedModelUsage

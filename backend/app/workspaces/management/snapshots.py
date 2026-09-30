@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from backend.app.domains.workspace.projects.models import WorkspaceProjectQuota
 from backend.app.workspaces.members.models import WorkspaceInvite, WorkspaceMember
+from backend.app.workspaces.projects.models import WorkspaceProjectQuota
 from backend.app.workspaces.quotas.models import WorkspaceQuota
 
 

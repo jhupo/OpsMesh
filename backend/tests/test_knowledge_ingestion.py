@@ -6,22 +6,22 @@ from uuid import UUID, uuid4
 import fakeredis
 from sqlalchemy import select
 
+from backend.app.capabilities.tools.contracts import ToolContext
+from backend.app.capabilities.tools.memory import KnowledgeCitationAccessError
+from backend.app.capabilities.tools.service import ProductToolService
+from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.core.config import Settings
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
-from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.domains.capabilities.tools.contracts import ToolContext
-from backend.app.domains.capabilities.tools.memory import KnowledgeCitationAccessError
-from backend.app.domains.capabilities.tools.service import ProductToolService
-from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.domains.knowledge.ingestion import KnowledgeSourceIngestionService
-from backend.app.domains.knowledge.models import (
+from backend.app.resources.files.models import WorkspaceFile
+from backend.app.resources.knowledge.ingestion import KnowledgeSourceIngestionService
+from backend.app.resources.knowledge.models import (
     KnowledgeCitation,
     KnowledgeSource,
     KnowledgeSourceIngestion,
 )
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.storage.storage import LocalStorage
+from backend.app.resources.memory.authorization import AuthorizedMemoryScope
+from backend.app.resources.memory.models import WorkspaceMemoryEntry
+from backend.app.resources.storage.storage import LocalStorage
 from backend.app.runtime.environment.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,

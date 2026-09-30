@@ -1,18 +1,13 @@
 from fastapi import APIRouter
 
-from backend.app.api.routes.agents.messages import router as agent_messages_router
-from backend.app.api.routes.agents.profiles import router as workspace_agents_router
-from backend.app.api.routes.agents.provider_capabilities import (
+from backend.app.agents.messages.routes import router as agent_messages_router
+from backend.app.agents.profiles.routes import router as workspace_agents_router
+from backend.app.agents.providers.capability_routes import (
     router as model_provider_capabilities_router,
 )
-from backend.app.api.routes.agents.providers import router as model_providers_router
-from backend.app.api.routes.agents.sessions import (
-    router as workspace_agent_sessions_router,
-)
-from backend.app.api.routes.capabilities.marketplace import router as marketplace_router
-from backend.app.api.routes.capabilities.router import router as capabilities_router
+from backend.app.agents.providers.routes import router as model_providers_router
+from backend.app.agents.sessions.routes import router as workspace_agent_sessions_router
 from backend.app.api.routes.integrations.automations import router as automations_router
-from backend.app.api.routes.integrations.plugin_runtime import router as plugin_runtime_router
 from backend.app.api.routes.integrations.webhooks import router as webhooks_router
 from backend.app.api.routes.operations.costs import router as costs_router
 from backend.app.api.routes.operations.health import router as health_router
@@ -27,15 +22,18 @@ from backend.app.api.routes.orchestration.definitions import router as orchestra
 from backend.app.api.routes.orchestration.runs import router as workspace_runs_router
 from backend.app.api.routes.platform.router import router as admin_router
 from backend.app.api.routes.self_hosted.router import router as self_hosted_router
-from backend.app.api.routes.workspace.domains import router as domains_router
-from backend.app.api.routes.workspace.exports.router import router as exports_router
-from backend.app.api.routes.workspace.files import router as files_router
-from backend.app.api.routes.workspace.projects import router as projects_router
 from backend.app.api.routes.workspace.router import router as workspace_resources_router
+from backend.app.bootstrap.capability_routes import router as capabilities_router
+from backend.app.capabilities.marketplace.public_routes import router as marketplace_router
+from backend.app.capabilities.plugins.runtime_routes import router as plugin_runtime_router
 from backend.app.identity.auth.routes import router as auth_router
 from backend.app.identity.authorization.routes import router as resource_access_router
 from backend.app.identity.invitations.routes import router as invitations_router
+from backend.app.resources.files.routes import router as files_router
+from backend.app.resources.transfers.routes.router import router as exports_router
+from backend.app.workspaces.domain_items.routes import router as domains_router
 from backend.app.workspaces.management.routes import router as workspaces_router
+from backend.app.workspaces.projects.routes import router as projects_router
 
 api_router = APIRouter()
 api_router.include_router(admin_router)

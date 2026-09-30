@@ -5,8 +5,6 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
-from backend.app.domains.agents.memory.working import AgentWorkingMemoryService
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.runs.state import RunStateService, RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
@@ -17,6 +15,8 @@ from backend.app.domains.orchestration.tasks.state import (
 )
 from backend.app.domains.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
 from backend.app.domains.orchestration.workflows.planning.attempts import TaskPlanningAttemptService
+from backend.app.resources.memory.episodic import AgentEpisodicMemoryService
+from backend.app.resources.memory.working import AgentWorkingMemoryService
 from backend.app.runtime.workers.leases import mark_agent_run_worker_cancel_requested
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]

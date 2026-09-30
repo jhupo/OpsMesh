@@ -4,16 +4,13 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.contracts import AgentRunRequest
+from backend.app.agents.execution.errors import AgentRuntimeProviderError, normalize_agent_error
+from backend.app.agents.providers.contracts import ModelProviderUnavailableError
+from backend.app.agents.providers.health import ModelProviderHealthService
+from backend.app.agents.providers.model_api import canonical_model_api
+from backend.app.agents.providers.resolution import ModelProviderResolutionService
 from backend.app.core.utils import optional_string, uuid_or_none
-from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
-from backend.app.domains.agents.providers.health import ModelProviderHealthService
-from backend.app.domains.agents.providers.model_api import canonical_model_api
-from backend.app.domains.agents.providers.resolution import ModelProviderResolutionService
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest
-from backend.app.domains.agents.runtime.errors import (
-    AgentRuntimeProviderError,
-    normalize_agent_error,
-)
 from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
 from backend.app.domains.orchestration.requests.model_provider import (
     effective_resolved_model_api,

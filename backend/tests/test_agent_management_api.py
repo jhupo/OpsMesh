@@ -12,6 +12,9 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agents.profiles.models import AgentProfile, AgentProfileVersion
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.agents.sessions.models import PersistentAgentSession, PersistentAgentSessionItem
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
@@ -21,15 +24,7 @@ from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.agents.profiles.models import AgentProfile, AgentProfileVersion
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.agents.sessions.models import (
-    PersistentAgentSession,
-    PersistentAgentSessionItem,
-)
-from backend.app.domains.workspace.reviews.service import ResourceReview
+from backend.app.governance.reviews.service import ResourceReview
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
@@ -51,7 +46,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
+        "backend.app.governance.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
         fake_review,
     )
 
@@ -564,7 +559,7 @@ def test_agent_update_requires_resource_review_for_high_impact_changes(monkeypat
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
+        "backend.app.governance.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
         review_agent_profile,
     )
 

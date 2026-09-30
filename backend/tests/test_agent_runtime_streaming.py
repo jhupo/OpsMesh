@@ -9,17 +9,17 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import sessionmaker
 
-import backend.app.domains.agents.runtime.providers.openai.streaming as openai_streaming
-from backend.app.core.db.base import Base
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+import backend.app.agents.execution.providers.openai.streaming as openai_streaming
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
-from backend.app.domains.agents.runtime.errors import AgentRuntimeCancelledError
-from backend.app.domains.agents.runtime.providers.claude.runner import ClaudeAgentSDKRunner
-from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
+from backend.app.agents.execution.errors import AgentRuntimeCancelledError
+from backend.app.agents.execution.providers.claude.runner import ClaudeAgentSDKRunner
+from backend.app.agents.execution.providers.openai.runner import OpenAIAgentsRunner
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.core.db.base import Base
 from backend.app.domains.orchestration.runs.cancellation import DatabaseRunCancellation
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus

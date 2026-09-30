@@ -8,11 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_text_fragments
-from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.control.ownership import owner_version
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.workspace.storage.artifact_models import Artifact
+from backend.app.resources.artifacts.models import Artifact
+from backend.app.resources.memory.models import WorkspaceMemoryEntry
 
 
 @dataclass(frozen=True, slots=True)

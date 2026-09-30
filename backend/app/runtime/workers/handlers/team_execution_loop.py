@@ -1,4 +1,3 @@
-from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoopService
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resource_queries import (
     ResourceQueryScope,
@@ -14,6 +13,7 @@ from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.environment.service import RuntimeControlService
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
+from backend.app.teams.execution.loop import TeamExecutionLoopService
 
 
 class TeamExecutionLoopJobHandler:

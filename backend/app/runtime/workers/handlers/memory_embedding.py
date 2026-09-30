@@ -1,13 +1,13 @@
 from sqlalchemy import select
 
-from backend.app.domains.agents.memory.embedding_service import (
+from backend.app.observability.costs.service import CostBudgetExceededError
+from backend.app.resources.memory.embedding_service import (
     MemoryEmbeddingError,
     MemoryEmbeddingWork,
     WorkspaceMemoryEmbeddingProviderResolver,
     WorkspaceMemoryEmbeddingService,
 )
-from backend.app.domains.agents.memory.models import WorkspaceMemoryConfiguration
-from backend.app.observability.costs.service import CostBudgetExceededError
+from backend.app.resources.memory.models import WorkspaceMemoryConfiguration
 from backend.app.runtime.workers.contracts import JobPayload
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
 

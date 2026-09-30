@@ -8,12 +8,9 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.capabilities.mcp.models import (
-    McpServer,
-    McpToolAllowlist,
-)
-from backend.app.domains.capabilities.resources.models import CapabilityResource
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist
+from backend.app.capabilities.references.models import CapabilityResource
 from backend.app.domains.orchestration.models import OrchestrationDefinition, OrchestrationRevision
 from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
 from backend.app.domains.orchestration.workflows.definitions.graph import (

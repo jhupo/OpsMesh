@@ -4,13 +4,13 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from backend.app.core.utils import datetime_or_none
-from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.domains.workspace.teams.runtime.service import (
+from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.teams.management.models import AgentTeam
+from backend.app.teams.sessions.service import (
     TEAM_RUNTIME_HEARTBEAT_STALE_AFTER_SECONDS,
     TEAM_RUNTIME_STATUS_KEY,
     TEAM_RUNTIME_WORKSPACE_RUNTIME_ID_KEY,
 )
-from backend.app.runtime.environment.models import WorkspaceRuntime
 
 
 def team_runtime_metadata(team: AgentTeam) -> dict[str, object]:

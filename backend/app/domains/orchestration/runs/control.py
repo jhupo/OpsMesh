@@ -22,12 +22,12 @@ from backend.app.domains.orchestration.workflows.statuses import (
     ACTIVE_RUN_STATUS_VALUES,
     STALE_RECOVERABLE_RUN_STATUS_VALUES,
 )
-from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.reservations import (
     RuntimeSpaceReservationReleaseService,
 )
+from backend.app.workspaces.projects.snapshots.service import RunProjectSnapshotService
 from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 EnqueueRun = Callable[[AgentRun, UUID | None], bool]

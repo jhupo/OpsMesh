@@ -8,8 +8,8 @@ from backend.app.api.schemas.platform.admin import (
     AdminPluginGovernanceResponse,
     AdminPluginPublisherTrustResponse,
 )
+from backend.app.capabilities.plugins.service import PluginService
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.capabilities.plugins.service import PluginService
 
 router = APIRouter()
 

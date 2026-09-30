@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.profiles.models import AgentProfile
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.domains.orchestration.tasks.observation.cards import (
@@ -25,7 +25,7 @@ from backend.app.domains.orchestration.tasks.observation.models import SUPPORTED
 from backend.app.domains.orchestration.tasks.observation.repository import (
     TaskObservationRepository,
 )
-from backend.app.domains.workspace.storage.artifact_models import Artifact
+from backend.app.resources.artifacts.models import Artifact
 
 
 class TaskObservationService:

@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.runtime.contracts import AgentRuntimeExecutionBinding
+from backend.app.agents.execution.contracts import AgentRuntimeExecutionBinding
 from backend.app.domains.orchestration.runs.authorization.policy import (
     RunRuntimeAuthorizationError,
     catalog_for_snapshot,
@@ -20,11 +20,11 @@ from backend.app.domains.orchestration.runs.authorization.policy import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.domains.workspace.teams.runtime.refs import team_bound_runtime_id
+from backend.app.resources.files.models import WorkspaceFile
 from backend.app.runtime.environment.models import RuntimeLease, WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceBinding
+from backend.app.teams.management.models import AgentTeam
+from backend.app.teams.sessions.refs import team_bound_runtime_id
 
 RUNTIME_READY_STATUSES = frozenset({"active", "running"})
 

@@ -9,9 +9,9 @@ from opsmesh_plugin_sdk.messaging.contracts import AutomationStreamEvent, EventS
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.plugins.policy import require_plugin_resource
+from backend.app.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.core.errors import DomainError
-from backend.app.domains.capabilities.plugins.policy import require_plugin_resource
-from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.integrations.automation_authorization import (
     require_automation_principal,
     require_event_principal,

@@ -7,8 +7,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.core.security.redaction import redact_text_fragments
-from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.collaboration.transfer_package import (
@@ -22,10 +22,10 @@ from backend.app.domains.orchestration.tasks.message_append import TaskMessageAp
 from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep, TaskTransfer
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
+from backend.app.teams.sessions.snapshots import build_team_snapshot
 
 TRANSFER_PENDING = "pending"
 TRANSFER_ACCEPTED = "accepted"

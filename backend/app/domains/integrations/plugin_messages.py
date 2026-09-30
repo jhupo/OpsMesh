@@ -6,8 +6,8 @@ from opsmesh_plugin_sdk.messaging.contracts import ApprovalDecision, ApprovalRec
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.core.errors import DomainError
-from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
 from backend.app.domains.integrations.automation_models import Automation
 from backend.app.domains.integrations.automation_stream import AutomationStreamService
