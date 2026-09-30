@@ -11,7 +11,7 @@ from backend.app.domains.workspace.data_transfer.contracts import (
     WorkspaceImportConflict,
     WorkspaceImportRequest,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.workspaces.management.models import Workspace
 
 
 @dataclass(slots=True)

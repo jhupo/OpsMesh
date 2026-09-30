@@ -36,7 +36,7 @@ from backend.app.domains.workspace.data_lifecycle.settings import (
     _string_list,
 )
 from backend.app.domains.workspace.data_transfer.contracts import SUPPORTED_WORKSPACE_EXPORT_FORMAT
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.workspaces.management.models import Workspace
 
 BACKUP_LIFECYCLE_EVENT_ACTIONS = (
     "workspace.lifecycle.backup_enqueued",

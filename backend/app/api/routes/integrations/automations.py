@@ -16,13 +16,9 @@ from opsmesh_plugin_sdk.packaging.manifest import PluginManifest
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.errors import AuthorizationError
-from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.integrations.automation_contracts import (
     AutomationConfiguration,
     AutomationResponse,
@@ -34,6 +30,10 @@ from backend.app.domains.integrations.automation_stream import AutomationStreamS
 from backend.app.domains.integrations.automations import AutomationService
 from backend.app.domains.integrations.identities import ExternalIdentityService
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.errors import AuthorizationError
+from backend.app.identity.authorization.permissions import WorkspaceAction
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

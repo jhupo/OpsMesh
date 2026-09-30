@@ -7,8 +7,6 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.utils import positive_int_or_none, string_list
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.orchestration.runs.authorization.runtime import (
     RunRuntimeAuthorizationService,
 )
@@ -18,7 +16,8 @@ from backend.app.domains.orchestration.runs.authorization.validation import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.runtime.environment.spaces.reservations import (
@@ -37,6 +36,7 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
+from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 
 class SelfHostedWorkerEligibilityService:

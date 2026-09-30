@@ -34,8 +34,8 @@ from backend.app.domains.workspace.storage.storage_transactions import (
     CompensatingObjectStorageWrites,
     ObjectStorageCompensationError,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.service import AuditService
+from backend.app.workspaces.management.models import Workspace
 
 
 class WorkspaceArchiveImportService:

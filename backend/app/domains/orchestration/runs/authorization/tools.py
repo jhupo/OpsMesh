@@ -10,12 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.utils import dict_or_empty, string_list, uuid_or_none
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resources import (
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.policy import (
     is_anthropic_provider,
@@ -38,6 +32,12 @@ from backend.app.domains.orchestration.runs.authorization.validation import (
 )
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 
 MAX_AGENT_TOOL_DEPTH = 3
 MAX_AGENT_TOOL_TURNS = 20

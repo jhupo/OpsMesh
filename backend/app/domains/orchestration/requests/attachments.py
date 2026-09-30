@@ -5,7 +5,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.agents.runtime.contracts import AgentInputAttachment
 from backend.app.domains.integrations.automation_authorization import (
     require_automation_principal,
@@ -17,6 +16,7 @@ from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.storage.content import WorkspaceFileContentReader
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.storage import create_storage
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 
 
 def message_attachments(

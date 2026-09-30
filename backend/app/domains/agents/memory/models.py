@@ -22,7 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.core.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
-    from backend.app.domains.workspace.tenants.models import Workspace
+    from backend.app.workspaces.management.models import Workspace
 
 
 def memory_content_fingerprint(title: str, content: str) -> str:

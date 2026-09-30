@@ -13,7 +13,6 @@ from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.state import TaskStateService, TaskStatus
 from backend.app.domains.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
-from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
 from backend.app.runtime.environment.spaces.reservations import (
     RuntimeSpaceReservationReleaseService,
 )
@@ -24,6 +23,7 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
+from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 
 class SelfHostedJobFinalizer:

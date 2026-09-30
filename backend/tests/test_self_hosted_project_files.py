@@ -19,8 +19,6 @@ from sqlalchemy.pool import StaticPool
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.projects.models import (
@@ -35,9 +33,12 @@ from backend.app.domains.workspace.projects.snapshots.service import RunProjectS
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.storage import LocalStorage
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 from backend.tests.fixtures.project_authorization import authorize_project_run
 
 TOKEN = "self-hosted-project-token"

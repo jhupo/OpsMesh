@@ -17,9 +17,9 @@ from backend.app.domains.workspace.data_transfer.contracts import (
 )
 from backend.app.domains.workspace.data_transfer.models import WorkspaceExportJob
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.workspaces.management.models import Workspace
 
 
 def scheduled_archive_export_request(

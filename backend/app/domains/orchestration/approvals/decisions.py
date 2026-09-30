@@ -6,15 +6,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.context import AuthenticatedUser
-from backend.app.domains.access.permissions import WorkspaceAction, WorkspaceRole
-from backend.app.domains.access.resources import (
-    ResourceAccessDenied,
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
-from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.agents.memory.episodic import AgentEpisodicMemoryService
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
@@ -22,6 +13,15 @@ from backend.app.domains.orchestration.approvals.run_gate import ApprovalRunGate
 from backend.app.domains.orchestration.runs.models import AgentRunStateSnapshot
 from backend.app.domains.workspace.reviews.resource_review_targets import (
     ResourceReviewDecisionService,
+)
+from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.authorization.context import AuthenticatedUser
+from backend.app.identity.authorization.permissions import WorkspaceAction, WorkspaceRole
+from backend.app.identity.authorization.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
 )
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType

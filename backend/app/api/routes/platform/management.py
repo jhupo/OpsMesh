@@ -12,28 +12,36 @@ from backend.app.api.schemas.platform.admin import (
     AdminProjectQuotaUpsertRequest,
     AdminProjectResponse,
     AdminProjectStatusUpdateRequest,
-    AdminResourceAuthorizationResponse,
-    AdminResourceGrantResponse,
-    AdminResourceGrantUpdateRequest,
-    AdminResourceOwnerUpdateRequest,
     AdminSystemLogResponse,
-    AdminWorkspaceMemberCreateRequest,
-    AdminWorkspaceMemberResponse,
-    AdminWorkspaceMemberUpdateRequest,
-    AdminWorkspaceResponse,
-    AdminWorkspaceStatusUpdateRequest,
 )
 from backend.app.core.db.session import get_db_session
 from backend.app.core.pagination import PageParams
-from backend.app.domains.access.models import SecuredResource, User
-from backend.app.domains.access.resources import ResourceAction, ResourceKind
 from backend.app.domains.platform.admin.management import (
     AdminResourceAuthorizationService,
     AdminSystemLogService,
     AdminWorkspaceManagementService,
 )
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.domains.workspace.tenants.quota_management import WorkspaceQuotaService
+from backend.app.identity.authorization.admin_schemas import (
+    AdminResourceAuthorizationResponse,
+    AdminResourceGrantResponse,
+    AdminResourceGrantUpdateRequest,
+    AdminResourceOwnerUpdateRequest,
+)
+from backend.app.identity.authorization.models import SecuredResource
+from backend.app.identity.authorization.resources import ResourceAction, ResourceKind
+from backend.app.identity.users.models import User
+from backend.app.workspaces.management.admin_schemas import (
+    AdminWorkspaceResponse,
+    AdminWorkspaceStatusUpdateRequest,
+)
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.admin_schemas import (
+    AdminWorkspaceMemberCreateRequest,
+    AdminWorkspaceMemberResponse,
+    AdminWorkspaceMemberUpdateRequest,
+)
+from backend.app.workspaces.members.models import WorkspaceMember
+from backend.app.workspaces.quotas.service import WorkspaceQuotaService
 
 router = APIRouter()
 

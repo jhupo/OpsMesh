@@ -9,12 +9,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.core.security.redaction import redact_sensitive_payload, redact_text_fragments
-from backend.app.domains.access.resource_queries import resource_query_scope
-from backend.app.domains.access.resources import (
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
 from backend.app.domains.agents.memory.configuration import initial_embedding_status
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
@@ -24,6 +18,12 @@ from backend.app.domains.agents.memory.models import (
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.identity.authorization.resource_queries import resource_query_scope
+from backend.app.identity.authorization.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 
 SEMANTIC_SCOPE_TYPES = frozenset({"workspace", "team", "agent"})
 SEMANTIC_KNOWLEDGE_TYPES = frozenset({"fact", "configuration", "policy", "procedure"})

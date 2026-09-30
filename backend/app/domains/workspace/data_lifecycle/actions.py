@@ -25,9 +25,9 @@ from backend.app.domains.workspace.data_lifecycle.settings import (
 )
 from backend.app.domains.workspace.data_transfer.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.workspaces.management.models import Workspace
 
 
 class RecoveryArchiveExportAction:

@@ -15,8 +15,6 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DomainError
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.utils import payload_hash
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.capabilities.plugins.policy import (
     plugin_resource_available,
     require_plugin_resource,
@@ -52,6 +50,8 @@ from backend.app.domains.orchestration.workflows.definitions.service import (
 )
 from backend.app.domains.workspace.projects.models import WorkspaceProject
 from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.scheduling.calendar import next_run_at, utc_datetime
 

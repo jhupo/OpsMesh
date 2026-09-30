@@ -22,7 +22,6 @@ from backend.app.core.db.session import get_db_session
 from backend.app.core.pagination import PageParams
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeContext,
     AgentRuntimeInterruption,
@@ -52,11 +51,13 @@ from backend.app.domains.workspace.reviews.policy import (
     RESOURCE_STATUS_REJECTED,
     REVIEW_TYPE_MCP_SERVER,
 )
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_approval_approve_enqueues_resume_job() -> None:

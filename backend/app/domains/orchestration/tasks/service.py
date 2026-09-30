@@ -9,17 +9,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resource_queries import (
-    execution_resource_queries,
-    resource_query_scope,
-)
-from backend.app.domains.access.resources import (
-    ResourceAccessDenied,
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.models import Task
@@ -30,6 +19,17 @@ from backend.app.domains.orchestration.workflows.planning.attempts import TaskPl
 from backend.app.domains.workspace.projects.models import WorkspaceProject
 from backend.app.domains.workspace.teams.models import AgentTeam
 from backend.app.domains.workspace.teams.runtime.snapshots import build_team_snapshot
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resource_queries import (
+    execution_resource_queries,
+    resource_query_scope,
+)
+from backend.app.identity.authorization.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.spaces.service import RuntimeSpaceService
 from backend.app.runtime.workers.queue import RedisQueue

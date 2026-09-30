@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
@@ -35,9 +34,6 @@ from backend.app.api.schemas.orchestration.tasks.timeline import (
     TaskTimelineResponse,
 )
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.access.resources import ResourceAction
 from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
@@ -69,6 +65,10 @@ from backend.app.domains.orchestration.tasks.observation.timeline import TaskTim
 from backend.app.domains.orchestration.tasks.observation.transcript import (
     TaskInteractionTranscriptService,
 )
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.identity.authorization.resources import ResourceAction
 from backend.app.runtime.workers.queue import RedisQueue
 
 if TYPE_CHECKING:

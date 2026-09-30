@@ -3,14 +3,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.errors import DatabaseConflictError
 from backend.app.core.db.session import get_db_session
 from backend.app.core.pagination import PageParams
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityCreateRequest,
     CapabilityResponse,
@@ -23,6 +20,9 @@ from backend.app.domains.capabilities.catalog.contracts import (
     ToolGroupUpdateRequest,
 )
 from backend.app.domains.capabilities.catalog.service import CapabilityService
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.permissions import WorkspaceAction
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])
 

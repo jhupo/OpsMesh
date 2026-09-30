@@ -33,8 +33,8 @@ from backend.app.domains.workspace.data_transfer.importers.skill_install import 
 )
 from backend.app.domains.workspace.data_transfer.importers.task import TaskMetadataImporter
 from backend.app.domains.workspace.data_transfer.importers.team import TeamMetadataImporter
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.service import AuditService
+from backend.app.workspaces.management.models import Workspace
 
 
 def _metadata_preview_token(request: WorkspaceImportRequest) -> str:

@@ -3,7 +3,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
@@ -19,8 +18,9 @@ from backend.app.api.schemas.operations.runtimes import (
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.permissions import WorkspaceAction
 from backend.app.runtime.environment.contracts import RuntimeLimits
 from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.environment.policies.quotas import RuntimeQuotaExceededError

@@ -12,7 +12,6 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
@@ -32,7 +31,9 @@ from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.storage import LocalStorage
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -> None:

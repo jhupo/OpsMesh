@@ -14,7 +14,6 @@ from backend.app.api.schemas.workspace.team_runtime import (
 )
 from backend.app.core.config import Settings
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.access.context import WorkspaceContext
 from backend.app.domains.agents.sessions.management import (
     PersistentAgentSessionManagementService,
 )
@@ -24,6 +23,7 @@ from backend.app.domains.workspace.teams.execution.loop import (
 from backend.app.domains.workspace.teams.service import (
     WorkspaceTeamService,
 )
+from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.runtime.environment.commands.queued_control import QueuedRuntimeControl
 from backend.app.runtime.environment.contracts import RuntimeLimits
 from backend.app.runtime.workers.queue import RedisQueue

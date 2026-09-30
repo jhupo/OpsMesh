@@ -15,8 +15,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.domains.capabilities.mcp.execution.contracts import (
     McpExecutionError,
@@ -47,9 +45,12 @@ from backend.app.domains.platform.admin.models import PlatformPolicy
 from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 @pytest.fixture(autouse=True)

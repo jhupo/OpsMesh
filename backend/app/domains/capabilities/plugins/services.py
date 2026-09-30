@@ -19,15 +19,6 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DomainError
 from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.core.utils import ensure_aware_utc
-from backend.app.domains.access.context import AuthenticatedUser
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.access.resources import (
-    ResourceAccessDenied,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
-from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.capabilities.plugins.models import (
     PluginBinding,
     PluginCredential,
@@ -41,8 +32,17 @@ from backend.app.domains.capabilities.resources.schema import reject_embedded_se
 from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
 from backend.app.domains.integrations.automation_models import Automation
 from backend.app.domains.integrations.identities import ExternalIdentityService
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.authorization.context import AuthenticatedUser
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.identity.authorization.resources import (
+    ResourceAccessDenied,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.observability.audit.service import AuditService
+from backend.app.workspaces.management.models import Workspace
 
 SERVICE_PERMISSIONS = frozenset(
     {

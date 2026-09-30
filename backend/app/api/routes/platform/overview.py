@@ -5,10 +5,11 @@ from backend.app.api.routes.platform.dependencies import (
     admin_overview_service,
     admin_workspace_management_service,
 )
-from backend.app.api.schemas.platform.admin import AdminOverviewResponse, AdminWorkspaceResponse
+from backend.app.api.schemas.platform.admin import AdminOverviewResponse
 from backend.app.core.pagination import PageParams
 from backend.app.domains.platform.admin.management import AdminWorkspaceManagementService
 from backend.app.domains.platform.admin.overview import AdminOverviewService
+from backend.app.workspaces.management.admin_schemas import AdminWorkspaceResponse
 
 router = APIRouter()
 

@@ -45,7 +45,6 @@ from backend.app.api.dependencies.queue import get_worker_queue
 from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.capabilities.plugins.user_services import PluginUserServices
 from backend.app.domains.integrations.automation_stream import AutomationStreamService
@@ -55,6 +54,7 @@ from backend.app.domains.integrations.plugin_messages import PluginMessageServic
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
 from backend.app.domains.workspace.storage.service import WorkspaceFileService
 from backend.app.domains.workspace.storage.storage import create_storage
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.observability.audit.security_events import SecurityAuditService
 from backend.app.runtime.workers.queue import RedisQueue
 

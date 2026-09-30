@@ -8,13 +8,19 @@ from sqlalchemy import func, select
 from backend.app.core.db.base import Base
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
-from backend.app.domains.access.models import ResourceGrant, SecuredResource, User
-from backend.app.domains.access.resources import RESOURCE_TABLES, ResourceAction, ResourceKind
 from backend.app.domains.platform.admin.base import AdminSessionService
 from backend.app.domains.workspace.projects.models import WorkspaceProject
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.authorization.models import ResourceGrant, SecuredResource
+from backend.app.identity.authorization.resources import (
+    RESOURCE_TABLES,
+    ResourceAction,
+    ResourceKind,
+)
+from backend.app.identity.users.models import User
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.service import AuditService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 class AdminResourceAuthorizationService(AdminSessionService):

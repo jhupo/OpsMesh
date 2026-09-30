@@ -14,10 +14,9 @@ from backend.app.api.dependencies.runtime import get_docker_runtime_client
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.models import User
 from backend.app.domains.platform.admin.models import PlatformPolicy
 from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.runtime.environment.contracts import (
     DockerRuntimeClient,
@@ -30,6 +29,8 @@ from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 TOKEN = "test-token"
 PINNED_IMAGE = "python@sha256:" + "0" * 64

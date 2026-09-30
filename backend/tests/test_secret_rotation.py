@@ -11,15 +11,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.providers.models import ModelProviderCredential
 from backend.app.domains.capabilities.mcp.models import McpCredentialReference
 from backend.app.domains.integrations.webhooks.models import WebhookSubscription
 from backend.app.domains.platform.credential_rotation import HostedSecretReencryptService
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 OLD_SECRET = "old-credential-secret"
 NEW_SECRET = "new-credential-secret"

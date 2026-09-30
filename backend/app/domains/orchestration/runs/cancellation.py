@@ -8,10 +8,10 @@ from sqlalchemy import Engine, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 
 
 @dataclass(slots=True)

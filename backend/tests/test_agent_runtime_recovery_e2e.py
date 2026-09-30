@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
 from backend.app.domains.orchestration.runs.control import RunControlService
 from backend.app.domains.orchestration.runs.execution import (
@@ -33,6 +32,7 @@ from backend.app.domains.orchestration.workflows.steps.scheduling_state import (
     mark_step_scheduling_runnable,
 )
 from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry

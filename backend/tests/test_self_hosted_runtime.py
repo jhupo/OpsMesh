@@ -14,8 +14,6 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
@@ -33,7 +31,8 @@ from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.platform.admin.models import PlatformPolicy
 from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember, WorkspaceQuota
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.models import RuntimeEvent, WorkspaceRuntime
@@ -56,6 +55,9 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.runtime.self_hosted.service import SelfHostedRuntimeService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
+from backend.app.workspaces.quotas.models import WorkspaceQuota
 
 TOKEN = "test-token"
 

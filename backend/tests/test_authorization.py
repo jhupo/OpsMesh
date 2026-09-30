@@ -9,11 +9,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.domains.access.errors import AuthenticationError, PermissionDeniedError
-from backend.app.domains.access.models import User, UserAPIToken
-from backend.app.domains.access.permissions import WorkspaceAction, role_allows
-from backend.app.domains.access.service import AuthorizationService
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.auth.models import UserAPIToken
+from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.authorization.errors import AuthenticationError, PermissionDeniedError
+from backend.app.identity.authorization.permissions import WorkspaceAction, role_allows
+from backend.app.identity.users.models import User
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_role_permissions_are_hierarchical() -> None:

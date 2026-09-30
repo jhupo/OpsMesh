@@ -24,10 +24,6 @@ from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import ResourceGrant, SecuredResource, User
-from backend.app.domains.access.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
-from backend.app.domains.access.resources import ResourceAction, ResourceKind
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     memory_content_fingerprint,
@@ -76,13 +72,15 @@ from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.teams.operations.console import TeamOperationsConsoleService
-from backend.app.domains.workspace.tenants.models import (
-    Workspace,
-    WorkspaceInvite,
-    WorkspaceMember,
-    WorkspaceQuota,
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.models import ResourceGrant, SecuredResource
+from backend.app.identity.authorization.permissions import (
+    ROLE_PERMISSIONS,
+    WorkspaceAction,
+    WorkspaceRole,
 )
-from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
+from backend.app.identity.authorization.resources import ResourceAction, ResourceKind
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.security_models import SecurityEvent
@@ -106,6 +104,10 @@ from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.scheduling.models import WorkspaceScheduledJob
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceInvite, WorkspaceMember
+from backend.app.workspaces.quotas.models import WorkspaceQuota
+from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 TOKEN = "test-token"
 

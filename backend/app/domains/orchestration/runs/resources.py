@@ -8,14 +8,14 @@ from sqlalchemy.orm import Session
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.workspace.tenants.models import WorkspaceReservation
-from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceReservation
 from backend.app.runtime.environment.spaces.reservations import (
     RuntimeSpaceCapacityReservationService,
     RuntimeSpaceReservationAttachmentService,
     RuntimeSpaceReservationReleaseService,
 )
+from backend.app.workspaces.quotas.models import WorkspaceReservation
+from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 MarkStepBlocked = Callable[[TaskStep, str, dict[str, object] | None], None]
 MarkStepRunnable = Callable[[TaskStep], None]

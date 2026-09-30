@@ -25,7 +25,6 @@ from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.rate_limits import FixedWindowRateLimiter
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
 from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
 from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
 from backend.app.domains.integrations.webhooks.models import (
@@ -42,11 +41,13 @@ from backend.app.domains.integrations.webhooks.scheduler import (
 from backend.app.domains.integrations.webhooks.subscriptions import (
     WebhookSubscriptionService,
 )
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 TOKEN = "test-token"
 SECRET = "test-credential-secret"

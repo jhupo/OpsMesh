@@ -10,8 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
 from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.domains.access.models import User
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.observability.audit.service import AuditService
 from backend.app.observability.notifications.contracts import NotificationCreateRequest
 from backend.app.observability.notifications.models import (
@@ -21,6 +20,8 @@ from backend.app.observability.notifications.models import (
     WorkspaceNotification,
 )
 from backend.app.observability.notifications.service import NotificationCenterService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 @dataclass(frozen=True)

@@ -20,8 +20,8 @@ from backend.app.domains.workspace.data_transfer.models import WorkspaceExportJo
 from backend.app.domains.workspace.projects.models import WorkspaceProjectFile
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.service import AuditService
+from backend.app.workspaces.management.models import Workspace
 
 RETENTION_DELETED_FILE_STATUS = "retention_deleted"
 

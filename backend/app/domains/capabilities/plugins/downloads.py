@@ -140,7 +140,7 @@ class PluginDownloadWorker:
     def _fail(self, lease: DownloadLease, code: str, *, retry: bool) -> None:
         with self.session_factory() as session:
             # Failure recording does not need the initiating actor to remain authorized.
-            from backend.app.domains.workspace.tenants.models import Workspace
+            from backend.app.workspaces.management.models import Workspace
 
             session.scalar(
                 select(Workspace).where(Workspace.id == lease.workspace_id).with_for_update()

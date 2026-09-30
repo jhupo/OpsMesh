@@ -12,8 +12,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     memory_content_fingerprint,
@@ -45,13 +43,16 @@ from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
 from backend.app.runtime.environment.contracts import (
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.models import SelfHostedMcpJob
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 @pytest.fixture(autouse=True)

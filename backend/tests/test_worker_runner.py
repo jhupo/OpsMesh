@@ -18,9 +18,6 @@ from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
 from backend.app.domains.agents.messages.models import AgentMessage
 from backend.app.domains.agents.profiles.models import AgentProfile
@@ -65,7 +62,9 @@ from backend.app.domains.workspace.reviews.service import ResourceReview
 from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoopQueueService
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import ResourceAccessDenied
+from backend.app.identity.users.models import User
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.costs.models import (
     ModelPricingRule,
@@ -93,6 +92,8 @@ from backend.app.runtime.workers.runner import (
     WorkerRunner,
     WorkerRunnerConfig,
 )
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 @pytest.fixture(autouse=True)

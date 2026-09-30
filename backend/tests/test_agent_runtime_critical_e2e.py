@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.app.core.config import Settings
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
@@ -53,6 +52,7 @@ from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.storage import LocalStorage
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.contracts import RuntimeCommandResult
 from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime

@@ -20,8 +20,6 @@ from backend.app.domains.orchestration.workflows.definitions.blocked_reasons imp
     explain_blocked_reason,
 )
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.domains.workspace.tenants.settings import scheduler_settings
 from backend.app.runtime.operations.contracts.scheduler import (
     BlockedStepExplanationResponse,
     OperationsSchedulerResponse,
@@ -30,6 +28,8 @@ from backend.app.runtime.operations.contracts.scheduler import (
     SchedulerPolicyResponse,
     SchedulerPriorityBucketResponse,
 )
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.management.settings import scheduler_settings
 
 
 class SchedulerPolicyService:

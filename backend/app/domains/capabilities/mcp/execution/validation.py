@@ -10,13 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resources import (
-    ResourceAccessDenied,
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
 from backend.app.domains.capabilities.catalog.contracts import CapabilityToolDescriptor
 from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.domains.capabilities.mcp.catalog.rules import (
@@ -39,6 +32,13 @@ from backend.app.domains.orchestration.runs.models import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 
 
 @dataclass(frozen=True, slots=True)

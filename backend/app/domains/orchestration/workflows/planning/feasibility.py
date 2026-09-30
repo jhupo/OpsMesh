@@ -11,7 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DomainError
-from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.snapshots import ModelProviderResolutionService
 from backend.app.domains.capabilities.catalog.contracts import EffectiveCapabilityCatalogResponse
@@ -31,9 +30,10 @@ from backend.app.domains.orchestration.workflows.scheduling.policy import (
     WorkspaceSchedulerPolicy,
 )
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.tenants.models import WorkspaceQuota
+from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.workspaces.quotas.models import WorkspaceQuota
 
 _ACTIVE_STATUS = "active"
 _ACTIVE_RUNS_KEY = "active_runs"

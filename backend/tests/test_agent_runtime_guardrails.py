@@ -12,7 +12,6 @@ from sqlalchemy import select
 
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.core.config import Settings
-from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.profiles.service import AgentManagementService
 from backend.app.domains.agents.runtime.contracts import (
@@ -39,6 +38,7 @@ from backend.app.domains.orchestration.runs.events import RunEventRecorder
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.runs.result_payloads import run_output_payload
 from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 

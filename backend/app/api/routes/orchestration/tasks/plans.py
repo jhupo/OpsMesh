@@ -6,7 +6,6 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
@@ -21,8 +20,6 @@ from backend.app.api.schemas.orchestration.tasks.management import (
     TaskPlanRetryRequest,
 )
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.workflows.definitions.application import (
@@ -44,6 +41,9 @@ from backend.app.domains.orchestration.workflows.planning.mutation import (
     TaskPlanMutationError,
     TaskPlanMutationService,
 )
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.permissions import WorkspaceAction
 from backend.app.runtime.workers.queue import RedisQueue
 
 if TYPE_CHECKING:

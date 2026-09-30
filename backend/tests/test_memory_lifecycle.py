@@ -17,7 +17,6 @@ from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
 from backend.app.domains.agents.memory.configuration import (
     MemoryConfigurationConflictError,
@@ -58,7 +57,7 @@ from backend.app.domains.agents.providers.credentials import (
     ModelProviderCredentialCommandService,
 )
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
@@ -66,6 +65,8 @@ from backend.app.runtime.workers.handlers.memory_embedding import (
     MemoryEmbeddingJobHandler,
 )
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_hybrid_retrieval_uses_weighted_rrf_and_deduplicates_content() -> None:

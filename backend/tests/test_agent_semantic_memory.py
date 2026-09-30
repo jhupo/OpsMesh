@@ -16,7 +16,6 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.configuration import (
     WorkspaceMemoryConfigurationService,
 )
@@ -30,8 +29,10 @@ from backend.app.domains.agents.providers.credentials import (
 )
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 TOKEN = "test-internal-token"
 

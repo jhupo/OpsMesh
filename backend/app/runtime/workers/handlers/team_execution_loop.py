@@ -1,15 +1,15 @@
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resource_queries import (
+from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoopService
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resource_queries import (
     ResourceQueryScope,
     bind_resource_queries,
     unbind_resource_queries,
 )
-from backend.app.domains.access.resources import (
+from backend.app.identity.authorization.resources import (
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
 )
-from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoopService
 from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.environment.service import RuntimeControlService
 from backend.app.runtime.workers.contracts import JobPayload

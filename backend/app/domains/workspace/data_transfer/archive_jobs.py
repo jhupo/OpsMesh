@@ -35,10 +35,10 @@ from backend.app.domains.workspace.storage.storage import ObjectStorage
 from backend.app.domains.workspace.storage.storage_transactions import (
     CompensatingObjectStorageWrites,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.workspaces.management.models import Workspace
 
 
 def _installed_release() -> str | None:

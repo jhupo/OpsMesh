@@ -12,9 +12,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
-from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeContext,
@@ -35,8 +32,12 @@ from backend.app.domains.workspace.reviews.models import ResourceReview
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.storage import LocalStorage
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
 from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 @pytest.fixture(autouse=True)

@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.telemetry.request_context import current_evidence_context
+from backend.app.workspaces.management.models import Workspace
 
 
 @dataclass(frozen=True)

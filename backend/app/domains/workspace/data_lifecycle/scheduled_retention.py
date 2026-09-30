@@ -16,7 +16,7 @@ from backend.app.domains.workspace.data_lifecycle.settings import (
     _positive_int,
     _retention_settings,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.workspaces.management.models import Workspace
 
 
 class ScheduledRetentionService:

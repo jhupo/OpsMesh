@@ -12,20 +12,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.db.base import Base
 from backend.app.core.errors import DomainError
-from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.access.resource_queries import (
-    ResourceQueryScope,
-    bind_resource_queries,
-    execution_resource_queries,
-    unbind_resource_queries,
-)
-from backend.app.domains.access.resources import (
-    RESOURCE_TABLES,
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
-from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.agents.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryConflictError,
@@ -33,6 +19,20 @@ from backend.app.domains.agents.memory.semantic import (
 )
 from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
+from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.identity.authorization.resource_queries import (
+    ResourceQueryScope,
+    bind_resource_queries,
+    execution_resource_queries,
+    unbind_resource_queries,
+)
+from backend.app.identity.authorization.resources import (
+    RESOURCE_TABLES,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.observability.audit.service import AuditService
 
 

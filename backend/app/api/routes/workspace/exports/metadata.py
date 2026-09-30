@@ -4,10 +4,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.workspace.data_transfer.contracts import (
     WorkspaceExportRequest,
     WorkspaceImportRequest,
@@ -18,6 +15,9 @@ from backend.app.domains.workspace.data_transfer.importers.metadata import (
 )
 from backend.app.domains.workspace.data_transfer.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.security import content_disposition_attachment
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.permissions import WorkspaceAction
 
 router = APIRouter()
 

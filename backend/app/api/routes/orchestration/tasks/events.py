@@ -8,7 +8,6 @@ from fastapi.responses import StreamingResponse
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.api.routes.orchestration.tasks.streaming import (
     _message_sequence,
@@ -29,18 +28,19 @@ from backend.app.api.schemas.orchestration.tasks.status import (
 )
 from backend.app.core.db.session import get_db_session
 from backend.app.core.pagination import PageParams
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.access.resources import (
+from backend.app.domains.orchestration.tasks.events import TaskEventBus
+from backend.app.domains.orchestration.tasks.feedback import TaskFeedbackService
+from backend.app.domains.orchestration.tasks.observation.live_status import TaskLiveStatusService
+from backend.app.domains.orchestration.tasks.queries import TaskQueryService
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.identity.authorization.resources import (
     ResourceAccessDenied,
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
 )
-from backend.app.domains.orchestration.tasks.events import TaskEventBus
-from backend.app.domains.orchestration.tasks.feedback import TaskFeedbackService
-from backend.app.domains.orchestration.tasks.observation.live_status import TaskLiveStatusService
-from backend.app.domains.orchestration.tasks.queries import TaskQueryService
 from backend.app.observability.telemetry.trace_context import current_trace_metadata
 
 if TYPE_CHECKING:

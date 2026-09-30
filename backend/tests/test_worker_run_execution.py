@@ -16,8 +16,6 @@ from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryEntry,
     WorkspaceMemoryRetrievalEvent,
@@ -101,12 +99,8 @@ from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBu
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
-from backend.app.domains.workspace.tenants.models import (
-    Workspace,
-    WorkspaceMember,
-    WorkspaceQuota,
-    WorkspaceReservation,
-)
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.costs.models import ModelUsageRecord
 from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
@@ -120,6 +114,9 @@ from backend.app.runtime.environment.spaces.models import (
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue, consume_once
 from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
+from backend.app.workspaces.quotas.models import WorkspaceQuota, WorkspaceReservation
 
 
 @pytest.fixture(autouse=True)

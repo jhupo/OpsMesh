@@ -23,8 +23,8 @@ from backend.app.domains.workspace.data_transfer.repository import (
 from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.service import AuditService
+from backend.app.workspaces.management.models import Workspace
 
 
 class WorkspaceArchiveRestoreDrillService:

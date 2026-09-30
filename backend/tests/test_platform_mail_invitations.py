@@ -7,8 +7,9 @@ from pytest import MonkeyPatch, raises
 from sqlalchemy import select
 from test_admin_api import _admin_headers, _client
 
-from backend.app.domains.access.models import User, UserInvitation
-from backend.app.domains.access.service import AuthorizationService
+from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.invitations.models import UserInvitation
+from backend.app.identity.users.models import User
 from backend.app.messaging.email.models import PlatformMailSettings
 from backend.app.messaging.email.routes import router as email_router
 from backend.app.messaging.email.smtp import send_smtp_message

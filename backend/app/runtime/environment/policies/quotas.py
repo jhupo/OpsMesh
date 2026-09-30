@@ -4,9 +4,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.runtime.environment.contracts import RuntimeLimits
 from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.workspaces.management.models import Workspace
 
 
 @dataclass(frozen=True)

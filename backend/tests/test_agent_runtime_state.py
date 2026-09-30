@@ -9,14 +9,15 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.runtime.contracts import AgentRuntimeResumeState
 from backend.app.domains.agents.runtime.state import (
     MAX_SERIALIZED_RUN_STATE_BYTES,
     AgentRunStateStore,
 )
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_agent_run_state_store_encrypts_updates_and_consumes_state() -> None:

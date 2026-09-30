@@ -5,7 +5,6 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.approvals.models import Approval
 from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
@@ -35,6 +34,7 @@ from backend.app.domains.orchestration.workflows.definitions.service import (
 )
 from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.observability.audit.models import AuditEvent
 from backend.tests.test_capability_resources import (
     _client as _api_client,
@@ -629,8 +629,8 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
     assert created.status_code == 201, created.text
     path = f"{base}/automations/{created.json()['id']}/events"
     if trigger_type == "message":
-        from backend.app.domains.access.models import User
-        from backend.app.domains.workspace.tenants.models import WorkspaceMember
+        from backend.app.identity.users.models import User
+        from backend.app.workspaces.members.models import WorkspaceMember
 
         employee = User(email="message-user@example.com", display_name="Message user")
         session.add(employee)
@@ -1383,7 +1383,6 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     from backend.app.api.dependencies.queue import get_worker_queue
     from backend.app.api.dependencies.redis import get_redis_client
     from backend.app.core.config import get_settings
-    from backend.app.domains.access.models import User
     from backend.app.domains.agents.runtime.contracts import (
         AgentRunResult,
         AgentRuntimeStructuredOutput,
@@ -1396,8 +1395,9 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     )
     from backend.app.domains.workspace.reviews.models import ResourceReview
     from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
-    from backend.app.domains.workspace.tenants.models import WorkspaceMember
+    from backend.app.identity.users.models import User
     from backend.app.runtime.workers.contracts import JobPayload, JobType
+    from backend.app.workspaces.members.models import WorkspaceMember
     from backend.tests.test_webhooks import _queue
     from backend.tests.test_worker_run_execution import (
         _run_agent_sync,

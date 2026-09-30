@@ -16,7 +16,7 @@ from backend.app.domains.workspace.reviews.policy import (
     _review_timeout_seconds,
     _uuid_or_none,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.workspaces.management.models import Workspace
 
 
 @dataclass(frozen=True)

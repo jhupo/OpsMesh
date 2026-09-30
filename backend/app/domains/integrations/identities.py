@@ -5,17 +5,17 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.access.context import AuthenticatedUser
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.access.resources import (
+from backend.app.domains.integrations.automation_models import Automation, ExternalIdentityBinding
+from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.authorization.context import AuthenticatedUser
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.identity.authorization.resources import (
     ResourceAccessDenied,
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
 )
-from backend.app.domains.access.service import AuthorizationService
-from backend.app.domains.integrations.automation_models import Automation, ExternalIdentityBinding
 from backend.app.observability.audit.service import AuditService
 
 

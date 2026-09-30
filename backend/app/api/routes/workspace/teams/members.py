@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,
@@ -26,8 +25,6 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.core.pagination import PageParams
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction
 from backend.app.domains.agents.messages.models import AgentMessage
 from backend.app.domains.agents.profiles.contracts import AgentProfileResponse
 from backend.app.domains.agents.profiles.models import AgentProfile
@@ -46,6 +43,9 @@ from backend.app.domains.workspace.teams.service import (
     TeamMemberUpdateCommand,
     WorkspaceTeamService,
 )
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.permissions import WorkspaceAction
 from backend.app.observability.audit.service import AuditService
 
 if TYPE_CHECKING:

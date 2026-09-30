@@ -3,7 +3,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
@@ -14,10 +13,11 @@ from backend.app.api.schemas.orchestration.approvals import (
 )
 from backend.app.core.db.session import get_db_session
 from backend.app.core.pagination import PageParams
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.permissions import WorkspaceAction, WorkspaceRole
 from backend.app.domains.orchestration.approvals.decisions import ApprovalDecisionService
 from backend.app.domains.orchestration.approvals.queries import ApprovalQueryService
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.permissions import WorkspaceAction, WorkspaceRole
 from backend.app.runtime.workers.queue import RedisQueue
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/approvals", tags=["approvals"])

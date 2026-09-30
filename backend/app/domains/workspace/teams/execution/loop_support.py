@@ -7,11 +7,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam as _AgentTeamModel
 from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue

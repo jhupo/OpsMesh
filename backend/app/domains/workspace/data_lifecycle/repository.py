@@ -9,9 +9,9 @@ from backend.app.domains.workspace.data_transfer.models import (
     WorkspaceExportJob,
     WorkspaceExportJobStatus,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.service import AuditService
+from backend.app.workspaces.management.models import Workspace
 
 
 class WorkspaceDataLifecycleRepository:

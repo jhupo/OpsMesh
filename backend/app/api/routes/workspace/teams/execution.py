@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import workspace_dependency
 from backend.app.api.dependencies.queue import (
     get_worker_queue,
 )
@@ -25,15 +24,6 @@ from backend.app.api.schemas.workspace.team_runtime import (
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.session import get_db_session
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.access.context import WorkspaceContext
-from backend.app.domains.access.errors import PermissionDeniedError
-from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.access.resources import (
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
-from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.workspace.teams.execution.loop import (
     TeamExecutionLoopService,
     enqueue_team_execution_loop_job,
@@ -44,6 +34,16 @@ from backend.app.domains.workspace.teams.operations.operator_actions import (
 )
 from backend.app.domains.workspace.teams.service import (
     WorkspaceTeamService,
+)
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.errors import PermissionDeniedError
+from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.identity.authorization.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
 )
 from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.queue import RedisQueue

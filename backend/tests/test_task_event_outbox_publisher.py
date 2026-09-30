@@ -11,16 +11,17 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.tasks.event_outbox import (
     TaskEventOutboxPublisher,
     TaskEventOutboxService,
 )
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
 from backend.app.domains.orchestration.tasks.models import Task, TaskEventOutbox
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_task_event_outbox_publisher_publishes_pending_event() -> None:

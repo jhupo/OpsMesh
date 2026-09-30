@@ -12,13 +12,12 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.service import RunOrchestrationService
 from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.tasks.state import TaskStatus
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.runtime.environment.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
@@ -31,6 +30,8 @@ from backend.app.runtime.workers.scheduling.models import (
 )
 from backend.app.runtime.workers.scheduling.service import WorkspaceScheduledJobService
 from backend.app.runtime.workers.scheduling.types import ScheduledJobMaintenanceSummary
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 POSTGRES_TEST_URL_ENV = "OPSMESH_TEST_POSTGRES_URL"
 

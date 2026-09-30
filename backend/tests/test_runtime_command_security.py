@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
 from backend.app.core.db.base import Base
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.contracts import (
@@ -20,6 +19,7 @@ from backend.app.runtime.environment.contracts import (
 from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.service import RuntimeControlService
+from backend.app.workspaces.management.models import Workspace
 
 
 class FakeDockerClient:

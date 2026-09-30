@@ -14,8 +14,8 @@ from backend.app.domains.workspace.teams.runtime.service import (
     TEAM_RUNTIME_STATUS_KEY,
     TEAM_RUNTIME_STOPPED,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.workspaces.management.models import Workspace
 
 
 class TeamExecutionLoopQueueRepository:

@@ -7,7 +7,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.workspace.teams.execution.loop_support import (
     TEAM_EXECUTION_LOOP_WINDOW_SECONDS,
     enqueue_team_execution_loop_job,
@@ -24,6 +23,7 @@ from backend.app.domains.workspace.teams.execution.runtime_candidates import (
     _team_loop_candidate,
 )
 from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.runtime.workers.queue import RedisQueue
 
 

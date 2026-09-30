@@ -11,8 +11,6 @@ from sqlalchemy.orm import sessionmaker
 
 import backend.app.domains.agents.runtime.providers.openai.streaming as openai_streaming
 from backend.app.core.db.base import Base
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
@@ -26,7 +24,10 @@ from backend.app.domains.orchestration.runs.cancellation import DatabaseRunCance
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 class TriggerCancellation:

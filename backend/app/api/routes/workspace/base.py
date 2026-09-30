@@ -4,11 +4,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.auth import (
-    account_action_dependency,
-    get_current_user,
-    workspace_dependency,
-)
 from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.api.idempotency import (
     IdempotencyInProgressError,
@@ -16,7 +11,20 @@ from backend.app.api.idempotency import (
     run_idempotent_create,
 )
 from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.api.schemas.workspace.workspaces import (
+from backend.app.core.config import Settings, get_settings
+from backend.app.core.db.errors import DatabaseConflictError
+from backend.app.core.db.session import get_db_session
+from backend.app.core.pagination import PageParams
+from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.identity.auth.dependencies import (
+    account_action_dependency,
+    get_current_user,
+    workspace_dependency,
+)
+from backend.app.identity.authorization.context import AuthenticatedUser, WorkspaceContext
+from backend.app.identity.authorization.permissions import AccountAction, WorkspaceAction
+from backend.app.workspaces.management.health.service import WorkspaceHealthService
+from backend.app.workspaces.management.schemas import (
     WorkspaceCreateRequest,
     WorkspaceHealthResponse,
     WorkspaceHealthSnapshotResponse,
@@ -24,15 +32,7 @@ from backend.app.api.schemas.workspace.workspaces import (
     WorkspaceResponse,
     WorkspaceUpdateRequest,
 )
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.errors import DatabaseConflictError
-from backend.app.core.db.session import get_db_session
-from backend.app.core.pagination import PageParams
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.context import AuthenticatedUser, WorkspaceContext
-from backend.app.domains.access.permissions import AccountAction, WorkspaceAction
-from backend.app.domains.workspace.tenants.health.service import WorkspaceHealthService
-from backend.app.domains.workspace.tenants.service import WorkspaceService
+from backend.app.workspaces.management.service import WorkspaceService
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]

@@ -7,8 +7,6 @@ from sqlalchemy.orm import Session
 from backend.app.core.db.base import Base
 from backend.app.core.db.pagination import page_scalars
 from backend.app.core.pagination import PageParams
-from backend.app.domains.access.resource_queries import require_resource_row, resource_query_scope
-from backend.app.domains.access.resources import ResourceAction
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.extensions.contracts import (
     DomainItemCreateRequest,
@@ -22,6 +20,11 @@ from backend.app.domains.workspace.extensions.models import (
     ReviewComment,
     RevisionRequest,
 )
+from backend.app.identity.authorization.resource_queries import (
+    require_resource_row,
+    resource_query_scope,
+)
+from backend.app.identity.authorization.resources import ResourceAction
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.app.runtime.workers.queue import RedisQueue
 

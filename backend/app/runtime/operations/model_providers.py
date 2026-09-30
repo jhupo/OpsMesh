@@ -27,13 +27,13 @@ from backend.app.domains.agents.providers.views import (
 )
 from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.runtime.operations.contracts.providers import (
     ModelProviderOperationsAgentResponse,
     ModelProviderOperationsCredentialResponse,
     ModelProviderOperationsResponse,
     ModelProviderOperationsRunResponse,
 )
+from backend.app.workspaces.management.models import Workspace
 
 
 class ModelProviderOperationsService:

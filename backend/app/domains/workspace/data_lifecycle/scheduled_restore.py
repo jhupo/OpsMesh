@@ -17,7 +17,7 @@ from backend.app.domains.workspace.data_lifecycle.scheduling import (
 from backend.app.domains.workspace.data_lifecycle.settings import _restore_drill_settings
 from backend.app.domains.workspace.data_transfer.service import WorkspaceExportService
 from backend.app.domains.workspace.storage.storage import ObjectStorage
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.workspaces.management.models import Workspace
 
 
 class ScheduledRestoreDrillService:

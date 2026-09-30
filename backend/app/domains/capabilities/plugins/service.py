@@ -11,8 +11,6 @@ from sqlalchemy.orm import Session
 from backend.app.core.db.errors import flush_or_raise_conflict
 from backend.app.core.errors import ConflictError, NotFoundError, PolicyDeniedError
 from backend.app.core.utils import payload_hash
-from backend.app.domains.access.models import User
-from backend.app.domains.access.permissions import WorkspaceAction, role_allows
 from backend.app.domains.capabilities.marketplace.models import WorkspaceMarketplaceInstall
 from backend.app.domains.capabilities.plugins.contracts import (
     PluginAction,
@@ -34,8 +32,11 @@ from backend.app.domains.capabilities.resources.schema import (
     validate_json_schema,
     validate_parameters,
 )
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.authorization.permissions import WorkspaceAction, role_allows
+from backend.app.identity.users.models import User
 from backend.app.observability.audit.service import AuditService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 class PluginService:

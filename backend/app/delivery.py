@@ -42,7 +42,7 @@ def main() -> None:
         return
     if args.command in {"bootstrap-admin", "reset-admin-password"}:
         from backend.app.core.db.session import SessionLocal
-        from backend.app.domains.access.service import AuthorizationService
+        from backend.app.identity.auth.service import AuthorizationService
 
         with SessionLocal() as session:
             service = AuthorizationService(session)

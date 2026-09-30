@@ -12,15 +12,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DomainError
-from backend.app.domains.access.context import AuthenticatedUser
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resource_queries import execution_resource_queries
-from backend.app.domains.access.resources import (
-    ResourceAccessDenied,
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
 from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.capabilities.resources.schema import reject_embedded_secrets
 from backend.app.domains.integrations.automation_authorization import require_automation_principal
@@ -30,6 +21,15 @@ from backend.app.domains.integrations.identities import ExternalIdentityService
 from backend.app.domains.workspace.storage.models import WorkspaceFile
 from backend.app.domains.workspace.storage.security import safe_filename
 from backend.app.domains.workspace.storage.service import WorkspaceFileService
+from backend.app.identity.authorization.context import AuthenticatedUser
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resource_queries import execution_resource_queries
+from backend.app.identity.authorization.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 
 
 class PluginAttachmentService:

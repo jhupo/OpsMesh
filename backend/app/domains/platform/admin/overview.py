@@ -3,11 +3,11 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from backend.app.domains.platform.admin.base import AdminSessionService
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.security_models import SecurityEvent
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.runtime.workers.models import WorkerLease, WorkerNode
+from backend.app.workspaces.management.models import Workspace
 
 
 class AdminOverviewService(AdminSessionService):

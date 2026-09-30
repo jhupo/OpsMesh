@@ -11,12 +11,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.utils import payload_hash
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resource_queries import (
-    execution_resource_queries,
-    unbind_resource_queries,
-)
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.agents.providers.contracts import ModelProviderUnavailableError
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
@@ -67,6 +61,12 @@ from backend.app.domains.orchestration.workflows.definitions.subworkflows import
 from backend.app.domains.workspace.projects.io.service import RunProjectIOService
 from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
 from backend.app.domains.workspace.storage.storage import ObjectStorage
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resource_queries import (
+    execution_resource_queries,
+    unbind_resource_queries,
+)
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.contracts import RuntimeEnvironmentError
 from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry

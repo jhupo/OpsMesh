@@ -7,13 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DomainError
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resources import (
-    ResourceAccessDenied,
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
 from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
 from backend.app.domains.integrations.automation_models import Automation
@@ -21,6 +14,13 @@ from backend.app.domains.integrations.automation_stream import AutomationStreamS
 from backend.app.domains.integrations.identities import ExternalIdentityService
 from backend.app.domains.orchestration.approvals.decisions import ApprovalDecisionService
 from backend.app.domains.orchestration.approvals.models import Approval
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 from backend.app.runtime.workers.queue import RedisQueue
 
 

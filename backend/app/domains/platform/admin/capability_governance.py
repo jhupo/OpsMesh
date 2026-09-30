@@ -12,12 +12,12 @@ from backend.app.domains.capabilities.marketplace.models import MarketplaceListi
 from backend.app.domains.capabilities.mcp.models import McpServer, McpToolAllowlist
 from backend.app.domains.capabilities.resources.models import CapabilityResource
 from backend.app.domains.capabilities.skills.models import Skill, WorkspaceSkillInstall
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.observability.audit.security_events import (
     SecurityAuditService,
     SecurityRequestContext,
 )
 from backend.app.observability.audit.service import AuditService
+from backend.app.workspaces.management.models import Workspace
 
 
 class AdminCapabilityKind(StrEnum):

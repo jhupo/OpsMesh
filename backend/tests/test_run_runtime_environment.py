@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.db.base import Base
 from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.runtime.environment.contracts import RuntimeCommandInputFile, RuntimeCommandResult
 from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.environment.run_environment import RunRuntimeEnvironmentService
+from backend.app.workspaces.management.models import Workspace
 
 
 class FakeDockerClient:

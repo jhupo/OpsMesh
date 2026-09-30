@@ -21,7 +21,7 @@ from backend.app.domains.workspace.storage.security import safe_filename
 from backend.app.domains.workspace.storage.storage_transactions import (
     CompensatingObjectStorageWrites,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.workspaces.management.models import Workspace
 
 
 class WorkspaceArchiveFileImporter:

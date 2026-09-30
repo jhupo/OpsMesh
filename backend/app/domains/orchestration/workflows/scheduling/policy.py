@@ -9,7 +9,7 @@ from backend.app.core.utils import (
     positive_int_or_none,
 )
 from backend.app.domains.orchestration.runs.resources import scheduler_numeric_limits
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.workspaces.management.models import Workspace
 
 
 @dataclass(frozen=True)

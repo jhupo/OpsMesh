@@ -14,7 +14,6 @@ from backend.app.core.utils import (
     positive_int_or_default,
     uuid_or_none,
 )
-from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.providers.metadata import budget_is_exhausted
 from backend.app.domains.agents.providers.model_api import (
@@ -44,7 +43,8 @@ from backend.app.domains.orchestration.workflows.planning.agent_plan import (
     is_agent_planning_step,
     planner_output_schema,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.workspaces.management.models import Workspace
 
 if TYPE_CHECKING:
     from backend.app.domains.orchestration.requests.builder import RunRequestBuilder

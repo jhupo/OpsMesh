@@ -7,12 +7,6 @@ from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage, PendingActio
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resources import (
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
 from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
 from backend.app.domains.integrations.automation_io import external_output, message_instruction
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
@@ -21,6 +15,12 @@ from backend.app.domains.orchestration.tasks.contracts import TaskControlActionR
 from backend.app.domains.orchestration.tasks.control.service import TaskControlService
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.orchestration.tasks.state import TERMINAL_TASK_STATUSES
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import (
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 
 
 @dataclass(frozen=True)

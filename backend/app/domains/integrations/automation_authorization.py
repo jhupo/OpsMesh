@@ -6,21 +6,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DomainError
-from backend.app.domains.access.context import AuthenticatedUser
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.permissions import WorkspaceAction, role_allows
-from backend.app.domains.access.resources import (
-    ResourceAccessDenied,
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
 from backend.app.domains.capabilities.plugins.policy import plugin_resource_available
 from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
 from backend.app.domains.integrations.identities import ExternalIdentityService
 from backend.app.domains.integrations.webhooks.models import WebhookDeliveryAttempt
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.authorization.context import AuthenticatedUser
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.permissions import WorkspaceAction, role_allows
+from backend.app.identity.authorization.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def require_automation_principal(session: Session, item: Automation) -> None:

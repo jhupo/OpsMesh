@@ -1,8 +1,5 @@
 from fastapi import APIRouter
 
-from backend.app.api.routes.access.auth import router as auth_router
-from backend.app.api.routes.access.invitations import router as invitations_router
-from backend.app.api.routes.access.resources import router as resource_access_router
 from backend.app.api.routes.agents.messages import router as agent_messages_router
 from backend.app.api.routes.agents.profiles import router as workspace_agents_router
 from backend.app.api.routes.agents.provider_capabilities import (
@@ -35,7 +32,10 @@ from backend.app.api.routes.workspace.exports.router import router as exports_ro
 from backend.app.api.routes.workspace.files import router as files_router
 from backend.app.api.routes.workspace.projects import router as projects_router
 from backend.app.api.routes.workspace.router import router as workspace_resources_router
-from backend.app.api.routes.workspace.workspaces import router as workspaces_router
+from backend.app.identity.auth.routes import router as auth_router
+from backend.app.identity.authorization.routes import router as resource_access_router
+from backend.app.identity.invitations.routes import router as invitations_router
+from backend.app.workspaces.management.routes import router as workspaces_router
 
 api_router = APIRouter()
 api_router.include_router(admin_router)

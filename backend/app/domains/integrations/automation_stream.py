@@ -10,11 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DomainError
-from backend.app.domains.access.context import AuthenticatedUser
-from backend.app.domains.access.errors import AuthorizationError
-from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.access.resources import ResourceAccessDenied
-from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.capabilities.plugins.policy import require_plugin_resource
 from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.domains.integrations.automation_authorization import (
@@ -25,6 +20,11 @@ from backend.app.domains.integrations.automation_contracts import AutomationConf
 from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
 from backend.app.domains.integrations.automations import AutomationService
 from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
+from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.authorization.context import AuthenticatedUser
+from backend.app.identity.authorization.errors import AuthorizationError
+from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 
 
 class AutomationStreamService:

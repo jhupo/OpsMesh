@@ -13,7 +13,6 @@ import backend.app.domains.agents.providers.health as model_provider_health_serv
 from backend.app.core.db.base import Base
 from backend.app.core.pagination import PageParams
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.providers.contracts import (
     ModelProviderUnavailableError,
 )
@@ -34,8 +33,10 @@ from backend.app.domains.agents.providers.queries import (
     ModelProviderCredentialQueryService,
 )
 from backend.app.domains.agents.providers.resolution import ModelProviderResolutionService
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.observability.audit.models import AuditEvent
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_agent_model_api_override_is_limited_to_provider_supported_protocols() -> None:

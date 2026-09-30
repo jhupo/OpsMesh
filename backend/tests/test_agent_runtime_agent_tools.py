@@ -9,7 +9,6 @@ from agents.tool_context import ToolContext
 
 import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
 from backend.app.core.config import Settings
-from backend.app.domains.access.execution import ExecutionIdentityService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.runtime.contracts import (
     AgentRunRequest,
@@ -29,6 +28,7 @@ from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.result_payloads import run_output_payload
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.runtime.workers.contracts import JobPayload, JobType
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 

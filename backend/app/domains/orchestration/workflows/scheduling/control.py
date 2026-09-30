@@ -10,9 +10,9 @@ from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.domains.orchestration.workflows.definitions.blocked_reasons import (
     explain_blocked_reason,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.domains.workspace.tenants.settings import scheduler_settings
 from backend.app.observability.audit.service import AuditService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.management.settings import scheduler_settings
 
 
 class SchedulerBlockedStepControlService:

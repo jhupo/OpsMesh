@@ -12,13 +12,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DomainError
 from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.context import AuthenticatedUser
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.permissions import WorkspaceAction
-from backend.app.domains.access.resources import ResourceAccessDenied
-from backend.app.domains.access.service import AuthorizationService
 from backend.app.domains.capabilities.plugins.models import PluginDeployment
 from backend.app.domains.capabilities.plugins.services import SERVICE_PERMISSIONS, PluginServices
+from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.authorization.context import AuthenticatedUser
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.observability.audit.service import AuditService
 from backend.app.runtime.environment.contracts import RuntimeLimits
 from backend.app.runtime.environment.models import RuntimeTemplate

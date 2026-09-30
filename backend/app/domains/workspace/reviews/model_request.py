@@ -13,7 +13,7 @@ from backend.app.domains.workspace.reviews.policy import (
     _max_risk,
 )
 from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.workspaces.management.models import Workspace
 
 _SENSITIVE_TERMS = {
     "api_key",

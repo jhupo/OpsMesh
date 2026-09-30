@@ -12,9 +12,9 @@ from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.utils import ensure_aware_utc
-from backend.app.domains.access.resource_queries import resource_query_scope
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.agents.providers.policy import canonical_model_provider
+from backend.app.identity.authorization.resource_queries import resource_query_scope
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.observability.costs.models import ModelUsageRecord, WorkspaceCostBudget
 from backend.app.observability.costs.pricing import normalize_currency
 

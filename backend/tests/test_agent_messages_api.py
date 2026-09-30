@@ -19,7 +19,6 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.messages.contracts import (
     AgentMessageCreateRequest,
     AgentMessageThreadCreateRequest,
@@ -29,9 +28,11 @@ from backend.app.domains.agents.messages.service import AgentMailboxService
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 TOKEN = "test-token"
 

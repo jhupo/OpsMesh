@@ -24,7 +24,6 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.db.base import Base
 from backend.app.core.db.session import get_db_session
 from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.models import User
 from backend.app.domains.agents.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEntry,
@@ -47,12 +46,14 @@ from backend.app.domains.workspace.storage.artifact_models import Artifact
 from backend.app.domains.workspace.storage.models import FileAccessEvent, WorkspaceFile
 from backend.app.domains.workspace.storage.storage import LocalStorage
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
 from backend.app.observability.audit.models import AuditEvent
 from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 TOKEN = "test-token"
 

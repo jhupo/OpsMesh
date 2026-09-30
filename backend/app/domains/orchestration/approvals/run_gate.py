@@ -17,10 +17,10 @@ from backend.app.domains.orchestration.tasks.steps import (
     TaskStepStateService,
     TaskStepStatus,
 )
-from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
 from backend.app.runtime.environment.spaces.reservations import (
     RuntimeSpaceReservationReleaseService,
 )
+from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 
 class ApprovalRunGateService:

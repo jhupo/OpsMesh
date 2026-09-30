@@ -11,13 +11,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.db.base import Base
 from backend.app.core.errors import DomainError, NotFoundError
-from backend.app.domains.access.context import AuthenticatedUser
-from backend.app.domains.access.resources import (
-    RESOURCE_TABLES,
-    ResourceAction,
-    ResourceAuthorizationService,
-    ResourceKind,
-)
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.capabilities.catalog.contracts import (
     CapabilityPolicyScope,
@@ -36,6 +29,13 @@ from backend.app.domains.capabilities.resources.schema import (
     validate_partial_parameters,
 )
 from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
+from backend.app.identity.authorization.context import AuthenticatedUser
+from backend.app.identity.authorization.resources import (
+    RESOURCE_TABLES,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
 
 
 @dataclass(slots=True)

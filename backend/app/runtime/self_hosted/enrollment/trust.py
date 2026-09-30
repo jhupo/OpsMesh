@@ -13,10 +13,10 @@ from backend.app.domains.capabilities.mcp.transport.payloads import (
     MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
     MCP_STDIO_CONTRACT_VERSION,
 )
-from backend.app.domains.workspace.tenants.models import Workspace
 from backend.app.runtime.environment.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.enrollment.policy import positive_policy_int
 from backend.app.runtime.self_hosted.models import RuntimeCredential, SelfHostedWorker
+from backend.app.workspaces.management.models import Workspace
 
 
 @dataclass(frozen=True)

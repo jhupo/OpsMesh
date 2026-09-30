@@ -21,7 +21,6 @@ from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
 from backend.app.domains.workspace.data_lifecycle.service import WorkspaceDataLifecycleService
 from backend.app.domains.workspace.storage.storage import create_storage
 from backend.app.domains.workspace.teams.execution.loop import TeamExecutionLoopQueueService
-from backend.app.domains.workspace.tenants.health.service import WorkspaceHealthService
 from backend.app.observability.audit.integrity import AuditIntegrityService
 from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.environment.cleanup_jobs import RuntimeCleanupService
@@ -32,6 +31,7 @@ from backend.app.runtime.workers.leases import WorkerLeaseMaintenanceService
 from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.runtime.workers.recovery.rehydration import QueueRehydrationService
 from backend.app.runtime.workers.scheduling.service import WorkspaceScheduledJobService
+from backend.app.workspaces.management.health.service import WorkspaceHealthService
 
 logger = logging.getLogger(__name__)
 

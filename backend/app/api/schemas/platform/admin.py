@@ -15,7 +15,6 @@ from backend.app.api.schemas.operations.runtimes import WorkspaceRuntimeResponse
 from backend.app.api.schemas.operations.workers import RuntimeLeaseResponse
 from backend.app.core.contracts import ORMModel, TimestampedModel
 from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.access.resources import ResourceAction, ResourceKind
 from backend.app.domains.platform.admin.capability_governance import AdminCapabilityKind
 from backend.app.domains.platform.admin.catalog import AdminCatalogKind
 from backend.app.runtime.workers.contracts import JobPayload
@@ -115,120 +114,6 @@ class AdminSecurityEventResponse(ORMModel):
         return redact_sensitive_payload(value)
 
 
-class AdminUserResponse(TimestampedModel):
-    username: str | None
-    email: str
-    display_name: str
-    status: str
-    platform_admin: bool
-
-
-class AdminUserListResponse(AdminUserResponse):
-    invitation_delivery_status: str | None = None
-    workspace_count: int = 0
-    active_workspace_count: int = 0
-    resource_usage_rate: float = Field(default=0.0, ge=0.0)
-
-
-class AdminUserCreateRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
-    display_name: str = Field(min_length=1, max_length=120)
-    username: str | None = Field(default=None, min_length=1, max_length=80)
-    password: str | None = Field(default=None, min_length=8, max_length=4096)
-    platform_admin: bool = False
-
-    @field_validator("email")
-    @classmethod
-    def _normalize_email(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if "@" not in normalized:
-            raise ValueError("email must contain @")
-        return normalized
-
-    @field_validator("display_name")
-    @classmethod
-    def _normalize_display_name(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("display_name is required")
-        return normalized
-
-
-class AdminUserUpdateRequest(BaseModel):
-    display_name: str | None = Field(default=None, min_length=1, max_length=120)
-    username: str | None = Field(default=None, min_length=1, max_length=80)
-    platform_admin: bool | None = None
-
-    @model_validator(mode="after")
-    def _require_update(self) -> "AdminUserUpdateRequest":
-        if not self.model_fields_set:
-            raise ValueError("at least one user field is required")
-        return self
-
-
-class AdminUserCreateResponse(AdminUserResponse):
-    initial_password: str
-
-
-class AdminUserTokenRevokeResponse(BaseModel):
-    revoked: int
-
-
-class AdminUserPasswordResetResponse(AdminUserResponse):
-    temporary_password: str
-
-
-class AdminWorkspaceResponse(TimestampedModel):
-    owner_user_id: UUID
-    name: str
-    slug: str
-    status: str
-    settings: dict[str, object]
-    member_count: int
-    project_count: int
-
-    @field_serializer("settings")
-    def _serialize_settings(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)
-
-
-class AdminWorkspaceMemberResponse(ORMModel):
-    id: UUID
-    workspace_id: UUID
-    user_id: UUID
-    email: str
-    display_name: str
-    role: str
-    status: str
-    created_at: datetime
-    updated_at: datetime
-
-
-class AdminUserDetailResponse(AdminUserResponse):
-    workspace_memberships: list[AdminWorkspaceMemberResponse]
-
-
-class AdminWorkspaceMemberUpdateRequest(BaseModel):
-    role: Literal["owner", "admin", "operator", "viewer"] | None = None
-    status: Literal["active", "disabled"] | None = None
-
-    @model_validator(mode="after")
-    def _require_update(self) -> "AdminWorkspaceMemberUpdateRequest":
-        if self.role is None and self.status is None:
-            raise ValueError("role or status is required")
-        return self
-
-
-class AdminWorkspaceMemberCreateRequest(BaseModel):
-    user_id: UUID
-    role: Literal["owner", "admin", "operator", "viewer"] = "viewer"
-
-
-class AdminWorkspaceStatusUpdateRequest(BaseModel):
-    status: Literal["active", "paused", "disabled", "archived"]
-    reason: str = "Updated by platform admin"
-
-
 class AdminProjectResponse(ORMModel):
     id: UUID
     workspace_id: UUID
@@ -295,28 +180,6 @@ class AdminProjectQuotaResponse(TimestampedModel):
     @property
     def over_reserved(self) -> bool:
         return self.reserved_value > self.limit_value
-
-
-class AdminResourceOwnerUpdateRequest(BaseModel):
-    user_id: UUID
-
-
-class AdminResourceGrantUpdateRequest(BaseModel):
-    user_id: UUID
-    actions: frozenset[ResourceAction] = Field(default_factory=frozenset)
-
-
-class AdminResourceGrantResponse(BaseModel):
-    user_id: UUID
-    actions: list[ResourceAction]
-
-
-class AdminResourceAuthorizationResponse(BaseModel):
-    workspace_id: UUID
-    resource_kind: ResourceKind
-    resource_id: UUID
-    owner_user_id: UUID | None
-    grants: list[AdminResourceGrantResponse]
 
 
 class AdminAnnouncementCreateRequest(BaseModel):
@@ -432,10 +295,6 @@ class AdminSystemLogResponse(ORMModel):
     @field_serializer("audit_metadata")
     def _serialize_audit_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
-
-
-class AdminUserStatusUpdateRequest(BaseModel):
-    status: Literal["active", "disabled"]
 
 
 class AdminQuarantineRuntimeSpaceRequest(BaseModel):

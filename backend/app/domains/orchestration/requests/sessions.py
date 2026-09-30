@@ -5,8 +5,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.utils import uuid_or_none
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resources import ResourceAccessDenied
 from backend.app.domains.agents.profiles.models import AgentProfile
 from backend.app.domains.agents.sessions.models import (
     PersistentAgentSession,
@@ -20,6 +18,8 @@ from backend.app.domains.orchestration.runs.authorization.validation import (
 from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.domains.orchestration.runs.state import RunStatus
 from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import ResourceAccessDenied
 
 
 @dataclass(slots=True)
