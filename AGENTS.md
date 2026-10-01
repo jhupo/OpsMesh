@@ -6,7 +6,7 @@ OpsMesh 是企业级 Agent 控制面。后端负责身份、工作空间、Agent
 
 ## 后端 API
 
-默认接口前缀是 `/api/v1`，由 `OPSMESH_API_PREFIX` 配置覆盖。总路由入口是 `backend/app/api/router.py`。
+默认接口前缀是 `/api/v1`，由 `OPSMESH_API_PREFIX` 配置覆盖。总路由入口是 `backend/app/bootstrap/routers.py`，平台管理员聚合入口是 `backend/app/bootstrap/platform_routes.py`。
 
 | 接口族 | 主要范围 | 代码位置 |
 | --- | --- | --- |
