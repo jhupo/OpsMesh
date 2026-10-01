@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class AgentProfileMutableFields(BaseModel):

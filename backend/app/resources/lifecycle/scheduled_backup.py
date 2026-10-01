@@ -14,7 +14,7 @@ from backend.app.resources.lifecycle.scheduling import (
 )
 from backend.app.resources.lifecycle.settings import _backup_settings
 from backend.app.resources.transfers.service import WorkspaceExportService
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.workspaces.management.models import Workspace
 
 

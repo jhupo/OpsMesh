@@ -12,7 +12,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.app.core.db.base import Base, TimestampMixin
+from backend.app.shared.db.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     pass

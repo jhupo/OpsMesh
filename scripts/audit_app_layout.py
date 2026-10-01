@@ -16,6 +16,88 @@ import grimp
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "backend/app"
 OUTPUT = ROOT / ".tmp/app-layout-review"
+BUSINESS_ROOTS = {
+    "identity", "workspaces", "agents", "teams", "capabilities", "resources",
+    "orchestration", "runtime", "platform", "messaging", "governance",
+}
+ENTRYPOINTS = {
+    "backend.app.main", "backend.app.delivery", "backend.app.runtime.workers.cli",
+    "backend.app.platform.updates.daemon",
+}
+
+
+def is_http_route(module: str) -> bool:
+    parts = module.split(".")
+    return "routes" in parts or parts[-1].endswith("_routes")
+
+
+def check_architecture() -> None:
+    """Check all current modules; new feature files are covered automatically."""
+    violations: list[str] = []
+    tables: dict[str, str] = {}
+    handlers: dict[str, str] = {}
+    files = sorted(APP.rglob("*.py"))
+    for path in files:
+        module = module_name(path)
+        relative = path.relative_to(APP)
+        if relative.parts[0] not in BUSINESS_ROOTS | {"shared", "bootstrap"} and path.name not in {
+            "__init__.py", "main.py", "delivery.py",
+        }:
+            violations.append(f"Unclassified application file: {relative}")
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"))
+        dependencies = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                dependencies.append(node.module)
+            elif isinstance(node, ast.Import):
+                dependencies.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ClassDef):
+                for declaration in node.body:
+                    if isinstance(declaration, ast.Assign) and any(
+                        isinstance(target, ast.Name) and target.id == "__tablename__"
+                        for target in declaration.targets
+                    ):
+                        table = ast.literal_eval(declaration.value)
+                        if table in tables:
+                            violations.append(f"Duplicate table {table}: {tables[table]}, {module}")
+                        tables[table] = module
+                if node.name.endswith("JobHandler") and node.name not in {
+                    "WorkerJobHandler", "JobHandler",
+                }:
+                    if node.name in handlers:
+                        violations.append(f"Duplicate job handler: {node.name}")
+                    handlers[node.name] = module
+                    if module.startswith("backend.app.runtime.workers."):
+                        violations.append(f"Business job handler retained in worker: {module}")
+        for dependency in dependencies:
+            if dependency.startswith(tuple(
+                "backend.app." + name for name in ("api", "domains", "core", "observability")
+            )):
+                violations.append(f"Legacy import: {module} -> {dependency}")
+            if not dependency.startswith("backend.app."):
+                continue
+            owner = dependency.split(".")[2]
+            if relative.parts[0] == "shared" and owner != "shared":
+                violations.append(f"Shared imports business: {module} -> {dependency}")
+            if (
+                owner == "bootstrap"
+                and relative.parts[0] != "bootstrap"
+                and module not in ENTRYPOINTS
+            ):
+                violations.append(f"Business imports composition: {module} -> {dependency}")
+            if is_http_route(dependency) and not (
+                is_http_route(module) or relative.parts[0] == "bootstrap" or module in ENTRYPOINTS
+            ):
+                violations.append(f"Business imports HTTP route: {module} -> {dependency}")
+    for name in ("api", "domains", "core", "observability", "runtime/workers/handlers"):
+        if (APP / name).exists():
+            violations.append(f"Superseded directory remains: {name}")
+    if violations:
+        raise SystemExit("\n".join(violations))
+    print(
+        f"Architecture verified: {len(files)} source files, {len(tables)} unique table owners, "
+        f"{len(handlers)} uniquely owned job handlers."
+    )
 
 
 def expression(node: ast.AST | None) -> str:
@@ -163,18 +245,16 @@ def review_facts() -> None:
             for p in APP.rglob("*")
             if p.is_file() and p.suffix != ".py" and "__pycache__" not in p.parts
         ],
-        "core_business_dependencies": {
+        "shared_business_dependencies": {
             r["path"]: [
                 d
                 for d in r["dependencies"]
-                if d.startswith(
-                    ("backend.app.domains.", "backend.app.runtime.", "backend.app.api.")
-                )
+                if d.startswith("backend.app.") and d.split(".")[2] in BUSINESS_ROOTS
             ]
             for r in records
-            if r["path"].startswith("core/")
+            if r["path"].startswith("shared/")
             and any(
-                d.startswith(("backend.app.domains.", "backend.app.runtime.", "backend.app.api."))
+                d.startswith("backend.app.") and d.split(".")[2] in BUSINESS_ROOTS
                 for d in r["dependencies"]
             )
         },
@@ -435,7 +515,11 @@ def main() -> None:
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--target-check", action="store_true")
     parser.add_argument("--manifest", action="store_true")
+    parser.add_argument("--architecture-check", action="store_true")
     args = parser.parse_args()
+    if args.architecture_check:
+        check_architecture()
+        return
     if args.facts:
         review_facts()
         return

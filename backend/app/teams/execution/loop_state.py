@@ -6,14 +6,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import (
+from backend.app.orchestration.tasks.models import Task, TaskMessage
+from backend.app.shared.utils import (
     dict_list,
     dict_or_empty,
     dict_or_none,
     int_or_zero,
     optional_string,
 )
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage
 from backend.app.teams.execution.loop_support import TeamExecutionLoopRepository
 from backend.app.teams.operations.command_center import TeamCommandCenterService
 

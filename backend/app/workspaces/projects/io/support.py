@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.errors import AgentRuntimePolicyError
-from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.workspaces.projects.models import AgentRunProjectIOState
 from backend.app.workspaces.projects.snapshots.manifest import (
     parse_run_project_manifest,

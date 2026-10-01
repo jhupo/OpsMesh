@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from uuid import UUID
 
-from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.resources.storage.storage import ObjectStorage, StorageObjectTooLargeError
 from backend.app.workspaces.projects.io.support import ProjectRunIOError
 from backend.app.workspaces.projects.models import AgentRunProjectSnapshot

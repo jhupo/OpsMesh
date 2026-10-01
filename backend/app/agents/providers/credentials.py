@@ -15,11 +15,8 @@ from backend.app.agents.providers.policy import (
     validated_base_url,
 )
 from backend.app.agents.providers.queries import ModelProviderCredentialQueryService
-from backend.app.core.security.egress import (
-    MODEL_PROVIDER_BASE_URL_POLICY,
-    EgressUrlPolicy,
-)
-from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.shared.security.egress import MODEL_PROVIDER_BASE_URL_POLICY, EgressUrlPolicy
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class ModelProviderCredentialCommandService:

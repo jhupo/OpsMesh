@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.messages.models import AgentMessage
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.teams.sessions.service import TeamRuntimeState
 
 

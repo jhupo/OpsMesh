@@ -10,17 +10,17 @@ from sqlalchemy.orm import Session
 from backend.app.agents.execution.contracts import AgentRuntimeToolResult
 from backend.app.agents.execution.tokens import truncate_to_token_bound
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.core.security.redaction import (
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.resources.memory.configuration import initial_embedding_status
+from backend.app.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
+from backend.app.resources.memory.policy import WorkingMemoryPolicy
+from backend.app.shared.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_text,
     redact_text_fragments,
 )
-from backend.app.core.utils import ensure_aware_utc
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.resources.memory.configuration import initial_embedding_status
-from backend.app.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
-from backend.app.resources.memory.policy import WorkingMemoryPolicy
+from backend.app.shared.utils import ensure_aware_utc
 
 WORKING_MEMORY_LAYER = "working"
 WORKING_MEMORY_SOURCE = "run_working_memory"

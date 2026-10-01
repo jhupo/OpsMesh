@@ -7,8 +7,8 @@ from backend.app.agents.providers.capabilities import resolve_model_capability
 from backend.app.agents.providers.metadata import sanitize_budget_metadata
 from backend.app.agents.providers.model_api import model_api_for_provider
 from backend.app.agents.providers.policy import model_provider_base_url_host
-from backend.app.core.contracts import ORMModel
-from backend.app.core.security.secrets import hosted_secret_metadata
+from backend.app.shared.contracts import ORMModel
+from backend.app.shared.security.secrets import hosted_secret_metadata
 
 
 class ModelProviderCredentialCreateRequest(BaseModel):

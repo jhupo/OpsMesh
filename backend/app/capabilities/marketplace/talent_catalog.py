@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.capabilities.marketplace.models import TalentListing, WorkspaceAgentInstall
 from backend.app.capabilities.marketplace.talent_repository import TalentMarketplaceRepository
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
 
 
 class TalentCatalogService:

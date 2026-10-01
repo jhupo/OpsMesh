@@ -8,16 +8,16 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStatus
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.state import RunStatus
 from backend.app.runtime.operations.contracts.queue import (
     QueueGovernanceDiagnosticsResponse,
     QueueGovernanceIssueResponse,
     QueueGovernanceReconcileAction,
 )
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.redis.keys import RedisKeyBuilder
 
 
 def job_ids(jobs: list[JobPayload], *, limit: int = 25) -> list[UUID]:

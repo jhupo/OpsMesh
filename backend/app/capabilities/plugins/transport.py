@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
-from backend.app.core.security.egress import validate_url_shape
+from backend.app.shared.security.egress import validate_url_shape
 
 
 def validate_distribution_url(url: str, allowed_hosts: list[str]) -> str:

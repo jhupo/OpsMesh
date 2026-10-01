@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import PurePosixPath
 
-from backend.app.core.security.redaction import (
+from backend.app.shared.security.redaction import (
     is_sensitive_payload_key,
     is_sensitive_payload_value,
 )

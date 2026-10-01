@@ -12,15 +12,15 @@ from backend.app.capabilities.marketplace.listing_payloads import (
 )
 from backend.app.capabilities.marketplace.models import TalentListing
 from backend.app.capabilities.marketplace.talent_repository import TalentMarketplaceRepository
-from backend.app.core.config import Settings
-from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.governance.audit.service import AuditService
 from backend.app.governance.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.governance.reviews.policy import (
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_AGENT_PROFILE,
 )
 from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.observability.audit.service import AuditService
+from backend.app.shared.config import Settings
+from backend.app.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 
 
 class TalentPublishService:

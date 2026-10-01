@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.errors import commit_or_raise_conflict
+from backend.app.governance.audit.service import AuditService
 from backend.app.identity.authorization.permissions import WorkspaceRole
 from backend.app.identity.users.models import User
-from backend.app.observability.audit.service import AuditService
+from backend.app.shared.db.errors import commit_or_raise_conflict
 from backend.app.workspaces.management.errors import (
     WorkspaceMemberConflictError,
     WorkspaceMemberNotFoundError,

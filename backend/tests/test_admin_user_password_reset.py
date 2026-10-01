@@ -2,7 +2,7 @@ from uuid import UUID
 
 from test_admin_api import _admin_headers, _client
 
-from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.governance.security_events.models import SecurityEvent
 
 
 def test_repeated_admin_password_resets_revoke_previous_credentials() -> None:

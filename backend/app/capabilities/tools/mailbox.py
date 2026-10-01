@@ -19,9 +19,9 @@ from backend.app.capabilities.tools.normalization import (
     bounded_optional,
     optional_uuid_from_metadata,
 )
-from backend.app.core.pagination import PageParams
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task
+from backend.app.shared.pagination import PageParams
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 
 

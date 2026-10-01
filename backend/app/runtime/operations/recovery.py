@@ -6,14 +6,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.workflows.statuses import STALE_RECOVERABLE_RUN_STATUS_VALUES
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.runs.statuses import STALE_RECOVERABLE_RUN_STATUS_VALUES
 from backend.app.runtime.operations.contracts.queue import (
     StaleRunDiagnosticResponse,
     StaleRunsDiagnosticsResponse,
 )
-from backend.app.runtime.workers.contracts import JobType
+from backend.app.runtime.queues.contracts import JobType
 from backend.app.runtime.workers.models import WorkerLease
 
 

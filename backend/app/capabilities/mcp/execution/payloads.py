@@ -1,4 +1,4 @@
-from backend.app.core.utils import payload_hash
+from backend.app.shared.utils import payload_hash
 
 
 def hash_from_payload(payload: dict[str, object] | None, key: str) -> str | None:

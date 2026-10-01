@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.core.security.redaction import (
+from backend.app.runtime.spaces.models import RuntimeSpace
+from backend.app.shared.security.redaction import (
     redact_sensitive_payload,
     redact_sensitive_payload_item,
     redact_text_fragments,
 )
-from backend.app.runtime.environment.spaces.models import RuntimeSpace
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 
 _INTERNAL_POLICY_KEYS = {"team_runtime", "team_runtime_thread_id"}

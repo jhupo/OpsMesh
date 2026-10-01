@@ -1,5 +1,4 @@
 """Admission and durable intent for isolated, platform-managed plugin processes."""
-
 import re
 from datetime import UTC, datetime
 from typing import Literal
@@ -12,17 +11,17 @@ from sqlalchemy.orm import Session
 
 from backend.app.capabilities.plugins.models import PluginDeployment
 from backend.app.capabilities.plugins.services import SERVICE_PERMISSIONS, PluginServices
-from backend.app.core.errors import DomainError
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.governance.audit.service import AuditService
 from backend.app.identity.authorization.context import AuthenticatedUser
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.permissions import WorkspaceAction
 from backend.app.identity.authorization.resources import ResourceAccessDenied
-from backend.app.observability.audit.service import AuditService
-from backend.app.runtime.environment.contracts import RuntimeLimits
-from backend.app.runtime.environment.models import RuntimeTemplate
-from backend.app.runtime.environment.policies.runtime import RuntimePolicyResolver
+from backend.app.identity.authorization.service import AuthorizationService
+from backend.app.runtime.instances.contracts import RuntimeLimits
+from backend.app.runtime.instances.models import RuntimeTemplate
+from backend.app.runtime.instances.policies.runtime import RuntimePolicyResolver
+from backend.app.shared.errors import DomainError
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 def deployment_lock_key(install_id: UUID) -> int:

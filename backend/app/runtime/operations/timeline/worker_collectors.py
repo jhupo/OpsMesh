@@ -11,7 +11,7 @@ from backend.app.runtime.operations.timeline.models import (
     aware_datetime,
     within,
 )
-from backend.app.runtime.workers.contracts import JobType
+from backend.app.runtime.queues.contracts import JobType
 from backend.app.runtime.workers.models import WorkerLease
 
 

@@ -5,13 +5,13 @@ from uuid import UUID
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.runtime.operations.contracts.control_plane import OperationsOverviewResponse
 from backend.app.runtime.operations.data_lifecycle_rollup import (
     WorkspaceDataLifecycleRollupService,
 )
 from backend.app.runtime.operations.overview_queries import OperationsOverviewQueryService
 from backend.app.runtime.operations.queues.metrics import QueueMetricsService
+from backend.app.shared.redis.keys import RedisKeyBuilder
 
 
 class OperationsOverviewPayloadService:

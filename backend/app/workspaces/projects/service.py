@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.core.db.pagination import page_scalars_by_offset
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
 from backend.app.resources.files.models import WorkspaceFile
+from backend.app.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.shared.db.pagination import page_scalars_by_offset
 from backend.app.workspaces.projects.contracts import (
     ProjectCreateCommand,
     ProjectFileCommand,

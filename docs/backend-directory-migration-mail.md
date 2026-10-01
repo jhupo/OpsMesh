@@ -1,6 +1,6 @@
 # 后端目录迁移：邮件设置与发送
 
-日期：2026-09-30。范围：首个纵向切片，包含邮件设置、测试发送、SMTP、配置模型和直接调用方。其他业务目录仍按 `backend-directory-redesign-proposal.md` 逐批迁移。
+日期：2026-10-01。范围：本文记录邮件纵向切片作为完整后端目录迁移的首批历史批次；后续业务模块已按同一方案完成归拢。
 
 ## 基线与分支
 
@@ -90,6 +90,6 @@ backend/app/messaging/
 - 未部署、未向远端推送、未创建远端 PR，也未发送真实邮件。
 - 未重新构建独立发行包或做生产 PostgreSQL 升降级演练。本批没有 schema 变更。
 - 未修改前端，无本批新增 UI 截图验收；此前基线里的 UI 改动不作为本次重新验证成果。
-- `identity/users`、`identity/invitations`、全局认证/授权和 core/shared 尚未迁移。
+- 后续完整迁移批次已将 identity、workspaces、agents、teams、capabilities、resources、orchestration、runtime、platform、governance、shared 与 bootstrap 归拢；本报告保留首批邮件的细节证据。
 
-当前无阻塞项（blocked：无）。下一批按修订方案单独处理用户管理与账号邀请，先列出具体调用者和事务归属，再调整路径。
+当前无阻塞项（blocked：无）。完整迁移的最终审计、快照和测试结果记录在 `.tmp/backend-directory-migration/`；未执行真实生产部署或远端推送。

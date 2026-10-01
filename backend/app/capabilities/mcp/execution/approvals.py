@@ -13,13 +13,13 @@ from backend.app.capabilities.mcp.execution.events import (
     McpToolCallLogService,
 )
 from backend.app.capabilities.mcp.models import McpServer
-from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.core.utils import payload_hash
-from backend.app.domains.orchestration.approvals.policy import ApprovalPolicyDecision
-from backend.app.domains.orchestration.approvals.service import ApprovalService
-from backend.app.domains.orchestration.approvals.waiting import ApprovalWaitingService
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
+from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision
+from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.queries import authorization_snapshot_for_run
+from backend.app.shared.security.redaction import redact_sensitive_payload
+from backend.app.shared.utils import payload_hash
 
 
 @dataclass(slots=True)

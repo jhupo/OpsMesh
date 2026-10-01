@@ -20,7 +20,7 @@ from backend.app.resources.transfers.importers.preview import (
     _quota_violation_conflict,
     _skip_conflict,
 )
-from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 
 
 class RuntimeSpaceMetadataImporter:

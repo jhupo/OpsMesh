@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from backend.app.capabilities.tools.contracts import ToolContext
-from backend.app.domains.orchestration.runs.events import RunEventWriter
+from backend.app.orchestration.runs.events import RunEventWriter
 
 
 class ProductToolEventRecorder:

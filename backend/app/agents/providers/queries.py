@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.providers.resolution import ModelProviderResolver
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.observability.audit.models import AuditEvent
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class ModelProviderCredentialQueryService:

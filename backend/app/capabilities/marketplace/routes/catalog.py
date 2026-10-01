@@ -3,7 +3,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.capabilities.marketplace.contracts import (
     TalentListingMetricsResponse,
     TalentListingResponse,
@@ -12,8 +11,9 @@ from backend.app.capabilities.marketplace.contracts import (
 from backend.app.capabilities.marketplace.responses import review_response
 from backend.app.capabilities.marketplace.talent_catalog import TalentCatalogService
 from backend.app.capabilities.marketplace.talent_reviews import TalentReviewService
-from backend.app.core.db.session import get_db_session
-from backend.app.core.pagination import PageParams
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.pagination import PageResponse, pagination_params
+from backend.app.shared.pagination import PageParams
 
 router = APIRouter()
 

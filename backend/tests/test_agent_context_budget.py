@@ -3,7 +3,7 @@ import pytest
 from backend.app.agents.execution.errors import AgentRuntimePolicyError
 from backend.app.agents.execution.tokens import estimate_token_upper_bound
 from backend.app.agents.profiles.payloads import normalize_create_payload
-from backend.app.domains.orchestration.requests.context_budget import (
+from backend.app.orchestration.requests.context_budget import (
     ContextBudgetManager,
     ContextFragment,
     ContextPriority,

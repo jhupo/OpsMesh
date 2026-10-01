@@ -6,7 +6,7 @@ from backend.app.capabilities.mcp.catalog.catalog import McpCatalogTool
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer
 from backend.app.capabilities.mcp.policy import mcp_health_check_stale
 from backend.app.capabilities.references.schema import reject_embedded_secrets
-from backend.app.core.security.egress import validate_url_shape
+from backend.app.shared.security.egress import validate_url_shape
 
 REMOTE_SERVER_TYPES = {"streamable_http", "sse"}
 MCP_AUTH_METHODS = {

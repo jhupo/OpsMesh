@@ -4,8 +4,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
-from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.governance.reviews.models import ResourceReview
 from backend.app.governance.reviews.policy import (
     _HIGH_RISK_LEVELS,
@@ -17,6 +15,8 @@ from backend.app.governance.reviews.policy import (
 )
 from backend.app.governance.reviews.scanner import ReviewScanner
 from backend.app.governance.reviews.semantic_runner import SemanticResourceReviewRunner
+from backend.app.shared.config import Settings
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class ResourcePolicyReviewBuilder:

@@ -17,24 +17,24 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.capabilities.references.models import CapabilityResource
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.domains.orchestration.runs.models import (
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.identity.users.models import User
+from backend.app.orchestration.runs.models import (
     AgentRun,
     RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.identity.users.models import User
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.orchestration.tasks.models import Task
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.resources.storage.storage import LocalStorage
-from backend.app.runtime.environment.backends.docker import DockerRuntimeBackend
-from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
-from backend.app.runtime.environment.contracts import RuntimeCommandResult
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.backends.docker import DockerRuntimeBackend
+from backend.app.runtime.backends.registry import RuntimeBackendRegistry
+from backend.app.runtime.instances.contracts import RuntimeCommandResult
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.shared.config import Settings
+from backend.app.shared.db.base import Base
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 from backend.app.workspaces.projects.io.service import RunProjectIOService

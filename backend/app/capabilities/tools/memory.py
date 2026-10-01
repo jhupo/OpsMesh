@@ -9,8 +9,7 @@ from backend.app.capabilities.tools.contracts import ToolContext, ToolResourceNo
 from backend.app.capabilities.tools.events import ProductToolEventRecorder
 from backend.app.capabilities.tools.normalization import normalized_tags
 from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.resources.knowledge.ingestion import KnowledgeSourceIngestionService
 from backend.app.resources.knowledge.models import KnowledgeCitation
 from backend.app.resources.memory.authorization import AuthorizedMemoryScope
@@ -19,6 +18,7 @@ from backend.app.resources.memory.models import WorkspaceMemoryEntry
 from backend.app.resources.memory.policy import semantic_memory_policy
 from backend.app.resources.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
 from backend.app.resources.memory.working import AgentWorkingMemoryService
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class KnowledgeCitationAccessError(ToolResourceNotFoundError):

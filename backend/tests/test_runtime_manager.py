@@ -12,10 +12,8 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.runtime.environment.contracts import (
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.runtime.instances.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
@@ -23,27 +21,29 @@ from backend.app.runtime.environment.contracts import (
     RuntimeLimits,
     RuntimeMount,
 )
-from backend.app.runtime.environment.manager import DockerRuntimeManagerProvider, RuntimeManager
-from backend.app.runtime.environment.models import (
+from backend.app.runtime.instances.manager import DockerRuntimeManagerProvider, RuntimeManager
+from backend.app.runtime.instances.models import (
     RuntimeCommand,
     RuntimeEvent,
     RuntimeLease,
     RuntimeTemplate,
     WorkspaceRuntime,
 )
-from backend.app.runtime.environment.policies.quotas import (
+from backend.app.runtime.instances.policies.quotas import (
     RuntimeQuotaExceededError,
     RuntimeQuotaPolicy,
 )
-from backend.app.runtime.environment.service import RuntimeControlService
-from backend.app.runtime.environment.spaces.models import (
+from backend.app.runtime.instances.service import RuntimeControlService
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.environment.spaces.service import RuntimeSpaceService
+from backend.app.runtime.spaces.service import RuntimeSpaceService
+from backend.app.shared.config import Settings
+from backend.app.shared.db.base import Base
 from backend.app.teams.management.models import AgentTeam
 from backend.app.workspaces.management.models import Workspace
 
@@ -1067,7 +1067,7 @@ def test_runtime_manager_rejects_process_limit_over_workspace_quota() -> None:
 
 
 def test_docker_sdk_create_container_applies_limits_and_hardening() -> None:
-    from backend.app.runtime.environment.backends.docker import DockerSdkRuntimeClient
+    from backend.app.runtime.backends.docker import DockerSdkRuntimeClient
 
     captured: dict[str, object] = {}
 
@@ -1130,7 +1130,7 @@ def test_docker_sdk_create_container_applies_limits_and_hardening() -> None:
 
 
 def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
-    from backend.app.runtime.environment.backends.docker import DockerSdkRuntimeClient
+    from backend.app.runtime.backends.docker import DockerSdkRuntimeClient
 
     calls: list[tuple[list[str], str | None]] = []
     archives: list[bytes] = []
@@ -1198,7 +1198,7 @@ def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
 
 
 def test_docker_sdk_archive_transfer_uses_runtime_identity() -> None:
-    from backend.app.runtime.environment.backends.docker import DockerSdkRuntimeClient
+    from backend.app.runtime.backends.docker import DockerSdkRuntimeClient
 
     captured: list[bytes] = []
 
@@ -1254,7 +1254,7 @@ def test_docker_sdk_archive_transfer_uses_runtime_identity() -> None:
 
 
 def test_docker_sdk_archive_rejects_non_normalized_paths() -> None:
-    from backend.app.runtime.environment.backends.docker import _rewrite_archive_owner
+    from backend.app.runtime.backends.docker import _rewrite_archive_owner
 
     source = io.BytesIO()
     with tarfile.open(fileobj=source, mode="w") as archive:

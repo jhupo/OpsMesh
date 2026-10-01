@@ -5,7 +5,7 @@ from sqlalchemy import ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.app.core.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from backend.app.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class DomainProject(UUIDPrimaryKeyMixin, TimestampMixin, Base):

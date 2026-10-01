@@ -22,7 +22,7 @@ from backend.app.capabilities.mcp.catalog.servers import McpServerService
 from backend.app.capabilities.mcp.models import McpCredentialReference
 from backend.app.capabilities.plugins.policy import plugin_resource_available
 from backend.app.capabilities.references.service import CapabilityResourceService
-from backend.app.core.config import Settings, get_settings
+from backend.app.shared.config import Settings, get_settings
 
 
 class WorkspaceCapabilityCatalogService:

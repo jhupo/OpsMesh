@@ -8,16 +8,16 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.capabilities.mcp.models import McpToolCallLog
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.observability.audit.service import AuditService
-from backend.app.observability.costs.models import ModelUsageRecord
-from backend.app.runtime.environment.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.audit.service import AuditService
+from backend.app.governance.costs.models import ModelUsageRecord
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.runtime.instances.models import RuntimeEvent, WorkspaceRuntime
 from backend.app.runtime.operations.contracts.events import OperationsCorrelationResponse
 from backend.app.runtime.workers.models import WorkerLease
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
 
 T = TypeVar("T")
 

@@ -1,8 +1,8 @@
 # OpsMesh 后端目录重新分类方案
 
-日期：2026-09-30。状态：**分类方案已修订，首批邮件模块已迁移并完成本地验证；其他模块仍为目标方案**。
+日期：2026-10-01。状态：**分类方案已实施并完成本地验证；本文保留设计依据、边界和验收标准**。
 
-范围：以 `backend/app` 的代码、路由、模型注册、部署入口和导入约束为依据；同时考虑 `backend/tests`、migration、独立 `runtime` 与 `operator` 包。现有工作已保存为本地基线 `db407a55`。下列目录树是最终目标，首批迁移及验收单独记录在 `docs/backend-directory-migration-mail.md`，未迁移目录不能当作已实现。
+范围：以 `backend/app` 的代码、路由、模型注册、部署入口和导入约束为依据；同时考虑 `backend/tests`、migration、独立 `runtime` 与 `operator` 包。迁移基线提交为 `db407a55`，当前实现已按最终目录树落地；邮件批次仍在 `docs/backend-directory-migration-mail.md` 单独记录。
 
 ## 一、先给结论
 
@@ -506,7 +506,7 @@ shared：通用设施与原语
 | 作业与持久数据 | 任务类型、序列化字段、恢复版本；若存有 Python 路径字符串需兼容迁移 |
 | `AGENTS.md`、当前有效文档 | 路由族位置与工程规范；旧删除文档不能擅自恢复 |
 
-`pyproject.toml` 当前还提到 `backend.app.api.services`，但本轮工作区未发现该目录。迁移前应核对并修正陈旧约束，而不是把旧约束名单直接当成现有架构。
+迁移前的 `pyproject.toml` 曾提到不存在的 `backend.app.api.services`；最终约束已改为 feature-first 的 shared、bootstrap、worker dispatch 和 adapter 边界。
 
 ## 十、验收、风险与回滚
 
@@ -520,7 +520,7 @@ shared：通用设施与原语
 6. **入口验证：** API、Worker、migrate、updater、发行版自检和自托管接入均能使用目标路径。
 7. **清理完成：** 精确搜索旧 import、动态路径、文档、部署命令；临时转发层退出，不保留永久双目录。
 
-建议验证工具：Ruff、mypy、import-linter、pytest 聚焦流程测试、OpenAPI/metadata 快照对比、API 与 Worker 启动冒烟。迁移末期再运行整体回归；本次只是方案文档，不执行无关完整测试。
+验证工具：Ruff、mypy、import-linter、pytest 流程测试、OpenAPI/metadata 快照对比、Job schema/payload/registry 对比、API 与 Worker 启动自检。最终结果记录在 `.tmp/backend-directory-migration/`，不修改数据库迁移或生产状态。
 
 ### 10.2 主要风险与处理
 
@@ -553,14 +553,14 @@ shared：通用设施与原语
 
 本文依据当前工作区文件（不是仅凭旧文档）：
 
-- `backend/app/api/router.py`：各接口族总注册。
-- `backend/app/api/routes/platform/router.py`：当前 `/admin` 集中鉴权与路由注册。
+- `backend/app/bootstrap/routers.py`：各接口族总注册。
+- `backend/app/bootstrap/platform_routes.py`：当前 `/admin` 集中鉴权与路由注册。
 - `backend/app/main.py`、`bootstrap/models.py`、`bootstrap/resources.py`、`bootstrap/providers.py`：应用与模型装配。
-- `backend/app/domains/access/models.py`、`admin.py`、`invitations.py`：用户、授权与邀请归属。
+- `backend/app/identity/{users,authorization,invitations}/`：用户、授权与邀请归属。
 - `backend/app/messaging/email`、`api/routes/platform/invitations.py`、`domains/access/invitations.py`：首批邮件/邀请边界；旧文件路径仅作为基线映射保留。
-- `backend/app/domains/workspace/teams/runtime`、`teams/execution`：团队状态与执行协作。
+- `backend/app/teams/{sessions,execution}`：团队状态与执行协作。
 - `backend/app/runtime/workers/cli.py`、`runner.py`、`runtime/operations/control_plane_service.py`：Worker 和运维聚合。
-- `backend/app/observability/notifications/service.py`：通知有独立业务状态，不是日志工具。
+- `backend/app/messaging/notifications/`：通知有独立业务状态，不是日志工具。
 - `backend/migrations/env.py`、`backend/app/delivery.py`、`deploy`、`pyproject.toml`、`scripts/audit_app_layout.py`：迁移、部署与架构门禁。
 - `runtime/pyproject.toml`、`operator/pyproject.toml`：独立发行包及入口。
 
@@ -570,9 +570,10 @@ FastAPI 官方《Bigger Applications - Multiple Files》说明了通过 `APIRout
 
 ### 状态
 
-- **已完成：** 迁移前目录/数量扫描、关键依赖核对、现有工作本地基线提交、分类方案修订。
-- **已实施并本地验证：** `messaging/email` 纵向切片；映射和验证范围见首批迁移报告。
-- **尚未执行：** 其他业务目录迁移、全局 core/shared 调整、数据库变更、部署及远端推送。
-- **后续逐批细化：** 每批文件/声明清单、混合模型拆分、跨模块事务与 handler 契约、历史动态路径兼容。
+- **Implemented：** identity、workspaces、agents、teams、capabilities、resources、orchestration、runtime、platform、messaging、governance、shared 与 bootstrap 已完成纵向归拢；旧 api/domains/core/observability 实现树已清理。
+- **Implemented：** Worker handler 按业务所有者归位，bootstrap/worker.py 注入 handler registry、maintenance 和失败回报；Worker loop 只保留通用租约、重试、心跳和确认机制。
+- **Verified：** 1,265 项本地测试通过、14 项可选集成测试跳过；Ruff、mypy、12 项 import-linter contracts、架构审计均通过。
+- **Verified：** 与 db407a55 的 OpenAPI 454 paths、127 张表及索引、Job schema/payload/handler registry 快照完全一致。
+- **Unverified：** 依赖真实 PostgreSQL、Redis、OpenAI API 或 Linux backup 的发布集成测试仍按测试标记跳过；未执行真实生产部署或远端推送。
 
-**首批先完成邮件设置与发送，再依据验证结果推进用户与邀请。目录整理的目标是打开一个功能模块就能找到它的接口、规则和数据；其他模块继续按上述边界和切片顺序迁移。**
+目录整理的目标已实现：打开一个功能模块即可找到其 routes/schema/service/model/jobs，跨模块具体装配集中在 bootstrap，公共机制留在 shared。

@@ -8,10 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
-from backend.app.core.utils import uuid_or_none
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import RuntimeSpace
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.contracts import (
     AuthenticatedWorker,
     CreatedEnrollmentToken,
@@ -30,6 +27,9 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
+from backend.app.runtime.spaces.models import RuntimeSpace
+from backend.app.shared.config import Settings
+from backend.app.shared.utils import uuid_or_none
 
 
 class SelfHostedIdentityService:

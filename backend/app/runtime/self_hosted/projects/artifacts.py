@@ -3,8 +3,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.resources.files.security import safe_filename, validate_storage_key
 from backend.app.runtime.self_hosted.contracts import (
     ArtifactUploadPayload,

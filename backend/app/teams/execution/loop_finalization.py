@@ -6,18 +6,18 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
+from backend.app.governance.audit.service import AuditService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.statuses import ACTIVE_RUN_STATUSES
+from backend.app.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.state import (
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.orchestration.tasks.state import (
     TERMINAL_TASK_STATUSES,
     TaskStateService,
     TaskStatus,
 )
-from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
-from backend.app.observability.audit.service import AuditService
 from backend.app.teams.execution.loop_state import _final_output_from_acceptance, _result
 from backend.app.teams.execution.loop_support import COMPLETED_STEP_STATUSES
 from backend.app.teams.management.models import AgentTeam

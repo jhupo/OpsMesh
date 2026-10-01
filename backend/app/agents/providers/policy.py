@@ -8,7 +8,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from backend.app.agents.providers.models import ModelProviderCredential
-from backend.app.core.security.egress import EgressUrlPolicy, url_host, validate_egress_url
+from backend.app.shared.security.egress import EgressUrlPolicy, url_host, validate_egress_url
 
 MODEL_PROVIDER_NOT_ACTIVE = "model_provider_not_active"
 MODEL_PROVIDER_UNHEALTHY = "model_provider_unhealthy"

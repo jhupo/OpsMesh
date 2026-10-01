@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
 from backend.app.resources.transfers.contracts import (
     WorkspaceImportConflict,
     WorkspaceImportRequest,

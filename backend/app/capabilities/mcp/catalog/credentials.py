@@ -12,11 +12,7 @@ from backend.app.capabilities.mcp.catalog.contracts import (
 )
 from backend.app.capabilities.mcp.models import McpCredentialReference
 from backend.app.capabilities.mcp.policy import require_mcp_server
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.governance.audit.service import AuditService
 from backend.app.governance.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.governance.reviews.models import ResourceReview
 from backend.app.governance.reviews.policy import (
@@ -25,7 +21,11 @@ from backend.app.governance.reviews.policy import (
     REVIEW_TYPE_MCP_CREDENTIAL_REFERENCE,
 )
 from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.observability.audit.service import AuditService
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class McpCredentialService:

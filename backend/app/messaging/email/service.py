@@ -2,15 +2,15 @@ import smtplib
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
-from backend.app.core.errors import DomainError
-from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.messaging.email.models import PlatformMailSettings
 from backend.app.messaging.email.schemas import (
     MailConfigurationResponse,
     MailConfigurationUpdate,
 )
 from backend.app.messaging.email.smtp import send_smtp_message
+from backend.app.shared.config import Settings
+from backend.app.shared.errors import DomainError
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class PlatformMailService:

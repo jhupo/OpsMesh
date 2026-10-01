@@ -10,11 +10,14 @@ from backend.app.capabilities.mcp.models import McpToolAllowlist
 from backend.app.capabilities.plugins.models import PluginBinding
 from backend.app.capabilities.references.models import CapabilityResource
 from backend.app.capabilities.skills.models import WorkspaceSkillInstall
-from backend.app.domains.integrations.automation_models import Automation, AutomationEvent
-from backend.app.domains.integrations.webhooks.models import WebhookDeliveryAttempt
-from backend.app.domains.orchestration.models import OrchestrationDefinition, OrchestrationRevision
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.orchestration.automations.models import Automation, AutomationEvent
+from backend.app.orchestration.definitions.models import (
+    OrchestrationDefinition,
+    OrchestrationRevision,
+)
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task
+from backend.app.orchestration.webhooks.models import WebhookDeliveryAttempt
 from backend.app.teams.management.models import AgentTeam
 
 

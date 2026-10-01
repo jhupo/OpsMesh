@@ -77,7 +77,7 @@ from backend.app.agents.execution.providers.claude.tools import (
 )
 from backend.app.agents.execution.usage import runtime_usage
 from backend.app.agents.providers.model_api import ANTHROPIC_MESSAGES_API
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 _EFFORT_SETTING: TypeAdapter[EffortLevel] = TypeAdapter(EffortLevel)
 _THINKING_SETTING: TypeAdapter[ThinkingConfig] = TypeAdapter(ThinkingConfig)

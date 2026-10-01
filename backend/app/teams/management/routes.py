@@ -5,25 +5,23 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.queue import (
-    get_worker_queue,
-)
-from backend.app.api.dependencies.redis import get_redis_client
-from backend.app.api.idempotency import (
+from backend.app.capabilities.governance.policy import TeamCapabilityPolicyService
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.idempotency import (
     IdempotencyInProgressError,
     IdempotencyService,
     run_idempotent_create,
 )
-from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.capabilities.governance.policy import TeamCapabilityPolicyService
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
-from backend.app.core.pagination import PageParams
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.identity.auth.dependencies import workspace_dependency
-from backend.app.identity.authorization.context import WorkspaceContext
-from backend.app.identity.authorization.permissions import WorkspaceAction
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.shared.http.pagination import PageResponse, pagination_params
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.redis.dependencies import get_redis_client
+from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.teams.execution.overview import TeamExecutionOverviewService
 from backend.app.teams.execution.schemas import (
     AgentTeamCommandCenterResponse,

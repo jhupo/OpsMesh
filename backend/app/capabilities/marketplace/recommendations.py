@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 from backend.app.capabilities.marketplace.contracts import TalentRecommendationRequest
 from backend.app.capabilities.marketplace.models import TalentListing
-from backend.app.core.utils import string_list, string_or_default
-from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.models import Task
+from backend.app.shared.utils import string_list, string_or_default
 
 
 @dataclass(frozen=True)

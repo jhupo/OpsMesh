@@ -19,15 +19,15 @@ from backend.app.capabilities.references.schema import (
     reject_embedded_secrets,
     validate_parameters,
 )
-from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.core.errors import DomainError, NotFoundError, PolicyDeniedError
-from backend.app.core.pagination import PageParams
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task
 from backend.app.resources.files.models import WorkspaceFile
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import RuntimeSpace
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.runtime.spaces.models import RuntimeSpace
+from backend.app.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.shared.errors import DomainError, NotFoundError, PolicyDeniedError
+from backend.app.shared.pagination import PageParams
 from backend.app.teams.management.models import AgentTeam
 
 OwnedResource = TypeVar(

@@ -14,9 +14,9 @@ from backend.app.capabilities.mcp.catalog.servers import McpServerService
 from backend.app.capabilities.plugins.contracts import PluginInstallRequest
 from backend.app.capabilities.plugins.service import PluginService
 from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
-from backend.app.core.config import Settings
-from backend.app.core.db.errors import flush_or_raise_conflict
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
+from backend.app.shared.config import Settings
+from backend.app.shared.db.errors import flush_or_raise_conflict
 
 
 class MarketplaceResourceInstaller:

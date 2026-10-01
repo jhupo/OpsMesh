@@ -16,7 +16,7 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeStructuredOutput,
 )
 from backend.app.agents.execution.providers.openai.tools import OpenAIProductFunctionTool
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class OpenAIAgentsResultMapper:

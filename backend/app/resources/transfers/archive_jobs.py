@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
 from backend.app.resources.storage.storage import ObjectStorage
 from backend.app.resources.storage.transactions import CompensatingObjectStorageWrites
 from backend.app.resources.transfers.archive_builder import WorkspaceArchiveExportBuilder
@@ -25,8 +25,8 @@ from backend.app.resources.transfers.contracts import (
 )
 from backend.app.resources.transfers.models import WorkspaceExportJob, WorkspaceExportJobStatus
 from backend.app.resources.transfers.repository import WorkspaceArchiveExportJobRepository
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.workspaces.management.models import Workspace
 
 

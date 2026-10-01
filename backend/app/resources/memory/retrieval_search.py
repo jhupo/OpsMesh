@@ -12,10 +12,10 @@ from sqlalchemy import and_, false, func, literal_column, or_, select, true
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
-from backend.app.core.utils import datetime_or_none, ensure_aware_utc
 from backend.app.resources.memory.authorization import AuthorizedMemoryScope
 from backend.app.resources.memory.models import WorkspaceMemoryEntry
 from backend.app.resources.memory.policy import HybridMemoryRetrievalPolicy, MemoryLifecyclePolicy
+from backend.app.shared.utils import datetime_or_none, ensure_aware_utc
 
 TOKEN_PATTERN = re.compile(r"[\w.-]+", re.UNICODE)
 SNIPPET_LENGTH = 220

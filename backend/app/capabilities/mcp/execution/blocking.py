@@ -15,10 +15,10 @@ from backend.app.capabilities.mcp.execution.events import (
     McpToolCallLogService,
 )
 from backend.app.capabilities.tools.contracts import ToolPermissionError
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.observability.telemetry.trace_context import with_current_trace_metadata
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.queries import authorization_snapshot_for_run
+from backend.app.shared.telemetry.trace_context import with_current_trace_metadata
 
 
 @dataclass(slots=True)

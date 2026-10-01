@@ -29,12 +29,12 @@ from backend.app.capabilities.references.schema import (
     validate_json_schema,
     validate_parameters,
 )
-from backend.app.core.db.errors import flush_or_raise_conflict
-from backend.app.core.errors import ConflictError, NotFoundError, PolicyDeniedError
-from backend.app.core.utils import payload_hash
+from backend.app.governance.audit.service import AuditService
 from backend.app.identity.authorization.permissions import WorkspaceAction, role_allows
 from backend.app.identity.users.models import User
-from backend.app.observability.audit.service import AuditService
+from backend.app.shared.db.errors import flush_or_raise_conflict
+from backend.app.shared.errors import ConflictError, NotFoundError, PolicyDeniedError
+from backend.app.shared.utils import payload_hash
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

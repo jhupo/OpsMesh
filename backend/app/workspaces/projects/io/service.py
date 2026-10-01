@@ -7,16 +7,16 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.tasks.models import Task
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import FileAccessEvent
 from backend.app.resources.storage.storage import ObjectStorage, create_storage
-from backend.app.runtime.environment.backends.registry import RuntimeBackendRegistry
-from backend.app.runtime.environment.contracts import RuntimeProjectFilesystem
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.backends.registry import RuntimeBackendRegistry
+from backend.app.runtime.instances.contracts import RuntimeProjectFilesystem
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.shared.config import Settings
 from backend.app.workspaces.projects.artifacts import ProjectOutputArtifactWriter
 from backend.app.workspaces.projects.file_boundaries import (
     ProjectBoundaryViolation,

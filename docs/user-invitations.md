@@ -44,8 +44,8 @@ uv run alembic upgrade head
 ## 当前代码归属
 
 - 邮件接口、DTO、配置模型、服务和 SMTP：`backend/app/messaging/email/`。
-- 管理员创建/重发邀请：`backend/app/api/routes/platform/invitations.py`；接受邀请：`backend/app/api/routes/access/invitations.py`。
-- 邀请 DTO：`backend/app/api/schemas/platform/invitations.py`；状态、有效期、激活与发送协调：`backend/app/domains/access/invitations.py`。
+- 管理员创建/重发邀请：`backend/app/identity/invitations/admin_routes.py`；接受邀请：`backend/app/identity/invitations/routes.py`。
+- 邀请 DTO：`backend/app/identity/invitations/schemas.py`；状态、有效期、激活与发送协调：`backend/app/identity/invitations/service.py`。
 - 邮件模型由 `bootstrap/models.py` 显式注册；只有一个 `PlatformMailSettings` 定义。
 
 本次归拢不新增数据库迁移，也不改变上述 API。邀请有效期和站点地址仍使用现有配置字段；规则由邀请服务解释，SMTP 仅负责发送。邮件路由即使不经过平台父路由注册，也必须验证管理员身份。

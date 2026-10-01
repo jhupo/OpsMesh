@@ -6,7 +6,6 @@ from uuid import UUID
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.runtime.operations.contracts.control_plane import OperationsControlPlaneResponse
 from backend.app.runtime.operations.control_plane import (
     control_plane_health,
@@ -23,6 +22,7 @@ from backend.app.runtime.operations.workers.capacity import OperationsWorkerCapa
 from backend.app.runtime.operations.workers.self_hosted_machines import (
     OperationsSelfHostedMachineService,
 )
+from backend.app.shared.redis.keys import RedisKeyBuilder
 
 
 class OperationsControlPlaneService:

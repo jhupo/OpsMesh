@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import dict_or_empty, positive_int_or_default
-from backend.app.runtime.workers.contracts import JobPayload
+from backend.app.runtime.queues.contracts import JobPayload
 from backend.app.runtime.workers.leases import WorkerLeaseQueryService
 from backend.app.runtime.workers.models import WorkerNode
+from backend.app.shared.utils import dict_or_empty, positive_int_or_default
 
 
 @dataclass(frozen=True)

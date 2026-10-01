@@ -2,10 +2,10 @@ from fastapi.testclient import TestClient
 from limits.storage import MemoryStorage
 from starlette.requests import Request
 
-from backend.app.api.client_ip import resolve_client_ip
-from backend.app.core.config import Settings
-from backend.app.core.security.rate_limits import FixedWindowRateLimiter
 from backend.app.main import create_app_with_dependencies
+from backend.app.shared.config import Settings
+from backend.app.shared.http.client_ip import resolve_client_ip
+from backend.app.shared.security.rate_limits import FixedWindowRateLimiter
 
 
 def test_fixed_window_limiter_blocks_after_limit() -> None:

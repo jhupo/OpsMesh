@@ -7,11 +7,11 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.runtime.environment.contracts import RuntimeCommandInputFile, RuntimeCommandResult
-from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
-from backend.app.runtime.environment.run_environment import RunRuntimeEnvironmentService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.runtime.instances.contracts import RuntimeCommandInputFile, RuntimeCommandResult
+from backend.app.runtime.instances.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.instances.run_environment import RunRuntimeEnvironmentService
+from backend.app.shared.db.base import Base
 from backend.app.workspaces.management.models import Workspace
 
 

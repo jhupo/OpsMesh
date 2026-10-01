@@ -23,10 +23,7 @@ from backend.app.capabilities.references.schema import (
     reject_embedded_secrets,
     validate_json_schema,
 )
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.core.errors import DomainError, PolicyDeniedError
-from backend.app.core.pagination import PageParams
+from backend.app.governance.audit.service import AuditService
 from backend.app.governance.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.governance.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
@@ -35,7 +32,10 @@ from backend.app.governance.reviews.policy import (
     REVIEW_TYPE_MCP_TOOL_ALLOWLIST,
 )
 from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.observability.audit.service import AuditService
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.shared.errors import DomainError, PolicyDeniedError
+from backend.app.shared.pagination import PageParams
 
 
 class McpServerService:

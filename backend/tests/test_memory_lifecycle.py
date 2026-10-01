@@ -15,10 +15,6 @@ from sqlalchemy.types import JSON
 
 from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
 from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.identity.users.models import User
 from backend.app.resources.memory.authorization import AuthorizedMemoryScope
 from backend.app.resources.memory.configuration import (
@@ -26,6 +22,7 @@ from backend.app.resources.memory.configuration import (
     MemoryConfigurationUpdate,
     WorkspaceMemoryConfigurationService,
 )
+from backend.app.resources.memory.embedding_jobs import MemoryEmbeddingJobHandler
 from backend.app.resources.memory.embedding_scheduler import WorkspaceMemoryEmbeddingScheduler
 from backend.app.resources.memory.embedding_service import (
     MemoryEmbeddingResult,
@@ -53,13 +50,14 @@ from backend.app.resources.memory.retrieval_search import (
     MemorySearchRequest,
 )
 from backend.app.resources.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
-from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
-from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.handlers.context import WorkerJobHandlerContext
-from backend.app.runtime.workers.handlers.memory_embedding import (
-    MemoryEmbeddingJobHandler,
-)
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.backends.factory import build_runtime_backend_registry
+from backend.app.runtime.queues.context import WorkerJobHandlerContext
+from backend.app.runtime.queues.contracts import JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.config import Settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.shared.security.secrets import SecretEncryptionService
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

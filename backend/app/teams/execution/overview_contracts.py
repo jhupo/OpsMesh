@@ -3,9 +3,7 @@ from __future__ import annotations
 from typing import NotRequired, TypedDict
 from uuid import UUID
 
-from backend.app.domains.orchestration.workflows.statuses import (
-    ACTIVE_RUN_STATUSES as _ACTIVE_RUN_STATUSES,
-)
+from backend.app.orchestration.runs.statuses import ACTIVE_RUN_STATUSES as _ACTIVE_RUN_STATUSES
 
 ACTIVE_RUN_STATUSES = _ACTIVE_RUN_STATUSES
 ACTIVE_STEP_STATUSES = {"queued", "running", "blocked"}

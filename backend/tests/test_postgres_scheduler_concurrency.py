@@ -11,25 +11,25 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.identity.users.models import User
-from backend.app.runtime.environment.spaces.models import (
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.scheduling.models import (
+    WorkspaceScheduledJob,
+    WorkspaceScheduledJobEvent,
+)
+from backend.app.orchestration.scheduling.service import WorkspaceScheduledJobService
+from backend.app.orchestration.scheduling.types import ScheduledJobMaintenanceSummary
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.state import TaskStatus
+from backend.app.runtime.queues.contracts import JobPayload
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.scheduling.models import (
-    WorkspaceScheduledJob,
-    WorkspaceScheduledJobEvent,
-)
-from backend.app.runtime.workers.scheduling.service import WorkspaceScheduledJobService
-from backend.app.runtime.workers.scheduling.types import ScheduledJobMaintenanceSummary
+from backend.app.shared.db.base import Base
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

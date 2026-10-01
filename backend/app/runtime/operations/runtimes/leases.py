@@ -6,9 +6,9 @@ from uuid import UUID
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.runtime.environment.models import RuntimeLease
+from backend.app.runtime.instances.models import RuntimeLease
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
 
 T = TypeVar("T")
 

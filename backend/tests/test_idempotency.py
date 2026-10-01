@@ -4,12 +4,12 @@ from uuid import UUID, uuid4
 import fakeredis
 import pytest
 
-from backend.app.api.idempotency import (
+from backend.app.shared.http.idempotency import (
     IdempotencyInProgressError,
     IdempotencyService,
     run_idempotent_create,
 )
-from backend.app.core.redis.keys import RedisKeyBuilder
+from backend.app.shared.redis.keys import RedisKeyBuilder
 
 
 def test_idempotency_service_uses_structured_states() -> None:

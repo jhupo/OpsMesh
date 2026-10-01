@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from backend.app.api.routes.workspace.base import router as base_router
+from backend.app.workspaces.management.dependencies import router as base_router
 from backend.app.workspaces.members.invitation_routes import router as invite_router
 from backend.app.workspaces.members.routes import router as member_router
 from backend.app.workspaces.quotas.routes import router as quota_router

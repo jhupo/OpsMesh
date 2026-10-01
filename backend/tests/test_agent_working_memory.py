@@ -8,12 +8,12 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.app.agents.execution.contracts import AgentRuntimeToolResult
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.core.db.base import Base
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
 from backend.app.identity.users.models import User
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.resources.memory.policy import WorkingMemoryPolicy
 from backend.app.resources.memory.working import AgentWorkingMemoryService, working_memory_context
+from backend.app.shared.db.base import Base
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

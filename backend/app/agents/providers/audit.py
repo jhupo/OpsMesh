@@ -15,9 +15,9 @@ from backend.app.agents.providers.model_api import (
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.providers.policy import model_provider_base_url_host
 from backend.app.agents.providers.probes import ModelProviderHealthCheckResult
-from backend.app.core.security.redaction import redact_sensitive_payload_item
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.audit.service import AuditService
+from backend.app.shared.security.redaction import redact_sensitive_payload_item
 
 "Model provider feature package."
 

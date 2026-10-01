@@ -20,9 +20,9 @@ from backend.app.capabilities.mcp.execution.policy import McpExecutionPolicy
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.capabilities.tools.contracts import ToolPermissionError
-from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.core.utils import canonical_payload, payload_hash
-from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.shared.security.redaction import redact_sensitive_text
+from backend.app.shared.utils import canonical_payload, payload_hash
 
 
 @dataclass(slots=True)

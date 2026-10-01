@@ -12,7 +12,6 @@ from backend.app.capabilities.mcp.catalog.contracts import (
     McpServerCreateRequest,
     McpToolAllowRequest,
 )
-from backend.app.core.utils import string_or_default
 from backend.app.governance.reviews.policy import (
     RESOURCE_STATUS_PENDING_APPROVAL,
     REVIEW_TYPE_AGENT_PROFILE,
@@ -20,6 +19,7 @@ from backend.app.governance.reviews.policy import (
     REVIEW_TYPE_PLUGIN,
     REVIEW_TYPE_SKILL,
 )
+from backend.app.shared.utils import string_or_default
 
 AGENT_SNAPSHOT_METADATA_KEY = "agent_snapshot"
 PRIVATE_DEFINITION_KEYS = frozenset(

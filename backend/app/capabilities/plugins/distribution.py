@@ -34,10 +34,10 @@ from backend.app.capabilities.plugins.policy import resource_configuration
 from backend.app.capabilities.plugins.service import PluginService
 from backend.app.capabilities.plugins.transport import validate_distribution_url
 from backend.app.capabilities.references.schema import reject_embedded_secrets
-from backend.app.core.db.errors import flush_or_raise_conflict
-from backend.app.core.errors import ConflictError, NotFoundError, PolicyDeniedError
-from backend.app.core.utils import payload_hash
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
+from backend.app.shared.db.errors import flush_or_raise_conflict
+from backend.app.shared.errors import ConflictError, NotFoundError, PolicyDeniedError
+from backend.app.shared.utils import payload_hash
 
 
 class PluginDistributionService:

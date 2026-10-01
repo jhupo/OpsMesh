@@ -9,7 +9,7 @@ from pydantic import (
     model_validator,
 )
 
-from backend.app.core.contracts import TimestampedModel
+from backend.app.shared.contracts import TimestampedModel
 
 
 class WorkspaceMemberResponse(TimestampedModel):

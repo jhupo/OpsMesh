@@ -18,11 +18,11 @@ from backend.app.capabilities.mcp.transport.stdio_credentials import (
     hosted_stdio_environment,
     self_hosted_stdio_environment_refs,
 )
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.runtime.environment.contracts import RuntimeCommandInputFile
-from backend.app.runtime.environment.manager import RuntimeManager
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.instances.contracts import RuntimeCommandInputFile
+from backend.app.runtime.instances.manager import RuntimeManager
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.dispatch.mcp import SelfHostedMcpJobService
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class DockerRuntimeStdioMcpToolAdapter:

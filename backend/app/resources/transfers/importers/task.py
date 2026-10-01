@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.resources.transfers.importers.context import (
     WorkspaceMetadataImportContext,
     _dict_field,
@@ -23,7 +23,7 @@ from backend.app.resources.transfers.importers.preview import (
     _missing_dependency_conflict,
     _skip_conflict,
 )
-from backend.app.runtime.environment.spaces.models import RuntimeSpace
+from backend.app.runtime.spaces.models import RuntimeSpace
 from backend.app.teams.management.models import AgentTeam
 
 

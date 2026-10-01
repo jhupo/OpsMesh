@@ -7,12 +7,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.schemas import AgentSessionSummaryResponse
 from backend.app.agents.sessions.management import PersistentAgentSessionManagementService
-from backend.app.core.config import Settings
-from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.identity.authorization.context import WorkspaceContext
-from backend.app.runtime.environment.commands.queued_control import QueuedRuntimeControl
-from backend.app.runtime.environment.contracts import RuntimeLimits
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.commands.queued_control import QueuedRuntimeControl
+from backend.app.runtime.instances.contracts import RuntimeLimits
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.config import Settings
+from backend.app.shared.security.redaction import redact_sensitive_payload
 from backend.app.teams.execution.loop import enqueue_team_execution_loop_job
 from backend.app.teams.management.service import WorkspaceTeamService
 from backend.app.teams.sessions.schemas import (

@@ -14,14 +14,14 @@ from backend.app.capabilities.mcp.transport.stdio import (
     DockerRuntimeStdioMcpToolAdapter,
     SelfHostedStdioMcpToolAdapter,
 )
-from backend.app.core.config import Settings
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.runtime.environment.contracts import DockerRuntimeClient
-from backend.app.runtime.environment.manager import RuntimeManager
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.runtime.instances.contracts import DockerRuntimeClient
+from backend.app.runtime.instances.manager import RuntimeManager
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.dispatch.mcp import SelfHostedMcpJobService
+from backend.app.shared.config import Settings
+from backend.app.shared.security.secrets import SecretEncryptionService
 from backend.app.workspaces.projects.models import AgentRunProjectIOState
 
 

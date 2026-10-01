@@ -18,13 +18,10 @@ from backend.app.capabilities.mcp.transport.stdio_credentials import (
     self_hosted_stdio_environment_refs,
 )
 from backend.app.capabilities.mcp.transport.unsupported import UnsupportedMcpToolAdapter
-from backend.app.core.security.egress import EgressUrlPolicy
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.runtime.environment.contracts import (
-    RuntimeCommandInputFile,
-    RuntimeCommandResult,
-)
-from backend.app.runtime.environment.models import RuntimeCommand, WorkspaceRuntime
+from backend.app.runtime.instances.contracts import RuntimeCommandInputFile, RuntimeCommandResult
+from backend.app.runtime.instances.models import RuntimeCommand, WorkspaceRuntime
+from backend.app.shared.security.egress import EgressUrlPolicy
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 def test_streamable_http_mcp_adapter_uses_official_client_session(monkeypatch) -> None:

@@ -9,10 +9,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.errors import commit_or_raise_conflict
+from backend.app.governance.audit.service import AuditService
 from backend.app.identity.users.models import User
-from backend.app.observability.audit.service import AuditService
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.errors import commit_or_raise_conflict
 from backend.app.workspaces.management.errors import (
     WorkspaceInviteConflictError,
     WorkspaceInviteNotFoundError,

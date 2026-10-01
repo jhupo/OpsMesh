@@ -18,7 +18,7 @@ from backend.app.capabilities.marketplace.talent_repository import (
     TalentMarketplaceRepository,
     copy_agent_definition,
 )
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
 
 
 class TalentInstallUpgradeService:

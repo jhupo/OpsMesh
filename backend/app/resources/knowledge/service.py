@@ -13,10 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.capabilities.references.schema import reject_embedded_secrets
-from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.core.db.pagination import page_scalars_by_offset
-from backend.app.core.security.redaction import is_sensitive_payload_key
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.knowledge.contracts import (
     KnowledgeSourceCreate,
@@ -25,6 +22,9 @@ from backend.app.resources.knowledge.contracts import (
     KnowledgeSourceUpdate,
 )
 from backend.app.resources.knowledge.models import KnowledgeSource, KnowledgeSourceRevision
+from backend.app.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.shared.db.pagination import page_scalars_by_offset
+from backend.app.shared.security.redaction import is_sensitive_payload_key
 
 
 class KnowledgeSourceVersionConflictError(ValueError):

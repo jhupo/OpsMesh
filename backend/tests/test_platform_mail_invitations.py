@@ -7,13 +7,13 @@ from pytest import MonkeyPatch, raises
 from sqlalchemy import select
 from test_admin_api import _admin_headers, _client
 
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.invitations.models import UserInvitation
 from backend.app.identity.users.models import User
 from backend.app.messaging.email.models import PlatformMailSettings
 from backend.app.messaging.email.routes import router as email_router
 from backend.app.messaging.email.smtp import send_smtp_message
-from backend.app.observability.audit.security_models import SecurityEvent
 
 MAIL_SETTINGS = {
     "enabled": True,
@@ -271,7 +271,7 @@ def test_mail_routes_keep_admin_boundary_without_parent_router(monkeypatch: Monk
     member = User(
         email="mail-member@example.com",
         display_name="Mail member",
-        password_hash=AuthorizationService.hash_password("Member-fixture-password-29"),
+        password_hash=AuthenticationService.hash_password("Member-fixture-password-29"),
         platform_admin=False,
     )
     session.add(member)

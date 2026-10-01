@@ -10,7 +10,7 @@ from backend.app.agents.providers.contracts import (
 from backend.app.agents.providers.model_api import model_api_for_provider
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.providers.policy import credential_is_selectable
-from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class ModelProviderResolver:

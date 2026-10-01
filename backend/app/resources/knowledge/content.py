@@ -16,7 +16,7 @@ from backend.app.resources.storage.storage import (
     StorageObjectReadError,
     StorageObjectTooLargeError,
 )
-from backend.app.runtime.environment.url_fetch import RuntimeUrlFetchError
+from backend.app.runtime.instances.url_fetch import RuntimeUrlFetchError
 
 MAX_SOURCE_BYTES = 10 * 1024 * 1024
 SUPPORTED_TEXT_TYPES = frozenset(

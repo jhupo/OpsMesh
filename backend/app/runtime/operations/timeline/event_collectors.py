@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.models import RunEvent
-from backend.app.runtime.environment.models import RuntimeEvent
+from backend.app.orchestration.runs.models import RunEvent
+from backend.app.runtime.instances.models import RuntimeEvent
 from backend.app.runtime.operations.timeline.models import (
     TimelineEvent,
     TimelineFilters,

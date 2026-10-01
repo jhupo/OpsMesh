@@ -10,27 +10,27 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.contracts import AgentRunResult, AgentRuntimeStructuredOutput
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
-from backend.app.domains.orchestration.workflows.planning.completion import PlannerCompletionService
-from backend.app.domains.orchestration.workflows.planning.lifecycle import (
+from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.governance.costs.models import WorkspaceCostBudget
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.orchestration.planning.attempt_models import TaskPlanningAttempt
+from backend.app.orchestration.planning.completion import PlannerCompletionService
+from backend.app.orchestration.planning.lifecycle import (
     TaskPlanLifecycleService,
     TaskPlanRetryCommand,
 )
-from backend.app.domains.orchestration.workflows.planning.mutation import (
+from backend.app.orchestration.planning.mutation import (
     TaskPlanMutationCommand,
     TaskPlanMutationError,
     TaskPlanMutationService,
 )
-from backend.app.identity.authorization.execution import ExecutionIdentityService
-from backend.app.observability.costs.models import WorkspaceCostBudget
-from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue, consume_once
-from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.quotas.models import WorkspaceQuota
 from backend.tests.test_worker_run_execution import (

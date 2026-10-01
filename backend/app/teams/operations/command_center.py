@@ -3,16 +3,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
+from backend.app.governance.audit.service import AuditService
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.observation.execution import (
-    TaskExecutionDiagnosticsService,
-)
-from backend.app.observability.audit.service import AuditService
-from backend.app.runtime.environment.contracts import RuntimeLifecycleControl
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.orchestration.tasks.observation.execution import TaskExecutionDiagnosticsService
+from backend.app.runtime.instances.contracts import RuntimeLifecycleControl
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.teams.execution.overview import TeamExecutionOverviewService
 from backend.app.teams.operations.action_plan import (
     _group_applicable_actions,

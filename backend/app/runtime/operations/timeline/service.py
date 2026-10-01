@@ -5,10 +5,6 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.redaction import (
-    redact_sensitive_payload_item,
-    redact_text_fragments,
-)
 from backend.app.runtime.operations.contracts.events import (
     TeamRuntimeTimelineEventResponse,
     TeamRuntimeTimelineResponse,
@@ -20,7 +16,11 @@ from backend.app.runtime.operations.timeline.models import (
     counts,
     matches_filters,
 )
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.security.redaction import (
+    redact_sensitive_payload_item,
+    redact_text_fragments,
+)
 
 
 class TeamRuntimeTimelineService:

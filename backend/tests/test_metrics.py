@@ -17,27 +17,27 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
-from backend.app.api.dependencies.redis import get_redis_client
-from backend.app.api.middleware import _metrics_path
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.identity.users.models import User
-from backend.app.main import create_app
-from backend.app.observability.audit.models import AuditIntegrityCheck
-from backend.app.observability.costs.models import (
+from backend.app.governance.audit.models import AuditIntegrityCheck
+from backend.app.governance.costs.models import (
     ModelPricingRule,
     ModelUsageRecord,
     WorkspaceCostBudget,
 )
-from backend.app.observability.telemetry.metrics import MetricsRegistry, metrics_registry
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.identity.users.models import User
+from backend.app.main import create_app
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.operations.metrics.workers import WorkerPrometheusMetrics
-from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.runtime.workers.models import WorkerLease, WorkerNode
+from backend.app.shared.config import Settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.middleware import _metrics_path
+from backend.app.shared.redis.dependencies import get_redis_client
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.shared.telemetry.metrics import MetricsRegistry, metrics_registry
 from backend.app.teams.management.models import AgentTeam
 from backend.app.workspaces.management.models import Workspace
 

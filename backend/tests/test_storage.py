@@ -8,7 +8,6 @@ from botocore.exceptions import ClientError
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
 
-from backend.app.core.config import Settings
 from backend.app.resources.storage import storage as storage_module
 from backend.app.resources.storage.storage import (
     LocalStorage,
@@ -16,6 +15,7 @@ from backend.app.resources.storage.storage import (
     StorageObjectTooLargeError,
     create_storage,
 )
+from backend.app.shared.config import Settings
 
 
 def test_local_storage_supports_object_storage_semantics(tmp_path: Path) -> None:

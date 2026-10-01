@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.agents.providers.models import ModelProviderCredential
-from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.statuses import ACTIVE_RUN_STATUSES
+from backend.app.orchestration.tasks.models import Task
+from backend.app.shared.security.redaction import redact_sensitive_payload
 from backend.app.teams.management.models import AgentTeamMember
 from backend.app.teams.operations.views import _dict, _string_list, _uuid_or_none
 from backend.app.teams.provider_readiness.views import (

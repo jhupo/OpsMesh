@@ -7,8 +7,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import stringify_or_none
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.knowledge.models import KnowledgeSource
@@ -20,6 +19,7 @@ from backend.app.resources.memory.retrieval_search import (
     memory_entry_source_id,
     memory_entry_source_type,
 )
+from backend.app.shared.utils import stringify_or_none
 from backend.app.workspaces.domain_items.models import DomainItem
 
 SOURCE_LIMIT = 80

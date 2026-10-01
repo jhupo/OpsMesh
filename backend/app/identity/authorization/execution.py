@@ -1,5 +1,4 @@
 """Durable initiating identities, shared by admission, retries and runtime calls."""
-
 from copy import deepcopy
 from dataclasses import replace
 from uuid import UUID
@@ -7,9 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.authorization.context import AuthenticatedUser
 from backend.app.identity.authorization.errors import AuthorizationError
 from backend.app.identity.authorization.permissions import WorkspaceAction
@@ -20,6 +17,9 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
+from backend.app.identity.authorization.service import AuthorizationService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task
 
 
 class ExecutionIdentityService:
@@ -28,14 +28,14 @@ class ExecutionIdentityService:
 
     def capture(self, workspace_id: UUID, user_id: UUID) -> dict[str, object]:
         scope = resource_query_scope(self._session)
-        auth = AuthorizationService(self._session)
+        auth = AuthenticationService(self._session)
         if scope is not None:
             if scope.workspace_id != workspace_id or scope.user.user_id != user_id:
                 raise ResourceAccessDenied()
             user = auth.refresh_authenticated_user(scope.user)
         else:
             user = auth.authenticate_user(user_id)
-        auth.require_workspace(
+        AuthorizationService(self._session).require_workspace(
             user_id=user.user_id,
             workspace_id=workspace_id,
             action=WorkspaceAction.WRITE,
@@ -63,9 +63,9 @@ class ExecutionIdentityService:
                 token_id=token_id,
                 token_scopes=deepcopy(scopes),
             )
-            auth = AuthorizationService(self._session)
+            auth = AuthenticationService(self._session)
             live = auth.refresh_authenticated_user(captured)
-            auth.require_workspace(
+            AuthorizationService(self._session).require_workspace(
                 user_id=user_id,
                 workspace_id=workspace_id,
                 action=WorkspaceAction.WRITE,

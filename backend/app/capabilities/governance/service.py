@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from backend.app.capabilities.governance.actions import CapabilityGovernanceActionService
 from backend.app.capabilities.governance.read import CapabilityGovernanceReadService
 from backend.app.capabilities.governance.rules import GOVERNANCE_APPLY_ACTIONS, governance_actions
-from backend.app.core.config import Settings, get_settings
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
+from backend.app.shared.config import Settings, get_settings
 
 
 class CapabilityGovernanceService:

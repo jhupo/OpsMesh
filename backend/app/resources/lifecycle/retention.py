@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.lifecycle.policy import (

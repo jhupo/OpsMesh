@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, contains_eager
 
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.resources.memory.models import WorkspaceMemoryEntry
-from backend.app.runtime.environment.spaces.models import RuntimeSpace
+from backend.app.runtime.spaces.models import RuntimeSpace
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.teams.sessions.memory_context import memory_visibility_scopes
 

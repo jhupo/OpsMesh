@@ -24,11 +24,11 @@ from backend.app.agents.providers.probes import (
 )
 from backend.app.agents.providers.queries import ModelProviderCredentialQueryService
 from backend.app.agents.providers.resolution import ModelProviderResolutionService
-from backend.app.core.db.base import Base
-from backend.app.core.pagination import PageParams
-from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.governance.audit.models import AuditEvent
 from backend.app.identity.users.models import User
-from backend.app.observability.audit.models import AuditEvent
+from backend.app.shared.db.base import Base
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.security.secrets import SecretEncryptionService
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

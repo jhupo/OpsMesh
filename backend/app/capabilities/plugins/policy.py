@@ -13,9 +13,9 @@ from backend.app.capabilities.plugins.models import (
     PluginTrustKey,
 )
 from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
-from backend.app.core.errors import PolicyDeniedError
-from backend.app.domains.integrations.automation_models import Automation
-from backend.app.domains.integrations.webhooks.models import WebhookSubscription
+from backend.app.orchestration.automations.models import Automation
+from backend.app.orchestration.webhooks.models import WebhookSubscription
+from backend.app.shared.errors import PolicyDeniedError
 
 
 def resource_configuration(

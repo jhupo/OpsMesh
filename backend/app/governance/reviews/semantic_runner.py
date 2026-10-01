@@ -4,8 +4,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.providers.contracts import ModelProviderUnavailableError
 from backend.app.agents.providers.resolution import ModelProviderResolutionService
-from backend.app.core.config import Settings
-from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.governance.reviews.config import ResourceReviewSettings
 from backend.app.governance.reviews.llm import LlmResourceReviewer
 from backend.app.governance.reviews.llm_review import (
@@ -15,6 +13,8 @@ from backend.app.governance.reviews.llm_review import (
 )
 from backend.app.governance.reviews.models import ResourceReview
 from backend.app.governance.reviews.scanner import ReviewScanner
+from backend.app.shared.config import Settings
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class SemanticResourceReviewRunner:

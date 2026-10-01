@@ -14,7 +14,7 @@ from backend.app.capabilities.skills.lifecycle import (
     require_workspace_install,
 )
 from backend.app.capabilities.skills.manifest import agent_installed_skill_ids, manifest_mcp_tools
-from backend.app.core.config import Settings, get_settings
+from backend.app.shared.config import Settings, get_settings
 
 
 class WorkspaceSkillImpactService:

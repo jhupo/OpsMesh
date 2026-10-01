@@ -6,7 +6,6 @@ from backend.app.capabilities.tools.events import ProductToolEventRecorder
 from backend.app.capabilities.tools.files import WorkspaceFileProductTools
 from backend.app.capabilities.tools.mailbox import AgentMailboxProductTools
 from backend.app.capabilities.tools.memory import WorkspaceMemoryProductTools
-from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.resources.artifacts.service import ArtifactPersistenceService
 from backend.app.resources.files.content import (
     DEFAULT_AGENT_FILE_READ_MAX_BYTES,
@@ -14,6 +13,7 @@ from backend.app.resources.files.content import (
     WorkspaceFileContentReader,
 )
 from backend.app.resources.storage.storage import ObjectStorage
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class ProductToolService:

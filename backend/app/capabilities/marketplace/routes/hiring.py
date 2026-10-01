@@ -10,11 +10,11 @@ from backend.app.capabilities.marketplace.contracts import (
 )
 from backend.app.capabilities.marketplace.responses import install_response
 from backend.app.capabilities.marketplace.talent_hiring import TalentHiringService
-from backend.app.core.db.errors import DatabaseConflictError
-from backend.app.core.db.session import get_db_session
 from backend.app.identity.auth.dependencies import workspace_dependency
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.shared.db.errors import DatabaseConflictError
+from backend.app.shared.db.session import get_db_session
 
 router = APIRouter()
 

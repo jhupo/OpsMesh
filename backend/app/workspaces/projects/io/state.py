@@ -6,13 +6,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.events import RunEventRecorder
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import FileAccessEvent
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.workspaces.projects.io.support import ProjectRunIOError
 from backend.app.workspaces.projects.models import AgentRunProjectIOState, AgentRunProjectSnapshot
 from backend.app.workspaces.projects.snapshots.manifest import (

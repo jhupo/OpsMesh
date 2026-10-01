@@ -3,8 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
-from backend.app.core.contracts import ORMModel
 from backend.app.messaging.email.schemas import EmailRecipient
+from backend.app.shared.contracts import ORMModel
 
 
 class UserInvitationRequest(EmailRecipient):

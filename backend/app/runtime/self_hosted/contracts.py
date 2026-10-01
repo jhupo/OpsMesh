@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.models import (
     RuntimeCredential,
     RuntimeEnrollmentToken,

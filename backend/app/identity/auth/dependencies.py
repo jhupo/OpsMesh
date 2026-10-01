@@ -5,10 +5,8 @@ from uuid import UUID
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.client_ip import security_request_context
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.governance.security_events.service import SecurityAuditService
+from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.authorization.context import AuthenticatedUser, WorkspaceContext
 from backend.app.identity.authorization.errors import AuthenticationError, PermissionDeniedError
 from backend.app.identity.authorization.permissions import AccountAction, WorkspaceAction
@@ -19,8 +17,11 @@ from backend.app.identity.authorization.resource_queries import (
     unbind_resource_queries,
 )
 from backend.app.identity.authorization.resources import ResourceAccessDenied, ResourceAction
-from backend.app.observability.audit.security_events import SecurityAuditService
-from backend.app.observability.telemetry.request_context import set_log_context
+from backend.app.identity.authorization.service import AuthorizationService
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.client_ip import security_request_context
+from backend.app.shared.telemetry.request_context import set_log_context
 
 AUTHORIZATION_HEADER = Header(default=None)
 SETTINGS_DEPENDENCY = Depends(get_settings)
@@ -80,7 +81,7 @@ async def get_current_user(
     session: Session = DB_SESSION_DEPENDENCY,
 ) -> AuthenticatedUser:
     token = _bearer_token(authorization)
-    service = AuthorizationService(session)
+    service = AuthenticationService(session)
     if token:
         try:
             user = service.authenticate_user_token(token, settings)
@@ -97,7 +98,7 @@ async def get_current_user(
                 )
                 metadata: dict[str, object] = {"has_authorization_header": True}
                 if action == "auth.user_token.rejected":
-                    metadata["token_fingerprint"] = AuthorizationService.fingerprint_user_token(
+                    metadata["token_fingerprint"] = AuthenticationService.fingerprint_user_token(
                         token
                     )
                 _record_auth_failure(

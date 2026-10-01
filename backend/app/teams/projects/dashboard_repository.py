@@ -6,8 +6,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import TaskMessage, TaskStep
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import TaskMessage, TaskStep
 from backend.app.resources.artifacts.models import Artifact
 
 

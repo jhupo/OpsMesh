@@ -11,13 +11,13 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
+from backend.app.governance.audit.models import AuditEvent
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
-from backend.app.observability.audit.models import AuditEvent
 from backend.app.resources.files.models import WorkspaceFile
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember

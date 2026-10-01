@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.agents.providers.model_api import configured_model_api
-from backend.app.core.utils import stringify_or_none
-from backend.app.domains.orchestration.workflows.planning.org_structure import build_org_structure
+from backend.app.orchestration.planning.org_structure import build_org_structure
+from backend.app.shared.utils import stringify_or_none
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 
 

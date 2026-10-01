@@ -16,8 +16,7 @@ from backend.app.agents.providers.policy import (
     canonical_model_provider,
     is_openai_compatible_provider,
 )
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
+from backend.app.governance.costs.service import CostAccountingService, CostBudgetExceededError
 from backend.app.resources.memory.configuration import (
     EMBEDDING_DIMENSIONS,
     WorkspaceMemoryConfigurationService,
@@ -27,6 +26,7 @@ from backend.app.resources.memory.models import (
     WorkspaceMemoryEmbeddingEvent,
     WorkspaceMemoryEntry,
 )
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class MemoryEmbeddingError(RuntimeError):

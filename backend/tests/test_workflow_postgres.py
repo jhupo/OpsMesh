@@ -13,21 +13,22 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.core.db.base import Base
-from backend.app.domains.orchestration.models import OrchestrationDefinition, OrchestrationRevision
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.definitions.application import (
+from backend.app.identity.users.models import User
+from backend.app.orchestration.definitions.application import (
     OrchestrationDefinitionApplicationService,
 )
-from backend.app.domains.orchestration.workflows.definitions.commands import (
-    OrchestrationDefinitionCreate,
+from backend.app.orchestration.definitions.commands import OrchestrationDefinitionCreate
+from backend.app.orchestration.definitions.contracts import WorkflowNode
+from backend.app.orchestration.definitions.models import (
+    OrchestrationDefinition,
+    OrchestrationRevision,
 )
-from backend.app.domains.orchestration.workflows.definitions.contracts import WorkflowNode
-from backend.app.domains.orchestration.workflows.definitions.service import (
+from backend.app.orchestration.definitions.service import (
     OrchestrationDefinitionError,
     OrchestrationDefinitionService,
 )
-from backend.app.identity.users.models import User
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.shared.db.base import Base
 from backend.app.teams.management.models import AgentTeam
 from backend.app.workspaces.management.models import Workspace
 from backend.tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema
@@ -48,11 +49,11 @@ def test_plugin_deployment_admission_recovery_service_access_and_revocation() ->
         PluginRelease,
         PluginTrustKey,
     )
-    from backend.app.core.config import Settings, get_settings
-    from backend.app.core.db.session import get_db_session
     from backend.app.main import create_app
-    from backend.app.runtime.environment.models import RuntimeTemplate
-    from backend.app.runtime.environment.plugin_processes import PluginProcessWorker
+    from backend.app.runtime.instances.models import RuntimeTemplate
+    from backend.app.runtime.instances.plugin_processes import PluginProcessWorker
+    from backend.app.shared.config import Settings, get_settings
+    from backend.app.shared.db.session import get_db_session
     from backend.tests.test_capability_resources import TOKEN, _headers, _seed_workspace
     from backend.tests.test_runtime_manager import FakeDockerClient
 

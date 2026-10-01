@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 
 from backend.app.agents.execution.contracts import AgentRuntimeCapability
+from backend.app.agents.execution.dependencies import get_agent_runtime_registry
+from backend.app.agents.execution.registry import ProviderAgentRuntimeRegistry
 from backend.app.agents.providers.capabilities import list_model_capabilities
 from backend.app.agents.providers.model_api import default_model_api, model_api_options_for_provider
 from backend.app.agents.providers.schemas import (
@@ -8,7 +10,6 @@ from backend.app.agents.providers.schemas import (
     AgentRuntimeCapabilityFeatureResponse,
     ModelCapabilityResponse,
 )
-from backend.app.bootstrap.providers import build_agent_runtime_registry
 from backend.app.identity.auth.dependencies import workspace_dependency
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.permissions import WorkspaceAction
@@ -25,9 +26,10 @@ router = APIRouter(
 )
 async def list_agent_runtime_adapter_capabilities(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    registry: ProviderAgentRuntimeRegistry = Depends(get_agent_runtime_registry),
 ) -> list[AgentRuntimeAdapterCapabilityResponse]:
     del context
-    matrix = build_agent_runtime_registry().capability_matrix()
+    matrix = registry.capability_matrix()
     return [
         AgentRuntimeAdapterCapabilityResponse(
             provider=capabilities.provider,

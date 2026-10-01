@@ -11,11 +11,11 @@ from backend.app.capabilities.mcp.transport.payloads import (
     MCP_PYTHON_SDK_STDIO_ENTRYPOINT,
     MCP_STDIO_CONTRACT_VERSION,
 )
-from backend.app.core.config import Settings
-from backend.app.core.utils import string_list, uuid_or_none
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.enrollment.policy import positive_policy_int
 from backend.app.runtime.self_hosted.models import RuntimeCredential, SelfHostedWorker
+from backend.app.shared.config import Settings
+from backend.app.shared.utils import string_list, uuid_or_none
 from backend.app.workspaces.management.models import Workspace
 
 

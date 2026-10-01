@@ -5,20 +5,18 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.api.schemas.orchestration.tasks.management import (
-    TaskTransferResponse,
-)
-from backend.app.core.db.base import Base
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.collaboration.transfers import (
+from backend.app.identity.users.models import User
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.collaboration.transfers import (
     TaskTransferCommand,
     TaskTransferDecision,
     TaskTransferError,
     TaskTransferService,
 )
-from backend.app.domains.orchestration.tasks.control.ownership import task_owner_can_execute_step
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep, TaskTransfer
-from backend.app.identity.users.models import User
+from backend.app.orchestration.tasks.control.ownership import task_owner_can_execute_step
+from backend.app.orchestration.tasks.models import Task, TaskStep, TaskTransfer
+from backend.app.orchestration.tasks.schemas.management import TaskTransferResponse
+from backend.app.shared.db.base import Base
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.management.models import Workspace
 

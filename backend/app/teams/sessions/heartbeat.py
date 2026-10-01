@@ -5,8 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.core.utils import coerce_int_or_zero
+from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.shared.utils import coerce_int_or_zero
 from backend.app.teams.management.models import (
     TEAM_RUNTIME_STALL_STATUSES,
     TEAM_RUNTIME_STALL_THRESHOLD,

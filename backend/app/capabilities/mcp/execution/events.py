@@ -22,19 +22,17 @@ from backend.app.capabilities.mcp.execution.payloads import (
 from backend.app.capabilities.mcp.execution.payloads import response_hash as mcp_response_hash
 from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist, McpToolCallLog
 from backend.app.capabilities.mcp.policy import require_mcp_server
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.core.utils import canonical_payload, payload_hash
-from backend.app.domains.orchestration.runs.events import RunEventRecorder
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
-from backend.app.domains.orchestration.tasks.models import TaskMessage
-from backend.app.observability.audit.service import AuditService
-from backend.app.observability.telemetry.request_context import current_evidence_context
-from backend.app.observability.telemetry.trace_context import (
-    with_current_trace_metadata,
-)
+from backend.app.governance.audit.service import AuditService
+from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.orchestration.tasks.models import TaskMessage
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.security.redaction import redact_sensitive_payload
+from backend.app.shared.telemetry.request_context import current_evidence_context
+from backend.app.shared.telemetry.trace_context import with_current_trace_metadata
+from backend.app.shared.utils import canonical_payload, payload_hash
 
 
 class McpToolCallLogQueryService:

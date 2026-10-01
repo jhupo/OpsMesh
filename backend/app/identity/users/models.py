@@ -13,7 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.app.core.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from backend.app.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from backend.app.workspaces.members.models import WorkspaceMember

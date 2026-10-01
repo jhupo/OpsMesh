@@ -6,9 +6,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from opentelemetry.trace import SpanKind
 
-from backend.app.api.middleware import RequestContextMiddleware
-from backend.app.core.config import Settings
-from backend.app.observability.telemetry.trace_context import (
+from backend.app.shared.config import Settings
+from backend.app.shared.http.middleware import RequestContextMiddleware
+from backend.app.shared.telemetry.trace_context import (
     current_trace_context,
     telemetry_span,
     trace_context_from_headers,
@@ -73,10 +73,10 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.sdk._logs.export import InMemoryLogExporter
 from sqlalchemy import create_engine
 
-import backend.app.observability.telemetry.tracing as tracing
+import backend.app.shared.telemetry.tracing as tracing
 from backend.app.bootstrap.telemetry import configure_worker_telemetry
-from backend.app.core.config import Settings
-from backend.app.observability.telemetry.trace_context import TraceContext, telemetry_span
+from backend.app.shared.config import Settings
+from backend.app.shared.telemetry.trace_context import TraceContext, telemetry_span
 
 exporter = InMemorySpanExporter()
 log_exporter = InMemoryLogExporter()
@@ -137,10 +137,10 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import SpanKind
 from sqlalchemy import create_engine
 
-import backend.app.observability.telemetry.tracing as tracing
+import backend.app.shared.telemetry.tracing as tracing
 from backend.app.bootstrap.telemetry import configure_api_telemetry
-from backend.app.core.config import Settings
-from backend.app.api.middleware import RequestContextMiddleware
+from backend.app.shared.config import Settings
+from backend.app.shared.http.middleware import RequestContextMiddleware
 
 exporter = InMemorySpanExporter()
 tracing.OTLPSpanExporter = lambda **_: exporter

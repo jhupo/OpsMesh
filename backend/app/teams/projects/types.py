@@ -5,12 +5,12 @@ from datetime import datetime
 from uuid import UUID
 
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.memory.models import WorkspaceMemoryEntry
-from backend.app.runtime.environment.spaces.models import (
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceEvent,
     RuntimeSpaceQuota,

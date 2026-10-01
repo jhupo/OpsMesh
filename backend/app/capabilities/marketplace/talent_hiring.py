@@ -10,12 +10,12 @@ from backend.app.capabilities.marketplace.listing_payloads import listing_agent_
 from backend.app.capabilities.marketplace.models import TalentListing, WorkspaceAgentInstall
 from backend.app.capabilities.marketplace.recommendations import missing_work_package_by_id
 from backend.app.capabilities.marketplace.talent_repository import TalentMarketplaceRepository
-from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.core.utils import string_or_default
-from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
+from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.orchestration.tasks.models import Task, TaskMessage
 from backend.app.resources.memory.policy import normalized_memory_policy
+from backend.app.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.shared.utils import string_or_default
 
 
 class TalentHiringService:

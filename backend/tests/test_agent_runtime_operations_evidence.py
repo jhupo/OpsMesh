@@ -3,15 +3,15 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.costs.models import ModelUsageRecord
-from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
-from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.bootstrap.worker import build_worker_runner
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.costs.models import ModelUsageRecord
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.workers.runner import (
-    WorkerRunner,
     WorkerRunnerConfig,
 )
+from backend.app.shared.telemetry.trace_context import TraceContext, trace_context
 from backend.tests.test_worker_runner import (
     DeterministicAgentRunner,
     _queue,
@@ -69,7 +69,7 @@ def test_agent_run_operations_evidence_shares_trace_and_run_identity() -> None:
             is True
         )
 
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="operations-evidence-worker"),

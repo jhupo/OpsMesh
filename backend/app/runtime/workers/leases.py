@@ -7,14 +7,11 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.observability.telemetry.trace_context import (
-    current_trace_context,
-    current_trace_metadata,
-)
-from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.workers.models import WorkerLease
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.telemetry.trace_context import current_trace_context, current_trace_metadata
 
 RUNNING_LEASE_STATUSES = frozenset({"running"})
 TERMINAL_LEASE_STATUSES = frozenset({"completed", "failed"})

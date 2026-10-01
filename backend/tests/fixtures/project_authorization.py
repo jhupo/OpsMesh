@@ -6,13 +6,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.capabilities.catalog.effective import effective_catalog_fingerprint
 from backend.app.capabilities.references.models import CapabilityResource
-from backend.app.domains.orchestration.runs.models import (
-    AgentRun,
-    authorization_snapshot_fingerprint,
-)
-from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.orchestration.runs.models import AgentRun, authorization_snapshot_fingerprint
+from backend.app.orchestration.tasks.models import Task
 from backend.app.resources.files.models import WorkspaceFile
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.instances.models import WorkspaceRuntime
 
 
 def authorize_project_run(

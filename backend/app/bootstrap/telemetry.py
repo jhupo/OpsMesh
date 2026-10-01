@@ -2,11 +2,8 @@ from fastapi import FastAPI
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from sqlalchemy import Engine
 
-from backend.app.core.config import Settings
-from backend.app.observability.telemetry.tracing import (
-    TelemetryRuntime,
-    create_telemetry_runtime,
-)
+from backend.app.shared.config import Settings
+from backend.app.shared.telemetry.tracing import TelemetryRuntime, create_telemetry_runtime
 
 
 def configure_api_telemetry(

@@ -3,8 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, computed_field, field_serializer
 
-from backend.app.core.contracts import ORMModel
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.contracts import ORMModel
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 SUPPORTED_WORKSPACE_EXPORT_FORMAT = "workspace-export.v2"
 WORKSPACE_EXPORT_SENSITIVE_FIELDS_POLICY = "secrets-excluded-redacted"

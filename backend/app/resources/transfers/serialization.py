@@ -2,10 +2,9 @@ from datetime import datetime
 
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.capabilities.skills.models import WorkspaceSkillInstall
-from backend.app.core.utils import stringify_or_none
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.observability.audit.models import AuditEvent
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.memory.models import (
@@ -13,7 +12,8 @@ from backend.app.resources.memory.models import (
     WorkspaceMemoryEntry,
     WorkspaceMemoryVersion,
 )
-from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.shared.utils import stringify_or_none
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.projects.models import (

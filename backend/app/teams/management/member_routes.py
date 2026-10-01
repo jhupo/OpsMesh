@@ -13,21 +13,21 @@ from backend.app.agents.profiles.service import AgentManagementService
 from backend.app.agents.providers.model_api import configured_model_api, require_known_model_api
 from backend.app.agents.providers.views import agent_profile_response
 from backend.app.agents.sessions.management import PersistentAgentSessionManagementService
-from backend.app.api.dependencies.redis import get_redis_client
-from backend.app.api.idempotency import (
+from backend.app.governance.audit.service import AuditService
+from backend.app.identity.auth.dependencies import workspace_dependency
+from backend.app.identity.authorization.context import WorkspaceContext
+from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.idempotency import (
     IdempotencyInProgressError,
     IdempotencyService,
     run_idempotent_create,
 )
-from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
-from backend.app.core.pagination import PageParams
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.identity.auth.dependencies import workspace_dependency
-from backend.app.identity.authorization.context import WorkspaceContext
-from backend.app.identity.authorization.permissions import WorkspaceAction
-from backend.app.observability.audit.service import AuditService
+from backend.app.shared.http.pagination import PageResponse, pagination_params
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.redis.dependencies import get_redis_client
+from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.teams.management.schemas import (
     AgentTeamMemberCreateRequest,
     AgentTeamMemberResponse,

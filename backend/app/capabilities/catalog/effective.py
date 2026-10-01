@@ -26,8 +26,6 @@ from backend.app.capabilities.references.schema import (
     reject_embedded_secrets,
     validate_partial_parameters,
 )
-from backend.app.core.db.base import Base
-from backend.app.core.errors import DomainError, NotFoundError
 from backend.app.identity.authorization.context import AuthenticatedUser
 from backend.app.identity.authorization.resources import (
     RESOURCE_TABLES,
@@ -35,6 +33,8 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
+from backend.app.shared.db.base import Base
+from backend.app.shared.errors import DomainError, NotFoundError
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 
 

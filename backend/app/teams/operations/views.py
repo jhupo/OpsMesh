@@ -2,8 +2,9 @@ from collections.abc import Iterable
 from datetime import datetime
 from uuid import UUID
 
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.core.utils import (
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.shared.utils import (
     datetime_or_none,
     dict_or_empty,
     int_or_zero,
@@ -12,7 +13,6 @@ from backend.app.core.utils import (
     string_list,
     uuid_or_none,
 )
-from backend.app.domains.orchestration.runs.models import AgentRun
 from backend.app.teams.organization.policy_payloads import visible_task_policy
 from backend.app.teams.sessions.service import TEAM_RUNTIME_RUNNING
 

@@ -14,9 +14,7 @@ from backend.app.agents.execution.contracts import (
 )
 from backend.app.capabilities.references.models import CapabilityResource
 from backend.app.capabilities.references.schema import validate_parameters
-from backend.app.core.utils import string_list
-from backend.app.domains.orchestration.runs.events import RunEventRecorder
-from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.governance.security_events.models import SecurityEvent
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resources import (
     ResourceAccessDenied,
@@ -24,10 +22,12 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.observability.telemetry.trace_context import with_current_trace_metadata
+from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.resources.memory.authorization import memory_read_scopes, memory_write_scopes
 from backend.app.resources.memory.models import WorkspaceMemoryEntry
+from backend.app.shared.telemetry.trace_context import with_current_trace_metadata
+from backend.app.shared.utils import string_list
 
 
 @dataclass(frozen=True, slots=True)

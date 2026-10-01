@@ -1,5 +1,4 @@
 """Installation identity and bounded host services for remote plugin processes."""
-
 import hashlib
 import json
 import logging
@@ -26,13 +25,7 @@ from backend.app.capabilities.plugins.models import (
 )
 from backend.app.capabilities.plugins.policy import require_plugin_resource
 from backend.app.capabilities.references.schema import reject_embedded_secrets
-from backend.app.core.errors import DomainError
-from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.core.utils import ensure_aware_utc
-from backend.app.domains.integrations.automation_contracts import AutomationConfiguration
-from backend.app.domains.integrations.automation_models import Automation
-from backend.app.domains.integrations.identities import ExternalIdentityService
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.governance.audit.service import AuditService
 from backend.app.identity.authorization.context import AuthenticatedUser
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.permissions import WorkspaceAction
@@ -41,7 +34,13 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
-from backend.app.observability.audit.service import AuditService
+from backend.app.identity.authorization.service import AuthorizationService
+from backend.app.orchestration.automations.contracts import AutomationConfiguration
+from backend.app.orchestration.automations.identities import ExternalIdentityService
+from backend.app.orchestration.automations.models import Automation
+from backend.app.shared.errors import DomainError
+from backend.app.shared.security.redaction import redact_sensitive_payload
+from backend.app.shared.utils import ensure_aware_utc
 from backend.app.workspaces.management.models import Workspace
 
 SERVICE_PERMISSIONS = frozenset(

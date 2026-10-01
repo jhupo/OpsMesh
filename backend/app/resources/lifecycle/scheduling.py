@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit.models import AuditEvent
+from backend.app.governance.audit.models import AuditEvent
 from backend.app.resources.lifecycle.settings import _ensure_utc_datetime, _positive_int
 from backend.app.resources.storage.storage import ObjectStorage
 from backend.app.resources.transfers.contracts import (
@@ -15,7 +15,7 @@ from backend.app.resources.transfers.contracts import (
     WorkspaceArchiveRestoreDrillRequest,
 )
 from backend.app.resources.transfers.models import WorkspaceExportJob
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.workspaces.management.models import Workspace
 
 

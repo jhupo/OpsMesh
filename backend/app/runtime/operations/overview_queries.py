@@ -5,9 +5,9 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.workers.models import WorkerHeartbeat
 
 

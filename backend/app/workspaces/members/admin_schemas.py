@@ -7,7 +7,7 @@ from pydantic import (
     model_validator,
 )
 
-from backend.app.core.contracts import ORMModel
+from backend.app.shared.contracts import ORMModel
 
 
 class AdminWorkspaceMemberResponse(ORMModel):

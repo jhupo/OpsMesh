@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
 from backend.app.resources.lifecycle.queries import archive_integrity_payload
 from backend.app.resources.lifecycle.recovery import (
     RECOVERY_READINESS_APPLY_ACTIONS,
@@ -26,7 +26,7 @@ from backend.app.resources.lifecycle.settings import (
 )
 from backend.app.resources.storage.storage import ObjectStorage
 from backend.app.resources.transfers.service import WorkspaceExportService
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.workspaces.management.models import Workspace
 
 

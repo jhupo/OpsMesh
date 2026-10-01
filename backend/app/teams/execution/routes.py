@@ -5,14 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies.queue import (
-    get_worker_queue,
-)
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
-from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.identity.auth.dependencies import workspace_dependency
-from backend.app.identity.auth.service import AuthorizationService
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.errors import PermissionDeniedError
 from backend.app.identity.authorization.permissions import WorkspaceAction
@@ -21,8 +14,13 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
-from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.identity.authorization.service import AuthorizationService
+from backend.app.runtime.queues.contracts import JobType
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.security.redaction import redact_sensitive_payload
 from backend.app.teams.execution.loop import (
     TeamExecutionLoopService,
     enqueue_team_execution_loop_job,

@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.contracts import AgentRuntimeResumeState
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.orchestration.runs.models import AgentRunStateSnapshot
+from backend.app.orchestration.runs.models import AgentRunStateSnapshot
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 # Native provider state can retain up to 20 MiB of admitted media as base64, plus SDK context.
 # Keep a hard ceiling while allowing approval/resumption of the largest admitted message.

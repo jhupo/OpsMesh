@@ -3,12 +3,12 @@ from hmac import compare_digest
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.client_ip import security_request_context
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.governance.security_events.service import SecurityAuditService
+from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.authorization.errors import AuthenticationError
-from backend.app.observability.audit.security_events import SecurityAuditService
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.client_ip import security_request_context
 
 SETTINGS_DEPENDENCY = Depends(get_settings)
 DB_SESSION_DEPENDENCY = Depends(get_db_session)
@@ -26,7 +26,7 @@ async def require_platform_admin(
         return
     if provided_token:
         try:
-            user = AuthorizationService(session).authenticate_user_token(provided_token, settings)
+            user = AuthenticationService(session).authenticate_user_token(provided_token, settings)
         except AuthenticationError:
             user = None
         if user is not None and user.platform_admin:

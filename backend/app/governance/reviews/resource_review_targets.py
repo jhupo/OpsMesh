@@ -8,11 +8,11 @@ from backend.app.capabilities.catalog.models import Capability
 from backend.app.capabilities.marketplace.models import MarketplaceListing, TalentListing
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolAllowlist
 from backend.app.capabilities.skills.models import Skill
-from backend.app.core.errors import PolicyDeniedError
-from backend.app.core.utils import uuid_or_none
-from backend.app.domains.orchestration.approvals.models import Approval
+from backend.app.governance.audit.service import AuditService
 from backend.app.governance.reviews.policy import RESOURCE_STATUS_ACTIVE, RESOURCE_STATUS_REJECTED
-from backend.app.observability.audit.service import AuditService
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.shared.errors import PolicyDeniedError
+from backend.app.shared.utils import uuid_or_none
 
 ResourceReviewTarget: TypeAlias = (
     AgentProfile

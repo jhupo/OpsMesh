@@ -24,7 +24,7 @@ from backend.app.agents.sessions.views import (
     session_item_view,
     session_summary,
 )
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
 class PersistentAgentSessionManagementService:

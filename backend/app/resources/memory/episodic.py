@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.contracts import AgentRunResult
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.core.security.redaction import redact_text_fragments
-from backend.app.domains.orchestration.approvals.models import Approval
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task, TaskMessage
 from backend.app.resources.memory.configuration import initial_embedding_status
 from backend.app.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
 from backend.app.resources.memory.policy import EpisodicMemoryPolicy, episodic_memory_policy
+from backend.app.shared.security.redaction import redact_text_fragments
 
 RUN_COMPLETED_ENTRY_TYPE = "agent_run_completed"
 RUN_FAILED_ENTRY_TYPE = "agent_run_failed"

@@ -1,4 +1,4 @@
-from backend.app.core.security.secrets import (
+from backend.app.shared.security.secrets import (
     SecretEncryptionService,
     external_vault_reference_metadata,
     redact_secret_provider_configs,

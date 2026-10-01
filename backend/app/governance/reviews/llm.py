@@ -21,7 +21,7 @@ from backend.app.agents.providers.policy import (
     is_anthropic_provider,
     is_openai_compatible_provider,
 )
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 OPENAI_RESPONSES_REVIEWER = "openai_responses"
 OPENAI_CHAT_REVIEWER = "openai_chat_completions"

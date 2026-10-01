@@ -3,8 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from backend.app.core.contracts import TimestampedModel
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.contracts import TimestampedModel
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class WorkspaceSkillInstallRequest(BaseModel):

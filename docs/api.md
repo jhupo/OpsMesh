@@ -1,6 +1,6 @@
 # OpsMesh API
 
-> 当前接口索引基于 `backend/app/api/router.py` 和当前路由实现。默认前缀为 `/api/v1`；精确请求和响应 schema 以运行中的 OpenAPI 为准。
+> 当前接口索引基于 `backend/app/bootstrap/routers.py` 和当前路由实现。默认前缀为 `/api/v1`；精确请求和响应 schema 以运行中的 OpenAPI 为准。
 
 ## 发现接口
 
@@ -91,7 +91,7 @@
 
 ## 自托管 Worker 与插件 Runtime
 
-自托管 Worker 路由由 `backend/app/api/routes/self_hosted/` 提供，插件 Runtime 路由使用 `/api/v1/plugin-runtime/{workspace_id}/{install_id}`。这些接口使用独立的 Worker、Runtime 或安装凭据，不能被普通用户 Token 代替。
+自托管 Worker 路由由 `backend/app/runtime/self_hosted/routes.py` 提供，插件 Runtime 路由使用 `/api/v1/plugin-runtime/{workspace_id}/{install_id}`。这些接口使用独立的 Worker、Runtime 或安装凭据，不能被普通用户 Token 代替。
 
 ## 通用约定
 
@@ -102,5 +102,4 @@
 - 认证信息、Provider Key、MCP Credential、签名材料和完整授权 URL 不得出现在响应、日志或审计详情中。
 - 对需要审批的动作，接口返回持久化的审批或 Run 状态，Worker 在执行前再次检查当前授权和策略。
 
-接口源代码：`backend/app/api/routes/`；应用路由汇总：`backend/app/api/router.py`。
-
+接口源代码按功能模块就近放在 `backend/app/<feature>/.../routes.py`；应用路由汇总：`backend/app/bootstrap/routers.py`。

@@ -7,10 +7,10 @@ from backend.app.capabilities.governance.schemas import (
     WorkspaceCapabilityGovernanceResponse,
 )
 from backend.app.capabilities.governance.service import CapabilityGovernanceService
-from backend.app.core.db.session import get_db_session
 from backend.app.identity.auth.dependencies import workspace_dependency
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.shared.db.session import get_db_session
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])
 

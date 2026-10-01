@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.messages.models import AgentMessageThread
 from backend.app.agents.sessions.models import PersistentAgentSession
-from backend.app.observability.audit.service import AuditService
-from backend.app.runtime.environment.contracts import RuntimeLifecycleControl
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.governance.audit.service import AuditService
+from backend.app.runtime.instances.contracts import RuntimeLifecycleControl
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.teams.management.models import (
     TEAM_RUNTIME_PAUSED,
     TEAM_RUNTIME_RUNNING,

@@ -7,18 +7,13 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import (
-    counts_by_value,
-    dedupe_strings,
-    dict_or_empty,
-    int_or_zero,
-)
-from backend.app.domains.orchestration.runs.activity import run_activity
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.runs.queries import latest_events_by_run
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
+from backend.app.orchestration.runs.activity import run_activity
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.queries import latest_events_by_run
+from backend.app.orchestration.runs.statuses import ACTIVE_RUN_STATUSES
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.resources.artifacts.models import Artifact
+from backend.app.shared.utils import counts_by_value, dedupe_strings, dict_or_empty, int_or_zero
 from backend.app.teams.management.models import AgentTeam
 from backend.app.teams.projects.dashboard_repository import TeamProjectDashboardRepository
 

@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from backend.app.api.client_ip import security_request_context
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
+from backend.app.governance.security_events.service import SecurityAuditService
 from backend.app.identity.auth.schemas import CurrentUserResponse
 from backend.app.identity.invitations.schemas import AcceptUserInvitationRequest
 from backend.app.identity.invitations.service import UserInvitationService
-from backend.app.observability.audit.security_events import SecurityAuditService
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.client_ip import security_request_context
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

@@ -6,10 +6,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import FileAccessEvent, WorkspaceFile
 from backend.app.resources.files.runtime_policy import validate_file_runtime_policy
@@ -17,6 +15,8 @@ from backend.app.resources.files.security import safe_filename
 from backend.app.resources.memory.indexing import WorkspaceMemoryIndexingService
 from backend.app.resources.storage.storage import ObjectStorage
 from backend.app.resources.storage.transactions import CompensatingObjectStorageWrites
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
 
 T = TypeVar("T")
 

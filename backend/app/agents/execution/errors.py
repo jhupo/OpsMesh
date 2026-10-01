@@ -6,7 +6,7 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeCapability,
     AgentRuntimeGuardrailResult,
 )
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 _SENSITIVE_URL_PATTERN = re.compile(
     r"https?://[^\s,'\";}]+",

@@ -12,9 +12,9 @@ from backend.app.agents.messages.contracts import (
 from backend.app.agents.messages.models import THREAD_STATUSES, AgentMessage, AgentMessageThread
 from backend.app.agents.messages.queries import AgentMailboxQueries
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.models import Task
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
 from backend.app.teams.management.models import AgentTeam
 
 T = TypeVar("T")

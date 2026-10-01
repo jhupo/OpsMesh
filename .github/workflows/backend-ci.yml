@@ -47,6 +47,8 @@ jobs:
       - run: uv run ruff check . --output-format github
       - name: Architecture contracts
         run: uv run python scripts/ci_command.py uv run lint-imports --no-cache
+      - name: Feature ownership and composition boundaries
+        run: uv run python scripts/ci_command.py uv run python scripts/audit_app_layout.py --architecture-check
       - name: Strict type checks
         run: uv run python scripts/ci_command.py uv run mypy
       - name: Focused tests

@@ -9,15 +9,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import stringify_or_none
-from backend.app.domains.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.models import Task
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.files.runtime_policy import runtime_file_denial_code
 from backend.app.resources.memory.configuration import initial_embedding_status
 from backend.app.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.utils import stringify_or_none
 
 _CHUNK_SIZE = 900
 _CHUNK_OVERLAP = 120

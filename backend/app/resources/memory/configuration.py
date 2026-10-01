@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.providers.policy import is_openai_compatible_provider
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
 from backend.app.resources.memory.models import WorkspaceMemoryConfiguration, WorkspaceMemoryEntry
 from backend.app.resources.memory.policy import (
     HybridMemoryRetrievalPolicy,

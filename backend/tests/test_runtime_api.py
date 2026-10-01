@@ -10,25 +10,25 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.runtime import get_docker_runtime_client
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.domains.platform.admin.models import PlatformPolicy
-from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
+from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.governance.policies.models import PlatformPolicy
+from backend.app.governance.policies.risky_values import RISKY_EXECUTION_POLICY_KEY
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
-from backend.app.runtime.environment.contracts import (
+from backend.app.runtime.instances.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.runtime.environment.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import RuntimeSpace
-from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.queue import RedisQueue
-from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.runtime.instances.dependencies import get_docker_runtime_client
+from backend.app.runtime.instances.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.queues.contracts import JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.runtime.spaces.models import RuntimeSpace
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 
@@ -499,10 +499,8 @@ def _client(
     app = create_app(settings)
     from fakeredis import FakeRedis
 
-    from backend.app.api.dependencies.queue import (
-        get_worker_queue,
-    )
-    from backend.app.core.redis.keys import RedisKeyBuilder
+    from backend.app.runtime.queues.dependencies import get_worker_queue
+    from backend.app.shared.redis.keys import RedisKeyBuilder
 
     def override_db_session() -> Generator[Session, None, None]:
         request_session = session_factory()

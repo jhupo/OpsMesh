@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.session import get_db_session
 from backend.app.identity.auth.dependencies import workspace_dependency
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.permissions import WorkspaceAction
@@ -15,6 +14,7 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
+from backend.app.shared.db.session import get_db_session
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/access", tags=["resource-access"])
 

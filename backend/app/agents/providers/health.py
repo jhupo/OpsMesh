@@ -16,8 +16,8 @@ from backend.app.agents.providers.probes import (
     ModelProviderHealthTarget,
     probe_model_provider,
 )
-from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.shared.security.redaction import redact_sensitive_text
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class ModelProviderHealthService:
@@ -136,7 +136,7 @@ def provider_health_audit_metadata(
 ) -> dict[str, object]:
     from backend.app.agents.providers.audit import model_api_audit_payload
     from backend.app.agents.providers.policy import model_provider_base_url_host
-    from backend.app.core.security.redaction import redact_sensitive_payload
+    from backend.app.shared.security.redaction import redact_sensitive_payload
 
     return {
         "name": credential.name,
@@ -172,7 +172,7 @@ def provider_credential_audit_metadata(credential: ModelProviderCredential) -> d
 _HEALTH_CHECK_SCHEDULE_JOB_LIMIT = 10
 if TYPE_CHECKING:
     from backend.app.agents.providers.queries import ModelProviderCredentialQueryService
-    from backend.app.runtime.workers.scheduling.models import WorkspaceScheduledJob
+    from backend.app.orchestration.scheduling.models import WorkspaceScheduledJob
 
 
 def model_provider_last_health_check_at(credential: ModelProviderCredential) -> datetime | None:
@@ -187,8 +187,8 @@ def model_provider_last_health_check_at(credential: ModelProviderCredential) -> 
 def model_provider_health_check_schedule_summary(
     session: Session, *, workspace_id: UUID, credential_id: UUID
 ) -> dict[str, object]:
-    from backend.app.runtime.workers.contracts import JobType
-    from backend.app.runtime.workers.scheduling.models import WorkspaceScheduledJob
+    from backend.app.orchestration.scheduling.models import WorkspaceScheduledJob
+    from backend.app.runtime.queues.contracts import JobType
 
     jobs = list(
         session.scalars(

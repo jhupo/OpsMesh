@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app.core.utils import dedupe_strings, string_list
+from backend.app.shared.utils import dedupe_strings, string_list
 from backend.app.teams.execution.overview_contracts import (
     ExecutionBottleneck,
     OperatorIntervention,

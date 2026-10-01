@@ -24,25 +24,25 @@ from backend.app.capabilities.mcp.models import (
 from backend.app.capabilities.mcp.transport.remote import SseMcpToolAdapter
 from backend.app.capabilities.mcp.transport.resolver import McpAdapterResolver
 from backend.app.capabilities.tools.contracts import ToolPermissionError, ToolResourceNotFoundError
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.orchestration.approvals.models import Approval
-from backend.app.domains.orchestration.runs.models import (
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.policies.models import PlatformPolicy
+from backend.app.governance.policies.risky_values import RISKY_EXECUTION_POLICY_KEY
+from backend.app.governance.reviews.models import ResourceReview
+from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.runs.models import (
     AgentRun,
     RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.platform.admin.models import PlatformPolicy
-from backend.app.domains.platform.admin.risky_policy_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.governance.reviews.models import ResourceReview
-from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.identity.authorization.execution import ExecutionIdentityService
-from backend.app.identity.users.models import User
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.shared.config import Settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.security.secrets import SecretEncryptionService
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

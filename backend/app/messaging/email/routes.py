@@ -1,9 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from backend.app.api.client_ip import security_request_context
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
+from backend.app.governance.security_events.service import SecurityAuditService
 from backend.app.identity.authorization.admin_dependencies import require_platform_admin
 from backend.app.messaging.email.schemas import (
     EmailRecipient,
@@ -11,7 +9,9 @@ from backend.app.messaging.email.schemas import (
     MailConfigurationUpdate,
 )
 from backend.app.messaging.email.service import PlatformMailService
-from backend.app.observability.audit.security_events import SecurityAuditService
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.client_ip import security_request_context
 
 DB_SESSION_DEPENDENCY = Depends(get_db_session)
 SETTINGS_DEPENDENCY = Depends(get_settings)

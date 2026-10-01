@@ -2,11 +2,11 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.orchestration.approvals.models import Approval
-from backend.app.domains.orchestration.approvals.service import ApprovalService
+from backend.app.governance.audit.service import AuditService
 from backend.app.governance.reviews.models import ResourceReview
-from backend.app.observability.audit.service import AuditService
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class ResourceReviewApprovalService:

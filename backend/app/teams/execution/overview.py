@@ -7,16 +7,13 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.core.utils import dedupe_strings, string_list
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.runs.queries import (
-    active_task_ids_by_agent,
-    latest_events_by_run,
-)
-from backend.app.domains.orchestration.tasks.collaboration.manager_diagnostics import (
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.queries import active_task_ids_by_agent, latest_events_by_run
+from backend.app.orchestration.tasks.collaboration.manager_diagnostics import (
     TaskManagerDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.shared.utils import dedupe_strings, string_list
 from backend.app.teams.execution.member_reassignment import specialist_reassignments
 from backend.app.teams.execution.member_staffing import staffing_gaps
 from backend.app.teams.execution.member_workload import active_run_phase_counts, member_items

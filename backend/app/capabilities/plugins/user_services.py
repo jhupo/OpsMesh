@@ -1,5 +1,4 @@
 """Plugin delegation to resource discovery and existing knowledge/memory services."""
-
 from opsmesh_plugin_sdk.services.knowledge import (
     KnowledgeHit,
     KnowledgeQuery,
@@ -12,9 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.core.db.base import Base
-from backend.app.core.errors import DomainError
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.governance.audit.service import AuditService
 from backend.app.identity.authorization.permissions import WorkspaceAction
 from backend.app.identity.authorization.resource_queries import (
     ResourceQueryScope,
@@ -28,12 +25,14 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
-from backend.app.observability.audit.service import AuditService
+from backend.app.identity.authorization.service import AuthorizationService
 from backend.app.resources.memory.semantic import (
     AgentSemanticMemoryService,
     SemanticMemoryConflictError,
     SemanticMemoryUpsert,
 )
+from backend.app.shared.db.base import Base
+from backend.app.shared.errors import DomainError
 
 
 class PluginUserServices:

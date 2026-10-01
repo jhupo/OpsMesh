@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.identity.authorization.resources import ResourceAccessDenied
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.teams.execution.loop_support import (
     TEAM_EXECUTION_LOOP_WINDOW_SECONDS,
     enqueue_team_execution_loop_job,

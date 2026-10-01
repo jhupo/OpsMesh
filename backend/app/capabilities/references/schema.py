@@ -5,7 +5,7 @@ from jsonschema.exceptions import SchemaError, ValidationError
 from referencing import Registry
 from referencing.exceptions import Unresolvable
 
-from backend.app.core.security.redaction import (
+from backend.app.shared.security.redaction import (
     is_sensitive_payload_key,
     is_sensitive_payload_value,
 )

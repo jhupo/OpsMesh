@@ -5,11 +5,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from backend.app.api.schemas.orchestration.tasks.management import (
+from backend.app.orchestration.tasks.schemas.management import (
     TaskHandoffQueueResponse,
     TaskManagerQueueResponse,
 )
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.security.redaction import redact_sensitive_payload
 from backend.app.teams.execution.schemas import AgentTeamExecutionOverviewResponse
 
 

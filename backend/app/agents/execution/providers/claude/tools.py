@@ -21,7 +21,7 @@ from backend.app.agents.execution.contracts import (
 )
 from backend.app.agents.execution.errors import AgentRuntimeCancelledError, normalize_agent_error
 from backend.app.agents.execution.observer import AgentRuntimeExecutionObserver
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 _SDK_TOOL_PREFIX = "mcp__opsmesh__"
 

@@ -4,8 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from backend.app.core.contracts import ORMModel, TimestampedModel
-from backend.app.core.utils import ensure_aware_utc
+from backend.app.shared.contracts import ORMModel, TimestampedModel
+from backend.app.shared.utils import ensure_aware_utc
 
 
 class CurrentUserResponse(ORMModel):

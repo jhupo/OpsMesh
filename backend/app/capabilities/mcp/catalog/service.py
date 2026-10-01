@@ -31,9 +31,9 @@ from backend.app.capabilities.mcp.models import (
     McpToolCallLog,
 )
 from backend.app.capabilities.mcp.policy import MCP_LIMIT_COUNTED_STATUSES, mcp_tool_policy_summary
-from backend.app.core.config import Settings
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
+from backend.app.shared.config import Settings
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
 
 T = TypeVar("T")
 

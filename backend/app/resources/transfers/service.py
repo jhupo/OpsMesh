@@ -16,8 +16,8 @@ from backend.app.resources.transfers.contracts import (
     WorkspaceExportResponse,
 )
 from backend.app.resources.transfers.models import WorkspaceExportJob
-from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.contracts import JobPayload
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.workspaces.management.models import Workspace
 
 

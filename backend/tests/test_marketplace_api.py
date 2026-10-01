@@ -17,7 +17,6 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.agents.providers.models import ModelProviderCredential
-from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.capabilities.marketplace.contracts import MarketplaceInstallRequest
 from backend.app.capabilities.marketplace.models import (
     MarketplaceListing,
@@ -28,14 +27,15 @@ from backend.app.capabilities.marketplace.models import (
 from backend.app.capabilities.marketplace.resource_service import MarketplaceService
 from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist
 from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.errors import DatabaseConflictError
-from backend.app.core.db.session import get_db_session
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage
 from backend.app.governance.reviews.llm import LlmReviewResult
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
+from backend.app.orchestration.tasks.models import Task, TaskMessage
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.errors import DatabaseConflictError
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.redis.dependencies import get_redis_client
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember

@@ -23,14 +23,14 @@ from backend.app.agents.profiles.payloads import (
 )
 from backend.app.agents.profiles.reviews import AgentProfileReviewService
 from backend.app.agents.profiles.versions import AgentVersionRecorder
-from backend.app.core.config import Settings
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
 from backend.app.governance.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     RESOURCE_STATUS_REJECTED,
 )
+from backend.app.shared.config import Settings
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
 
 AGENT_STATUS_ACTIVE = RESOURCE_STATUS_ACTIVE
 AGENT_STATUS_ARCHIVED = "archived"

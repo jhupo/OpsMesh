@@ -7,8 +7,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import datetime_or_none, positive_int_or_default, uuid_or_none
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.shared.utils import datetime_or_none, positive_int_or_default, uuid_or_none
 from backend.app.teams.execution.loop_support import TEAM_RUNTIME_DEFAULT_LOOP_INTERVAL_SECONDS
 from backend.app.teams.execution.queue_repository import TeamExecutionLoopQueueRepository
 from backend.app.teams.management.models import AgentTeam

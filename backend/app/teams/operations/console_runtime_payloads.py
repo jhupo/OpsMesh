@@ -4,8 +4,10 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.core.utils import (
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.security.redaction import redact_sensitive_payload
+from backend.app.shared.utils import (
     datetime_or_none,
     dedupe_strings,
     dict_list,
@@ -13,8 +15,6 @@ from backend.app.core.utils import (
     int_or_zero,
     positive_int_or_default,
 )
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue
 from backend.app.teams.sessions.service import TeamRuntimeState
 
 

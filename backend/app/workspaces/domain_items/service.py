@@ -4,17 +4,17 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.base import Base
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.identity.authorization.resource_queries import (
     require_resource_row,
     resource_query_scope,
 )
 from backend.app.identity.authorization.resources import ResourceAction
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.orchestration.tasks.models import Task
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
 from backend.app.workspaces.domain_items.contracts import (
     DomainItemCreateRequest,
     DomainProjectCreateRequest,

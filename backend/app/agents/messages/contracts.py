@@ -7,9 +7,9 @@ from sqlalchemy import Select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.core.contracts import TimestampedModel
-from backend.app.core.pagination import PageParams
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.shared.contracts import TimestampedModel
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 T = TypeVar("T")
 

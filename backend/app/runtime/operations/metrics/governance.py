@@ -6,10 +6,10 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import ensure_aware_utc
-from backend.app.observability.audit.models import AuditIntegrityCheck
-from backend.app.observability.costs.models import ModelUsageRecord, WorkspaceCostBudget
-from backend.app.observability.telemetry.metrics import GaugeMetric
+from backend.app.governance.audit.models import AuditIntegrityCheck
+from backend.app.governance.costs.models import ModelUsageRecord, WorkspaceCostBudget
+from backend.app.shared.telemetry.metrics import GaugeMetric
+from backend.app.shared.utils import ensure_aware_utc
 from backend.app.workspaces.management.models import Workspace
 
 

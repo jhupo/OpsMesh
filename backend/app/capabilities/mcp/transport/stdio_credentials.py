@@ -4,7 +4,7 @@ import re
 
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionError
 from backend.app.capabilities.mcp.models import McpCredentialReference
-from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SELF_HOSTED_ENV_PROVIDER = "self_hosted_env"

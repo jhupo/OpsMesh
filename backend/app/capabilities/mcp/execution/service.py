@@ -20,9 +20,9 @@ from backend.app.capabilities.mcp.execution.validation import McpExecutionValida
 from backend.app.capabilities.mcp.models import McpToolCallLog
 from backend.app.capabilities.mcp.policy import MCP_LIMIT_COUNTED_STATUSES
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
-from backend.app.core.config import Settings, get_settings
-from backend.app.domains.orchestration.approvals.policy import ApprovalPolicyEngine
-from backend.app.observability.telemetry.trace_context import current_trace_context, telemetry_span
+from backend.app.orchestration.approvals.policy import ApprovalPolicyEngine
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.telemetry.trace_context import current_trace_context, telemetry_span
 
 
 class McpToolExecutionService:

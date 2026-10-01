@@ -18,9 +18,9 @@ from backend.app.capabilities.mcp.catalog.rules import connection_summary as _co
 from backend.app.capabilities.mcp.catalog.rules import mcp_server_probeable as _mcp_server_probeable
 from backend.app.capabilities.mcp.catalog.service import McpCatalogService
 from backend.app.capabilities.mcp.models import McpToolAllowlist
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.pagination import PageParams
 
 
 class CapabilityGovernanceMcpActionService:

@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.tasks.control.actions import TaskOperatorActionService
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.control.actions import TaskOperatorActionService
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 
 TERMINAL_TASK_STATUSES = {"completed", "cancelled", "canceled"}

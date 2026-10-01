@@ -104,11 +104,11 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "backend/migrations/versions/*.py" = ["E501"]
-"backend/app/api/routes/*.py" = ["B008"]
 "backend/app/**/routes.py" = ["B008"]
 "backend/app/**/*_routes.py" = ["B008"]
 "backend/app/**/routes/*.py" = ["B008"]
 "backend/app/**/dependencies.py" = ["B008"]
+"backend/app/**/*_dependencies.py" = ["B008"]
 "backend/app/**/http_common.py" = ["B008"]
 
 [tool.ruff.lint.isort]
@@ -130,70 +130,151 @@ include_external_packages = true
 
 [[tool.importlinter.contracts]]
 id = "http-transport"
-name = "HTTP transport is only composed by the API entry point"
+name = "HTTP middleware is composed only at the API entry point"
 type = "protected"
-protected_modules = ["backend.app.api.routes", "backend.app.api.middleware"]
-allowed_importers = ["backend.app.api", "backend.app.main"]
+protected_modules = [
+    "backend.app.shared.http.middleware",
+]
+allowed_importers = [
+    "backend.app.main",
+]
 
 [[tool.importlinter.contracts]]
-id = "infrastructure-no-api"
-name = "Shared infrastructure cannot depend on the API even indirectly"
+id = "shared-no-business"
+name = "Shared mechanisms cannot import business modules or bootstrap"
 type = "forbidden"
-source_modules = ["backend.app.core"]
-forbidden_modules = ["backend.app.api"]
+source_modules = [
+    "backend.app.shared",
+]
+forbidden_modules = [
+    "backend.app.identity",
+    "backend.app.workspaces",
+    "backend.app.agents",
+    "backend.app.teams",
+    "backend.app.capabilities",
+    "backend.app.resources",
+    "backend.app.orchestration",
+    "backend.app.runtime",
+    "backend.app.platform",
+    "backend.app.messaging",
+    "backend.app.governance",
+    "backend.app.bootstrap",
+    "backend.app.main",
+]
 
 [[tool.importlinter.contracts]]
 id = "pagination-no-transport"
 name = "Pagination inputs have no HTTP or database dependency"
 type = "forbidden"
-source_modules = ["backend.app.core.pagination"]
-forbidden_modules = ["backend.app.api", "fastapi", "starlette", "sqlalchemy"]
+source_modules = [
+    "backend.app.shared.pagination",
+]
+forbidden_modules = [
+    "fastapi",
+    "starlette",
+    "sqlalchemy",
+]
 
 [[tool.importlinter.contracts]]
 id = "production-no-test-framework"
 name = "Production code cannot depend on the test framework"
 type = "forbidden"
-source_modules = ["backend.app"]
-forbidden_modules = ["pytest"]
+source_modules = [
+    "backend.app",
+]
+forbidden_modules = [
+    "pytest",
+]
 
 [[tool.importlinter.contracts]]
 id = "docker-sdk-boundary"
 name = "Docker daemon access stays in its infrastructure adapter"
 type = "protected"
-protected_modules = ["docker"]
-allowed_importers = ["backend.app.runtime.environment.backends.docker"]
+protected_modules = [
+    "docker",
+]
+allowed_importers = [
+    "backend.app.runtime.backends.docker",
+]
 
 [[tool.importlinter.contracts]]
 id = "s3-sdk-boundary"
 name = "S3 SDK access stays in its storage adapter"
 type = "protected"
-protected_modules = ["boto3"]
-allowed_importers = ["backend.app.resources.storage.storage"]
+protected_modules = [
+    "boto3",
+]
+allowed_importers = [
+    "backend.app.resources.storage.storage",
+]
 
 [[tool.importlinter.contracts]]
 id = "provider-neutral-contracts"
-name = "Agent runtime contracts do not depend on vendor SDKs or HTTP transport"
+name = "Agent runtime contracts stay independent of vendor SDK and HTTP"
 type = "forbidden"
-source_modules = ["backend.app.agents.execution.contracts", "backend.app.runtime.contracts"]
-forbidden_modules = ["agents", "openai", "anthropic", "claude_agent_sdk", "backend.app.api"]
+source_modules = [
+    "backend.app.agents.execution.contracts",
+    "backend.app.runtime.contracts",
+]
+forbidden_modules = [
+    "agents",
+    "openai",
+    "anthropic",
+    "claude_agent_sdk",
+    "fastapi",
+    "starlette",
+    "backend.app.bootstrap",
+]
 
 [[tool.importlinter.contracts]]
-id = "domain-no-api-services"
-name = "Domain and runtime code cannot depend on API application services"
+id = "bootstrap-composition"
+name = "Only application entry points import concrete composition"
+type = "protected"
+protected_modules = [
+    "backend.app.bootstrap",
+]
+allowed_importers = [
+    "backend.app.main",
+    "backend.app.delivery",
+    "backend.app.runtime.workers.cli",
+    "backend.app.platform.updates.daemon",
+]
+
+[[tool.importlinter.contracts]]
+id = "worker-dispatch-boundary"
+name = "Worker loop accepts injected business handlers and maintenance"
 type = "forbidden"
-source_modules = ["backend.app.domains", "backend.app.runtime"]
-forbidden_modules = ["backend.app.api.services"]
+source_modules = [
+    "backend.app.runtime.workers.runner",
+    "backend.app.runtime.workers.reporting",
+    "backend.app.runtime.workers.contracts",
+]
+forbidden_modules = [
+    "backend.app.agents",
+    "backend.app.teams",
+    "backend.app.capabilities",
+    "backend.app.resources",
+    "backend.app.orchestration",
+    "backend.app.platform",
+    "backend.app.messaging",
+    "backend.app.bootstrap",
+]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 id = "email-http-composition"
 name = "Email HTTP routes are only composed by the platform API"
 type = "protected"
-protected_modules = ["backend.app.messaging.email.routes"]
-allowed_importers = ["backend.app.api.routes.platform.router"]
+protected_modules = [
+    "backend.app.messaging.email.routes",
+]
+allowed_importers = [
+    "backend.app.bootstrap.platform_routes",
+]
 
 [[tool.importlinter.contracts]]
 id = "email-service-boundary"
-name = "Email application and persistence do not depend on HTTP or other business domains"
+name = "Email persistence and delivery stay independent of HTTP and consumers"
 type = "forbidden"
 source_modules = [
     "backend.app.messaging.email.service",
@@ -202,10 +283,11 @@ source_modules = [
     "backend.app.messaging.email.smtp",
 ]
 forbidden_modules = [
-    "backend.app.api",
     "backend.app.bootstrap",
-    "backend.app.domains",
     "backend.app.runtime",
+    "backend.app.identity",
+    "backend.app.workspaces",
+    "backend.app.orchestration",
     "fastapi",
     "starlette",
 ]
@@ -214,7 +296,9 @@ forbidden_modules = [
 id = "email-model-owner"
 name = "Email persistence is private to its service and registration"
 type = "protected"
-protected_modules = ["backend.app.messaging.email.models"]
+protected_modules = [
+    "backend.app.messaging.email.models",
+]
 allowed_importers = [
     "backend.app.messaging.email.service",
     "backend.app.bootstrap.models",

@@ -23,63 +23,54 @@ from backend.app.agents.messages.models import AgentMessage
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
 from backend.app.agents.sessions.models import PersistentAgentSession
+from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.bootstrap.worker import build_worker_runner
 from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist, McpToolCallLog
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
-from backend.app.domains.orchestration.runs.authorization.snapshot import (
-    RunAuthorizationSnapshotService,
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.costs.models import (
+    ModelPricingRule,
+    ModelUsageRecord,
+    WorkspaceCostBudget,
 )
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.collaboration.state import (
-    TaskCollaborationStateService,
-)
-from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
-from backend.app.domains.orchestration.tasks.models import (
-    Task,
-    TaskEventOutbox,
-    TaskMessage,
-    TaskStep,
-)
-from backend.app.domains.orchestration.tasks.state import TaskStatus
 from backend.app.governance.reviews.model_request import ModelRequestReview
 from backend.app.governance.reviews.service import ResourceReview
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.identity.users.models import User
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.costs.models import (
-    ModelPricingRule,
-    ModelUsageRecord,
-    WorkspaceCostBudget,
-)
-from backend.app.observability.notifications.models import WorkspaceNotification
-from backend.app.observability.telemetry.request_context import current_log_context, log_context
-from backend.app.observability.telemetry.trace_context import TraceContext, trace_context
+from backend.app.messaging.notifications.models import WorkspaceNotification
+from backend.app.orchestration.requests.builder import RunRequestBuilder
+from backend.app.orchestration.runs.authorization.snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.tasks.collaboration.state import TaskCollaborationStateService
+from backend.app.orchestration.tasks.events import RedisTaskEventBus
+from backend.app.orchestration.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep
+from backend.app.orchestration.tasks.state import TaskStatus
 from backend.app.resources.memory.models import WorkspaceMemoryEntry
 from backend.app.resources.transfers.models import WorkspaceExportJob, WorkspaceExportJobStatus
-from backend.app.runtime.environment.contracts import (
+from backend.app.runtime.instances.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceEvent
-from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.runtime.instances.models import RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent
 from backend.app.runtime.workers.models import WorkerHeartbeat, WorkerLease, WorkerNode
 from backend.app.runtime.workers.nodes import WorkerHeartbeatOperationsService
-from backend.app.runtime.workers.queue import RedisQueue
-from backend.app.runtime.workers.registry import WorkerJobHandler
 from backend.app.runtime.workers.runner import (
     WorkerMaintenanceSummary,
-    WorkerRunner,
     WorkerRunnerConfig,
 )
+from backend.app.shared.config import Settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.shared.security.secrets import SecretEncryptionService
+from backend.app.shared.telemetry.request_context import current_log_context, log_context
+from backend.app.shared.telemetry.trace_context import TraceContext, trace_context
 from backend.app.teams.execution.loop import TeamExecutionLoopQueueService
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.teams.sessions.service import TeamRuntimeService
@@ -227,7 +218,7 @@ def test_worker_runner_run_once_processes_agent_job() -> None:
     assert queued_trace is not None
     assert queued_trace.trace_id == parent_trace.trace_id
     assert queued_trace.parent_span_id == parent_trace.span_id
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-1", queue_name="agent_runs"),
@@ -295,7 +286,7 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
             priority=7,
         )
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -421,7 +412,7 @@ def test_worker_blocks_model_call_when_workspace_cost_budget_is_exhausted() -> N
         )
     )
     model_runner = MustNotRunAgentRunner()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-budget", queue_name="agent_runs"),
@@ -476,7 +467,7 @@ def test_worker_runner_maintenance_reclaims_job_after_crash_before_lease() -> No
         idempotency_key=f"agent.run:{workspace_id}:{run_id}",
     )
     queue.enqueue(job)
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -523,7 +514,7 @@ def test_multi_agent_plan_survives_worker_restart_and_manager_approval() -> None
         assert orchestration.enqueue_run(first_run, requested_by_user_id=user_id) is True
         session.commit()
 
-    first_worker = WorkerRunner(
+    first_worker = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-before-restart", queue_name="agent_runs"),
@@ -543,7 +534,7 @@ def test_multi_agent_plan_survives_worker_restart_and_manager_approval() -> None
         assert phases["handoff"]["status"] == "not_required"
         assert [item["status"] for item in state["handoffs"]] == ["source_incomplete"]
 
-    restarted_worker = WorkerRunner(
+    restarted_worker = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-after-restart", queue_name="agent_runs"),
@@ -619,7 +610,7 @@ def test_worker_heartbeat_preserves_existing_capacity_routing_fields() -> None:
         )
         session.commit()
 
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=_queue(),
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -651,7 +642,7 @@ def test_worker_maintenance_enqueues_team_execution_loop_jobs() -> None:
         session_factory,
         with_runtime_template=True,
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-team-loop", queue_name="agent_runs"),
@@ -701,7 +692,7 @@ def test_worker_maintenance_enqueues_running_team_runtime_without_tasks() -> Non
         workspace_id = workspace.id
         team_id = team.id
         user_id = user.id
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-running-team-loop", queue_name="agent_runs"),
@@ -756,7 +747,7 @@ def test_worker_maintenance_prioritizes_stale_team_runtime_recovery() -> None:
             "last_heartbeat_at": stale_at.isoformat(),
         },
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-stale-team-loop", queue_name="agent_runs"),
@@ -784,7 +775,7 @@ def test_worker_maintenance_prioritizes_degraded_bound_team_runtime() -> None:
         runtime_status="running",
         runtime_connection_status="offline",
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -814,7 +805,7 @@ def test_worker_maintenance_does_not_recover_paused_team_runtime() -> None:
         session_factory,
         runtime_metadata={"status": "paused"},
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-paused-team-loop", queue_name="agent_runs"),
@@ -841,7 +832,7 @@ def test_worker_maintenance_does_not_recover_stopped_team_runtime() -> None:
         session_factory,
         runtime_metadata={"status": "stopped"},
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-stopped-team-loop", queue_name="agent_runs"),
@@ -885,7 +876,7 @@ def test_worker_maintenance_enqueues_healthy_team_runtime_on_scheduled_cadence()
         runtime_status="running",
         runtime_connection_status="online",
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -1191,7 +1182,7 @@ def test_team_runtime_maintenance_consume_then_reschedules_on_next_cadence() -> 
             queue=queue,
             now=now + timedelta(seconds=61),
         )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -1255,7 +1246,7 @@ def test_worker_runner_processes_team_execution_loop_job() -> None:
             execution_identity=identity,
         )
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-team-loop-job", queue_name="agent_runs"),
@@ -1313,7 +1304,7 @@ def test_worker_runner_records_team_execution_loop_worker_failure(
             routing={"trigger": "scheduled_team_runtime", "api_key": "sk-routing-secret"},
         )
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -1384,7 +1375,7 @@ def test_worker_runner_records_team_execution_loop_missing_actor_failure() -> No
             routing={"trigger": "scheduled_team_runtime"},
         )
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -1444,7 +1435,7 @@ def test_worker_runner_team_execution_loop_ensures_workspace_runtime() -> None:
             execution_identity=identity,
         )
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-team-loop-runtime", queue_name="agent_runs"),
@@ -1519,7 +1510,7 @@ def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime() -> N
     assert job.routing["trigger"] == "degraded_team_runtime"
     assert job.routing["runtime_health"] == "degraded"
     queue.enqueue(job, force=True)
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -1572,7 +1563,7 @@ def test_worker_runner_team_runtime_soak_keeps_persistent_context_between_iterat
                 routing={"trigger": "scheduled_team_runtime"},
             )
         )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-team-loop-soak", queue_name="agent_runs"),
@@ -1649,7 +1640,7 @@ def test_team_runtime_scheduled_soak_across_thirty_minutes() -> None:
         team.default_task_policy = policy
         session.commit()
 
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -1757,7 +1748,7 @@ def test_worker_runner_continues_after_job_failure() -> None:
             idempotency_key=f"agent.run:{workspace_id}:{run_id}",
         )
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -1808,7 +1799,7 @@ def test_worker_runner_schedules_retry_with_error_metadata() -> None:
         max_attempts=2,
     )
     queue.enqueue(job)
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -1845,7 +1836,7 @@ def test_worker_runner_marks_archive_export_failed_when_settings_missing() -> No
             max_attempts=1,
         )
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -1898,7 +1889,7 @@ def test_worker_runner_drain_prevents_new_job_claims() -> None:
         )
         session.add(node)
         session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-draining", queue_name="agent_runs"),
@@ -1936,7 +1927,7 @@ def test_worker_runner_maintenance_status_prevents_new_job_claims() -> None:
             )
         )
         session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-maintenance", queue_name="agent_runs"),
@@ -1979,7 +1970,7 @@ def test_worker_runner_quarantined_status_prevents_new_job_claims() -> None:
             )
         )
         session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-quarantined", queue_name="agent_runs"),
@@ -2072,7 +2063,7 @@ def test_worker_runner_capacity_prevents_new_job_claims_when_full() -> None:
             )
         )
         session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-full", queue_name="agent_runs"),
@@ -2128,7 +2119,7 @@ def test_worker_runner_capacity_allows_claim_when_slot_available() -> None:
             )
         )
         session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-slot", queue_name="agent_runs"),
@@ -2198,7 +2189,7 @@ def test_worker_runner_skips_jobs_that_do_not_match_worker_capacity() -> None:
             )
         )
         session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-systemd", queue_name="agent_runs"),
@@ -2286,7 +2277,7 @@ def test_worker_runner_processes_mcp_tool_execution_job() -> None:
             },
         )
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-mcp", queue_name="agent_runs"),
@@ -2335,7 +2326,7 @@ def test_worker_runner_processes_memory_index_job() -> None:
             routing={"source_type": "task"},
         )
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-memory", queue_name="agent_runs"),
@@ -2365,7 +2356,7 @@ def test_worker_runner_processes_memory_index_job() -> None:
 def test_worker_runner_rolls_back_failed_session() -> None:
     session_factory = _session_factory()
     queue = _queue()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-fail", queue_name="agent_runs"),
@@ -2391,7 +2382,7 @@ def test_worker_runner_maintenance_recovers_stale_runs() -> None:
         task_status=TaskStatus.RUNNING,
         started_at=datetime.now(UTC) - timedelta(seconds=3_600),
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -2441,7 +2432,7 @@ def test_worker_runner_maintenance_requeues_stale_queued_and_fails_waiting_runti
         waiting_run.created_at = stale_at
         waiting_run.updated_at = stale_at
         session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -2478,7 +2469,7 @@ def test_worker_runner_maintenance_rehydrates_missing_queued_run() -> None:
     session_factory = _session_factory()
     queue = _queue()
     workspace_id, run_id, _ = _seed_run(session_factory, slug="missing-queued-run")
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -2526,7 +2517,7 @@ def test_worker_runner_maintenance_expires_stale_worker_leases() -> None:
             )
         )
         session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -2570,7 +2561,7 @@ def test_worker_runner_maintenance_keeps_recently_heartbeat_worker_leases() -> N
             )
         )
         session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -2673,7 +2664,7 @@ def test_worker_runner_maintenance_cleans_stale_runtimes_across_workspaces() -> 
         stale_runtime_id = stale_runtime.id
         terminal_runtime_id = terminal_runtime.id
         runtime_space_id = runtime_space.id
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -2777,7 +2768,7 @@ def test_worker_runner_summary_includes_maintenance_recovery() -> None:
         slug="maintenance-loop",
     )
     stop_event = Event()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -2816,7 +2807,7 @@ def test_worker_runner_summary_includes_maintenance_recovery() -> None:
 def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
     session_factory = _session_factory()
     stop_event = Event()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=_queue(),
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -2940,7 +2931,7 @@ def test_worker_maintenance_publishes_task_event_outbox_and_counts_result() -> N
         session.commit()
         outbox_event_id = outbox_event.id
         task_id = run.task_id
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -3030,7 +3021,7 @@ def test_worker_job_log_context_is_scoped_to_single_job() -> None:
             idempotency_key=f"agent.run:{workspace_id}:{run_id}",
         )
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-context", queue_name="agent_runs"),

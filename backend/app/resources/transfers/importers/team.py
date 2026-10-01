@@ -20,7 +20,7 @@ from backend.app.resources.transfers.importers.preview import (
     _missing_dependency_conflict,
     _skip_conflict,
 )
-from backend.app.runtime.environment.spaces.models import RuntimeSpace
+from backend.app.runtime.spaces.models import RuntimeSpace
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 
 

@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConst
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.app.core.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from backend.app.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 ACTIVE_SESSION_STATUS = "active"
 ARCHIVED_SESSION_STATUS = "archived"

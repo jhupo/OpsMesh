@@ -12,13 +12,13 @@ from mcp.types import CallToolResult, PaginatedRequestParams
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionError
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer
 from backend.app.capabilities.mcp.transport.payloads import string_dict_setting, string_setting
-from backend.app.core.security.egress import (
+from backend.app.shared.security.egress import (
     MCP_EGRESS_URL_POLICY,
     EgressUrlPolicy,
     EgressUrlValidationError,
     validate_egress_url,
 )
-from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class BaseRemoteMcpToolAdapter(ABC):

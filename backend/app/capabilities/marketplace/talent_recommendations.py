@@ -23,8 +23,8 @@ from backend.app.capabilities.marketplace.recommendations import (
     task_team_type,
 )
 from backend.app.capabilities.marketplace.talent_repository import TalentMarketplaceRepository
-from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage
+from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.orchestration.tasks.models import Task, TaskMessage
 
 
 class TalentRecommendationService:

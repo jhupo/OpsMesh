@@ -17,14 +17,14 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeUsage,
 )
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.costs.service import CostAccountingService
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.costs.service import CostAccountingService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 

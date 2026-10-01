@@ -16,7 +16,7 @@ redis_image="${OPSMESH_REMOTE_REDIS_IMAGE:-redis:7-alpine}"
 test_image="${OPSMESH_REMOTE_TEST_IMAGE:-python:3.13-slim}"
 
 pytest_args="${OPSMESH_REMOTE_PYTEST_ARGS:-backend/tests/test_capabilities_api.py backend/tests/test_operations_api.py -k 'governance_reenables_disabled_mcp_tools or governance_repairs_unallowed_agent_mcp_tools or workspace_capability_governance_can_refresh_stale_mcp_health_checks or team_runtime_timeline_aggregates_redacts_and_scopes_events or operations_overview_includes_workspace_data_lifecycle_rollup'}"
-ruff_args="${OPSMESH_REMOTE_RUFF_ARGS:-backend/app/capabilities/service.py backend/app/operations/timeline.py backend/app/operations/service.py backend/app/api/schemas/operations.py backend/tests/test_capabilities_api.py backend/tests/test_operations_api.py}"
+ruff_args="${OPSMESH_REMOTE_RUFF_ARGS:-backend/app backend/tests/test_capabilities_api.py backend/tests/test_operations_api.py}"
 
 cleanup() {
     docker rm -f "${postgres_container}" "${redis_container}" "${test_container}" >/dev/null 2>&1 || true

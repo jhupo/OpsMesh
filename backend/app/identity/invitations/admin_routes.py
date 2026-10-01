@@ -3,14 +3,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from backend.app.api.client_ip import security_request_context
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
+from backend.app.governance.security_events.service import SecurityAuditService
+from backend.app.identity.authorization.admin_dependencies import require_platform_admin
 from backend.app.identity.invitations.schemas import UserInvitationRequest, UserInvitationResponse
 from backend.app.identity.invitations.service import UserInvitationService
-from backend.app.observability.audit.security_events import SecurityAuditService
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.client_ip import security_request_context
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.post("/user-invitations", response_model=UserInvitationResponse, status_code=201)

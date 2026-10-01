@@ -40,23 +40,23 @@ from pydantic import ValidationError
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.api.client_ip import security_request_context
-from backend.app.api.dependencies.queue import get_worker_queue
-from backend.app.api.dependencies.redis import get_redis_client
 from backend.app.capabilities.plugins.services import PluginPrincipal, PluginServices
 from backend.app.capabilities.plugins.user_services import PluginUserServices
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
-from backend.app.domains.integrations.automation_stream import AutomationStreamService
-from backend.app.domains.integrations.automations import AutomationService
-from backend.app.domains.integrations.plugin_attachments import PluginAttachmentService
-from backend.app.domains.integrations.plugin_messages import PluginMessageService
-from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
+from backend.app.governance.security_events.service import SecurityAuditService
 from backend.app.identity.authorization.resources import ResourceAccessDenied
-from backend.app.observability.audit.security_events import SecurityAuditService
+from backend.app.orchestration.automations.plugin_attachments import PluginAttachmentService
+from backend.app.orchestration.automations.plugin_messages import PluginMessageService
+from backend.app.orchestration.automations.service import AutomationService
+from backend.app.orchestration.automations.stream import AutomationStreamService
+from backend.app.orchestration.tasks.events import RedisTaskEventBus
 from backend.app.resources.files.service import WorkspaceFileService
 from backend.app.resources.storage.storage import create_storage
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.client_ip import security_request_context
+from backend.app.shared.redis.dependencies import get_redis_client
 
 router = APIRouter(prefix="/plugin-runtime/{workspace_id}/{install_id}", tags=["plugin-runtime"])
 

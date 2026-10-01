@@ -15,11 +15,7 @@ from backend.app.capabilities.catalog.contracts import (
 from backend.app.capabilities.catalog.models import Capability, ToolGroup
 from backend.app.capabilities.references.schema import reject_embedded_secrets
 from backend.app.capabilities.skills.models import Skill
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.errors import PolicyDeniedError
-from backend.app.core.pagination import PageParams
+from backend.app.governance.audit.service import AuditService
 from backend.app.governance.reviews.approval_service import ResourceReviewApprovalService
 from backend.app.governance.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
@@ -28,7 +24,11 @@ from backend.app.governance.reviews.policy import (
     REVIEW_TYPE_SKILL,
 )
 from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.observability.audit.service import AuditService
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.errors import PolicyDeniedError
+from backend.app.shared.pagination import PageParams
 
 T = TypeVar("T")
 class CapabilityService:

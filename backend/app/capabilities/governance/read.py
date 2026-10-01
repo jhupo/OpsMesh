@@ -19,8 +19,8 @@ from backend.app.capabilities.governance.rules import (
 from backend.app.capabilities.mcp.catalog.service import McpCatalogService
 from backend.app.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from backend.app.capabilities.skills.models import WorkspaceSkillInstall
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.pagination import PageParams
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.pagination import PageParams
 
 
 class McpGovernanceSummary(TypedDict):

@@ -7,7 +7,7 @@ from pydantic import (
     model_validator,
 )
 
-from backend.app.core.contracts import TimestampedModel
+from backend.app.shared.contracts import TimestampedModel
 from backend.app.workspaces.members.admin_schemas import AdminWorkspaceMemberResponse
 
 

@@ -15,7 +15,7 @@ from backend.app.agents.providers.model_api import (
     unsupported_agent_model_api,
 )
 from backend.app.agents.providers.models import ModelProviderCredential
-from backend.app.core.security.redaction import redact_sensitive_text
+from backend.app.shared.security.redaction import redact_sensitive_text
 from backend.app.teams.management.models import AgentTeamMember
 from backend.app.teams.provider_readiness.payloads import (
     _capability_provider,

@@ -15,7 +15,6 @@ from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
 from sqlalchemy.sql.elements import ClauseElement
 from sqlalchemy.sql.visitors import iterate
 
-from backend.app.core.db.base import Base
 from backend.app.identity.authorization.context import AuthenticatedUser
 from backend.app.identity.authorization.models import SecuredResource
 from backend.app.identity.authorization.resources import (
@@ -25,6 +24,7 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
+from backend.app.shared.db.base import Base
 
 _ROOTS = {table: kind for kind, table in RESOURCE_TABLES.items()}
 

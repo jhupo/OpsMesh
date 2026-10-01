@@ -1,14 +1,12 @@
 """Product resource authorization; membership and token scopes remain upper bounds."""
-
 from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, and_, exists, false, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.base import Base
-from backend.app.core.errors import DomainError
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.governance.audit.service import AuditService
+from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.authorization.context import AuthenticatedUser
 from backend.app.identity.authorization.errors import AuthorizationError
 from backend.app.identity.authorization.models import ResourceGrant, SecuredResource
@@ -17,8 +15,10 @@ from backend.app.identity.authorization.permissions import (
     WorkspaceRole,
     role_allows,
 )
+from backend.app.identity.authorization.service import AuthorizationService
 from backend.app.identity.users.models import User
-from backend.app.observability.audit.service import AuditService
+from backend.app.shared.db.base import Base
+from backend.app.shared.errors import DomainError
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 
@@ -267,7 +267,7 @@ class ResourceAuthorizationService:
         references: list[tuple[ResourceKind, UUID, ResourceAction]],
     ) -> None:
         try:
-            live = AuthorizationService(self._session).refresh_authenticated_user(self.user)
+            live = AuthenticationService(self._session).refresh_authenticated_user(self.user)
             if live.token_scopes != self.user.token_scopes:
                 raise ResourceAccessDenied()
         except AuthorizationError as exc:
@@ -404,14 +404,13 @@ class ResourceAuthorizationService:
         resource_id: UUID,
         user_id: UUID,
     ) -> None:
-        auth = AuthorizationService(self._session)
-        auth.require_workspace(
+        AuthorizationService(self._session).require_workspace(
             user_id=self.user.user_id,
             workspace_id=workspace_id,
             action=WorkspaceAction.ADMIN,
             authenticated_user=self.user,
         )
-        auth.require_workspace(
+        AuthorizationService(self._session).require_workspace(
             user_id=user_id, workspace_id=workspace_id, action=WorkspaceAction.READ
         )
         self.require(workspace_id, kind, resource_id, ResourceAction.SHARE)

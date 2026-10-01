@@ -9,8 +9,6 @@ from pydantic import (
     field_validator,
 )
 
-from backend.app.core.contracts import TimestampedModel
-from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.governance.reviews.policy import (
     DEFAULT_RESOURCE_REVIEW_MODEL,
     MODEL_REQUEST_REVIEW_SETTINGS_KEY,
@@ -19,6 +17,8 @@ from backend.app.governance.reviews.policy import (
     RESOURCE_REVIEW_SETTINGS_KEY,
     SEMANTIC_REVIEW_SETTINGS_KEY,
 )
+from backend.app.shared.contracts import TimestampedModel
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 _RESOURCE_REVIEW_SCOPE_KEYS = frozenset(
     {

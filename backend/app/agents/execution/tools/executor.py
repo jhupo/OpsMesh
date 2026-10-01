@@ -19,14 +19,14 @@ from backend.app.capabilities.mcp.execution.contracts import McpExecutionRequest
 from backend.app.capabilities.mcp.execution.service import McpToolExecutionService
 from backend.app.capabilities.mcp.models import McpToolAllowlist
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
-from backend.app.core.config import Settings
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
-from backend.app.domains.orchestration.approvals.policy import ApprovalPolicyEngine
+from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
+from backend.app.orchestration.approvals.policy import ApprovalPolicyEngine
 from backend.app.resources.memory.policy import working_memory_policy
 from backend.app.resources.memory.working import AgentWorkingMemoryService
 from backend.app.resources.storage.storage import ObjectStorage
-from backend.app.runtime.environment.contracts import DockerRuntimeClient
+from backend.app.runtime.instances.contracts import DockerRuntimeClient
+from backend.app.shared.config import Settings
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class BackendToolExecutor:

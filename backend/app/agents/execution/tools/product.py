@@ -36,19 +36,16 @@ from backend.app.agents.execution.tools.payloads import (
 from backend.app.capabilities.catalog.product_tools import PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES
 from backend.app.capabilities.tools.contracts import ToolContext, ToolResourceNotFoundError
 from backend.app.capabilities.tools.service import ProductToolService
-from backend.app.core.config import Settings
-from backend.app.core.security.redaction import redact_sensitive_text
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.core.utils import payload_hash, string_list
-from backend.app.domains.orchestration.approvals.policy import (
-    ApprovalPolicyDecision,
-    ApprovalPolicyEngine,
-)
-from backend.app.domains.orchestration.approvals.service import ApprovalService
-from backend.app.domains.orchestration.approvals.waiting import ApprovalWaitingService
-from backend.app.observability.telemetry.trace_context import current_trace_context, telemetry_span
+from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
+from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
 from backend.app.resources.memory.authorization import memory_read_scopes, memory_write_scopes
 from backend.app.resources.storage.storage import ObjectStorage, create_storage
+from backend.app.shared.config import Settings
+from backend.app.shared.security.redaction import redact_sensitive_text
+from backend.app.shared.security.secrets import SecretEncryptionService
+from backend.app.shared.telemetry.trace_context import current_trace_context, telemetry_span
+from backend.app.shared.utils import payload_hash, string_list
 
 __all__ = ["PRODUCT_TOOL_NAMES", "ProductToolExecutor"]
 

@@ -9,34 +9,28 @@ from threading import Event, Thread
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.agents.execution.contracts import AgentRuntimeExecutor
-from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
-from backend.app.core.config import Settings
-from backend.app.domains.platform.updates.service import maintenance_enabled
-from backend.app.observability.telemetry.request_context import log_context
-from backend.app.observability.telemetry.trace_context import (
+from backend.app.runtime.queues.contracts import JobPayload
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.runtime.workers.capacity import WorkerCapacitySnapshotService, worker_can_run_job
+from backend.app.runtime.workers.contracts import WorkerFailureHandler, WorkerJobTypeHandler
+from backend.app.runtime.workers.heartbeat import worker_status_for_failures
+from backend.app.runtime.workers.maintenance_contracts import (
+    WorkerMaintenanceSummary,
+)
+from backend.app.runtime.workers.maintenance_runner import MaintenanceJob, MaintenanceRunner
+from backend.app.runtime.workers.models import WorkerRunnerConfig, WorkerRunSummary
+from backend.app.runtime.workers.nodes import WorkerHeartbeatOperationsService
+from backend.app.runtime.workers.reporting import WorkerLeaseReporter
+from backend.app.runtime.workers.state import WorkerRunState
+from backend.app.shared.config import Settings
+from backend.app.shared.telemetry.request_context import log_context
+from backend.app.shared.telemetry.trace_context import (
     child_trace_context,
     current_trace_context,
     new_trace_context,
     telemetry_span,
     trace_context,
 )
-from backend.app.runtime.environment.contracts import DockerRuntimeClient
-from backend.app.runtime.workers.capacity import WorkerCapacitySnapshotService, worker_can_run_job
-from backend.app.runtime.workers.contracts import JobPayload
-from backend.app.runtime.workers.heartbeat import worker_status_for_failures
-from backend.app.runtime.workers.maintenance import (
-    WorkerMaintenanceConfig,
-    WorkerMaintenanceService,
-    WorkerMaintenanceSummary,
-)
-from backend.app.runtime.workers.maintenance_runner import MaintenanceJob, MaintenanceRunner
-from backend.app.runtime.workers.models import WorkerRunnerConfig, WorkerRunSummary
-from backend.app.runtime.workers.nodes import WorkerHeartbeatOperationsService
-from backend.app.runtime.workers.queue import RedisQueue
-from backend.app.runtime.workers.registry import WorkerJobHandler
-from backend.app.runtime.workers.reporting import WorkerLeaseReporter
-from backend.app.runtime.workers.state import WorkerRunState
 
 logger = logging.getLogger(__name__)
 
@@ -48,20 +42,22 @@ class WorkerRunner:
         queue: RedisQueue,
         session_factory: Callable[[], Session],
         config: WorkerRunnerConfig,
-        agent_runner: AgentRuntimeExecutor | None = None,
-        mcp_adapter: McpToolAdapter | McpToolAdapterResolver | None = None,
+        handler_factory: Callable[[Session], WorkerJobTypeHandler],
+        maintenance: Callable[[], WorkerMaintenanceSummary],
+        admission_blocked: Callable[[Session], bool],
+        on_job_failure: WorkerFailureHandler,
         settings: Settings | None = None,
-        runtime_docker_client: DockerRuntimeClient | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._queue = queue
         self._session_factory = session_factory
         self._config = config
-        self._agent_runner = agent_runner
-        self._mcp_adapter = mcp_adapter
+        self._handler_factory = handler_factory
+        self._maintenance = maintenance
+        self._admission_blocked = admission_blocked
+        self._on_job_failure = on_job_failure
         self._settings = settings
-        self._runtime_docker_client = runtime_docker_client
         self._monotonic = monotonic
         self._sleep = sleep
         self._lease_reporter = WorkerLeaseReporter(
@@ -83,7 +79,7 @@ class WorkerRunner:
         with self._session_scope() as session:
             # Hold the shared installation lock until the lease exists. The updater's exclusive
             # maintenance transition must not race a dequeued-but-not-yet-leased job.
-            if maintenance_enabled(session):
+            if self._admission_blocked(session):
                 return False
             capacity = WorkerCapacitySnapshotService(session).worker_capacity_snapshot(
                 self._config.worker_id,
@@ -132,7 +128,7 @@ class WorkerRunner:
                             status=failure_status,
                             metadata={"error": str(exc)},
                         )
-                        self._lease_reporter.record_team_execution_loop_failure(
+                        self._on_job_failure(
                             job,
                             status=failure_status,
                             error=exc,
@@ -197,14 +193,7 @@ class WorkerRunner:
 
     def _handle_job(self, job: JobPayload) -> None:
         with self._session_scope() as session:
-            handler = WorkerJobHandler(
-                session=session,
-                queue=self._queue,
-                agent_runner=self._agent_runner,
-                settings=self._settings,
-                mcp_adapter=self._mcp_adapter,
-                runtime_docker_client=self._runtime_docker_client,
-            )
+            handler = self._handler_factory(session)
             handler.handle(job)
 
     @contextmanager
@@ -347,16 +336,7 @@ class WorkerRunner:
         return stop_event is not None and stop_event.is_set()
 
     def run_maintenance(self) -> WorkerMaintenanceSummary:
-        return WorkerMaintenanceService(
-            queue=self._queue,
-            session_factory=self._session_factory,
-            config=WorkerMaintenanceConfig(
-                run_lease_seconds=self._config.run_lease_seconds,
-                recovery_batch_size=self._config.recovery_batch_size,
-            ),
-            settings=self._settings,
-            runtime_docker_client=self._runtime_docker_client,
-        ).run()
+        return self._maintenance()
 
     def _retry_delay(self, job: JobPayload) -> float:
         if not job.can_retry:

@@ -3,10 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.client_ip import security_request_context
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
-from backend.app.core.errors import ConflictError
+from backend.app.governance.security_events.service import SecurityAuditService
 from backend.app.identity.auth.dependencies import account_action_dependency, get_current_user
 from backend.app.identity.auth.schemas import (
     CurrentUserResponse,
@@ -20,11 +17,15 @@ from backend.app.identity.auth.schemas import (
     UserLoginRequest,
     UserRegisterRequest,
 )
-from backend.app.identity.auth.service import AuthorizationService, ProfileChange
+from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.authorization.context import AuthenticatedUser
 from backend.app.identity.authorization.errors import AuthenticationError, PermissionDeniedError
 from backend.app.identity.authorization.permissions import AccountAction
-from backend.app.observability.audit.security_events import SecurityAuditService
+from backend.app.identity.users.accounts import AccountService, ProfileChange
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.errors import ConflictError
+from backend.app.shared.http.client_ip import security_request_context
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -40,7 +41,7 @@ async def register_user(
     session: Session = Depends(get_db_session),
 ) -> CurrentUserResponse:
     try:
-        user = AuthorizationService(session).register_user(
+        user = AccountService(session).register_user(
             email=request.email,
             display_name=request.display_name,
             password=request.password,
@@ -71,7 +72,7 @@ async def login_user(
     settings: Settings = Depends(get_settings),
 ) -> UserAPITokenCreateResponse:
     try:
-        created = AuthorizationService(session).login_with_password(
+        created = AuthenticationService(session).login_with_password(
             email=request.email,
             username=request.username,
             password=request.password,
@@ -121,7 +122,7 @@ def logout_user(
     session: Session = Depends(get_db_session),
 ) -> Response:
     if current_user.token_id is not None:
-        token = AuthorizationService(session).revoke_user_api_token(
+        token = AuthenticationService(session).revoke_user_api_token(
             user_id=current_user.user_id,
             token_id=current_user.token_id,
         )
@@ -147,7 +148,7 @@ def update_current_user_profile(
     session: Session = Depends(get_db_session),
 ) -> CurrentUserResponse:
     try:
-        user = AuthorizationService(session).update_profile(
+        user = AccountService(session).update_profile(
             actor=current_user,
             change=ProfileChange(
                 display_name=request.display_name,
@@ -204,7 +205,7 @@ def get_current_user_avatar(
     ),
     session: Session = Depends(get_db_session),
 ) -> Response:
-    content = AuthorizationService(session).get_avatar(actor=current_user)
+    content = AccountService(session).get_avatar(actor=current_user)
     if content is None:
         raise HTTPException(status_code=404, detail="Avatar not found")
     return Response(
@@ -227,7 +228,7 @@ async def change_current_user_password(
     session: Session = Depends(get_db_session),
 ) -> CurrentUserResponse:
     try:
-        user = AuthorizationService(session).change_password(
+        user = AccountService(session).change_password(
             user_id=current_user.user_id,
             current_password=request.current_password,
             new_password=request.new_password,
@@ -264,7 +265,7 @@ async def list_current_user_tokens(
     current_user: AuthenticatedUser = Depends(account_action_dependency(AccountAction.TOKENS_READ)),
     session: Session = Depends(get_db_session),
 ) -> list[UserAPITokenResponse]:
-    tokens = AuthorizationService(session).list_user_api_tokens(current_user.user_id)
+    tokens = AuthenticationService(session).list_user_api_tokens(current_user.user_id)
     return [UserAPITokenResponse.model_validate(token) for token in tokens]
 
 
@@ -283,7 +284,7 @@ async def create_current_user_token(
     settings: Settings = Depends(get_settings),
 ) -> UserAPITokenCreateResponse:
     try:
-        created = AuthorizationService(session).create_user_api_token(
+        created = AuthenticationService(session).create_user_api_token(
             user_id=current_user.user_id,
             name=request.name,
             expires_at=request.expires_at,
@@ -313,7 +314,7 @@ async def revoke_current_user_tokens(
     ),
     session: Session = Depends(get_db_session),
 ) -> UserAPITokenRevokeAllResponse:
-    tokens = AuthorizationService(session).revoke_all_user_api_tokens(
+    tokens = AuthenticationService(session).revoke_all_user_api_tokens(
         user_id=current_user.user_id,
     )
     _record_auth_event(
@@ -336,7 +337,7 @@ async def revoke_current_user_token(
     ),
     session: Session = Depends(get_db_session),
 ) -> UserAPITokenResponse:
-    token = AuthorizationService(session).revoke_user_api_token(
+    token = AuthenticationService(session).revoke_user_api_token(
         user_id=current_user.user_id,
         token_id=token_id,
     )
@@ -365,7 +366,7 @@ async def rotate_current_user_token(
     settings: Settings = Depends(get_settings),
 ) -> UserAPITokenCreateResponse:
     try:
-        created = AuthorizationService(session).rotate_user_api_token(
+        created = AuthenticationService(session).rotate_user_api_token(
             user_id=current_user.user_id,
             token_id=token_id,
             settings=settings,

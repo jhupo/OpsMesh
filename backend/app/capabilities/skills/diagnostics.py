@@ -26,7 +26,7 @@ from backend.app.capabilities.skills.diagnostic_types import (
 )
 from backend.app.capabilities.skills.manifest import agent_installed_skill_ids, manifest_mcp_tools
 from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
-from backend.app.core.config import Settings, get_settings
+from backend.app.shared.config import Settings, get_settings
 
 
 @dataclass(frozen=True)

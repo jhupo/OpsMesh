@@ -18,9 +18,10 @@ def test_model_registration_is_idempotent() -> None:
 def test_database_import_does_not_load_business_models() -> None:
     _fresh_process(
         "import sys\n"
-        "import backend.app.core.db.session\n"
-        "assert not any(name.startswith(('backend.app.domains.', "
-        "'backend.app.runtime.', 'backend.app.api.', 'backend.app.messaging.')) "
+        "import backend.app.shared.db.session\n"
+        "assert not any(name.startswith(tuple('backend.app.' + root + '.' for root in "
+        "['identity', 'workspaces', 'agents', 'teams', 'capabilities', 'resources', "
+        "'orchestration', 'runtime', 'platform', 'messaging', 'governance', 'bootstrap'])) "
         "for name in sys.modules)\n"
     )
 
@@ -36,7 +37,9 @@ def test_explicit_registration_covers_every_declared_table() -> None:
                     isinstance(target, ast.Name) and target.id == "__tablename__"
                     for target in item.targets
                 ):
-                    expected.add(ast.literal_eval(item.value))
+                    table = ast.literal_eval(item.value)
+                    assert table not in expected, f"Duplicate ORM table owner: {table}"
+                    expected.add(table)
     assert expected
     _fresh_process(
         "from backend.app.bootstrap.models import register_models\n"

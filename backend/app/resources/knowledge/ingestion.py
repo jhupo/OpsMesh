@@ -8,9 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.errors import flush_or_raise_conflict
-from backend.app.core.db.pagination import page_scalars_by_offset
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
 from backend.app.resources.knowledge.content import (
     KnowledgeContentError,
     KnowledgeUrlFetcher,
@@ -26,8 +24,10 @@ from backend.app.resources.memory.authorization import AuthorizedMemoryScope
 from backend.app.resources.memory.configuration import initial_embedding_status
 from backend.app.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
 from backend.app.resources.storage.storage import ObjectStorage
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.db.errors import flush_or_raise_conflict
+from backend.app.shared.db.pagination import page_scalars_by_offset
 
 
 @dataclass(frozen=True, slots=True)

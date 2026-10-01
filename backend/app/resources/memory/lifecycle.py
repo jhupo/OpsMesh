@@ -8,8 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.core.utils import ensure_aware_utc
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
 from backend.app.resources.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEntry,
@@ -17,6 +16,7 @@ from backend.app.resources.memory.models import (
 )
 from backend.app.resources.memory.policy import MemoryLifecyclePolicy, memory_lifecycle_policy
 from backend.app.resources.memory.semantic import AgentSemanticMemoryService, SemanticMemoryUpsert
+from backend.app.shared.utils import ensure_aware_utc
 from backend.app.teams.management.models import AgentTeam
 
 

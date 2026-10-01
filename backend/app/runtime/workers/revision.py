@@ -3,8 +3,8 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
 from backend.app.workspaces.domain_items.models import RevisionRequest
 
 

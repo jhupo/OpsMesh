@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 from backend.app.capabilities.plugins.distribution import PluginDistributionService
 from backend.app.capabilities.plugins.models import PluginDownload
 from backend.app.capabilities.plugins.transport import PluginFetchError, PluginHttpFetcher
-from backend.app.core.errors import DomainError, PolicyDeniedError
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
+from backend.app.shared.errors import DomainError, PolicyDeniedError
 
 
 @dataclass(frozen=True)

@@ -8,12 +8,12 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.errors import DatabaseConflictError, flush_or_raise_conflict
-from backend.app.core.pagination import PageParams
 from backend.app.identity.auth.models import UserAPIToken
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.invitations.models import UserInvitation
 from backend.app.identity.users.models import User
+from backend.app.shared.db.errors import DatabaseConflictError, flush_or_raise_conflict
+from backend.app.shared.pagination import PageParams
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 from backend.app.workspaces.quotas.models import WorkspaceQuota
@@ -150,10 +150,10 @@ class IdentityAdminService:
         platform_admin: bool = False,
     ) -> User:
         user = User(
-            email=AuthorizationService.normalize_email(email),
+            email=AuthenticationService.normalize_email(email),
             username=username.strip() if username else None,
             display_name=display_name.strip(),
-            password_hash=AuthorizationService.hash_password(password),
+            password_hash=AuthenticationService.hash_password(password),
             platform_admin=platform_admin,
         )
         self._session.add(user)
@@ -192,7 +192,7 @@ class IdentityAdminService:
         if user is None:
             return None
         password = token_urlsafe(32)
-        user.password_hash = AuthorizationService.hash_password(password)
+        user.password_hash = AuthenticationService.hash_password(password)
         now = datetime.now(UTC)
         for token in self._session.scalars(
             select(UserAPIToken).where(

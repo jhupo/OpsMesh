@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.capabilities.mcp.models import McpServer
-from backend.app.core.security.redaction import redact_sensitive_text
+from backend.app.shared.security.redaction import redact_sensitive_text
 
 MCP_LIMIT_COUNTED_STATUSES = (
     "completed",

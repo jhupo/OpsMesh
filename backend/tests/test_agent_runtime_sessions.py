@@ -18,8 +18,8 @@ from backend.app.agents.sessions.models import (
     PersistentAgentSessionRef,
 )
 from backend.app.agents.sessions.store import SQLAlchemyAgentSession
-from backend.app.core.db.base import Base
 from backend.app.identity.users.models import User
+from backend.app.shared.db.base import Base
 from backend.app.workspaces.management.models import Workspace
 
 

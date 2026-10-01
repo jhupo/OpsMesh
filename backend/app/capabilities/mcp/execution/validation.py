@@ -21,13 +21,6 @@ from backend.app.capabilities.mcp.policy import mcp_health_check_stale
 from backend.app.capabilities.plugins.policy import plugin_resource_available
 from backend.app.capabilities.references.schema import validate_parameters
 from backend.app.capabilities.tools.contracts import ToolResourceNotFoundError
-from backend.app.core.config import Settings
-from backend.app.domains.orchestration.runs.models import (
-    AUTHORIZATION_SNAPSHOT_VERSION,
-    AgentRun,
-    authorization_snapshot_fingerprint,
-)
-from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resources import (
     ResourceAccessDenied,
@@ -35,6 +28,13 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
+from backend.app.orchestration.runs.models import (
+    AUTHORIZATION_SNAPSHOT_VERSION,
+    AgentRun,
+    authorization_snapshot_fingerprint,
+)
+from backend.app.orchestration.runs.queries import authorization_snapshot_for_run
+from backend.app.shared.config import Settings
 
 
 @dataclass(frozen=True, slots=True)

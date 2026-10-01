@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.app.agents.execution.contracts import AgentRuntimeUsage
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 def runtime_usage(

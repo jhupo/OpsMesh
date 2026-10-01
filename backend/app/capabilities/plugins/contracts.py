@@ -6,7 +6,7 @@ from opsmesh_plugin_sdk.packaging.distribution import PluginReleaseDescriptor, S
 from opsmesh_plugin_sdk.packaging.packages import SignedPluginPackage
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.app.core.contracts import TimestampedModel
+from backend.app.shared.contracts import TimestampedModel
 
 
 class TrustKeyCreate(BaseModel):

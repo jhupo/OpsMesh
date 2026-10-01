@@ -4,8 +4,8 @@ from uuid import UUID
 from pydantic import BaseModel, Field, computed_field, field_serializer
 
 from backend.app.agents.profiles.contracts import AgentProfileResponse
-from backend.app.core.contracts import TimestampedModel
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.contracts import TimestampedModel
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 MarketplaceListingType = Literal["agent", "skill", "mcp_server", "plugin"]
 MarketplaceVisibility = Literal["private", "workspace", "public"]

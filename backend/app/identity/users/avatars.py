@@ -6,7 +6,7 @@ from io import BytesIO
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from backend.app.core.errors import DomainError
+from backend.app.shared.errors import DomainError
 
 
 def normalize_avatar(encoded: str) -> bytes:

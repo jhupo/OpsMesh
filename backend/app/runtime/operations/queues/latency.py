@@ -5,9 +5,9 @@ from uuid import UUID
 
 from redis import Redis
 
-from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.runtime.operations.contracts.queue import QueueLatencyResponse
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.redis.keys import RedisKeyBuilder
 
 
 class OperationsQueueLatencyService:

@@ -16,15 +16,15 @@ from backend.app.agents.providers.schemas import (
     ModelProviderHealthCheckRequest,
     ModelProviderHealthCheckResponse,
 )
-from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import get_db_session
-from backend.app.core.pagination import PageParams
-from backend.app.core.security.egress import EgressUrlValidationError
-from backend.app.core.security.secrets import SecretEncryptionService
 from backend.app.identity.auth.dependencies import workspace_dependency
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.pagination import PageResponse, pagination_params
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.security.egress import EgressUrlValidationError
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-credentials",

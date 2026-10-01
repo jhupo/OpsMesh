@@ -18,18 +18,16 @@ from backend.app.agents.messages.contracts import (
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.messages.service import AgentMailboxService
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.api.dependencies.queue import (
-    get_worker_queue,
-)
-from backend.app.api.dependencies.redis import get_redis_client
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.orchestration.tasks.models import Task
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.redis.dependencies import get_redis_client
+from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.teams.management.models import AgentTeam
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember

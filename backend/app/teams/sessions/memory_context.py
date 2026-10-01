@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from backend.app.core.security.redaction import (
+from backend.app.resources.memory.models import WorkspaceMemoryEntry
+from backend.app.shared.security.redaction import (
     redact_sensitive_payload_item,
     redact_text_fragments,
 )
-from backend.app.resources.memory.models import WorkspaceMemoryEntry
 from backend.app.teams.management.models import AgentTeam
 
 TEAM_MEMORY_SCOPES = {"team"}

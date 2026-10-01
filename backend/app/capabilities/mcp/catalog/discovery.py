@@ -26,10 +26,10 @@ from backend.app.capabilities.references.schema import (
     reject_embedded_secrets,
     validate_json_schema,
 )
-from backend.app.core.security.egress import MCP_EGRESS_URL_POLICY
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.service import AuditService
+from backend.app.shared.security.egress import MCP_EGRESS_URL_POLICY
+from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 class McpDiscoveryError(RuntimeError):

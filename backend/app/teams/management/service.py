@@ -6,10 +6,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.service import AgentManagementService
 from backend.app.capabilities.references.schema import reject_embedded_secrets
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.observability.audit.service import AuditService
-from backend.app.runtime.environment.spaces.service import RuntimeSpaceService
+from backend.app.governance.audit.service import AuditService
+from backend.app.runtime.spaces.service import RuntimeSpaceService
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.teams.organization.org_chart import TeamOrgChartBuilder
 

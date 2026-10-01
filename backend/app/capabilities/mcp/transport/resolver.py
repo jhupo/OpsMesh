@@ -10,7 +10,7 @@ from backend.app.capabilities.mcp.transport.remote import (
     StreamableHttpMcpToolAdapter,
 )
 from backend.app.capabilities.mcp.transport.unsupported import UnsupportedMcpToolAdapter
-from backend.app.core.security.secrets import SecretEncryptionService
+from backend.app.shared.security.secrets import SecretEncryptionService
 
 
 @dataclass(frozen=True)

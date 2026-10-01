@@ -4,8 +4,8 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.audit.service import AuditService
 from backend.app.resources.lifecycle.settings import _ensure_utc_datetime
 from backend.app.resources.transfers.models import WorkspaceExportJob, WorkspaceExportJobStatus
 from backend.app.workspaces.management.models import Workspace

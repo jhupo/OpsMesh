@@ -5,19 +5,19 @@ from importlib import import_module
 from sqlalchemy import MetaData
 from sqlalchemy.orm import configure_mappers
 
-from backend.app.core.db.base import Base
+from backend.app.shared.db.base import Base
 
 _MODEL_MODULES = (
-    "backend.app.domains.platform.admin.models",
+    "backend.app.governance.policies.models",
     "backend.app.messaging.email.models",
-    "backend.app.domains.platform.updates.models",
+    "backend.app.platform.updates.models",
     "backend.app.identity.auth.models",
     "backend.app.identity.authorization.models",
     "backend.app.identity.invitations.models",
     "backend.app.identity.users.models",
-    "backend.app.domains.integrations.webhooks.models",
-    "backend.app.domains.integrations.automation_models",
-    "backend.app.observability.audit.security_models",
+    "backend.app.orchestration.webhooks.models",
+    "backend.app.orchestration.automations.models",
+    "backend.app.governance.security_events.models",
     "backend.app.resources.memory.models",
     "backend.app.agents.messages.models",
     "backend.app.agents.profiles.models",
@@ -30,11 +30,12 @@ _MODEL_MODULES = (
     "backend.app.capabilities.references.models",
     "backend.app.capabilities.skills.models",
     "backend.app.resources.knowledge.models",
-    "backend.app.domains.orchestration.approvals.models",
-    "backend.app.domains.orchestration.models",
-    "backend.app.domains.orchestration.runs.models",
-    "backend.app.domains.orchestration.tasks.models",
-    "backend.app.domains.orchestration.workflows.planning.attempt_models",
+    "backend.app.orchestration.approvals.models",
+    "backend.app.orchestration.definitions.models",
+    "backend.app.orchestration.runs.subworkflow_models",
+    "backend.app.orchestration.runs.models",
+    "backend.app.orchestration.tasks.models",
+    "backend.app.orchestration.planning.attempt_models",
     "backend.app.workspaces.domain_items.models",
     "backend.app.resources.transfers.models",
     "backend.app.workspaces.projects.models",
@@ -44,14 +45,14 @@ _MODEL_MODULES = (
     "backend.app.workspaces.management.models",
     "backend.app.workspaces.members.models",
     "backend.app.workspaces.quotas.models",
-    "backend.app.observability.audit.models",
-    "backend.app.observability.costs.models",
-    "backend.app.observability.notifications.models",
-    "backend.app.runtime.environment.models",
-    "backend.app.runtime.environment.spaces.models",
+    "backend.app.governance.audit.models",
+    "backend.app.governance.costs.models",
+    "backend.app.messaging.notifications.models",
+    "backend.app.runtime.instances.models",
+    "backend.app.runtime.spaces.models",
     "backend.app.runtime.workers.models",
     "backend.app.runtime.self_hosted.models",
-    "backend.app.runtime.workers.scheduling.models",
+    "backend.app.orchestration.scheduling.models",
 )
 
 

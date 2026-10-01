@@ -21,18 +21,18 @@ from backend.app.agents.profiles.models import AgentProfile
 from backend.app.capabilities.catalog.effective import EffectiveCapabilityCatalogService
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer
 from backend.app.capabilities.references.models import CapabilityResource
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.tasks.models import Task
 from backend.app.governance.reviews.models import ResourceReview
 from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.users.models import User
-from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.tasks.models import Task
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.storage.storage import LocalStorage
+from backend.app.shared.config import Settings
+from backend.app.shared.db.base import Base
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 
@@ -68,7 +68,7 @@ def test_effective_catalog_hides_product_tool_without_required_resource() -> Non
     session.commit()
 
     without_resource = EffectiveCapabilityCatalogService(session).resolve(
-        user=AuthorizationService(session).authenticate_user(user.id),
+        user=AuthenticationService(session).authenticate_user(user.id),
         workspace_id=workspace.id,
         agent_profile_id=profile.id,
     )
@@ -92,7 +92,7 @@ def test_effective_catalog_hides_product_tool_without_required_resource() -> Non
     session.commit()
 
     with_resource = EffectiveCapabilityCatalogService(session).resolve(
-        user=AuthorizationService(session).authenticate_user(user.id),
+        user=AuthenticationService(session).authenticate_user(user.id),
         workspace_id=workspace.id,
         agent_profile_id=profile.id,
     )

@@ -14,12 +14,12 @@ from backend.app.agents.messages.contracts import (
     AgentMessageThreadStatusRequest,
 )
 from backend.app.agents.messages.service import AgentMailboxService
-from backend.app.api.pagination import PageResponse, pagination_params
-from backend.app.core.db.session import get_db_session
-from backend.app.core.pagination import PageParams
 from backend.app.identity.auth.dependencies import workspace_dependency
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.pagination import PageResponse, pagination_params
+from backend.app.shared.pagination import PageParams
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/agent-message-threads",

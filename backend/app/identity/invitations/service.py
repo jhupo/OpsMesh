@@ -6,14 +6,14 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
-from backend.app.core.db.errors import DatabaseConflictError, flush_or_raise_conflict
-from backend.app.core.errors import ConflictError, DomainError
-from backend.app.core.utils import ensure_aware_utc
-from backend.app.identity.auth.service import AuthorizationService
+from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.invitations.models import UserInvitation
 from backend.app.identity.users.models import User
 from backend.app.messaging.email.service import PlatformMailService
+from backend.app.shared.config import Settings
+from backend.app.shared.db.errors import DatabaseConflictError, flush_or_raise_conflict
+from backend.app.shared.errors import ConflictError, DomainError
+from backend.app.shared.utils import ensure_aware_utc
 
 
 class UserInvitationService:
@@ -23,7 +23,7 @@ class UserInvitationService:
 
     def invite(self, *, email: str, display_name: str, platform_admin: bool) -> UserInvitation:
         self._mail.require_enabled()
-        email = AuthorizationService.normalize_email(email)
+        email = AuthenticationService.normalize_email(email)
         user = self._session.scalar(select(User).where(User.email == email).with_for_update())
         if user is not None:
             invitation = self._session.scalar(
@@ -130,7 +130,7 @@ class UserInvitationService:
             raise self._invalid_invitation()
         user.display_name = display_name.strip()
         user.username = username.strip() or None
-        user.password_hash = AuthorizationService.hash_password(password)
+        user.password_hash = AuthenticationService.hash_password(password)
         user.status = "active"
         invitation.accepted_at = datetime.now(UTC)
         self._flush("Username already exists")

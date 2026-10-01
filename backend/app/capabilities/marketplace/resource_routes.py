@@ -3,7 +3,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.pagination import PageResponse, pagination_params
 from backend.app.capabilities.marketplace.contracts import (
     MarketplaceInstallRequest,
     MarketplaceListingCreateRequest,
@@ -13,13 +12,14 @@ from backend.app.capabilities.marketplace.contracts import (
 )
 from backend.app.capabilities.marketplace.resource_service import MarketplaceService
 from backend.app.capabilities.marketplace.responses import marketplace_install_response
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.errors import DatabaseConflictError
-from backend.app.core.db.session import get_db_session
-from backend.app.core.pagination import PageParams
 from backend.app.identity.auth.dependencies import workspace_dependency
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.errors import DatabaseConflictError
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.http.pagination import PageResponse, pagination_params
+from backend.app.shared.pagination import PageParams
 
 router = APIRouter()
 

@@ -3,11 +3,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
-from backend.app.api.schemas.orchestration.tasks.core import (
-    TaskResponse,
-)
-from backend.app.core.contracts import TimestampedModel
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.orchestration.tasks.schemas.core import TaskResponse
+from backend.app.shared.contracts import TimestampedModel
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class DomainProjectResponse(TimestampedModel):

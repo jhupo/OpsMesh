@@ -12,7 +12,7 @@ from backend.app.resources.lifecycle.scheduling import (
     WorkspaceScheduledLifecycleService,
 )
 from backend.app.resources.storage.storage import ObjectStorage
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.service import RedisQueue
 
 
 class WorkspaceDataLifecycleService:

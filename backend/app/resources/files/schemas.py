@@ -4,8 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, computed_field, field_serializer
 
-from backend.app.core.contracts import ORMModel, TimestampedModel
-from backend.app.core.security.redaction import redact_sensitive_payload
+from backend.app.shared.contracts import ORMModel, TimestampedModel
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 FileSensitivity = Literal["public", "internal", "confidential", "restricted"]
 FileRuntimeAccess = Literal["allowed", "denied"]
