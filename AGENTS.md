@@ -14,9 +14,9 @@ OpsMesh 是企业级 Agent 控制面。后端负责身份、工作空间、Agent
 | 健康与指标 | `/health`、`/health/live`、`/health/ready`、`/metrics` | `backend/app/platform/health/` |
 | 工作空间 | 工作空间、成员、配额、项目、域、文件、知识、记忆、团队、导入导出 | `backend/app/workspaces/`、`backend/app/resources/`、`backend/app/teams/` |
 | Agent 与模型 | Agent Profile、Session、消息、Provider、Provider 能力、执行适配器 | `backend/app/agents/` |
-| 编排与执行 | Orchestration、Task、Run、Approval、计划、事件、流式状态 | `backend/app/orchestration/`、`backend/app/teams/execution/` |
+| 编排与执行 | Orchestration、Task、Run、Approval、计划、定时任务、事件、流式状态 | `backend/app/orchestration/`、`backend/app/teams/execution/` |
 | 能力中心 | Skill、Tool、MCP、凭据、插件、能力目录、Marketplace | `backend/app/capabilities/` |
-| 运行运维 | Operations、队列、Worker、Runtime、Runtime Space、成本、通知、定时任务 | `backend/app/runtime/`、`backend/app/governance/costs/`、`backend/app/messaging/notifications/` |
+| 运行运维 | Operations、队列、Worker、Runtime、Runtime Space、成本、通知 | `backend/app/runtime/`、`backend/app/governance/costs/`、`backend/app/messaging/notifications/` |
 | 平台管理员 | `/admin/*`：总览、用户、公告、策略、能力治理、插件治理、Worker、Runtime、队列、安全、系统和更新 | `backend/app/bootstrap/platform_routes.py` 与各资源模块的 `admin_routes.py` |
 | 外部集成 | Webhook、Automation、Plugin Runtime | `backend/app/orchestration/webhooks/`、`backend/app/orchestration/automations/`、`backend/app/capabilities/plugins/` |
 | 自托管 Worker | 注册、身份、Worker 控制、Job、MCP Job、Artifact | `backend/app/runtime/self_hosted/` |
@@ -61,7 +61,7 @@ OpsMesh 是企业级 Agent 控制面。后端负责身份、工作空间、Agent
 ## 必要工程规范
 
 - 工作空间是租户边界。所有工作空间资源的 API、查询、缓存、Worker、存储和工具调用都必须带工作空间范围。
-- 依赖方向保持 `api -> domains/application -> infrastructure`；Route 不直接操作基础设施或拥有长流程。
+- 依赖方向保持 `routes -> service/domain -> infrastructure`；各功能模块就近放置 routes/schema/service/model，Route 不直接操作基础设施或拥有长流程。
 - PostgreSQL 是持久事实来源；Redis 不保存唯一业务状态。
 - 密钥只在最窄执行边界解密；禁止写入日志、响应、事件、缓存或完整授权 URL。
 - 风险操作默认拒绝，并按需要创建审批、审计或安全事件。
