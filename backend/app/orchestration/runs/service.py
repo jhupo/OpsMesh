@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.orchestration.planning.attempts import TaskPlanningAttemptService
 from backend.app.orchestration.planning.team_project_plan import TeamStepPlanner
 from backend.app.orchestration.requests.builder import RunRequestBuilder
@@ -71,10 +72,22 @@ class RunOrchestrationService:
         if first_team_step is None:
             if task.agent_team_id is not None:
                 return None
+            profile = None
+            if task.owner_agent_profile_id is not None:
+                profile = self._session.scalar(
+                    select(AgentProfile).where(
+                        AgentProfile.workspace_id == task.workspace_id,
+                        AgentProfile.id == task.owner_agent_profile_id,
+                        AgentProfile.status == "active",
+                        AgentProfile.archived_at.is_(None),
+                    )
+                )
+                if profile is None:
+                    raise ValueError("Task agent is unavailable")
             authorization_snapshot = self._authorization_snapshots().build_authorization_snapshot(
                 task,
                 None,
-                None,
+                profile,
             )
             runtime_binding = runtime_binding_for_snapshot(
                 authorization_snapshot,
@@ -83,6 +96,7 @@ class RunOrchestrationService:
             generic_run = AgentRun(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                agent_profile_id=profile.id if profile is not None else None,
                 runtime_id=(
                     runtime_binding.workspace_runtime_id if runtime_binding is not None else None
                 ),

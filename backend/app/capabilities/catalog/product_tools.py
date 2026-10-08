@@ -33,6 +33,33 @@ UUID_SCHEMA = {"type": "string", "format": "uuid"}
 
 PRODUCT_TOOL_CATALOG = (
     ProductToolDefinition(
+        name="discover_conversation_targets",
+        description="Discover authorized expert agents and teams before delegating.",
+        input_schema=_object_schema(
+            {
+                "query": {"type": "string", "maxLength": 200},
+                "offset": {"type": "integer", "minimum": 0},
+            }
+        ),
+    ),
+    ProductToolDefinition(
+        name="delegate_conversation_task",
+        description=(
+            "Submit work to an authorized agent or team. Returns a task ID. "
+            "End your run; the platform resumes you with results. Reuse request_key on retries."
+        ),
+        input_schema=_object_schema(
+            {
+                "kind": {"type": "string", "enum": ["agent", "team"]},
+                "target_id": UUID_SCHEMA,
+                "body": {"type": "string", "minLength": 1, "maxLength": 32000},
+                "request_key": {"type": "string", "minLength": 1, "maxLength": 100},
+            },
+            required=("kind", "target_id", "body", "request_key"),
+        ),
+        risk_level="medium",
+    ),
+    ProductToolDefinition(
         name="send_agent_message",
         description="Send a workspace-scoped message to another agent profile.",
         input_schema=_object_schema(

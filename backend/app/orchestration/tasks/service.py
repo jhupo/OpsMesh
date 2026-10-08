@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.governance.audit.service import AuditService
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resource_queries import (
@@ -38,6 +39,7 @@ from backend.app.workspaces.projects.models import WorkspaceProject
 @dataclass(frozen=True)
 class TaskCreateCommand:
     title: str
+    agent_profile_id: UUID | None = None
     agent_team_id: UUID | None = None
     runtime_space_id: UUID | None = None
     workspace_project_id: UUID | None = None
@@ -98,6 +100,26 @@ class WorkspaceTaskService:
             workspace_id=workspace_id,
             created_by_user_id=user_id,
             created_by_agent_run_id=None,
+            command=command,
+            queue=None,
+            initiating_identity=execution_identity,
+        )
+        return task
+
+    def create_conversation_task(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        command: TaskCreateCommand,
+        execution_identity: dict[str, object],
+        parent_run_id: UUID | None = None,
+    ) -> Task:
+        """Admission inside the conversation transaction; queue recovery dispatches after commit."""
+        task, _ = self._create_task(
+            workspace_id=workspace_id,
+            created_by_user_id=user_id,
+            created_by_agent_run_id=parent_run_id,
             command=command,
             queue=None,
             initiating_identity=execution_identity,
@@ -183,6 +205,7 @@ class WorkspaceTaskService:
         user = identities.restore(workspace_id, identity)
         access = ResourceAuthorizationService(self._session, user)
         for kind, identifier, action in (
+            (ResourceKind.AGENT, command.agent_profile_id, ResourceAction.INVOKE),
             (ResourceKind.TEAM, command.agent_team_id, ResourceAction.INVOKE),
             (ResourceKind.PROJECT, command.workspace_project_id, ResourceAction.INVOKE),
             (ResourceKind.WORKFLOW, command.orchestration_definition_id, ResourceAction.INVOKE),
@@ -216,6 +239,20 @@ class WorkspaceTaskService:
         identity: dict[str, object] | None,
     ) -> tuple[Task, AgentRun | None]:
         payload = _task_payload(command)
+        if command.agent_profile_id is not None:
+            if command.agent_team_id is not None:
+                raise ValueError("A task cannot bind both an individual agent and a team")
+            profile = self._session.scalar(
+                select(AgentProfile).where(
+                    AgentProfile.workspace_id == workspace_id,
+                    AgentProfile.id == command.agent_profile_id,
+                    AgentProfile.status == "active",
+                    AgentProfile.archived_at.is_(None),
+                )
+            )
+            if profile is None:
+                raise ValueError("Agent not found or unavailable")
+            payload["owner_agent_profile_id"] = profile.id
         runtime_spaces = RuntimeSpaceService(self._session)
         team = self._team_for_task(workspace_id, command)
         self._validate_project(workspace_id, command.workspace_project_id)
@@ -323,6 +360,7 @@ class WorkspaceTaskService:
             select(AgentTeam).where(
                 AgentTeam.workspace_id == workspace_id,
                 AgentTeam.id == command.agent_team_id,
+                AgentTeam.status == "active",
             )
         )
         if team is None:

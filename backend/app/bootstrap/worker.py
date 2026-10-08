@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.execution.contracts import AgentRuntimeExecutor
 from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
+from backend.app.orchestration.conversations.maintenance import ConversationMaintenanceService
 from backend.app.orchestration.scheduling.maintenance import WorkerMaintenanceService
 from backend.app.platform.updates.service import maintenance_enabled
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
@@ -51,6 +52,12 @@ def build_worker_runner(
             session.close()
 
     def maintenance() -> WorkerMaintenanceSummary:
+        for _ in range(5):
+            with failure_session_scope() as session:
+                if maintenance_enabled(session):
+                    break
+                if not ConversationMaintenanceService(session).process_one():
+                    break
         try:
             with failure_session_scope() as session:
                 PlatformHistoryService(session).capture(settings or get_settings())

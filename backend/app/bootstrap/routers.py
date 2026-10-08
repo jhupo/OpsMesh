@@ -19,6 +19,7 @@ from backend.app.identity.invitations.routes import router as invitations_router
 from backend.app.messaging.notifications.routes import router as notifications_router
 from backend.app.orchestration.approvals.routes import router as approvals_router
 from backend.app.orchestration.automations.routes import router as automations_router
+from backend.app.orchestration.conversations.routes import router as conversations_router
 from backend.app.orchestration.definitions.routes import router as orchestrations_router
 from backend.app.orchestration.runs.routes import router as workspace_runs_router
 from backend.app.orchestration.scheduling.routes import router as scheduled_jobs_router
@@ -47,6 +48,7 @@ api_router.include_router(marketplace_router)
 api_router.include_router(model_providers_router)
 api_router.include_router(model_provider_capabilities_router)
 api_router.include_router(workspace_agents_router)
+api_router.include_router(conversations_router)
 api_router.include_router(workspace_agent_sessions_router)
 api_router.include_router(workspace_runs_router)
 api_router.include_router(workspace_resources_router)

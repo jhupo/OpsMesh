@@ -31,6 +31,9 @@ _ROOTS = {table: kind for kind, table in RESOURCE_TABLES.items()}
 # A dependent row inherits data access from its owning aggregate, never from an unrelated
 # agent/tool reference. A team grant deliberately does not grant access to its users' tasks.
 _PARENTS: dict[str, tuple[str, str]] = {
+    "conversation_turns": ("conversation_id", "conversations"),
+    "conversation_executions": ("turn_id", "conversation_turns"),
+    "conversation_events": ("conversation_id", "conversations"),
     "workspace_agent_installs": ("installed_agent_profile_id", "agent_profiles"),
     "webhook_delivery_attempts": ("subscription_id", "webhook_subscriptions"),
     "agent_profile_versions": ("agent_profile_id", "agent_profiles"),
@@ -173,6 +176,8 @@ def _row_predicate(
     table = Base.metadata.tables[table_name]
     service = ResourceAuthorizationService(session, scope.user)
     tenant = table.c.workspace_id == scope.workspace_id
+    if table_name == "conversations":
+        return and_(tenant, table.c.created_by_user_id == scope.user.user_id)
     if table_name == "marketplace_listings" and action == ResourceAction.READ:
         return or_(
             and_(tenant, _workspace_admin(scope)),
@@ -432,6 +437,10 @@ def _authorize_changes(session: Session, flush_context: object, instances: objec
         if row.workspace_id != scope.workspace_id:
             raise ResourceAccessDenied()
         if row in session.new:
+            if table.name == "conversations":
+                if row.created_by_user_id != scope.user.user_id:
+                    raise ResourceAccessDenied()
+                continue
             if table.name in _ROOTS or table.name in _APPENDED_EVIDENCE:
                 continue
             if (
