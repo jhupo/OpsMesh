@@ -25,6 +25,7 @@ from backend.app.agents.sessions.models import PersistentAgentSessionRef
 from backend.app.agents.sessions.store import SQLAlchemyAgentSession
 from backend.app.capabilities.mcp.transport.resolver import McpAdapterResolver
 from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
+from backend.app.orchestration.conversations.models import ConversationExecution
 from backend.app.orchestration.requests.attachments import message_attachments
 from backend.app.orchestration.requests.context import RunRequestContextProvider
 from backend.app.orchestration.requests.context_budget import (
@@ -37,6 +38,7 @@ from backend.app.orchestration.requests.model_provider import RunRequestModelPro
 from backend.app.orchestration.requests.prompt import RunRequestPromptRenderer
 from backend.app.orchestration.requests.sessions import RunRequestSessionService
 from backend.app.orchestration.requests.tracing import agent_run_tracing
+from backend.app.orchestration.runs.authorization.policy import RunRuntimeAuthorizationError
 from backend.app.orchestration.runs.authorization.runtime import (
     ResolvedRunRuntimeBinding,
     RunRuntimeAuthorizationService,
@@ -163,6 +165,29 @@ class RunRequestBuilder:
         model_provider_override: dict[str, Any] | None,
     ) -> _AuthorizedRequestInputs:
         task = authorized_task_for_run(self.session, run)
+        if (
+            self.session.scalar(
+                select(ConversationExecution.id).where(
+                    ConversationExecution.workspace_id == run.workspace_id,
+                    ConversationExecution.task_id == run.task_id,
+                )
+            )
+            is not None
+        ):
+            runtime = self.session.scalar(
+                select(WorkspaceRuntime).where(
+                    WorkspaceRuntime.workspace_id == run.workspace_id,
+                    WorkspaceRuntime.id == run.execution_runtime_id,
+                    WorkspaceRuntime.execution_mode.in_(["isolated", "pooled", "persistent"]),
+                    WorkspaceRuntime.status.in_(["active", "running"]),
+                )
+            )
+            if runtime is None:
+                raise RunRuntimeAuthorizationError(
+                    "conversation_runtime_required",
+                    "Conversation execution requires an approved "
+                    "isolated, pooled or persistent Runtime",
+                )
         live_profile = authorized_profile_for_run(self.session, run)
         snapshot = authorization_snapshot_for_run(run)
         self.validate_authorization_snapshot(run, task, live_profile, snapshot)
