@@ -154,6 +154,7 @@ class RunControlService:
         workspace_id: UUID,
         run_id: UUID,
         actor_user_id: UUID,
+        commit: bool = True,
     ) -> AgentRun | None:
         failed_run = self.session.scalar(
             select(AgentRun).where(AgentRun.workspace_id == workspace_id, AgentRun.id == run_id)
@@ -203,8 +204,9 @@ class RunControlService:
                 "task_id": str(failed_run.task_id) if failed_run.task_id is not None else None,
             },
         )
-        self.session.commit()
-        self.session.refresh(retry_run)
+        if commit:
+            self.session.commit()
+            self.session.refresh(retry_run)
         return retry_run
 
     def recover_stale_running_runs(

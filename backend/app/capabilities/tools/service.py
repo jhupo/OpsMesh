@@ -26,6 +26,8 @@ class ProductToolService:
         readable_content_types: frozenset[str] = DEFAULT_AGENT_READABLE_CONTENT_TYPES,
         memory_embedding_secret_service: SecretEncryptionService | None = None,
     ) -> None:
+        from backend.app.capabilities.tools.conversations import ConversationProductTools
+
         events = ProductToolEventRecorder(session)
         artifact_persistence = (
             ArtifactPersistenceService(session, storage) if storage is not None else None
@@ -51,3 +53,4 @@ class ProductToolService:
             memory_embedding_secret_service=memory_embedding_secret_service,
         )
         self.mailbox = AgentMailboxProductTools(session, events)
+        self.conversations = ConversationProductTools(session)
