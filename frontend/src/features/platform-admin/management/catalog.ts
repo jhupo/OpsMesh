@@ -6,7 +6,6 @@ import {
   Boxes,
   BrainCircuit,
   Building2,
-  CircleGauge,
   Combine,
   Cpu,
   FileClock,
@@ -14,13 +13,11 @@ import {
   Gavel,
   HardDrive,
   History,
-  LayoutDashboard,
   ListTodo,
   Network,
   Package,
   PlugZap,
   ServerCog,
-  Settings2,
   ShieldAlert,
   ShieldCheck,
   TimerReset,
@@ -701,122 +698,6 @@ export const definitions: Record<Collection, Definition> = {
     actions: lifecycleActions,
   },
 }
-
-export type NavigationEntry = {
-  key: string
-  icon: LucideIcon
-  path?: string
-  children?: { key: string; path: string }[]
-}
-export const adminNavigation: { key: string; items: NavigationEntry[] }[] = [
-  {
-    key: 'overview',
-    items: [{ key: 'overview', icon: LayoutDashboard, path: 'overview' }],
-  },
-  {
-    key: 'organization',
-    items: [
-      { key: 'workspaces', icon: Building2, path: 'workspaces' },
-      { key: 'userAccess', icon: Users, path: 'users' },
-    ],
-  },
-  {
-    key: 'catalogGovernance',
-    items: [
-      {
-        key: 'agentsAndTeams',
-        icon: Bot,
-        children: [
-          { key: 'experts', path: 'experts' },
-          { key: 'teams', path: 'teams' },
-        ],
-      },
-      {
-        key: 'capabilityCatalog',
-        icon: Boxes,
-        children: [
-          { key: 'tools', path: 'capabilities/tools' },
-          { key: 'skills', path: 'capabilities/skills' },
-          { key: 'mcp', path: 'mcp' },
-        ],
-      },
-      {
-        key: 'plugins',
-        icon: Package,
-        path: 'extensions/plugins',
-      },
-    ],
-  },
-  {
-    key: 'operations',
-    items: [
-      {
-        key: 'executionCenter',
-        icon: ListTodo,
-        children: [
-          { key: 'tasks', path: 'execution/tasks' },
-          { key: 'runs', path: 'execution/runs' },
-        ],
-      },
-      {
-        key: 'runtimeControl',
-        icon: ServerCog,
-        children: [
-          { key: 'runtimeSpaces', path: 'runtime/spaces' },
-          { key: 'runtimes', path: 'runtime/runtimes' },
-          { key: 'runtimeLeases', path: 'runtime/leases' },
-        ],
-      },
-      {
-        key: 'workers',
-        icon: Network,
-        children: [
-          { key: 'allWorkers', path: 'runtime/workers' },
-          { key: 'selfHosted', path: 'runtime/self-hosted' },
-        ],
-      },
-      {
-        key: 'queues',
-        icon: ListTodo,
-        children: [
-          { key: 'queueOverview', path: 'runtime/queues' },
-          { key: 'deadLetters', path: 'runtime/dead-letters' },
-        ],
-      },
-    ],
-  },
-  {
-    key: 'governance',
-    items: [
-      {
-        key: 'policyCenter',
-        icon: ShieldCheck,
-        path: 'governance/policies',
-      },
-      {
-        key: 'securityEvents',
-        icon: ShieldAlert,
-        path: 'governance/security',
-      },
-      {
-        key: 'auditEvidence',
-        icon: FileClock,
-        path: 'governance/audit',
-      },
-    ],
-  },
-  {
-    key: 'system',
-    items: [
-      {
-        key: 'systemConfiguration',
-        icon: Settings2,
-        path: 'system/configuration',
-      },
-      { key: 'serviceStatus', icon: CircleGauge, path: 'system/status' },
-    ],
-  },
-]
 
 export const routes: Record<string, Collection> = {
   users: 'users',

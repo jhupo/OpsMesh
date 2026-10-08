@@ -1,6 +1,6 @@
 import React from 'react'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useLocation } from '@tanstack/react-router'
 import { ArrowRight, ChevronRight, Laptop, Moon, Sun } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { currentUserQueryOptions } from '@/api/auth'
@@ -29,9 +29,13 @@ export function CommandMenu() {
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
   const workspaceSidebarData = useSidebarData()
   const platformSidebarData = usePlatformAdminSidebarData()
-  const sidebarData = user.platform_admin
-    ? platformSidebarData
-    : workspaceSidebarData
+  const adminMode = useLocation({
+    select: (location) => location.pathname.startsWith('/admin'),
+  })
+  const sidebarData =
+    user.platform_admin && adminMode
+      ? platformSidebarData
+      : workspaceSidebarData
 
   const runCommand = React.useCallback(
     (command: () => unknown) => {
