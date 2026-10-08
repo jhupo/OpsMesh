@@ -1,0 +1,525 @@
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from backend.app.governance.audit.service import AuditService
+from backend.app.resources.knowledge.content import (
+    KnowledgeContentError,
+    KnowledgeUrlFetcher,
+    fetch_runtime_id,
+    prepare_knowledge_content,
+)
+from backend.app.resources.knowledge.models import (
+    KnowledgeCitation,
+    KnowledgeSource,
+    KnowledgeSourceIngestion,
+)
+from backend.app.resources.memory.authorization import AuthorizedMemoryScope
+from backend.app.resources.memory.configuration import initial_embedding_status
+from backend.app.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
+from backend.app.resources.storage.storage import ObjectStorage
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.db.errors import flush_or_raise_conflict
+from backend.app.shared.db.pagination import page_scalars_by_offset
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeIngestionResult:
+    ingestion_id: UUID
+    source_id: UUID
+    source_version: int
+    status: str
+    byte_count: int
+    chunk_count: int
+    error_code: str | None
+
+
+class KnowledgeSourceIngestionService:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def request(
+        self,
+        *,
+        workspace_id: UUID,
+        source_id: UUID,
+        requested_by_user_id: UUID,
+    ) -> KnowledgeSourceIngestion:
+        source = self._lock_source(workspace_id, source_id)
+        if source is None:
+            raise ValueError("Knowledge source not found")
+        if source.status != "active":
+            raise ValueError("Only active knowledge sources can be ingested")
+        if source.source_type == "url":
+            fetch_runtime_id(source.source_config)
+        existing = self._session.scalar(
+            select(KnowledgeSourceIngestion).where(
+                KnowledgeSourceIngestion.workspace_id == workspace_id,
+                KnowledgeSourceIngestion.source_id == source.id,
+                KnowledgeSourceIngestion.source_version == source.version,
+            )
+        )
+        if existing is not None:
+            if existing.status == "failed":
+                existing.status = "pending"
+                existing.attempts = 0
+                existing.error_code = None
+                existing.started_at = None
+                existing.completed_at = None
+            else:
+                return existing
+        else:
+            existing = KnowledgeSourceIngestion(
+                workspace_id=workspace_id,
+                requested_by_user_id=requested_by_user_id,
+                source_id=source.id,
+                source_version=source.version,
+                status="pending",
+                attempts=0,
+                byte_count=0,
+                chunk_count=0,
+            )
+            self._session.add(existing)
+        flush_or_raise_conflict(
+            self._session,
+            "Knowledge source ingestion is already requested for this version",
+        )
+        AuditService(self._session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=requested_by_user_id,
+            action="knowledge_source.ingestion_requested",
+            target_type="knowledge_source",
+            target_id=source.id,
+            metadata={"source_version": source.version, "ingestion_id": str(existing.id)},
+        )
+        return existing
+
+    def list_ingestions(
+        self,
+        *,
+        workspace_id: UUID,
+        source_id: UUID,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[KnowledgeSourceIngestion], int]:
+        statement = select(KnowledgeSourceIngestion).where(
+            KnowledgeSourceIngestion.workspace_id == workspace_id,
+            KnowledgeSourceIngestion.source_id == source_id,
+        )
+        return page_scalars_by_offset(
+            self._session,
+            statement.order_by(
+                KnowledgeSourceIngestion.created_at.desc(),
+                KnowledgeSourceIngestion.id.desc(),
+            ),
+            limit=limit,
+            offset=offset,
+        )
+
+    def get_ingestion(
+        self,
+        *,
+        workspace_id: UUID,
+        source_id: UUID,
+        ingestion_id: UUID,
+    ) -> KnowledgeSourceIngestion | None:
+        return self._session.scalar(
+            select(KnowledgeSourceIngestion).where(
+                KnowledgeSourceIngestion.workspace_id == workspace_id,
+                KnowledgeSourceIngestion.source_id == source_id,
+                KnowledgeSourceIngestion.id == ingestion_id,
+            )
+        )
+
+    def list_citations(
+        self,
+        *,
+        workspace_id: UUID,
+        source_id: UUID,
+        ingestion_id: UUID,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[KnowledgeCitation], int] | None:
+        ingestion_exists = self._session.scalar(
+            select(KnowledgeSourceIngestion.id).where(
+                KnowledgeSourceIngestion.workspace_id == workspace_id,
+                KnowledgeSourceIngestion.source_id == source_id,
+                KnowledgeSourceIngestion.id == ingestion_id,
+            )
+        )
+        if ingestion_exists is None:
+            return None
+        statement = select(KnowledgeCitation).where(
+            KnowledgeCitation.workspace_id == workspace_id,
+            KnowledgeCitation.source_id == source_id,
+            KnowledgeCitation.ingestion_id == ingestion_id,
+        )
+        return page_scalars_by_offset(
+            self._session,
+            statement.order_by(KnowledgeCitation.chunk_index, KnowledgeCitation.id),
+            limit=limit,
+            offset=offset,
+        )
+
+    def authorized_citations_for_memory_entry(
+        self,
+        *,
+        workspace_id: UUID,
+        memory_entry_id: UUID,
+        access_scopes: tuple[AuthorizedMemoryScope, ...],
+    ) -> list[KnowledgeCitation]:
+        entry = self._session.scalar(
+            select(WorkspaceMemoryEntry).where(
+                WorkspaceMemoryEntry.workspace_id == workspace_id,
+                WorkspaceMemoryEntry.id == memory_entry_id,
+                WorkspaceMemoryEntry.source_type == "knowledge_source",
+                WorkspaceMemoryEntry.entry_type == "knowledge_chunk",
+                WorkspaceMemoryEntry.status == "active",
+            )
+        )
+        if entry is None or entry.source_id is None:
+            raise ValueError("Knowledge memory entry not found")
+        if not any(
+            scope.allows(
+                source_type="knowledge_source",
+                tags=set(entry.tags),
+                scope_type=entry.scope_type,
+                scope_id=entry.scope_id,
+            )
+            for scope in access_scopes
+        ):
+            raise ValueError("Knowledge memory entry is outside the authorized resource scope")
+        try:
+            source_id = UUID(entry.source_id)
+        except ValueError as exc:
+            raise ValueError("Knowledge memory entry source is invalid") from exc
+        source = self._session.scalar(
+            select(KnowledgeSource).where(
+                KnowledgeSource.workspace_id == workspace_id,
+                KnowledgeSource.id == source_id,
+                KnowledgeSource.status == "active",
+            )
+        )
+        if source is None:
+            raise ValueError("Knowledge source is not active")
+        return list(
+            self._session.scalars(
+                select(KnowledgeCitation).where(
+                    KnowledgeCitation.workspace_id == workspace_id,
+                    KnowledgeCitation.source_id == source_id,
+                    KnowledgeCitation.memory_entry_id == memory_entry_id,
+                ).order_by(KnowledgeCitation.chunk_index, KnowledgeCitation.id)
+            ).all()
+        )
+
+    def authorized_citations_for_memory_entries(
+        self,
+        *,
+        workspace_id: UUID,
+        memory_entry_ids: set[UUID],
+        access_scopes: tuple[AuthorizedMemoryScope, ...],
+    ) -> dict[UUID, list[KnowledgeCitation]]:
+        if not memory_entry_ids or not access_scopes:
+            return {}
+        entries = self._session.scalars(
+            select(WorkspaceMemoryEntry).where(
+                WorkspaceMemoryEntry.workspace_id == workspace_id,
+                WorkspaceMemoryEntry.id.in_(memory_entry_ids),
+                WorkspaceMemoryEntry.source_type == "knowledge_source",
+                WorkspaceMemoryEntry.entry_type == "knowledge_chunk",
+                WorkspaceMemoryEntry.status == "active",
+            )
+        ).all()
+        authorized_entries = [
+            entry
+            for entry in entries
+            if any(
+                scope.allows(
+                    source_type="knowledge_source",
+                    tags=set(entry.tags),
+                    scope_type=entry.scope_type,
+                    scope_id=entry.scope_id,
+                )
+                for scope in access_scopes
+            )
+        ]
+        source_ids: set[UUID] = set()
+        entry_source_ids: dict[UUID, UUID] = {}
+        for entry in authorized_entries:
+            if entry.source_id is None:
+                continue
+            try:
+                source_id = UUID(entry.source_id)
+            except ValueError:
+                continue
+            source_ids.add(source_id)
+            entry_source_ids[entry.id] = source_id
+        if not source_ids:
+            return {}
+        active_source_ids = set(
+            self._session.scalars(
+                select(KnowledgeSource.id).where(
+                    KnowledgeSource.workspace_id == workspace_id,
+                    KnowledgeSource.status == "active",
+                    KnowledgeSource.id.in_(source_ids),
+                )
+            ).all()
+        )
+        eligible_entry_ids = {
+            entry_id
+            for entry_id, source_id in entry_source_ids.items()
+            if source_id in active_source_ids
+        }
+        if not eligible_entry_ids:
+            return {}
+        citations = self._session.scalars(
+            select(KnowledgeCitation)
+            .where(
+                KnowledgeCitation.workspace_id == workspace_id,
+                KnowledgeCitation.memory_entry_id.in_(eligible_entry_ids),
+                KnowledgeCitation.source_id.in_(active_source_ids),
+            )
+            .order_by(KnowledgeCitation.memory_entry_id, KnowledgeCitation.chunk_index)
+        ).all()
+        grouped: dict[UUID, list[KnowledgeCitation]] = {}
+        for citation in citations:
+            grouped.setdefault(citation.memory_entry_id, []).append(citation)
+        return grouped
+
+    def start(
+        self,
+        *,
+        workspace_id: UUID,
+        source_id: UUID,
+        source_version: int,
+    ) -> KnowledgeSourceIngestion | None:
+        ingestion = self._session.scalar(
+            select(KnowledgeSourceIngestion)
+            .where(
+                KnowledgeSourceIngestion.workspace_id == workspace_id,
+                KnowledgeSourceIngestion.source_id == source_id,
+                KnowledgeSourceIngestion.source_version == source_version,
+            )
+            .with_for_update()
+        )
+        if ingestion is None or ingestion.status == "succeeded":
+            return None
+        if ingestion.status == "processing":
+            return None
+        source = self._session.scalar(
+            select(KnowledgeSource).where(
+                KnowledgeSource.workspace_id == workspace_id,
+                KnowledgeSource.id == source_id,
+            )
+        )
+        if source is None or source.status != "active" or source.version != source_version:
+            self.fail(ingestion, "source_version_stale")
+            return None
+        ingestion.status = "processing"
+        ingestion.attempts += 1
+        ingestion.started_at = datetime.now(UTC)
+        ingestion.completed_at = None
+        ingestion.error_code = None
+        return ingestion
+
+    def process(
+        self,
+        *,
+        ingestion: KnowledgeSourceIngestion,
+        storage: ObjectStorage | None = None,
+        url_fetcher: KnowledgeUrlFetcher | None = None,
+    ) -> KnowledgeIngestionResult:
+        source = self._session.scalar(
+            select(KnowledgeSource).where(
+                KnowledgeSource.workspace_id == ingestion.workspace_id,
+                KnowledgeSource.id == ingestion.source_id,
+                KnowledgeSource.version == ingestion.source_version,
+                KnowledgeSource.status == "active",
+            )
+        )
+        if source is None:
+            return self._fail_result(ingestion, "source_version_stale")
+        try:
+            content = prepare_knowledge_content(
+                self._session,
+                source=source,
+                storage=storage,
+                url_fetcher=url_fetcher,
+            )
+        except KnowledgeContentError as exc:
+            return self._fail_result(ingestion, exc.code)
+        chunks = content.chunks
+        self._archive_chunks(ingestion.workspace_id, ingestion.source_id)
+        entries: list[WorkspaceMemoryEntry] = []
+        for index, chunk in enumerate(chunks):
+            title = f"{source.name} #{index + 1}" if len(chunks) > 1 else source.name
+            entry = WorkspaceMemoryEntry(
+                workspace_id=ingestion.workspace_id,
+                source_type="knowledge_source",
+                source_id=str(source.id),
+                memory_layer="semantic",
+                scope_type="workspace",
+                scope_id=str(ingestion.workspace_id),
+                memory_key=f"knowledge_source:{source.id}:v{source.version}:{index}",
+                entry_type="knowledge_chunk",
+                title=title,
+                content=chunk.text,
+                tags=["knowledge_source", source.source_type],
+                visibility_scope="workspace",
+                importance=40,
+                status="active",
+                content_fingerprint=memory_content_fingerprint(title, chunk.text),
+                memory_metadata={
+                    "knowledge_source_id": str(source.id),
+                    "source_version": source.version,
+                    "workspace_file_id": (
+                        str(source.workspace_file_id)
+                        if source.workspace_file_id is not None
+                        else None
+                    ),
+                    "chunk_index": index,
+                    "chunk_count": len(chunks),
+                    "filename": content.filename,
+                    "start_offset": chunk.start_offset,
+                    "end_offset": chunk.end_offset,
+                },
+                embedding_status=initial_embedding_status(
+                    self._session,
+                    ingestion.workspace_id,
+                ),
+            )
+            self._session.add(entry)
+            entries.append(entry)
+        self._session.flush()
+        for index, (chunk, entry) in enumerate(zip(chunks, entries, strict=True)):
+            self._session.add(
+                KnowledgeCitation(
+                    workspace_id=ingestion.workspace_id,
+                    source_id=source.id,
+                    ingestion_id=ingestion.id,
+                    memory_entry_id=entry.id,
+                    source_version=source.version,
+                    chunk_index=index,
+                    locator=content.locator,
+                    start_offset=chunk.start_offset,
+                    end_offset=chunk.end_offset,
+                    quote=chunk.text,
+                    quote_sha256=hashlib.sha256(chunk.text.encode("utf-8")).hexdigest(),
+                )
+            )
+        ingestion.status = "succeeded"
+        ingestion.content_sha256 = content.content_sha256
+        ingestion.byte_count = len(content.raw)
+        ingestion.chunk_count = len(chunks)
+        ingestion.completed_at = datetime.now(UTC)
+        ingestion.error_code = None
+        source.last_ingested_at = ingestion.completed_at
+        source.last_error_code = None
+        self._session.flush()
+        AuditService(self._session).record_system_action(
+            workspace_id=ingestion.workspace_id,
+            action="knowledge_source.ingestion_succeeded",
+            target_type="knowledge_source",
+            target_id=source.id,
+            metadata={
+                "ingestion_id": str(ingestion.id),
+                "source_version": source.version,
+                "byte_count": ingestion.byte_count,
+                "chunk_count": ingestion.chunk_count,
+            },
+        )
+        return self._result(ingestion)
+
+    def fail(self, ingestion: KnowledgeSourceIngestion, error_code: str) -> None:
+        ingestion.status = "failed"
+        ingestion.error_code = error_code
+        ingestion.completed_at = datetime.now(UTC)
+        source = self._session.scalar(
+            select(KnowledgeSource).where(
+                KnowledgeSource.workspace_id == ingestion.workspace_id,
+                KnowledgeSource.id == ingestion.source_id,
+            )
+        )
+        if source is not None:
+            source.last_error_code = error_code
+        AuditService(self._session).record_system_action(
+            workspace_id=ingestion.workspace_id,
+            action="knowledge_source.ingestion_failed",
+            target_type="knowledge_source",
+            target_id=ingestion.source_id,
+            metadata={"ingestion_id": str(ingestion.id), "error_code": error_code},
+        )
+
+    def _fail_result(
+        self,
+        ingestion: KnowledgeSourceIngestion,
+        error_code: str,
+    ) -> KnowledgeIngestionResult:
+        self.fail(ingestion, error_code)
+        return self._result(ingestion)
+
+    def _result(self, ingestion: KnowledgeSourceIngestion) -> KnowledgeIngestionResult:
+        return KnowledgeIngestionResult(
+            ingestion_id=ingestion.id,
+            source_id=ingestion.source_id,
+            source_version=ingestion.source_version,
+            status=ingestion.status,
+            byte_count=ingestion.byte_count,
+            chunk_count=ingestion.chunk_count,
+            error_code=ingestion.error_code,
+        )
+
+    def _lock_source(self, workspace_id: UUID, source_id: UUID) -> KnowledgeSource | None:
+        return self._session.scalar(
+            select(KnowledgeSource)
+            .where(
+                KnowledgeSource.workspace_id == workspace_id,
+                KnowledgeSource.id == source_id,
+            )
+            .with_for_update()
+        )
+
+    def _archive_chunks(self, workspace_id: UUID, source_id: UUID) -> None:
+        entries = self._session.scalars(
+            select(WorkspaceMemoryEntry).where(
+                WorkspaceMemoryEntry.workspace_id == workspace_id,
+                WorkspaceMemoryEntry.source_type == "knowledge_source",
+                WorkspaceMemoryEntry.source_id == str(source_id),
+                WorkspaceMemoryEntry.entry_type == "knowledge_chunk",
+                WorkspaceMemoryEntry.status == "active",
+            )
+        ).all()
+        now = datetime.now(UTC)
+        for entry in entries:
+            entry.status = "archived"
+            entry.archived_at = now
+            entry.invalidate_embedding(status="not_applicable")
+
+
+def enqueue_knowledge_source_ingestion_job(
+    *,
+    queue: RedisQueue,
+    workspace_id: UUID,
+    source_id: UUID,
+    source_version: int,
+    requested_by_user_id: UUID,
+) -> bool:
+    return queue.enqueue(
+        JobPayload(
+            workspace_id=workspace_id,
+            job_type=JobType.KNOWLEDGE_INGEST,
+            resource_id=source_id,
+            requested_by_user_id=requested_by_user_id,
+            idempotency_key=f"knowledge.ingest:{workspace_id}:{source_id}:v{source_version}",
+            routing={"source_version": source_version},
+            priority=-5,
+            max_attempts=1,
+        )
+    )

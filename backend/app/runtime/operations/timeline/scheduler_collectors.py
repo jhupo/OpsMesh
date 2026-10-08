@@ -5,8 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.runtime.operations.timeline.models import (
     TimelineEvent,
     TimelineFilters,
@@ -15,6 +14,7 @@ from backend.app.runtime.operations.timeline.models import (
     datetime_from_value,
     within,
 )
+from backend.app.teams.management.models import AgentTeam
 
 TEAM_RUNTIME_CAPABILITY_KEY = "team_runtime"
 

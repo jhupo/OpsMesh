@@ -30,7 +30,7 @@ export function DataTableColumnHeader<TData, TValue>({
   const { t } = useTranslation()
 
   if (!column.getCanSort()) {
-    return <div className={cn(className)}>{title}</div>
+    return <div className={cn('font-semibold', className)}>{title}</div>
   }
 
   return (
@@ -40,9 +40,9 @@ export function DataTableColumnHeader<TData, TValue>({
           <Button
             variant='ghost'
             size='sm'
-            className='h-8 data-[state=open]:bg-accent'
+            className='h-8 font-semibold data-[state=open]:bg-accent'
           >
-            <span>{title}</span>
+            <span className='font-semibold'>{title}</span>
             {column.getIsSorted() === 'desc' ? (
               <ArrowDownIcon className='ms-2 h-4 w-4' />
             ) : column.getIsSorted() === 'asc' ? (

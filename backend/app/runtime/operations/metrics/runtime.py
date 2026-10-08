@@ -3,14 +3,14 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
-from backend.app.observability.telemetry.metrics import GaugeMetric
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import RuntimeSpaceQuota
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.statuses import ACTIVE_RUN_STATUSES
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.operations.runtimes.provider_capacity import (
     capacity_slots_from_metadata,
 )
+from backend.app.runtime.spaces.models import RuntimeSpaceQuota
+from backend.app.shared.telemetry.metrics import GaugeMetric
 
 ACTIVE_RUNTIME_RUN_STATUSES = ACTIVE_RUN_STATUSES
 

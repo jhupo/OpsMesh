@@ -5,13 +5,13 @@ from uuid import UUID
 
 from redis.exceptions import RedisError
 
-from backend.app.core.security.redaction import (
+from backend.app.runtime.operations.timeline.models import TimelineEvent, TimelineFilters, within
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.security.redaction import (
     redact_sensitive_payload_item,
     redact_text_fragments,
 )
-from backend.app.runtime.operations.timeline.models import TimelineEvent, TimelineFilters, within
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue
 
 
 def queue_job_time(job: JobPayload) -> datetime:

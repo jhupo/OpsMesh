@@ -9,23 +9,24 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
     AgentRuntimeUsage,
 )
-from backend.app.domains.agents.runtime.usage import runtime_usage
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.observability.costs.pricing import CostPricingService
-from backend.app.observability.costs.queries import CostQueryService
-from backend.app.observability.costs.service import CostAccountingService, CostBudgetExceededError
-from backend.app.observability.costs.usage import normalize_model_usage
-from backend.app.observability.notifications.models import WorkspaceNotification
+from backend.app.agents.execution.usage import runtime_usage
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.governance.costs.pricing import CostPricingService
+from backend.app.governance.costs.queries import CostQueryService
+from backend.app.governance.costs.service import CostAccountingService, CostBudgetExceededError
+from backend.app.governance.costs.usage import normalize_model_usage
+from backend.app.identity.users.models import User
+from backend.app.messaging.notifications.models import WorkspaceNotification
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.shared.db.base import Base
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_usage_normalization_handles_provider_aliases_and_redacts_raw_payload() -> None:

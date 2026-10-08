@@ -3,13 +3,13 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.orchestration.runs.events import RunEventWriter
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.runtime.environment.events import new_runtime_event
-from backend.app.runtime.environment.models import RuntimeEvent, WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import RuntimeSpaceEvent
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.orchestration.runs.events import RunEventWriter
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.runtime.instances.events import new_runtime_event
+from backend.app.runtime.instances.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime.spaces.models import RuntimeSpaceEvent
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class SelfHostedEventRecorder:

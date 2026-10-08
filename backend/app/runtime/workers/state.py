@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from backend.app.runtime.workers.capacity import merge_counts
 from backend.app.runtime.workers.heartbeat import worker_heartbeat_details
-from backend.app.runtime.workers.maintenance import WorkerMaintenanceSummary
+from backend.app.runtime.workers.maintenance_contracts import WorkerMaintenanceSummary
 from backend.app.runtime.workers.models import WorkerRunnerConfig, WorkerRunSummary
 
 

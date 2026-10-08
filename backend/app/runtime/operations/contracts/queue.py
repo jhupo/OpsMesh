@@ -6,9 +6,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
-from backend.app.core.security.redaction import redact_sensitive_payload
-from backend.app.domains.orchestration.runs.contracts import AgentRunResponse
-from backend.app.runtime.workers.contracts import JobPayload
+from backend.app.orchestration.runs.contracts import AgentRunResponse
+from backend.app.runtime.queues.contracts import JobPayload
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class QueueMetricsResponse(BaseModel):

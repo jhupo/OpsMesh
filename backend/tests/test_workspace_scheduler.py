@@ -9,46 +9,38 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
-from backend.app.domains.orchestration.runs.authorization.snapshot import (
-    RunAuthorizationSnapshotService,
-)
-from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
-from backend.app.domains.orchestration.runs.events import RunEventRecorder
-from backend.app.domains.orchestration.runs.lifecycle import (
-    RunLifecycleCallbacks,
-    RunLifecycleService,
-)
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.resources import RunResourceReservationService
-from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.state import TaskStatus
-from backend.app.domains.orchestration.workflows.scheduling.service import WorkspaceScheduler
-from backend.app.domains.orchestration.workflows.steps.launcher import RunStepLauncher
-from backend.app.domains.orchestration.workflows.steps.scheduling_state import (
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
+from backend.app.orchestration.requests.builder import RunRequestBuilder
+from backend.app.orchestration.runs.authorization.snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.resources import RunResourceReservationService
+from backend.app.orchestration.runs.scheduling.service import WorkspaceScheduler
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.runs.steps.launcher import RunStepLauncher
+from backend.app.orchestration.runs.steps.scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.tenants.models import (
-    Workspace,
-    WorkspaceMember,
-    WorkspaceQuota,
-    WorkspaceReservation,
-)
-from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
-from backend.app.runtime.environment.spaces.models import (
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.state import TaskStatus
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.environment.spaces.service import RuntimeSpaceService
+from backend.app.runtime.spaces.service import RuntimeSpaceService
+from backend.app.shared.db.base import Base
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
+from backend.app.workspaces.quotas.models import WorkspaceQuota, WorkspaceReservation
+from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 
 def test_workspace_scheduler_orders_steps_by_task_priority_and_run_quota() -> None:

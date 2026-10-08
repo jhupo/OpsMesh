@@ -5,12 +5,12 @@ import pytest
 from sqlalchemy.orm import Session
 
 from backend.app.bootstrap.models import register_models
-from backend.app.domains.orchestration.tasks.models import TaskStep
-from backend.app.domains.orchestration.workflows.scheduling.capacity import (
+from backend.app.orchestration.runs.scheduling.capacity import (
     TeamMemberCapacityResolver,
     manager_capacity_context,
 )
-from backend.app.domains.workspace.teams.models import AgentTeam
+from backend.app.orchestration.tasks.models import TaskStep
+from backend.app.teams.management.models import AgentTeam
 
 register_models()
 

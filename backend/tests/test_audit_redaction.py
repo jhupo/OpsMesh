@@ -9,19 +9,20 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.requests import Request
 
-from backend.app.api.client_ip import security_request_context
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.core.pagination import PageParams
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.domains.access.models import User
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.observability.audit.integrity import AuditIntegrityService
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.audit.queries import AuditQueryService
-from backend.app.observability.audit.security_events import SecurityAuditService
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.observability.audit.service import AuditService
+from backend.app.governance.audit.integrity import AuditIntegrityService
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.audit.queries import AuditQueryService
+from backend.app.governance.audit.service import AuditService
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.governance.security_events.service import SecurityAuditService
+from backend.app.identity.users.models import User
+from backend.app.shared.config import Settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.http.client_ip import security_request_context
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_audit_service_redacts_sensitive_metadata_before_db_write() -> None:

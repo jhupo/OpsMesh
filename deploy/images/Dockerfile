@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /usr/local/bin/uv
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
@@ -9,7 +9,7 @@ COPY runtime ./runtime
 COPY backend ./backend
 RUN uv sync --frozen --no-dev --no-editable --package opsmesh
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 ARG BUILD_COMMIT
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/app/.venv/bin:$PATH" \
     OPSMESH_BUILD_COMMIT=${BUILD_COMMIT} OPSMESH_RUN_MIGRATIONS=false

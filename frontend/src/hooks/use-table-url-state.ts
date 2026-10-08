@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type {
   ColumnFiltersState,
   OnChangeFn,
@@ -119,19 +119,29 @@ export function useTableUrlState(
     return { pageIndex: Math.max(0, pageNum - 1), pageSize: pageSizeNum }
   }, [search, pageKey, pageSizeKey, defaultPage, defaultPageSize])
 
-  const onPaginationChange: OnChangeFn<PaginationState> = (updater) => {
-    const next = typeof updater === 'function' ? updater(pagination) : updater
-    const nextPage = next.pageIndex + 1
-    const nextPageSize = next.pageSize
-    navigate({
-      search: (prev) => ({
-        ...(prev as SearchRecord),
-        [pageKey]: nextPage <= defaultPage ? undefined : nextPage,
-        [pageSizeKey]:
-          nextPageSize === defaultPageSize ? undefined : nextPageSize,
-      }),
-    })
-  }
+  const onPaginationChange: OnChangeFn<PaginationState> = useCallback(
+    (updater) => {
+      const next = typeof updater === 'function' ? updater(pagination) : updater
+      if (
+        next.pageIndex === pagination.pageIndex &&
+        next.pageSize === pagination.pageSize
+      ) {
+        return
+      }
+
+      const nextPage = next.pageIndex + 1
+      const nextPageSize = next.pageSize
+      navigate({
+        search: (prev) => ({
+          ...(prev as SearchRecord),
+          [pageKey]: nextPage <= defaultPage ? undefined : nextPage,
+          [pageSizeKey]:
+            nextPageSize === defaultPageSize ? undefined : nextPageSize,
+        }),
+      })
+    },
+    [defaultPage, defaultPageSize, navigate, pageKey, pageSizeKey, pagination]
+  )
 
   const [globalFilter, setGlobalFilter] = useState<string | undefined>(() => {
     if (!globalFilterEnabled) return undefined
@@ -190,22 +200,26 @@ export function useTableUrlState(
     })
   }
 
-  const ensurePageInRange = (
-    pageCount: number,
-    opts: { resetTo?: 'first' | 'last' } = { resetTo: 'first' }
-  ) => {
-    const currentPage = (search as SearchRecord)[pageKey]
-    const pageNum = typeof currentPage === 'number' ? currentPage : defaultPage
-    if (pageCount > 0 && pageNum > pageCount) {
-      navigate({
-        replace: true,
-        search: (prev) => ({
-          ...(prev as SearchRecord),
-          [pageKey]: opts.resetTo === 'last' ? pageCount : undefined,
-        }),
-      })
-    }
-  }
+  const ensurePageInRange = useCallback(
+    (
+      pageCount: number,
+      opts: { resetTo?: 'first' | 'last' } = { resetTo: 'first' }
+    ) => {
+      const currentPage = (search as SearchRecord)[pageKey]
+      const pageNum =
+        typeof currentPage === 'number' ? currentPage : defaultPage
+      if (pageCount > 0 && pageNum > pageCount) {
+        navigate({
+          replace: true,
+          search: (prev) => ({
+            ...(prev as SearchRecord),
+            [pageKey]: opts.resetTo === 'last' ? pageCount : undefined,
+          }),
+        })
+      }
+    },
+    [defaultPage, navigate, pageKey, search]
+  )
 
   return {
     globalFilter: globalFilterEnabled ? (globalFilter ?? '') : undefined,

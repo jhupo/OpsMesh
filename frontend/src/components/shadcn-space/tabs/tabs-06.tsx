@@ -33,9 +33,9 @@ export default function TabsVertical({
       value={value}
       onValueChange={onValueChange}
       orientation={isMobile ? 'horizontal' : 'vertical'}
-      className='flex w-full flex-col gap-6 md:flex-row'
+      className='flex min-h-0 min-w-0 flex-1 flex-col gap-6 md:flex-row'
     >
-      <TabsList className='flex h-auto w-full justify-start gap-2 overflow-x-auto rounded-none bg-transparent p-0 pb-2 md:w-44 md:shrink-0 md:flex-col md:justify-start md:overflow-visible md:border-e md:border-border md:pe-4 md:pb-0'>
+      <TabsList className='flex h-auto w-full justify-start gap-2 overflow-x-auto rounded-none bg-transparent p-0 pb-2 md:w-44 md:shrink-0 md:self-stretch md:flex-col md:justify-start md:overflow-visible md:border-e md:border-border md:pe-4 md:pb-0'>
         {items.map((tab) => {
           const Icon = tab.icon
           const isActive = value === tab.id
@@ -70,7 +70,7 @@ export default function TabsVertical({
           )
         })}
       </TabsList>
-      <div className='min-w-0 flex-1'>
+      <div className='min-h-0 min-w-0 flex-1'>
         {items.map((tab) => (
           <TabsContent
             key={tab.id}
@@ -81,7 +81,7 @@ export default function TabsVertical({
               initial={{ opacity: 0, x: reducedMotion ? 0 : 10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: reducedMotion ? 0.15 : 0.3 }}
-              className='h-full'
+              className='flex h-full min-h-0 flex-col'
             >
               {children}
             </motion.div>

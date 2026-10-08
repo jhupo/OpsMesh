@@ -6,17 +6,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import datetime_or_none
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStateService, RunStatus
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.state import TaskStateService, TaskStatus
-from backend.app.domains.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
-from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
-from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
-from backend.app.runtime.environment.spaces.reservations import (
-    RuntimeSpaceReservationReleaseService,
-)
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.state import RunStateService, RunStatus
+from backend.app.orchestration.runs.statuses import ACTIVE_RUN_STATUSES
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.state import TaskStateService, TaskStatus
+from backend.app.orchestration.tasks.steps import TaskStepStateService, TaskStepStatus
 from backend.app.runtime.self_hosted.models import (
     RuntimeCredential,
     SelfHostedJobClaim,
@@ -24,6 +19,9 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedWorker,
 )
 from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
+from backend.app.runtime.spaces.reservations import RuntimeSpaceReservationReleaseService
+from backend.app.shared.utils import datetime_or_none
+from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 
 class SelfHostedJobFinalizer:

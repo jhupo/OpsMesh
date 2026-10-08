@@ -13,15 +13,18 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.domains.access.errors import AuthenticationError
-from backend.app.domains.access.models import User, UserAPIToken
-from backend.app.domains.access.service import AuthorizationService
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.identity.auth.models import UserAPIToken
+from backend.app.identity.auth.service import AuthenticationService
+from backend.app.identity.authorization.errors import AuthenticationError
+from backend.app.identity.users.accounts import AccountService
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
-from backend.app.observability.audit.security_models import SecurityEvent
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 INTERNAL_TOKEN = "test-internal-token"
 
@@ -55,7 +58,7 @@ def test_register_creates_user_with_password_hash_and_does_not_leak_hash() -> No
 def test_password_verifier_rejects_removed_pbkdf2_format() -> None:
     legacy_hash = "pbkdf2_sha256$260000$c2FsdA==$ZGlnZXN0"
 
-    assert AuthorizationService.verify_password("password", legacy_hash) is False
+    assert AuthenticationService.verify_password("password", legacy_hash) is False
 
 
 def test_missing_user_login_still_runs_password_verification(
@@ -69,13 +72,13 @@ def test_missing_user_login_still_runs_password_verification(
         return False
 
     monkeypatch.setattr(
-        AuthorizationService,
+        AuthenticationService,
         "verify_password",
         staticmethod(record_verification),
     )
 
     with pytest.raises(AuthenticationError, match="Invalid email or password"):
-        AuthorizationService(session).login_with_password(
+        AuthenticationService(session).login_with_password(
             email="missing@example.com",
             password="wrong-password",
             settings=Settings(environment="test"),
@@ -147,7 +150,7 @@ def test_password_login_issues_user_token_and_auth_me_accepts_it() -> None:
 
 def test_bootstrapped_superadmin_can_login_and_reset_platform_access() -> None:
     client, session = _client()
-    administrator, initial_password = AuthorizationService(session).create_platform_admin()
+    administrator, initial_password = AccountService(session).create_platform_admin()
 
     logged_in = client.post(
         "/api/v1/auth/login",
@@ -165,7 +168,7 @@ def test_bootstrapped_superadmin_can_login_and_reset_platform_access() -> None:
     assert platform_users.status_code == 200
     assert platform_users.json()["items"][0]["email"] == administrator.email
 
-    _, replacement_password = AuthorizationService(session).reset_platform_admin_password()
+    _, replacement_password = AccountService(session).reset_platform_admin_password()
     expired_admin = client.get(
         "/api/v1/admin/users?limit=50&offset=0",
         headers=_user_token_headers(first_token),

@@ -11,24 +11,8 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.memory.models import (
-    WorkspaceMemoryEntry,
-    WorkspaceMemoryRetrievalEvent,
-    memory_content_fingerprint,
-)
-from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.agents.runtime.contracts import (
+import backend.app.agents.execution.providers.openai.runner as openai_runtime
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeContext,
@@ -36,90 +20,84 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
-from backend.app.domains.agents.runtime.errors import AgentRuntimeProviderError
-from backend.app.domains.agents.runtime.state import AgentRunStateStore
-from backend.app.domains.agents.sessions.models import PersistentAgentSession
-from backend.app.domains.capabilities.mcp.models import (
-    McpCredentialReference,
-    McpServer,
-    McpToolAllowlist,
-)
-from backend.app.domains.capabilities.resources.models import CapabilityResource
-from backend.app.domains.capabilities.skills.models import (
-    Skill,
-    WorkspaceSkillInstall,
-)
-from backend.app.domains.orchestration.approvals.agent_tool_interruptions import (
+from backend.app.agents.execution.errors import AgentRuntimeProviderError
+from backend.app.agents.execution.state import AgentRunStateStore
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.agents.sessions.models import PersistentAgentSession
+from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolAllowlist
+from backend.app.capabilities.references.models import CapabilityResource
+from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.costs.models import ModelUsageRecord
+from backend.app.governance.reviews.model_request import ModelRequestReview
+from backend.app.governance.reviews.models import ResourceReview
+from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
+from backend.app.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,
 )
-from backend.app.domains.orchestration.approvals.decisions import ApprovalDecisionService
-from backend.app.domains.orchestration.approvals.models import Approval, PendingToolInvocation
-from backend.app.domains.orchestration.approvals.pending_tools import PendingToolInvocationService
-from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
-from backend.app.domains.orchestration.requests.request_reviewing import (
+from backend.app.orchestration.approvals.decisions import ApprovalDecisionService
+from backend.app.orchestration.approvals.models import Approval, PendingToolInvocation
+from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
+from backend.app.orchestration.planning.attempt_models import TaskPlanningAttempt
+from backend.app.orchestration.requests.builder import RunRequestBuilder
+from backend.app.orchestration.requests.request_reviewing import (
     model_request_review_fingerprint,
     model_request_review_input,
 )
-from backend.app.domains.orchestration.runs.activity import activity_phase
-from backend.app.domains.orchestration.runs.authorization.snapshot import (
-    RunAuthorizationSnapshotService,
-)
-from backend.app.domains.orchestration.runs.control import RunControlService
-from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
-from backend.app.domains.orchestration.runs.events import RunEventRecorder
-from backend.app.domains.orchestration.runs.execution import (
-    RunExecutionDependencies,
-    RunExecutionService,
-)
-from backend.app.domains.orchestration.runs.lifecycle import (
-    RunLifecycleCallbacks,
-    RunLifecycleService,
-)
-from backend.app.domains.orchestration.runs.models import (
+from backend.app.orchestration.runs.activity import activity_phase
+from backend.app.orchestration.runs.authorization.snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.runs.control import RunControlService
+from backend.app.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService
+from backend.app.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
+from backend.app.orchestration.runs.models import (
     AUTHORIZATION_SNAPSHOT_VERSION,
     AgentRun,
     AgentRunStateSnapshot,
     RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.domains.orchestration.runs.resources import RunResourceReservationService
-from backend.app.domains.orchestration.runs.service import (
-    RunOrchestrationService,
-)
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.state import TaskStatus
-from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
-from backend.app.domains.orchestration.workflows.steps.launcher import RunStepLauncher
-from backend.app.domains.orchestration.workflows.steps.scheduling_state import (
+from backend.app.orchestration.runs.resources import RunResourceReservationService
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.runs.steps.launcher import RunStepLauncher
+from backend.app.orchestration.runs.steps.scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
-from backend.app.domains.workspace.reviews.models import ResourceReview
-from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.domains.workspace.storage.artifact_models import Artifact
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.teams.runtime.service import TeamRuntimeService
-from backend.app.domains.workspace.tenants.models import (
-    Workspace,
-    WorkspaceMember,
-    WorkspaceQuota,
-    WorkspaceReservation,
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.orchestration.tasks.state import TaskStatus
+from backend.app.resources.artifacts.models import Artifact
+from backend.app.resources.memory.models import (
+    WorkspaceMemoryEntry,
+    WorkspaceMemoryRetrievalEvent,
+    memory_content_fingerprint,
 )
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.costs.models import ModelUsageRecord
-from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import (
+from backend.app.runtime.backends.factory import build_runtime_backend_registry
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue, consume_once
-from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.shared.config import Settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.shared.security.secrets import SecretEncryptionService
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
+from backend.app.teams.sessions.service import TeamRuntimeService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
+from backend.app.workspaces.quotas.models import WorkspaceQuota, WorkspaceReservation
 
 
 @pytest.fixture(autouse=True)
@@ -146,7 +124,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         fake_resource_review,
     )
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         fake_model_request_review,
     )
 
@@ -173,10 +151,7 @@ class ExplodingAgentRunner:
 
 
 def test_task_start_creates_queued_run_and_worker_completes_injected_runner() -> None:
-    from backend.app.domains.orchestration.tasks.service import (
-        TaskCreateCommand,
-        WorkspaceTaskService,
-    )
+    from backend.app.orchestration.tasks.service import TaskCreateCommand, WorkspaceTaskService
 
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -3192,7 +3167,7 @@ def test_model_request_review_routes_sensitive_input_to_admin_approval(
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         blocking_review,
     )
     session = _session()

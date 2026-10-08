@@ -7,14 +7,14 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.runtime.operations.contracts.capacity import OperationsWorkerLifecycleResponse
 from backend.app.runtime.operations.workers.lifecycle_buckets import (
     WorkerLifecycleBucketAccumulator,
 )
-from backend.app.runtime.workers.contracts import JobPayload
+from backend.app.runtime.queues.contracts import JobPayload
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.runtime.workers.models import WorkerLease, WorkerNode
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.shared.redis.keys import RedisKeyBuilder
 
 
 class WorkerLifecyclePayloadService:

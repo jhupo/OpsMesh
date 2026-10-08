@@ -13,99 +13,84 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import backend.app.domains.agents.providers.health as model_provider_health_service_module
-from backend.app.api.dependencies.queue import (
-    get_worker_queue,
-)
-from backend.app.api.dependencies.redis import get_redis_client
-from backend.app.api.dependencies.runtime import get_docker_runtime_client
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import ResourceGrant, SecuredResource, User
-from backend.app.domains.access.permissions import ROLE_PERMISSIONS, WorkspaceAction, WorkspaceRole
-from backend.app.domains.access.resources import ResourceAction, ResourceKind
-from backend.app.domains.agents.memory.models import (
-    WorkspaceMemoryEntry,
-    memory_content_fingerprint,
-)
-from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.agents.providers.models import ModelProviderCredential
-from backend.app.domains.agents.providers.probes import (
+import backend.app.agents.providers.health as model_provider_health_service_module
+from backend.app.agents.execution.contracts import AgentRunRequest, AgentRunResult
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.agents.providers.models import ModelProviderCredential
+from backend.app.agents.providers.probes import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
-from backend.app.domains.agents.sessions.models import (
-    PersistentAgentSession,
-    PersistentAgentSessionItem,
+from backend.app.agents.sessions.models import PersistentAgentSession, PersistentAgentSessionItem
+from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.reviews.model_request import ModelRequestReview
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.models import ResourceGrant, SecuredResource
+from backend.app.identity.authorization.permissions import (
+    ROLE_PERMISSIONS,
+    WorkspaceAction,
+    WorkspaceRole,
 )
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.delivery.correction_diagnostics import (
+from backend.app.identity.authorization.resources import ResourceAction, ResourceKind
+from backend.app.identity.users.models import User
+from backend.app.main import create_app
+from backend.app.orchestration.planning.attempt_models import TaskPlanningAttempt
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.scheduling.models import WorkspaceScheduledJob
+from backend.app.orchestration.tasks.delivery.correction_diagnostics import (
     TaskCorrectionDiagnosticsService,
 )
-from backend.app.domains.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
-from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus
-from backend.app.domains.orchestration.tasks.message_append import (
+from backend.app.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
+from backend.app.orchestration.tasks.events import RedisTaskEventBus
+from backend.app.orchestration.tasks.message_append import (
     TASK_MESSAGE_CREATED_EVENT_TYPE,
     TaskMessageAppendService,
 )
-from backend.app.domains.orchestration.tasks.models import (
-    Task,
-    TaskEventOutbox,
-    TaskMessage,
-    TaskStep,
-)
-from backend.app.domains.orchestration.tasks.observation.execution import (
-    TaskExecutionDiagnosticsService,
-)
-from backend.app.domains.orchestration.tasks.observation.service import TaskObservationService
-from backend.app.domains.orchestration.tasks.observation.timeline import TaskTimelineService
-from backend.app.domains.orchestration.tasks.state import TaskStatus
-from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
-from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
-from backend.app.domains.workspace.storage.artifact_models import Artifact
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.teams.operations.console import TeamOperationsConsoleService
-from backend.app.domains.workspace.tenants.models import (
-    Workspace,
-    WorkspaceInvite,
-    WorkspaceMember,
-    WorkspaceQuota,
-)
-from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
-from backend.app.main import create_app
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.runtime.environment.contracts import (
+from backend.app.orchestration.tasks.models import Task, TaskEventOutbox, TaskMessage, TaskStep
+from backend.app.orchestration.tasks.observation.execution import TaskExecutionDiagnosticsService
+from backend.app.orchestration.tasks.observation.service import TaskObservationService
+from backend.app.orchestration.tasks.observation.timeline import TaskTimelineService
+from backend.app.orchestration.tasks.state import TaskStatus
+from backend.app.resources.artifacts.models import Artifact
+from backend.app.resources.files.models import WorkspaceFile
+from backend.app.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
+from backend.app.runtime.instances.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
     RuntimeCreateRequest,
 )
-from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import (
-    RuntimeSpace,
-    RuntimeSpaceQuota,
-    RuntimeSpaceReservation,
-)
+from backend.app.runtime.instances.dependencies import get_docker_runtime_client
+from backend.app.runtime.instances.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.operations.timeline.service import (
     TeamRuntimeTimelineService,
     TimelineFilters,
 )
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue, consume_once
-from backend.app.runtime.workers.registry import WorkerJobHandler
-from backend.app.runtime.workers.scheduling.models import WorkspaceScheduledJob
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.runtime.spaces.models import (
+    RuntimeSpace,
+    RuntimeSpaceQuota,
+    RuntimeSpaceReservation,
+)
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.redis.dependencies import get_redis_client
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.shared.security.secrets import SecretEncryptionService
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
+from backend.app.teams.operations.console import TeamOperationsConsoleService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceInvite, WorkspaceMember
+from backend.app.workspaces.quotas.models import WorkspaceQuota
+from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 TOKEN = "test-token"
 
@@ -2274,9 +2259,7 @@ def test_team_execution_loop_finalize_closes_approved_tasks_only(system_executio
     assert approved_task.status == "running"
 
     if system_execution:
-        from backend.app.domains.workspace.teams.execution.loop_finalization import (
-            TeamExecutionFinalizationService,
-        )
+        from backend.app.teams.execution.loop_finalization import TeamExecutionFinalizationService
 
         applied_body = TeamExecutionFinalizationService(session).finalize_ready_tasks(
             workspace_id=workspace.id,
@@ -6487,7 +6470,7 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery(
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         approve_model_request,
     )
 
@@ -8293,9 +8276,7 @@ def test_task_live_status_api_returns_active_runs_and_message_cursor() -> None:
 
 
 def test_task_live_status_scopes_participants_and_includes_message_only_agents() -> None:
-    from backend.app.domains.orchestration.tasks.observation.live_status import (
-        TaskLiveStatusService,
-    )
+    from backend.app.orchestration.tasks.observation.live_status import TaskLiveStatusService
 
     _, session = _client()
     _, workspace = _seed_workspace(session, role="owner")

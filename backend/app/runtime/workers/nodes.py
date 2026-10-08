@@ -1,27 +1,26 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.db.pagination import page_scalars
-from backend.app.core.pagination import PageParams
-from backend.app.core.utils import non_empty_string_or_none
-from backend.app.domains.platform.admin.policy_reader import PlatformPolicyService
-from backend.app.observability.audit.service import AuditService
-from backend.app.observability.telemetry.trace_context import with_current_trace_metadata
+from backend.app.governance.audit.service import AuditService
+from backend.app.governance.policies.reader import PlatformPolicyService
+from backend.app.runtime.queues.contracts import JobType
 from backend.app.runtime.workers.capacity import (
     bounded_worker_capacity,
     merge_worker_capacity,
     next_worker_node_status,
     worker_capacity,
 )
-from backend.app.runtime.workers.contracts import JobType
 from backend.app.runtime.workers.leases import WorkerLeaseHeartbeatRecorder
 from backend.app.runtime.workers.models import WorkerHeartbeat, WorkerNode
+from backend.app.shared.db.pagination import page_scalars
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.telemetry.trace_context import with_current_trace_metadata
+from backend.app.shared.utils import non_empty_string_or_none
 
 
 class WorkerHeartbeatOperationsService:
@@ -192,9 +191,6 @@ class WorkerNodeRegistry:
         return node
 
 
-T = TypeVar("T")
-
-
 class WorkerNodeRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -218,14 +214,6 @@ class WorkerNodeRepository:
 
     def add(self, node: WorkerNode) -> None:
         self._session.add(node)
-
-
-def page_worker_nodes(
-    session: Session,
-    statement: Select[tuple[T]],
-    page: PageParams,
-) -> tuple[list[T], int]:
-    return page_scalars(session, statement, page)
 
 
 def _normalize_heartbeat_details(details: dict[str, object]) -> dict[str, object]:

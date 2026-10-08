@@ -1,5 +1,9 @@
 import * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
+import {
+  workspaceAccessQueryOptions,
+  type WorkspaceAccess,
+} from '@/api/workspace-access'
 import { workspacesQueryOptions, type Workspace } from '@/api/workspaces'
 
 const ACTIVE_WORKSPACE_KEY = 'opsmesh.active-workspace'
@@ -8,6 +12,9 @@ type WorkspaceContextValue = {
   workspaces: Workspace[]
   activeWorkspace: Workspace | undefined
   selectWorkspace: (workspaceId: string) => void
+  access: WorkspaceAccess | undefined
+  accessPending: boolean
+  accessError: Error | null
 }
 
 const WorkspaceContext = React.createContext<WorkspaceContextValue | null>(null)
@@ -21,6 +28,7 @@ export function WorkspaceProvider({ children }: React.PropsWithChildren) {
   const activeWorkspace =
     workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ??
     workspaces[0]
+  const accessQuery = useQuery(workspaceAccessQueryOptions(activeWorkspace?.id))
 
   React.useEffect(() => {
     if (!activeWorkspace || activeWorkspace.id === selectedWorkspaceId) return
@@ -33,8 +41,22 @@ export function WorkspaceProvider({ children }: React.PropsWithChildren) {
   }, [])
 
   const value = React.useMemo(
-    () => ({ workspaces, activeWorkspace, selectWorkspace }),
-    [workspaces, activeWorkspace, selectWorkspace]
+    () => ({
+      workspaces,
+      activeWorkspace,
+      selectWorkspace,
+      access: accessQuery.data,
+      accessPending: accessQuery.isPending,
+      accessError: accessQuery.error,
+    }),
+    [
+      workspaces,
+      activeWorkspace,
+      selectWorkspace,
+      accessQuery.data,
+      accessQuery.isPending,
+      accessQuery.error,
+    ]
   )
 
   return (

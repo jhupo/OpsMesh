@@ -10,13 +10,14 @@ from backend.app.bootstrap.models import register_models
 from backend.app.bootstrap.providers import build_agent_runtime_registry
 from backend.app.bootstrap.runtime import get_default_docker_runtime_client
 from backend.app.bootstrap.telemetry import configure_worker_telemetry
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.session import SessionLocal, engine
-from backend.app.core.redis.client import redis_client
-from backend.app.domains.orchestration.runs.service import build_default_queue
-from backend.app.observability.telemetry.logging import configure_logging
+from backend.app.bootstrap.worker import build_worker_runner
+from backend.app.orchestration.runs.service import build_default_queue
 from backend.app.runtime.workers.models import WorkerRunnerConfig
 from backend.app.runtime.workers.runner import WorkerRunner
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.session import SessionLocal, engine
+from backend.app.shared.redis.client import redis_client
+from backend.app.shared.telemetry.logging import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def _run_worker(args: argparse.Namespace, settings: Settings) -> int:
 
 def _build_runner(settings: Settings, config: WorkerRunnerConfig) -> WorkerRunner:
     register_models()
-    return WorkerRunner(
+    return build_worker_runner(
         queue=build_default_queue(redis_client, settings),
         session_factory=SessionLocal,
         config=config,

@@ -9,33 +9,28 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-import backend.app.domains.agents.providers.health as model_provider_health_service_module
-from backend.app.core.db.base import Base
-from backend.app.core.pagination import PageParams
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.providers.contracts import (
-    ModelProviderUnavailableError,
-)
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.agents.providers.health import ModelProviderHealthService
-from backend.app.domains.agents.providers.model_api import (
+import backend.app.agents.providers.health as model_provider_health_service_module
+from backend.app.agents.providers.contracts import ModelProviderUnavailableError
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.agents.providers.health import ModelProviderHealthService
+from backend.app.agents.providers.model_api import (
     model_api_for_agent_provider,
     unsupported_agent_model_api,
 )
-from backend.app.domains.agents.providers.models import ModelProviderCredential
-from backend.app.domains.agents.providers.probes import (
+from backend.app.agents.providers.models import ModelProviderCredential
+from backend.app.agents.providers.probes import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
-from backend.app.domains.agents.providers.queries import (
-    ModelProviderCredentialQueryService,
-)
-from backend.app.domains.agents.providers.resolution import ModelProviderResolutionService
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.observability.audit.models import AuditEvent
+from backend.app.agents.providers.queries import ModelProviderCredentialQueryService
+from backend.app.agents.providers.resolution import ModelProviderResolutionService
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.identity.users.models import User
+from backend.app.shared.db.base import Base
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.security.secrets import SecretEncryptionService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_agent_model_api_override_is_limited_to_provider_supported_protocols() -> None:

@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { Outlet } from '@tanstack/react-router'
+import { Outlet, useLocation } from '@tanstack/react-router'
 import { currentUserQueryOptions } from '@/api/auth'
 import { getCookie } from '@/lib/cookies'
 import { LayoutProvider } from '@/context/layout-provider'
@@ -18,6 +18,10 @@ type AuthenticatedLayoutProps = {
 
 export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
+  const adminMode =
+    useLocation({
+      select: (location) => location.pathname.startsWith('/admin'),
+    }) && user.platform_admin
   const defaultOpen = getCookie('sidebar_state') !== 'false'
   const shell = (
     <SearchProvider>
@@ -25,9 +29,9 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
         <SidebarProvider defaultOpen={defaultOpen}>
           <SkipToMain />
           <DeveloperTools />
-          <AppSidebar platformAdmin={user.platform_admin} />
+          <AppSidebar platformAdmin={adminMode} />
           <SidebarInset className='h-svh overflow-hidden peer-data-[variant=inset]:md:h-[calc(100svh-(var(--spacing)*4))]'>
-            <Header platformAdmin={user.platform_admin} />
+            <Header platformAdmin={adminMode} />
             <div
               id='content'
               tabIndex={-1}
@@ -43,7 +47,7 @@ export function AuthenticatedLayout({ children }: AuthenticatedLayoutProps) {
 
   return (
     <WorkspaceProvider>
-      {user.platform_admin ? shell : <ProjectProvider>{shell}</ProjectProvider>}
+      <ProjectProvider>{shell}</ProjectProvider>
     </WorkspaceProvider>
   )
 }

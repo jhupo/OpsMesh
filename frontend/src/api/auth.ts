@@ -39,7 +39,7 @@ export async function logout(): Promise<void> {
 export function currentUserQueryOptions() {
   return queryOptions({
     queryKey: ['auth', 'current-user'],
-    queryFn: () => apiRequest<CurrentUser>('/auth/me'),
+    queryFn: ({ signal }) => apiRequest<CurrentUser>('/auth/me', { signal }),
     staleTime: 60_000,
   })
 }

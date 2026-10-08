@@ -1,7 +1,9 @@
 import React from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
+import { useNavigate, useLocation } from '@tanstack/react-router'
 import { ArrowRight, ChevronRight, Laptop, Moon, Sun } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { currentUserQueryOptions } from '@/api/auth'
 import { useSearch } from '@/context/search-provider'
 import { useTheme } from '@/context/theme-provider'
 import {
@@ -13,7 +15,10 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command'
-import { useSidebarData } from './layout/data/sidebar-data'
+import {
+  usePlatformAdminSidebarData,
+  useSidebarData,
+} from './layout/data/sidebar-data'
 import { ScrollArea } from './ui/scroll-area'
 
 export function CommandMenu() {
@@ -21,7 +26,16 @@ export function CommandMenu() {
   const { setTheme } = useTheme()
   const { open, setOpen } = useSearch()
   const { t } = useTranslation()
-  const sidebarData = useSidebarData()
+  const { data: user } = useSuspenseQuery(currentUserQueryOptions())
+  const workspaceSidebarData = useSidebarData()
+  const platformSidebarData = usePlatformAdminSidebarData()
+  const adminMode = useLocation({
+    select: (location) => location.pathname.startsWith('/admin'),
+  })
+  const sidebarData =
+    user.platform_admin && adminMode
+      ? platformSidebarData
+      : workspaceSidebarData
 
   const runCommand = React.useCallback(
     (command: () => unknown) => {
@@ -59,7 +73,7 @@ export function CommandMenu() {
                 return navItem.items?.map((subItem, i) => (
                   <CommandItem
                     key={`${navItem.title}-${subItem.url}-${i}`}
-                    value={`${navItem.title}-${subItem.url}`}
+                    value={`${navItem.title} ${subItem.title}`}
                     onSelect={() => {
                       runCommand(() => navigate({ to: subItem.url }))
                     }}

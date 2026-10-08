@@ -13,50 +13,49 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.queue import (
-    get_worker_queue,
-)
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.core.pagination import PageParams
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
 )
-from backend.app.domains.agents.runtime.state import AgentRunStateStore
-from backend.app.domains.capabilities.mcp.models import McpServer
-from backend.app.domains.orchestration.approvals.agent_tool_interruptions import (
-    AgentToolInterruptionService,
-)
-from backend.app.domains.orchestration.approvals.decisions import ApprovalDecisionService
-from backend.app.domains.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
-from backend.app.domains.orchestration.approvals.models import Approval, PendingToolInvocation
-from backend.app.domains.orchestration.approvals.pending_tools import (
-    PendingToolInvocationRequest,
-    PendingToolInvocationService,
-)
-from backend.app.domains.orchestration.approvals.queries import ApprovalQueryService
-from backend.app.domains.orchestration.approvals.service import ApprovalService
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.orchestration.tasks.state import TaskStatus
-from backend.app.domains.workspace.reviews.policy import (
+from backend.app.agents.execution.state import AgentRunStateStore
+from backend.app.capabilities.mcp.models import McpServer
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
     RESOURCE_STATUS_PENDING_APPROVAL,
     RESOURCE_STATUS_REJECTED,
     REVIEW_TYPE_MCP_SERVER,
 )
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.orchestration.approvals.agent_tool_interruptions import (
+    AgentToolInterruptionService,
+)
+from backend.app.orchestration.approvals.decisions import ApprovalDecisionService
+from backend.app.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
+from backend.app.orchestration.approvals.models import Approval, PendingToolInvocation
+from backend.app.orchestration.approvals.pending_tools import (
+    PendingToolInvocationRequest,
+    PendingToolInvocationService,
+)
+from backend.app.orchestration.approvals.queries import ApprovalQueryService
+from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.tasks.models import Task
+from backend.app.orchestration.tasks.state import TaskStatus
+from backend.app.runtime.queues.contracts import JobType
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.shared.security.secrets import SecretEncryptionService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_approval_approve_enqueues_resume_job() -> None:

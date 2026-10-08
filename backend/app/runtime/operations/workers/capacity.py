@@ -3,13 +3,13 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import positive_int_or_default
 from backend.app.runtime.operations.contracts.capacity import (
     WorkerCapacityAggregateResponse,
     WorkerTypeCapacityResponse,
 )
 from backend.app.runtime.workers.leases import RUNNING_LEASE_STATUSES
 from backend.app.runtime.workers.models import WorkerLease, WorkerNode
+from backend.app.shared.utils import positive_int_or_default
 
 
 class OperationsWorkerCapacityService:

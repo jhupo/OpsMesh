@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from typing import TextIO
 
-from backend.app.domains.agents.providers.policy import normalize_openai_compatible_base_url
+from backend.app.agents.providers.policy import normalize_openai_compatible_base_url
 
 
 @dataclass(frozen=True)
@@ -79,12 +79,10 @@ def config_from_env(argv: list[str]) -> OpenAIGatewaySmokeConfig:
 def _write_dry_run(config: OpenAIGatewaySmokeConfig, *, stream: TextIO) -> None:
     stream.write("OpenAI gateway smoke dry run\n")
     stream.write("api_key_configured=true\n")
-    stream.write(f"api_key_prefix={config.api_key[:3]}\n")
-    stream.write(f"api_key_length={len(config.api_key)}\n")
-    stream.write(f"base_url={config.base_url or 'openai-default'}\n")
-    stream.write(f"model={config.model}\n")
-    stream.write(f"model_api={config.model_api or 'unspecified'}\n")
-    stream.write(f"pytest_args={' '.join(config.pytest_args)}\n")
+    stream.write(f"base_url_configured={config.base_url is not None}\n")
+    stream.write(f"model_configured={bool(config.model)}\n")
+    stream.write(f"model_api_configured={config.model_api is not None}\n")
+    stream.write(f"pytest_arg_count={len(config.pytest_args)}\n")
 
 
 def _pop_flag(argv: list[str], flag: str) -> bool:

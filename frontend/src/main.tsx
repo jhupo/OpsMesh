@@ -1,6 +1,5 @@
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
-import { AxiosError } from 'axios'
 import {
   QueryCache,
   QueryClient,
@@ -10,7 +9,6 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import i18n from '@/i18n'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/errors'
-import { useAuthStore } from '@/stores/auth-store'
 import { clearAuthSession, safeRedirectPath } from '@/lib/auth-session'
 import { handleServerError } from '@/lib/handle-server-error'
 import { DirectionProvider } from './context/direction-provider'
@@ -21,6 +19,7 @@ import { routeTree } from './routeTree.gen'
 // Styles
 import './styles/index.css'
 
+let redirectingToSignIn = false
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -28,15 +27,8 @@ const queryClient = new QueryClient({
         // eslint-disable-next-line no-console
         if (import.meta.env.DEV) console.log({ failureCount, error })
 
-        if (failureCount >= 0 && import.meta.env.DEV) return false
-        if (failureCount > 3 && import.meta.env.PROD) return false
-
-        if (error instanceof ApiError && [401, 403].includes(error.status))
-          return false
-        return !(
-          error instanceof AxiosError &&
-          [401, 403].includes(error.response?.status ?? 0)
-        )
+        if (import.meta.env.DEV || failureCount >= 1) return false
+        return !(error instanceof ApiError && error.status < 500)
       },
       refetchOnWindowFocus: import.meta.env.PROD,
       staleTime: 10 * 1000, // 10s
@@ -45,8 +37,8 @@ const queryClient = new QueryClient({
       onError: (error) => {
         handleServerError(error)
 
-        if (error instanceof AxiosError) {
-          if (error.response?.status === 304) {
+        if (error instanceof ApiError) {
+          if (error.status === 304) {
             toast.error(i18n.t('errors.content_not_modified'))
           }
         }
@@ -57,7 +49,12 @@ const queryClient = new QueryClient({
     onError: (error) => {
       if (error instanceof ApiError && error.status === 401) {
         clearAuthSession()
-        if (router.history.location.pathname === '/sign-in') return
+        if (
+          redirectingToSignIn ||
+          router.history.location.pathname === '/sign-in'
+        )
+          return
+        redirectingToSignIn = true
         void router
           .navigate({
             to: '/sign-in',
@@ -66,26 +63,14 @@ const queryClient = new QueryClient({
             },
             replace: true,
           })
-          .then(() => queryClient.clear())
+          .then(
+            () => queryClient.clear(),
+            () => queryClient.clear()
+          )
+          .finally(() => {
+            redirectingToSignIn = false
+          })
         return
-      }
-      if (error instanceof AxiosError) {
-        if (error.response?.status === 401) {
-          toast.error(i18n.t('errors.session_expired'))
-          useAuthStore.getState().auth.reset()
-          const redirect = `${router.history.location.href}`
-          router.navigate({ to: '/sign-in', search: { redirect } })
-        }
-        if (error.response?.status === 500) {
-          toast.error(i18n.t('errors.internal_server'))
-          // Only navigate to error page in production to avoid disrupting HMR in development
-          if (import.meta.env.PROD) {
-            router.navigate({ to: '/500' })
-          }
-        }
-        if (error.response?.status === 403) {
-          // router.navigate("/forbidden", { replace: true });
-        }
       }
     },
   }),

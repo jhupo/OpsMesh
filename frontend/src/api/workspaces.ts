@@ -18,8 +18,10 @@ export type PageResponse<T> = {
 export function workspacesQueryOptions() {
   return queryOptions({
     queryKey: ['workspaces', 'accessible'],
-    queryFn: () =>
-      apiRequest<PageResponse<Workspace>>('/workspaces?limit=50&offset=0'),
+    queryFn: ({ signal }) =>
+      apiRequest<PageResponse<Workspace>>('/workspaces?limit=50&offset=0', {
+        signal,
+      }),
     staleTime: 60_000,
   })
 }

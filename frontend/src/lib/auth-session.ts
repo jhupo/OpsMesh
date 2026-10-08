@@ -34,7 +34,10 @@ export function clearAuthSession(): void {
   }
 }
 
-export function safeRedirectPath(value: string | undefined): string {
+export function safeRedirectPath(
+  value: string | undefined,
+  platformAdmin?: boolean
+): string {
   if (
     !value ||
     !value.startsWith('/') ||
@@ -45,7 +48,9 @@ export function safeRedirectPath(value: string | undefined): string {
   const target = new URL(value, 'https://opsmesh.invalid')
   if (
     target.origin !== 'https://opsmesh.invalid' ||
-    /^\/sign-in(?:-2)?\/?$/.test(target.pathname)
+    /^\/sign-in(?:-2)?\/?$/.test(target.pathname) ||
+    (platformAdmin === false &&
+      /^\/(?:admin|users)(?:\/|$)/.test(target.pathname))
   )
     return '/'
   return target.pathname + target.search + target.hash

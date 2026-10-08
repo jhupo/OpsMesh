@@ -5,17 +5,15 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
-from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.definitions.graph import (
+from backend.app.orchestration.definitions.graph import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
-from backend.app.domains.orchestration.workflows.planning.team_project_plan import (
-    ProjectPlanStepMaterializer,
-)
-from backend.app.domains.orchestration.workflows.steps.dependencies import dependencies_satisfied
+from backend.app.orchestration.planning.team_project_plan import ProjectPlanStepMaterializer
+from backend.app.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.runs.steps.dependencies import dependencies_satisfied
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 

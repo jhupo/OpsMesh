@@ -9,38 +9,35 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.agents.runtime.contracts import AgentRunRequest, AgentRunResult
-from backend.app.domains.orchestration.runs.control import RunControlService
-from backend.app.domains.orchestration.runs.execution import (
-    RunExecutionDependencies,
-    RunExecutionService,
-)
-from backend.app.domains.orchestration.runs.models import (
+from backend.app.agents.execution.contracts import AgentRunRequest, AgentRunResult
+from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.orchestration.runs.control import RunControlService
+from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService
+from backend.app.orchestration.runs.models import (
     AgentRun,
     RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.domains.orchestration.runs.resources import RunResourceReservationService
-from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.state import TaskStatus
-from backend.app.domains.orchestration.workflows.steps.scheduling_state import (
+from backend.app.orchestration.runs.resources import RunResourceReservationService
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.runs.steps.scheduling_state import (
     mark_step_scheduling_blocked,
     mark_step_scheduling_runnable,
 )
-from backend.app.domains.workspace.teams.models import AgentTeam
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.runtime.environment.backends.factory import build_runtime_backend_registry
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.queue import RedisQueue, consume_once
-from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.state import TaskStatus
+from backend.app.runtime.backends.factory import build_runtime_backend_registry
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.shared.db.base import Base
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.teams.management.models import AgentTeam
 from backend.tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
     _seed_workspace,
@@ -69,9 +66,9 @@ class ExplodingRunner:
 
 @pytest.fixture(autouse=True)
 def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
-    from backend.app.domains.workspace.reviews.models import ResourceReview
-    from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
+    from backend.app.governance.reviews.model_request import ModelRequestReview
+    from backend.app.governance.reviews.models import ResourceReview
+    from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 
     monkeypatch.setattr(
         ResourcePolicyReviewBuilder,
@@ -84,7 +81,7 @@ def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         lambda self, **kwargs: ModelRequestReview(
             required=False,
             risk_level="low",

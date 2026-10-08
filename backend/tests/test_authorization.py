@@ -7,13 +7,17 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.config import Settings
-from backend.app.core.db.base import Base
-from backend.app.domains.access.errors import AuthenticationError, PermissionDeniedError
-from backend.app.domains.access.models import User, UserAPIToken
-from backend.app.domains.access.permissions import WorkspaceAction, role_allows
-from backend.app.domains.access.service import AuthorizationService
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.identity.auth.models import UserAPIToken
+from backend.app.identity.auth.service import AuthenticationService
+from backend.app.identity.authorization.errors import AuthenticationError, PermissionDeniedError
+from backend.app.identity.authorization.permissions import WorkspaceAction, role_allows
+from backend.app.identity.authorization.service import AuthorizationService
+from backend.app.identity.users.accounts import AccountService
+from backend.app.identity.users.models import User
+from backend.app.shared.config import Settings
+from backend.app.shared.db.base import Base
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_role_permissions_are_hierarchical() -> None:
@@ -83,7 +87,7 @@ def test_authenticate_user_rejects_inactive_user() -> None:
     session.commit()
 
     with pytest.raises(AuthenticationError):
-        AuthorizationService(session).authenticate_user(user.id)
+        AuthenticationService(session).authenticate_user(user.id)
 
 
 def test_user_api_tokens_store_hash_and_authenticate_user() -> None:
@@ -93,7 +97,7 @@ def test_user_api_tokens_store_hash_and_authenticate_user() -> None:
     session.add(user)
     session.commit()
 
-    created = AuthorizationService(session).create_user_api_token(
+    created = AuthenticationService(session).create_user_api_token(
         user_id=user.id,
         name="local cli",
         settings=settings,
@@ -105,7 +109,7 @@ def test_user_api_tokens_store_hash_and_authenticate_user() -> None:
     assert stored.token_hash != created.token
     assert stored.fingerprint.startswith("sha256:")
     assert created.token not in str(stored.__dict__)
-    authenticated = AuthorizationService(session).authenticate_user_token(
+    authenticated = AuthenticationService(session).authenticate_user_token(
         created.token,
         settings,
     )
@@ -118,13 +122,13 @@ def test_user_api_token_authentication_rejects_revoked_token() -> None:
     user = User(email="revoked-token@example.com", display_name="Revoked Token")
     session.add(user)
     session.commit()
-    created = AuthorizationService(session).create_user_api_token(
+    created = AuthenticationService(session).create_user_api_token(
         user_id=user.id,
         name="temporary",
         settings=settings,
     )
 
-    revoked = AuthorizationService(session).revoke_user_api_token(
+    revoked = AuthenticationService(session).revoke_user_api_token(
         user_id=user.id,
         token_id=created.record.id,
     )
@@ -132,7 +136,7 @@ def test_user_api_token_authentication_rejects_revoked_token() -> None:
     assert revoked is not None
     assert revoked.status == "revoked"
     with pytest.raises(AuthenticationError, match="Invalid or inactive user token"):
-        AuthorizationService(session).authenticate_user_token(created.token, settings)
+        AuthenticationService(session).authenticate_user_token(created.token, settings)
 
 
 def test_user_api_token_authentication_rejects_disabled_user() -> None:
@@ -141,7 +145,7 @@ def test_user_api_token_authentication_rejects_disabled_user() -> None:
     user = User(email="disabled-token-user@example.com", display_name="Disabled")
     session.add(user)
     session.commit()
-    created = AuthorizationService(session).create_user_api_token(
+    created = AuthenticationService(session).create_user_api_token(
         user_id=user.id,
         name="owned by disabled user",
         settings=settings,
@@ -150,15 +154,15 @@ def test_user_api_token_authentication_rejects_disabled_user() -> None:
     session.commit()
 
     with pytest.raises(AuthenticationError, match="Invalid or inactive user token"):
-        AuthorizationService(session).authenticate_user_token(created.token, settings)
+        AuthenticationService(session).authenticate_user_token(created.token, settings)
 
 
 def test_register_and_password_login_store_hash_not_plaintext() -> None:
     session = _session()
     settings = _settings()
-    service = AuthorizationService(session)
+    service = AuthenticationService(session)
 
-    user = service.register_user(
+    user = AccountService(session).register_user(
         email="Password.Owner@Example.COM",
         display_name="Password Owner",
         password="correct horse battery staple",
@@ -181,8 +185,8 @@ def test_register_and_password_login_store_hash_not_plaintext() -> None:
 def test_password_login_rejects_wrong_password() -> None:
     session = _session()
     settings = _settings()
-    service = AuthorizationService(session)
-    service.register_user(
+    service = AuthenticationService(session)
+    AccountService(session).register_user(
         email="wrong-password@example.com",
         display_name="Wrong Password",
         password="correct horse battery staple",
@@ -199,8 +203,8 @@ def test_password_login_rejects_wrong_password() -> None:
 def test_change_password_and_revoke_all_user_api_tokens() -> None:
     session = _session()
     settings = _settings()
-    service = AuthorizationService(session)
-    user = service.register_user(
+    service = AuthenticationService(session)
+    user = AccountService(session).register_user(
         email="change-password@example.com",
         display_name="Change Password",
         password="old password value",
@@ -216,7 +220,7 @@ def test_change_password_and_revoke_all_user_api_tokens() -> None:
         settings=settings,
     )
 
-    service.change_password(
+    AccountService(session).change_password(
         user_id=user.id,
         current_password="old password value",
         new_password="new password value",
@@ -243,10 +247,9 @@ def test_change_password_and_revoke_all_user_api_tokens() -> None:
 
 def test_worker_resource_workspace_mismatch_is_rejected() -> None:
     session = _session()
-    service = AuthorizationService(session)
 
     with pytest.raises(PermissionDeniedError, match="Resource does not belong"):
-        service.ensure_resource_workspace(
+        AuthorizationService(session).ensure_resource_workspace(
             resource_workspace_id=uuid4(),
             expected_workspace_id=uuid4(),
         )

@@ -8,8 +8,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import age_seconds, positive_int_or_none, string_list
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.operations.contracts.control_plane import (
     OperationsSelfHostedMachineResponse,
     OperationsSelfHostedMachinesResponse,
@@ -25,6 +24,7 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
+from backend.app.shared.utils import age_seconds, positive_int_or_none, string_list
 
 
 def self_hosted_policy_summary(capabilities: dict[str, object]) -> dict[str, object]:

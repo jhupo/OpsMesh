@@ -20,8 +20,8 @@ docker compose -f deploy/local/compose.yml up --build
 ## Pull Requests
 
 - Create a feature branch and open a PR targeting `master`; do not push directly to `master`
-  or bypass required checks. See [GitHub automation](docs/github-automation.md) for the policy
-  and the verified repository settings, which are recorded separately.
+  or bypass required checks. The repository workflows under `.github/workflows/` are the source
+  of truth for automated checks.
 - Keep changes scoped to one feature or fix.
 - Add or update tests for API behavior, worker behavior, migrations, security boundaries, and review/approval flows.
 - Do not add compatibility aliases, deprecated shims, fallback branches, or duplicate implementations.

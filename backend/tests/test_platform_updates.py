@@ -9,13 +9,14 @@ from opsmesh_operator.update_state import Journal, UpdatePlan
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.domains.platform.updates import daemon
-from backend.app.domains.platform.updates.models import (
+from backend.app.bootstrap.worker import build_worker_runner
+from backend.app.platform.updates import daemon
+from backend.app.platform.updates.models import (
     PlatformInstallation,
     PlatformUpdateEvent,
     PlatformUpdateJob,
 )
-from backend.app.domains.platform.updates.service import UpdateService, maintenance_enabled
+from backend.app.platform.updates.service import UpdateService, maintenance_enabled
 from backend.tests.test_admin_api import _admin_headers, _client
 
 
@@ -110,14 +111,13 @@ def test_maintenance_holds_new_plans() -> None:
 
 def test_worker_admission_does_not_claim_work_during_maintenance() -> None:
     from backend.app.runtime.workers.models import WorkerRunnerConfig
-    from backend.app.runtime.workers.runner import WorkerRunner
     from backend.tests.test_worker_runner import _queue, _session_factory
 
     factory = _session_factory()
     with factory() as session:
         session.get(PlatformInstallation, 1).maintenance = True
         session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=_queue(),
         session_factory=factory,
         config=WorkerRunnerConfig(worker_id="drain-check", queue_name="agent_runs"),

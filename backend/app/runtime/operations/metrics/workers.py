@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import ensure_aware_utc
-from backend.app.observability.telemetry.metrics import GaugeMetric
 from backend.app.runtime.workers.models import WorkerLease, WorkerNode
+from backend.app.shared.telemetry.metrics import GaugeMetric
+from backend.app.shared.utils import ensure_aware_utc
 
 
 class WorkerPrometheusMetrics:

@@ -6,31 +6,28 @@ from uuid import UUID, uuid4
 import fakeredis
 from sqlalchemy import select
 
-from backend.app.core.config import Settings
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.agents.memory.authorization import AuthorizedMemoryScope
-from backend.app.domains.agents.memory.models import WorkspaceMemoryEntry
-from backend.app.domains.capabilities.tools.contracts import ToolContext
-from backend.app.domains.capabilities.tools.memory import KnowledgeCitationAccessError
-from backend.app.domains.capabilities.tools.service import ProductToolService
-from backend.app.domains.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
-from backend.app.domains.knowledge.ingestion import KnowledgeSourceIngestionService
-from backend.app.domains.knowledge.models import (
+from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.capabilities.tools.contracts import ToolContext
+from backend.app.capabilities.tools.memory import KnowledgeCitationAccessError
+from backend.app.capabilities.tools.service import ProductToolService
+from backend.app.capabilities.tools.workspace_memory import WorkspaceMemorySearchService
+from backend.app.resources.files.models import WorkspaceFile
+from backend.app.resources.knowledge.ingestion import KnowledgeSourceIngestionService
+from backend.app.resources.knowledge.models import (
     KnowledgeCitation,
     KnowledgeSource,
     KnowledgeSourceIngestion,
 )
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.storage.storage import LocalStorage
-from backend.app.runtime.environment.contracts import (
-    RuntimeCommandInputFile,
-    RuntimeCommandResult,
-)
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.url_fetch import RuntimeUrlFetcher
-from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.queue import RedisQueue
-from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.resources.memory.authorization import AuthorizedMemoryScope
+from backend.app.resources.memory.models import WorkspaceMemoryEntry
+from backend.app.resources.storage.storage import LocalStorage
+from backend.app.runtime.instances.contracts import RuntimeCommandInputFile, RuntimeCommandResult
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.runtime.instances.url_fetch import RuntimeUrlFetcher
+from backend.app.runtime.queues.contracts import JobType
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.config import Settings
+from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.tests.test_workspace_api import _client, _headers, _seed_workspace
 
 

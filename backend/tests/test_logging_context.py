@@ -3,8 +3,8 @@ import logging
 import sys
 from uuid import uuid4
 
-from backend.app.observability.telemetry.logging import RequestContextFilter, json_log_formatter
-from backend.app.observability.telemetry.request_context import current_log_context, log_context
+from backend.app.shared.telemetry.logging import RequestContextFilter, json_log_formatter
+from backend.app.shared.telemetry.request_context import current_log_context, log_context
 
 
 def test_log_context_filter_adds_standard_fields_to_records() -> None:

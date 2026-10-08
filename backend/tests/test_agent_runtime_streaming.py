@@ -9,24 +9,25 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import sessionmaker
 
-import backend.app.domains.agents.runtime.providers.openai.streaming as openai_streaming
-from backend.app.core.db.base import Base
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+import backend.app.agents.execution.providers.openai.streaming as openai_streaming
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeToolResult,
 )
-from backend.app.domains.agents.runtime.errors import AgentRuntimeCancelledError
-from backend.app.domains.agents.runtime.providers.claude.runner import ClaudeAgentSDKRunner
-from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
-from backend.app.domains.orchestration.runs.cancellation import DatabaseRunCancellation
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.agents.execution.errors import AgentRuntimeCancelledError
+from backend.app.agents.execution.providers.claude.runner import ClaudeAgentSDKRunner
+from backend.app.agents.execution.providers.openai.runner import OpenAIAgentsRunner
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
+from backend.app.orchestration.runs.cancellation import DatabaseRunCancellation
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.tasks.models import Task
+from backend.app.shared.db.base import Base
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 class TriggerCancellation:

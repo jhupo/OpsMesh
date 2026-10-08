@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Eye, EyeOff, Loader2, LockKeyhole, Mail } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { currentUserQueryOptions, login } from '@/api/auth'
 import {
   clearAuthSession,
@@ -51,17 +52,20 @@ export function UserAuthForm({
       queryClient.clear()
       setAuthSession({ token: result.token, tokenId: result.id })
       try {
-        await queryClient.fetchQuery(currentUserQueryOptions())
+        return await queryClient.fetchQuery(currentUserQueryOptions())
       } catch (error) {
         clearAuthSession()
         throw error
       }
     },
-    onSuccess: () => {
-      void navigate({ to: safeRedirectPath(redirectTo), replace: true })
+    onSuccess: (user) => {
+      void navigate({
+        to: safeRedirectPath(redirectTo, user.platform_admin),
+        replace: true,
+      })
     },
     onError: (error) => {
-      form.setError('root', { message: error.message })
+      toast.error(error.message)
     },
   })
   return (
@@ -86,9 +90,7 @@ export function UserAuthForm({
                     autoComplete='username'
                     autoCapitalize='none'
                     spellCheck={false}
-                    aria-invalid={
-                      fieldState.invalid || Boolean(form.formState.errors.root)
-                    }
+                    aria-invalid={fieldState.invalid}
                     disabled={mutation.isPending}
                   />
                 </FormControl>
@@ -108,9 +110,7 @@ export function UserAuthForm({
                     icon={LockKeyhole}
                     type={showPassword ? 'text' : 'password'}
                     autoComplete='current-password'
-                    aria-invalid={
-                      fieldState.invalid || Boolean(form.formState.errors.root)
-                    }
+                    aria-invalid={fieldState.invalid}
                     disabled={mutation.isPending}
                     trailing={
                       <Button
@@ -137,11 +137,6 @@ export function UserAuthForm({
             )}
           />
         </FieldGroup>
-        {form.formState.errors.root?.message && (
-          <p role='alert' className='text-sm text-destructive'>
-            {form.formState.errors.root.message}
-          </p>
-        )}
         <Button type='submit' disabled={mutation.isPending}>
           {mutation.isPending && (
             <Loader2 className='animate-spin motion-reduce:animate-none' />

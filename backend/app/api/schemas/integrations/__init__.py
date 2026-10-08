@@ -1,1 +1,0 @@
-"""External integration transport schemas."""

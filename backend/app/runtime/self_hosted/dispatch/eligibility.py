@@ -6,25 +6,16 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import positive_int_or_none, string_list
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.resources import ResourceAccessDenied
-from backend.app.domains.orchestration.runs.authorization.runtime import (
-    RunRuntimeAuthorizationService,
-)
-from backend.app.domains.orchestration.runs.authorization.validation import (
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.authorization.resources import ResourceAccessDenied
+from backend.app.orchestration.runs.authorization.runtime import RunRuntimeAuthorizationService
+from backend.app.orchestration.runs.authorization.validation import (
     RunAuthorizationService,
     authorized_profile_for_run,
 )
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.tenants.reservations import WorkspaceQuotaService
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import RuntimeSpace
-from backend.app.runtime.environment.spaces.reservations import (
-    RuntimeSpaceCapacityReservationService,
-    RuntimeSpaceReservationAttachmentService,
-)
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
 from backend.app.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
 from backend.app.runtime.self_hosted.enrollment.policy import (
@@ -37,6 +28,13 @@ from backend.app.runtime.self_hosted.models import (
     SelfHostedMcpJob,
     SelfHostedWorker,
 )
+from backend.app.runtime.spaces.models import RuntimeSpace
+from backend.app.runtime.spaces.reservations import (
+    RuntimeSpaceCapacityReservationService,
+    RuntimeSpaceReservationAttachmentService,
+)
+from backend.app.shared.utils import positive_int_or_none, string_list
+from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 
 class SelfHostedWorkerEligibilityService:
