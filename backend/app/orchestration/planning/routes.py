@@ -44,7 +44,6 @@ else:
     RedisClient = Redis
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
-STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
 
 
 @router.post("/tasks/{task_id}/plan/apply-orchestration", response_model=TaskResponse)

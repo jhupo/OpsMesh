@@ -149,9 +149,3 @@ def recommended_manager_actions(blocked_reasons: list[str]) -> list[str]:
     if "specialist_steps_incomplete" in blocked_reasons:
         actions.append("monitor_specialists")
     return list(dict.fromkeys(actions))
-
-
-def int_dict(value: object) -> dict[str, int]:
-    if not isinstance(value, dict):
-        return {}
-    return {str(key): int(item) for key, item in value.items() if isinstance(item, int)}

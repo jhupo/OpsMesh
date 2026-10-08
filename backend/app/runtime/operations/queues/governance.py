@@ -52,10 +52,6 @@ def oldest_age_seconds(now: datetime, values: list[datetime]) -> int | None:
     return max(ages) if ages else None
 
 
-def max_optional_int(current: object, candidate: int) -> int:
-    return candidate if not isinstance(current, int) else max(current, candidate)
-
-
 def orphaned_jobs(
     agent_run_jobs: list[JobPayload],
     runs_by_id: dict[UUID, AgentRun],

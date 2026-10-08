@@ -51,24 +51,5 @@ def is_platform_package(package: dict[str, object]) -> bool:
     )
 
 
-def ensure_dependencies_exist(
-    package: dict[str, object], packages: list[dict[str, object]]
-) -> None:
-    ids = {str(item.get("package_id")) for item in packages}
-    if any(dependency not in ids for dependency in package_dependencies(package)):
-        raise ValueError("New work depends on an unknown package")
-
-
-def strings(value: object) -> list[str]:
-    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
-
-
-def package_index(packages: list[dict[str, object]], package_id: str) -> int:
-    for index, package in enumerate(packages):
-        if str(package.get("package_id")) == package_id:
-            return index
-    raise ValueError("Work package was not found")
-
-
 def reject(code: str, message: str) -> NoReturn:
     raise ValueError(f"{code}: {message}")

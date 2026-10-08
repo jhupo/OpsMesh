@@ -1,14 +1,11 @@
 from collections.abc import Iterable
-from datetime import datetime
 from uuid import UUID
 
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from backend.app.shared.utils import (
-    datetime_or_none,
     dict_or_empty,
     int_or_zero,
-    json_safe_payload,
     positive_int_or_default,
     string_list,
     uuid_or_none,
@@ -41,10 +38,6 @@ def _uuid_list(value: object) -> list[UUID]:
 
 def _uuid_value(value: object) -> UUID | None:
     return value if isinstance(value, UUID) else None
-
-
-def _json_safe_payload(value: object) -> object:
-    return json_safe_payload(value)
 
 
 def _summary(
@@ -179,10 +172,6 @@ def _positive_int(value: object, default: int) -> int:
 
 def _int_value(value: object) -> int:
     return int_or_zero(value)
-
-
-def _datetime_or_none(value: object) -> datetime | None:
-    return datetime_or_none(value)
 
 
 def _visible_task_policy(value: object) -> dict[str, object]:

@@ -3,7 +3,7 @@ import json
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 from fastapi.encoders import jsonable_encoder
 from redis import Redis
 from redis.exceptions import RedisError
@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 else:
     RedisClient = Redis
 
-router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
 
 

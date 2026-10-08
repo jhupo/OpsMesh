@@ -1,7 +1,5 @@
 """Task ownership rules shared by transfer, scheduling, and run authorization."""
 
-from uuid import UUID
-
 from backend.app.orchestration.tasks.models import Task, TaskStep
 
 
@@ -35,7 +33,3 @@ def owner_version(task: Task) -> int:
     """Normalize rows created before ownership versioning was introduced."""
 
     return max(int(task.owner_version or 1), 1)
-
-
-def uuid_text(value: UUID | None) -> str | None:
-    return str(value) if value is not None else None

@@ -133,10 +133,6 @@ def context_budget_policy(memory_policy: object) -> ContextBudgetPolicy:
     return agent_memory_policy(memory_policy).context_budget
 
 
-def default_context_budget_policy() -> dict[str, object]:
-    return ContextBudgetPolicy().model_dump(mode="json")
-
-
 def normalized_memory_policy(value: object) -> dict[str, object]:
     return agent_memory_policy(value).model_dump(mode="json")
 

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.governance.audit.service import AuditService
@@ -192,9 +191,6 @@ class WorkerNodeRegistry:
         return node
 
 
-T = TypeVar("T")
-
-
 class WorkerNodeRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -218,14 +214,6 @@ class WorkerNodeRepository:
 
     def add(self, node: WorkerNode) -> None:
         self._session.add(node)
-
-
-def page_worker_nodes(
-    session: Session,
-    statement: Select[tuple[T]],
-    page: PageParams,
-) -> tuple[list[T], int]:
-    return page_scalars(session, statement, page)
 
 
 def _normalize_heartbeat_details(details: dict[str, object]) -> dict[str, object]:

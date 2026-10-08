@@ -49,30 +49,6 @@ _RESOURCE_PATHS = {
 }
 
 
-async def require_internal_token(
-    request: Request,
-    authorization: str | None = AUTHORIZATION_HEADER,
-    settings: Settings = SETTINGS_DEPENDENCY,
-    session: Session = DB_SESSION_DEPENDENCY,
-) -> None:
-    token = _bearer_token(authorization)
-    valid = _is_internal_token(token, settings)
-    if not valid:
-        SecurityAuditService(session).record_request_event(
-            request_context=security_request_context(request),
-            action="auth.internal_token.rejected",
-            outcome="denied",
-            severity="warning",
-            reason="Invalid or missing authorization token",
-            metadata={"has_authorization_header": bool(authorization)},
-        )
-        session.commit()
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing authorization token",
-        )
-
-
 async def get_current_user(
     request: Request,
     authorization: str | None = AUTHORIZATION_HEADER,

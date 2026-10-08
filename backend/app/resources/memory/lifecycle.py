@@ -282,26 +282,6 @@ class WorkspaceMemoryLifecycleService:
         return "workspace", entry.workspace_id
 
 
-def decayed_importance(
-    entry: WorkspaceMemoryEntry,
-    policy: MemoryLifecyclePolicy,
-    *,
-    now: datetime,
-) -> float:
-    half_life_days = (
-        policy.episodic_decay_half_life_days
-        if entry.memory_layer == "episodic"
-        else policy.semantic_decay_half_life_days
-    )
-    reference = entry.last_accessed_at or entry.updated_at or entry.created_at
-    age_days = max(
-        (ensure_aware_utc(now) - ensure_aware_utc(reference)).total_seconds() / 86_400,
-        0,
-    )
-    decay_factor: float = 0.5 ** (age_days / half_life_days)
-    return round(float(entry.importance) * decay_factor, 6)
-
-
 def _expired_episode(
     entry: WorkspaceMemoryEntry,
     policy: MemoryLifecyclePolicy,
