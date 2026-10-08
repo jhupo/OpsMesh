@@ -5,6 +5,7 @@ from backend.app.identity.authorization.permissions import (
     AccountAction,
     WorkspaceAction,
     WorkspaceRole,
+    role_allows,
 )
 from backend.app.identity.users.models import User
 from backend.app.workspaces.management.models import Workspace
@@ -83,3 +84,15 @@ class WorkspaceContext:
     @property
     def role(self) -> WorkspaceRole:
         return WorkspaceRole(self.membership.role)
+
+    @property
+    def allowed_actions(self) -> tuple[WorkspaceAction, ...]:
+        """Workspace-level upper bound; individual resources need their own checks."""
+        if self.workspace.status != "active" or self.membership.status != "active":
+            return ()
+        return tuple(
+            action
+            for action in WorkspaceAction
+            if role_allows(self.membership.role, action)
+            and self.user.allows_workspace_action(self.workspace.id, action)
+        )

@@ -1,5 +1,6 @@
 """Compose business job handlers and maintenance into the generic worker loop."""
 
+import logging
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -12,6 +13,8 @@ from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, Mcp
 from backend.app.orchestration.scheduling.maintenance import WorkerMaintenanceService
 from backend.app.platform.updates.service import maintenance_enabled
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
+from backend.app.runtime.operations.admin_requests import AdminOperationService
+from backend.app.runtime.operations.history import PlatformHistoryService
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.runtime.workers.maintenance_contracts import (
     WorkerMaintenanceConfig,
@@ -19,7 +22,7 @@ from backend.app.runtime.workers.maintenance_contracts import (
 )
 from backend.app.runtime.workers.models import WorkerRunnerConfig
 from backend.app.runtime.workers.runner import WorkerRunner
-from backend.app.shared.config import Settings
+from backend.app.shared.config import Settings, get_settings
 from backend.app.teams.execution.worker_failures import TeamWorkerFailureReporter
 
 
@@ -48,6 +51,18 @@ def build_worker_runner(
             session.close()
 
     def maintenance() -> WorkerMaintenanceSummary:
+        try:
+            with failure_session_scope() as session:
+                PlatformHistoryService(session).capture(settings or get_settings())
+        except Exception:
+            logging.getLogger(__name__).error("Platform history sampling failed")
+        try:
+            for _ in range(5):
+                with failure_session_scope() as session:
+                    if not AdminOperationService(session).process_one(queue):
+                        break
+        except Exception:
+            logging.getLogger(__name__).error("Platform operation maintenance failed")
         return WorkerMaintenanceService(
             queue=queue,
             session_factory=session_factory,

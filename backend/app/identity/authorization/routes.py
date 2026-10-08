@@ -2,21 +2,59 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.app.identity.auth.dependencies import workspace_dependency
-from backend.app.identity.authorization.context import WorkspaceContext
-from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.identity.auth.dependencies import get_current_user, workspace_dependency
+from backend.app.identity.authorization.context import AuthenticatedUser, WorkspaceContext
+from backend.app.identity.authorization.errors import PermissionDeniedError
+from backend.app.identity.authorization.permissions import WorkspaceAction, WorkspaceRole
 from backend.app.identity.authorization.resources import (
     ResourceAction,
     ResourceAuthorizationService,
     ResourceKind,
 )
+from backend.app.identity.authorization.service import AuthorizationService
 from backend.app.shared.db.session import get_db_session
+from backend.app.shared.errors import ForbiddenError
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/access", tags=["resource-access"])
+
+
+class WorkspaceAccessResponse(BaseModel):
+    workspace_id: UUID
+    user_id: UUID
+    role: WorkspaceRole
+    workspace_status: str
+    membership_status: str
+    allowed_actions: list[WorkspaceAction] = Field(
+        description="Workspace-level permissions; resource-specific authorization still applies."
+    )
+
+
+@router.get("/context", response_model=WorkspaceAccessResponse)
+def workspace_access_context(
+    workspace_id: UUID,
+    response: Response,
+    user: AuthenticatedUser = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceAccessResponse:
+    try:
+        context = AuthorizationService(session).get_access_context(
+            workspace_id=workspace_id, user=user
+        )
+    except PermissionDeniedError as exc:
+        raise ForbiddenError(str(exc)) from exc
+    response.headers["Cache-Control"] = "no-store"
+    return WorkspaceAccessResponse(
+        workspace_id=context.workspace.id,
+        user_id=context.user.user_id,
+        role=context.role,
+        workspace_status=context.workspace.status,
+        membership_status=context.membership.status,
+        allowed_actions=list(context.allowed_actions),
+    )
 
 
 class GrantRequest(BaseModel):

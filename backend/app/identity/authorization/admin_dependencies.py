@@ -29,7 +29,7 @@ async def require_platform_admin(
             user = AuthenticationService(session).authenticate_user_token(provided_token, settings)
         except AuthenticationError:
             user = None
-        if user is not None and user.platform_admin:
+        if user is not None and user.platform_admin and not user.uses_restricted_token:
             session.commit()
             return
     SecurityAuditService(session).record_request_event(

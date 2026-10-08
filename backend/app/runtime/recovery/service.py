@@ -160,6 +160,7 @@ class StaleRunRecoveryService:
             statuses=normalized_statuses,
             limit=limit,
             now=now,
+            lock=True,
         )
         queue = RedisQueue(self._redis, self._keys, queue_name)
         run_control = RunControlService(

@@ -8,6 +8,7 @@ from sqlalchemy.orm import configure_mappers
 from backend.app.shared.db.base import Base
 
 _MODEL_MODULES = (
+    "backend.app.runtime.operations.models",
     "backend.app.governance.policies.models",
     "backend.app.messaging.email.models",
     "backend.app.platform.updates.models",
