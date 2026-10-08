@@ -9,6 +9,7 @@ from backend.app.agents.sessions.models import PersistentAgentSession, Persisten
 from backend.app.agents.sessions.store import SQLAlchemyAgentSession
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resources import ResourceAccessDenied
+from backend.app.orchestration.conversations.models import ConversationExecution
 from backend.app.orchestration.runs.authorization.validation import (
     authorized_profile_for_run,
     authorized_task_for_run,
@@ -38,7 +39,7 @@ class RunRequestSessionService:
             ref=ref,
             agent_profile_id=profile.id,
             agent_team_id=task.agent_team_id if task is not None else None,
-            task_id=task.id if task is not None and task.agent_team_id is None else None,
+            task_id=task.id if task is not None and ref.scope_type == "task_agent" else None,
             metadata={
                 "agent_role": profile.role,
                 "source": "run_orchestration",
@@ -129,7 +130,13 @@ class RunRequestSessionService:
             run.workspace_id,
             task.execution_identity,
         )
-        if task.agent_team_id is not None:
+        conversation_execution = self.session.scalar(
+            select(ConversationExecution.id).where(
+                ConversationExecution.workspace_id == run.workspace_id,
+                ConversationExecution.task_id == task.id,
+            )
+        )
+        if task.agent_team_id is not None and conversation_execution is None:
             scope_type = "team_agent"
             scope_id = f"{task.agent_team_id}:{profile.id}"
         else:

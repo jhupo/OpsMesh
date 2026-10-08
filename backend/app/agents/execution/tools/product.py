@@ -271,6 +271,20 @@ def _execute_product_tool(
     resource_grants: tuple[AgentRuntimeResourceGrant, ...],
     file_scope_ids: tuple[UUID, ...],
 ) -> dict[str, object]:
+    if tool_name == "discover_conversation_targets":
+        return service.conversations.discover(
+            context,
+            query=str_argument(arguments, "query", default=""),
+            offset=int_argument(arguments, "offset", default=0),
+        )
+    if tool_name == "delegate_conversation_task":
+        return service.conversations.delegate(
+            context,
+            kind=str_argument(arguments, "kind", default=""),
+            target_id=uuid_argument(arguments, "target_id"),
+            body=str_argument(arguments, "body", default=""),
+            request_key=str_argument(arguments, "request_key", default=""),
+        )
     if tool_name == "send_agent_message":
         return service.mailbox.send_agent_message(
             context,
