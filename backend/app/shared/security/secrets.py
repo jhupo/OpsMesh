@@ -103,11 +103,13 @@ class SecretEncryptionService:
         return bool(key_id) and key_id != self._key_id
 
     def _fingerprint(self, normalized_payload: str) -> str:
-        digest = hmac.new(
+        # Keyed payload fingerprint, not a password verifier. Preserve the existing
+        # HMAC-SHA256 bytes so stored credential fingerprints remain compatible.
+        digest = hmac.digest(
             self._secret.encode("utf-8"),
             normalized_payload.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
+            "sha256",
+        ).hex()
         return f"sha256:{digest}"
 
     @staticmethod
