@@ -109,7 +109,7 @@ export function UsersInviteDialog({
                 variant='link'
                 className='h-auto justify-start p-0'
               >
-                <a href='/admin/system/configuration'>{t('mail.configure')}</a>
+                <a href='/admin/system/mail'>{t('mail.configure')}</a>
               </Button>
             </AlertDescription>
           </Alert>

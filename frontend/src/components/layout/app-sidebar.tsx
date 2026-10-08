@@ -11,6 +11,7 @@ import {
   useSidebarData,
 } from './data/sidebar-data'
 import { NavGroup } from './nav-group'
+import { WorkspaceSwitcher } from './workspace-switcher'
 
 type AppSidebarProps = {
   platformAdmin: boolean
@@ -25,6 +26,7 @@ export function AppSidebar({ platformAdmin }: AppSidebarProps) {
     <Sidebar collapsible={collapsible} variant={variant}>
       <SidebarHeader>
         <AppTitle platformAdmin={platformAdmin} />
+        {!platformAdmin && <WorkspaceSwitcher />}
       </SidebarHeader>
       <SidebarContent>
         {sidebarData.navGroups.map((props) => (

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.runs.models import AgentRun
@@ -156,24 +156,30 @@ class StaleRunQueryService:
         statuses: set[RunStatus],
         limit: int,
         now: datetime,
+        lock: bool = False,
     ) -> list[AgentRun]:
         cutoff = now - timedelta(seconds=stale_after_seconds)
-        candidates = self._session.scalars(
+        anchor = case(
+            (
+                AgentRun.status == "running",
+                func.coalesce(AgentRun.started_at, AgentRun.updated_at, AgentRun.created_at),
+            ),
+            else_=func.coalesce(AgentRun.updated_at, AgentRun.created_at),
+        )
+        statement = (
             select(AgentRun)
             .where(
                 AgentRun.workspace_id == workspace_id,
                 AgentRun.status.in_([status.value for status in statuses]),
+                anchor < cutoff,
             )
-            .order_by(AgentRun.updated_at.asc(), AgentRun.created_at.asc())
-            .limit(limit * 3)
-        ).all()
-        stale_runs = []
-        for run in candidates:
-            age_anchor = stale_run_age_anchor(run)
-            if age_anchor is not None and age_anchor < cutoff:
-                stale_runs.append(run)
-        stale_runs.sort(key=lambda run: stale_run_age_anchor(run) or run.created_at)
-        return stale_runs[:limit]
+            .order_by(anchor, AgentRun.id)
+            .limit(limit)
+            .execution_options(populate_existing=True)
+        )
+        if lock:
+            statement = statement.with_for_update(skip_locked=True)
+        return list(self._session.scalars(statement).all())
 
     def latest_worker_leases_by_run_id(
         self,

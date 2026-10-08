@@ -1,7 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { Command } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useWorkspace } from '@/context/workspace-provider'
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -12,7 +11,6 @@ import {
 export function AppTitle({ platformAdmin }: { platformAdmin: boolean }) {
   const { setOpenMobile } = useSidebar()
   const { t } = useTranslation()
-  const { activeWorkspace } = useWorkspace()
   const destination = platformAdmin
     ? { to: '/admin/$section' as const, params: { section: 'overview' } }
     : { to: '/' as const }
@@ -39,7 +37,7 @@ export function AppTitle({ platformAdmin }: { platformAdmin: boolean }) {
               <span className='truncate text-xs'>
                 {platformAdmin
                   ? t('platformAdmin.role')
-                  : (activeWorkspace?.name ?? t('sidebar.workspace'))}
+                  : t('navigation.workspaceMode')}
               </span>
             </span>
           </Link>

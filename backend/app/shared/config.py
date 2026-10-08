@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     log_format: LogFormat = Field(default="json")
     enable_api_docs: bool = Field(default=True)
+    platform_history_enabled: bool = Field(default=True)
+    platform_history_interval_seconds: int = Field(default=60, ge=60, le=3600)
+    platform_history_retention_days: int = Field(default=30, ge=1, le=366)
     cors_origins: list[str] = Field(default_factory=list)
     database_url: str = Field(
         default="postgresql+psycopg://opsmesh:opsmesh@localhost:5432/opsmesh"

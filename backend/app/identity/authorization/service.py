@@ -18,6 +18,29 @@ class AuthorizationService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def get_access_context(
+        self,
+        *,
+        workspace_id: UUID,
+        user: AuthenticatedUser,
+    ) -> WorkspaceContext:
+        """Expose membership to its subject, including an inactive workspace's status."""
+        if not user.allows_workspace_action(workspace_id, WorkspaceAction.READ):
+            raise PermissionDeniedError("API token scope does not allow this workspace action")
+        row = self._session.execute(
+            select(Workspace, WorkspaceMember)
+            .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+            .where(
+                Workspace.id == workspace_id,
+                WorkspaceMember.user_id == user.user_id,
+                WorkspaceMember.status == "active",
+            )
+        ).one_or_none()
+        if row is None or not role_allows(row[1].role, WorkspaceAction.READ):
+            raise PermissionDeniedError("User is not an active member of this workspace")
+        workspace, membership = row
+        return WorkspaceContext(user=user, workspace=workspace, membership=membership)
+
     def require_workspace(
         self,
         *,
@@ -59,4 +82,3 @@ class AuthorizationService:
     ) -> None:
         if resource_workspace_id != expected_workspace_id:
             raise PermissionDeniedError("Resource does not belong to the requested workspace")
-
