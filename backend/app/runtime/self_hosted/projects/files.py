@@ -7,32 +7,32 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
-from backend.app.domains.orchestration.runs.events import RunEventRecorder
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.projects.artifacts import ProjectOutputArtifactWriter
-from backend.app.domains.workspace.projects.file_boundaries import (
+from backend.app.governance.audit.service import AuditService
+from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task
+from backend.app.resources.artifacts.models import Artifact
+from backend.app.resources.files.models import FileAccessEvent
+from backend.app.resources.storage.storage import ObjectStorage, create_storage
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
+from backend.app.runtime.self_hosted.models import SelfHostedJobClaim
+from backend.app.shared.config import Settings
+from backend.app.workspaces.projects.artifacts import ProjectOutputArtifactWriter
+from backend.app.workspaces.projects.file_boundaries import (
     ProjectBoundaryViolation,
     ProjectFileBoundaryService,
 )
-from backend.app.domains.workspace.projects.io.staging import ProjectInputArchiveBuilder
-from backend.app.domains.workspace.projects.io.state import ProjectIOStateService
-from backend.app.domains.workspace.projects.io.support import ProjectRunIOError
-from backend.app.domains.workspace.projects.models import AgentRunProjectSnapshot
-from backend.app.domains.workspace.projects.snapshots.manifest import (
+from backend.app.workspaces.projects.io.staging import ProjectInputArchiveBuilder
+from backend.app.workspaces.projects.io.state import ProjectIOStateService
+from backend.app.workspaces.projects.io.support import ProjectRunIOError
+from backend.app.workspaces.projects.models import AgentRunProjectSnapshot
+from backend.app.workspaces.projects.snapshots.manifest import (
     RunProjectManifest,
     RunProjectOutput,
     public_run_project_manifest,
 )
-from backend.app.domains.workspace.projects.snapshots.service import RunProjectSnapshotService
-from backend.app.domains.workspace.storage.artifact_models import Artifact
-from backend.app.domains.workspace.storage.models import FileAccessEvent
-from backend.app.domains.workspace.storage.storage import ObjectStorage, create_storage
-from backend.app.observability.audit.service import AuditService
-from backend.app.runtime.environment.models import WorkspaceRuntime
-from backend.app.runtime.self_hosted.contracts import AuthenticatedWorker
-from backend.app.runtime.self_hosted.models import SelfHostedJobClaim
+from backend.app.workspaces.projects.snapshots.service import RunProjectSnapshotService
 
 
 @dataclass(frozen=True, slots=True)

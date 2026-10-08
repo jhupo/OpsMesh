@@ -3,7 +3,7 @@ from uuid import UUID
 
 from test_workspace_api import _client, _headers, _seed_workspace
 
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
 
 
 def test_model_provider_operations_exposes_agent_run_and_fallback_diagnostics() -> None:

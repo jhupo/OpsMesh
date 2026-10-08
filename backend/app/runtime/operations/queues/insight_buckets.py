@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from backend.app.core.utils import age_seconds
 from backend.app.runtime.operations.contracts.queue import (
     QueueJobTypeBucketResponse,
     QueuePriorityBucketResponse,
 )
-from backend.app.runtime.workers.contracts import JobPayload
+from backend.app.runtime.queues.contracts import JobPayload
+from backend.app.shared.utils import age_seconds
 
 
 @dataclass(slots=True)

@@ -8,12 +8,8 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.sessions.management import (
-    PersistentAgentSessionManagementService,
-)
-from backend.app.domains.agents.sessions.models import (
+from backend.app.agents.sessions.management import PersistentAgentSessionManagementService
+from backend.app.agents.sessions.models import (
     ACTIVE_SESSION_STATUS,
     ARCHIVED_SESSION_STATUS,
     FROZEN_SESSION_STATUS,
@@ -21,8 +17,10 @@ from backend.app.domains.agents.sessions.models import (
     PersistentAgentSessionItem,
     PersistentAgentSessionRef,
 )
-from backend.app.domains.agents.sessions.store import SQLAlchemyAgentSession
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.agents.sessions.store import SQLAlchemyAgentSession
+from backend.app.identity.users.models import User
+from backend.app.shared.db.base import Base
+from backend.app.workspaces.management.models import Workspace
 
 
 def test_sqlalchemy_agent_session_persists_items_across_instances() -> None:

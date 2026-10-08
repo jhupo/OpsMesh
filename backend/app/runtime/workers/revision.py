@@ -3,9 +3,9 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.orchestration.tasks.message_append import TaskMessageAppendService
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.workspace.extensions.models import RevisionRequest
+from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.workspaces.domain_items.models import RevisionRequest
 
 
 class RevisionRequestPlanner:

@@ -2,11 +2,11 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import string_list
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.queries import authorization_snapshot_for_run
-from backend.app.domains.platform.admin.policy_reader import PlatformPolicyService
-from backend.app.runtime.environment.spaces.models import RuntimeSpace
+from backend.app.governance.policies.reader import PlatformPolicyService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.queries import authorization_snapshot_for_run
+from backend.app.runtime.spaces.models import RuntimeSpace
+from backend.app.shared.utils import string_list
 
 
 def positive_policy_int(value: object) -> int | None:

@@ -12,53 +12,50 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.queue import (
-    get_worker_queue,
-)
-from backend.app.api.dependencies.redis import get_redis_client
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.core.errors import PolicyDeniedError
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.models import User, UserAPIToken
-from backend.app.domains.access.resources import ResourceAccessDenied
-from backend.app.domains.capabilities.catalog.models import Capability, ToolGroup
-from backend.app.domains.capabilities.marketplace.models import MarketplaceListing
-from backend.app.domains.capabilities.mcp.models import McpServer, McpToolAllowlist
-from backend.app.domains.capabilities.plugins.contracts import PluginAction
-from backend.app.domains.capabilities.plugins.models import (
+from backend.app.capabilities.catalog.models import Capability, ToolGroup
+from backend.app.capabilities.marketplace.models import MarketplaceListing
+from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist
+from backend.app.capabilities.plugins.contracts import PluginAction
+from backend.app.capabilities.plugins.models import (
     PluginCredential,
     PluginDeployment,
     PluginInstall,
     PluginRelease,
     PluginTrustKey,
 )
-from backend.app.domains.capabilities.plugins.service import PluginService
-from backend.app.domains.capabilities.plugins.services import PluginPrincipal, PluginServices
-from backend.app.domains.capabilities.resources.models import CapabilityResource
-from backend.app.domains.capabilities.skills.models import Skill, WorkspaceSkillInstall
-from backend.app.domains.orchestration.approvals.models import Approval
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.platform.admin.models import PlatformPolicy, PlatformPolicyEvent
-from backend.app.domains.workspace.projects.models import WorkspaceProject, WorkspaceProjectQuota
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.domains.workspace.tenants.reservations import (
+from backend.app.capabilities.plugins.service import PluginService
+from backend.app.capabilities.plugins.services import PluginPrincipal, PluginServices
+from backend.app.capabilities.references.models import CapabilityResource
+from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.policies.models import PlatformPolicy, PlatformPolicyEvent
+from backend.app.governance.security_events.models import SecurityEvent
+from backend.app.identity.auth.models import UserAPIToken
+from backend.app.identity.authorization.resources import ResourceAccessDenied
+from backend.app.identity.users.models import User
+from backend.app.main import create_app
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task
+from backend.app.runtime.instances.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceEvent, RuntimeSpaceQuota
+from backend.app.runtime.workers.models import WorkerLease, WorkerNode
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.errors import PolicyDeniedError
+from backend.app.shared.redis.dependencies import get_redis_client
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
+from backend.app.workspaces.projects.models import WorkspaceProject, WorkspaceProjectQuota
+from backend.app.workspaces.quotas.models import WorkspaceQuota
+from backend.app.workspaces.quotas.reservations import (
     WorkspaceQuotaService as WorkspaceQuotaReservationService,
 )
-from backend.app.main import create_app
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.observability.audit.security_models import SecurityEvent
-from backend.app.runtime.environment.models import RuntimeEvent, RuntimeLease, WorkspaceRuntime
-from backend.app.runtime.environment.spaces.models import (
-    RuntimeSpace,
-    RuntimeSpaceEvent,
-    RuntimeSpaceQuota,
-)
-from backend.app.runtime.workers.contracts import JobPayload, JobType
-from backend.app.runtime.workers.models import WorkerLease, WorkerNode
-from backend.app.runtime.workers.queue import RedisQueue
 
 TOKEN = "test-token"
 ADMIN_TOKEN = "admin-token"
@@ -79,6 +76,38 @@ def test_admin_api_requires_platform_admin_token() -> None:
         action="auth.platform_admin.rejected",
     )
     assert rejected_events.count() == 2
+
+
+def test_every_admin_endpoint_rejects_an_authenticated_workspace_owner() -> None:
+    import re
+
+    from backend.app.identity.auth.service import AuthenticationService
+
+    client, session, _ = _client()
+    user, _ = _seed_workspace(session)
+    created = AuthenticationService(session).create_user_api_token(
+        user_id=user.id,
+        name="admin-boundary-regression",
+        settings=client.app.state.settings,
+    )
+    paths = client.app.openapi()["paths"]
+    checked = []
+    for template, operations in paths.items():
+        if not template.startswith("/api/v1/admin/"):
+            continue
+        path = re.sub(r"\{[^}]+\}", str(uuid4()), template)
+        for method in operations:
+            if method not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            response = client.request(
+                method.upper(), path,
+                headers={"Authorization": f"Bearer {created.token}"},
+            )
+            assert response.status_code == 401, (method, template, response.text)
+            checked.append((method, template))
+    assert checked
+    rejected = session.query(SecurityEvent).filter_by(action="auth.platform_admin.rejected")
+    assert rejected.count() == len(checked)
 
 
 def test_admin_api_exposes_global_control_plane_metadata() -> None:
@@ -1444,13 +1473,13 @@ def test_admin_system_version_reports_current_package_version() -> None:
 
 
 def test_admin_check_updates_returns_latest_release(monkeypatch) -> None:
-    from backend.app.domains.platform.releases.cache import clear_release_update_cache
-    from backend.app.domains.platform.releases.models import (
+    from backend.app.platform.releases.cache import clear_release_update_cache
+    from backend.app.platform.releases.models import (
         ReleaseAsset,
         ReleaseUpdateCheck,
         ReleaseVersion,
     )
-    from backend.app.domains.platform.releases.service import ReleaseUpdateService
+    from backend.app.platform.releases.service import ReleaseUpdateService
 
     clear_release_update_cache()
 
@@ -1541,6 +1570,34 @@ def test_admin_can_manage_user_lifecycle_and_workspace_membership() -> None:
     )
     assert added.status_code == 201
     member_id = added.json()["id"]
+
+    session.add(
+        WorkspaceQuota(
+            workspace_id=workspace.id,
+            quota_key="active_runs",
+            limit_value=10,
+            reserved_value=4,
+            unit="count",
+            status="active",
+        )
+    )
+    session.add(
+        WorkspaceQuota(
+            workspace_id=workspace.id,
+            quota_key="docker_runtimes",
+            limit_value=10,
+            reserved_value=9,
+            unit="count",
+            status="active",
+        )
+    )
+    session.commit()
+    listed = client.get("/api/v1/admin/users", headers=_admin_headers())
+    assert listed.status_code == 200
+    managed_summary = next(item for item in listed.json()["items"] if item["id"] == user_id)
+    assert managed_summary["workspace_count"] == 1
+    assert managed_summary["active_workspace_count"] == 1
+    assert managed_summary["resource_usage_rate"] == 0.9
 
     updated_member = client.patch(
         f"/api/v1/admin/workspaces/{workspace.id}/members/{member_id}",

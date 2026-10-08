@@ -6,7 +6,7 @@
       - any-glob-to-any-file: ['backend/app/runtime/**', 'runtime/**', 'operator/**']
 'area:security':
   - changed-files:
-      - any-glob-to-any-file: ['backend/app/domains/access/**', 'backend/app/core/security/**', 'SECURITY.md', '.github/workflows/codeql.yml', '.github/workflows/dependency-review.yml']
+      - any-glob-to-any-file: ['backend/app/identity/**', 'backend/app/shared/security/**', 'SECURITY.md', '.github/workflows/codeql.yml', '.github/workflows/dependency-review.yml']
 'area:delivery':
   - changed-files:
       - any-glob-to-any-file: ['.github/**', 'deploy/**', 'scripts/**']

@@ -19,6 +19,80 @@ export type PlatformOverview = {
   runtimes_running: number
   runtimes_offline: number
   critical_security_events: number
+  // Reserved response fields; absent until the platform aggregate is implemented.
+  execution?: PlatformExecutionOverview
+  hosts?: PlatformHostMetrics[]
+  operations_timeline?: {
+    range: PlatformAnalyticsRange
+    points: Array<{
+      timestamp: string
+      workers_online: number
+      queued: number
+      runtimes_running: number
+      database_connections: number
+      redis_connections: number
+    }>
+  }
+}
+
+export type PlatformHostMetrics = {
+  id: string
+  hostname: string
+  scope: 'host'
+  observed_at: string
+  cpu_percent: number | null
+  cpu_cores: number | null
+  memory_used_bytes: number | null
+  memory_total_bytes: number | null
+  disk_used_bytes: number | null
+  disk_total_bytes: number | null
+  disk_mount: string
+  range: PlatformAnalyticsRange
+  timeline: Array<{
+    timestamp: string
+    cpu_percent: number | null
+    memory_percent: number | null
+    disk_percent: number | null
+  }>
+}
+
+export type PlatformExecutionOverview = {
+  range: PlatformAnalyticsRange
+  totals: {
+    tasks_created: number
+    tasks_completed: number
+    tasks_failed: number
+    tasks_running: number
+    agents_running: number
+    teams_running: number
+    runs_total: number
+    average_task_duration_ms: number | null
+  }
+  timeline: Array<{
+    timestamp: string
+    created: number
+    completed: number
+    failed: number
+    agent_runs: number
+    team_runs: number
+  }>
+  recent_runs: Array<{
+    id: string
+    task_title: string
+    workspace_name: string
+    agent_name: string
+    team_name: string | null
+    status:
+      | 'queued'
+      | 'running'
+      | 'waiting_approval'
+      | 'succeeded'
+      | 'failed'
+      | 'cancelled'
+    started_at: string
+    duration_ms: number | null
+    tool_calls: number
+  }>
 }
 
 export type PlatformAnalyticsRange = '24h' | '7d' | '30d'
@@ -199,10 +273,13 @@ export function releaseUpdateCheckQueryOptions(enabled: boolean) {
   })
 }
 
-export function platformOverviewQueryOptions() {
+export function platformOverviewQueryOptions(
+  range: PlatformAnalyticsRange = '24h'
+) {
   return queryOptions({
-    queryKey: ['platform-admin', 'overview'],
-    queryFn: () => apiRequest<PlatformOverview>('/admin/overview'),
+    queryKey: ['platform-admin', 'overview', range],
+    queryFn: () =>
+      apiRequest<PlatformOverview>(`/admin/overview?range=${range}`),
     staleTime: 30_000,
   })
 }

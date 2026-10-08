@@ -3,10 +3,10 @@ from typing import Protocol
 
 from fastapi import FastAPI
 
-from backend.app.core.config import Settings
-from backend.app.core.executors import shutdown_blocking_executor
-from backend.app.core.redis.client import close_redis_client, create_redis_client
-from backend.app.core.security.rate_limits import FixedWindowRateLimiter
+from backend.app.shared.config import Settings
+from backend.app.shared.executors import shutdown_blocking_executor
+from backend.app.shared.redis.client import close_redis_client, create_redis_client
+from backend.app.shared.security.rate_limits import FixedWindowRateLimiter
 
 
 class ShutdownResource(Protocol):

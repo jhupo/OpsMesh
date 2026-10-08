@@ -1,4 +1,4 @@
-from backend.app.core.security.secrets import (
+from backend.app.shared.security.secrets import (
     SecretEncryptionService,
     external_vault_reference_metadata,
     redact_secret_provider_configs,
@@ -16,6 +16,11 @@ def test_secret_encryption_round_trip_and_fingerprint_are_stable() -> None:
     assert decrypted == payload
     assert "sk-secret" not in encrypted.ciphertext
     assert encrypted.fingerprint == repeated.fingerprint
+    # Persisted fingerprint produced by the original HMAC implementation.
+    assert (
+        encrypted.fingerprint
+        == "sha256:d4271441bc8538c428a09d92036c4539aaa6209aa38d1c1894db044b86af18ce"
+    )
     assert encrypted.key_id == "test"
     assert encrypted.secret_version == "v1"
     assert encrypted.rotation_state == "current"

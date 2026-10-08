@@ -10,22 +10,21 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.queue import (
-    get_worker_queue,
-)
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.models import User
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.governance.audit.models import AuditEvent, AuditIntegrityCheck
+from backend.app.governance.audit.service import AuditService
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
-from backend.app.observability.audit.models import AuditEvent, AuditIntegrityCheck
-from backend.app.observability.audit.service import AuditService
-from backend.app.observability.notifications.models import WorkspaceNotification
-from backend.app.runtime.workers.contracts import JobType
-from backend.app.runtime.workers.queue import RedisQueue
-from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.messaging.notifications.models import WorkspaceNotification
+from backend.app.runtime.queues.contracts import JobType
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 TOKEN = "audit-integrity-api-token"
 

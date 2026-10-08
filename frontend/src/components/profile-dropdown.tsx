@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
 import { Bell, LogOut, Settings, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { currentUserQueryOptions } from '@/api/auth'
@@ -21,6 +21,9 @@ export function ProfileDropdown() {
   const [open, setOpen] = useDialogState()
   const { t } = useTranslation()
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
+  const adminMode = useLocation({
+    select: (location) => location.pathname.startsWith('/admin'),
+  })
   return (
     <>
       <DropdownMenu modal={false}>
@@ -46,6 +49,25 @@ export function ProfileDropdown() {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
+            {user.platform_admin && (
+              <DropdownMenuItem asChild>
+                <Link
+                  {...(adminMode
+                    ? { to: '/' as const }
+                    : {
+                        to: '/admin/$section' as const,
+                        params: { section: 'overview' },
+                      })}
+                >
+                  <Settings />
+                  {t(
+                    adminMode
+                      ? 'navigation.workspaceMode'
+                      : 'navigation.adminMode'
+                  )}
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem asChild>
               <Link to='/settings'>
                 <UserRound />

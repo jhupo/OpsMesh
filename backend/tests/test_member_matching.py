@@ -6,16 +6,15 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.planning.member_matching import (
-    MemberMatchingService,
-)
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.identity.users.models import User
+from backend.app.orchestration.planning.member_matching import MemberMatchingService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.shared.db.base import Base
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_member_matching_ranks_by_role_and_skill_weight() -> None:

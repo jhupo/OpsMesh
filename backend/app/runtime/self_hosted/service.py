@@ -2,8 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings
-from backend.app.domains.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.runtime.self_hosted.contracts import (
     ArtifactUploadPayload,
     AuthenticatedWorker,
@@ -40,6 +39,7 @@ from backend.app.runtime.self_hosted.projects.artifacts import SelfHostedArtifac
 from backend.app.runtime.self_hosted.worker.control import SelfHostedWorkerControlService
 from backend.app.runtime.self_hosted.worker.events import SelfHostedEventRecorder
 from backend.app.runtime.self_hosted.worker.maintenance import SelfHostedMaintenanceService
+from backend.app.shared.config import Settings
 
 
 class SelfHostedRuntimeService:

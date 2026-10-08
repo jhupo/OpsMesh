@@ -22,7 +22,7 @@ services:
     environment:
       <<: *environment
       OPSMESH_SERVICE_NAME: opsmesh-api
-    ports: ['127.0.0.1:${OPSMESH_API_PORT:-8000}:8000']
+    ports: ['${OPSMESH_API_BIND:-127.0.0.1}:${OPSMESH_API_PORT:-8000}:8000']
     healthcheck:
       test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/v1/health/ready", timeout=3).read()']
       interval: 5s

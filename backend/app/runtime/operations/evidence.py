@@ -6,11 +6,10 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.utils import ensure_aware_utc
-from backend.app.observability.audit.models import AuditIntegrityCheck
-from backend.app.observability.costs.models import ModelUsageRecord, WorkspaceCostBudget
-from backend.app.observability.costs.queries import CostQueryService
-from backend.app.observability.notifications.models import WorkspaceNotification
+from backend.app.governance.audit.models import AuditIntegrityCheck
+from backend.app.governance.costs.models import ModelUsageRecord, WorkspaceCostBudget
+from backend.app.governance.costs.queries import CostQueryService
+from backend.app.messaging.notifications.models import WorkspaceNotification
 from backend.app.runtime.operations.contracts.control_plane import (
     OperationsDrilldownsResponse,
     OperationsEvidencePlaneResponse,
@@ -19,6 +18,7 @@ from backend.app.runtime.operations.contracts.control_plane import (
 from backend.app.runtime.operations.data_lifecycle_rollup import (
     WorkspaceDataLifecycleRollupService,
 )
+from backend.app.shared.utils import ensure_aware_utc
 
 
 class OperationsEvidenceService:

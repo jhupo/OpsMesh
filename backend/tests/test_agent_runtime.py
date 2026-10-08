@@ -8,11 +8,8 @@ from uuid import uuid4
 import pytest
 from agents import OpenAIResponsesCompactionSession, RunContextWrapper
 
-import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
-from backend.app.bootstrap.providers import build_agent_runtime_registry
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.policy import normalize_openai_compatible_base_url
-from backend.app.domains.agents.runtime.contracts import (
+import backend.app.agents.execution.providers.openai.runner as openai_runtime
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeAgentRef,
@@ -27,22 +24,22 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeToolResult,
     AgentRunTracing,
 )
-from backend.app.domains.agents.runtime.errors import (
-    AgentRuntimeCapabilityError,
-    normalize_agent_error,
-)
-from backend.app.domains.agents.runtime.providers.openai.results import (
+from backend.app.agents.execution.errors import AgentRuntimeCapabilityError, normalize_agent_error
+from backend.app.agents.execution.providers.openai.results import (
     OpenAIAgentsResultMapper,
     runtime_event_from_sdk_item,
 )
-from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
-from backend.app.domains.agents.runtime.providers.openai.tools import (
+from backend.app.agents.execution.providers.openai.runner import OpenAIAgentsRunner
+from backend.app.agents.execution.providers.openai.tools import (
     OpenAIToolBridge,
     runtime_allowed_tools,
 )
-from backend.app.domains.agents.runtime.registry import ProviderAgentRuntimeRegistry
-from backend.app.domains.agents.sessions.models import PersistentAgentSessionRef
-from backend.app.domains.agents.sessions.store import SQLAlchemyAgentSession
+from backend.app.agents.execution.registry import ProviderAgentRuntimeRegistry
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.policy import normalize_openai_compatible_base_url
+from backend.app.agents.sessions.models import PersistentAgentSessionRef
+from backend.app.agents.sessions.store import SQLAlchemyAgentSession
+from backend.app.bootstrap.providers import build_agent_runtime_registry
 from backend.app.runtime.contracts import (
     SandboxBinding,
     SandboxCommandResult,

@@ -10,12 +10,8 @@ from agents import RunContextWrapper
 from agents.exceptions import InputGuardrailTripwireTriggered
 from sqlalchemy import select
 
-import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
-from backend.app.core.config import Settings
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.profiles.service import AgentManagementService
-from backend.app.domains.agents.runtime.contracts import (
+import backend.app.agents.execution.providers.openai.runner as openai_runtime
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeContext,
     AgentRuntimeGuardrail,
@@ -23,23 +19,25 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeGuardrails,
     AgentRuntimeOutputSchema,
 )
-from backend.app.domains.agents.runtime.errors import (
+from backend.app.agents.execution.errors import (
     AgentRuntimeGuardrailBlockedError,
     AgentRuntimeOutputValidationError,
     normalize_agent_error,
 )
-from backend.app.domains.agents.runtime.providers.claude.runner import ClaudeAgentSDKRunner
-from backend.app.domains.agents.runtime.providers.openai.guardrails import OpenAIRuntimeOutputSchema
-from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
-from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
-from backend.app.domains.orchestration.runs.authorization.snapshot import (
-    RunAuthorizationSnapshotService,
-)
-from backend.app.domains.orchestration.runs.events import RunEventRecorder
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.runs.result_payloads import run_output_payload
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.agents.execution.providers.claude.runner import ClaudeAgentSDKRunner
+from backend.app.agents.execution.providers.openai.guardrails import OpenAIRuntimeOutputSchema
+from backend.app.agents.execution.providers.openai.runner import OpenAIAgentsRunner
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.profiles.service import AgentManagementService
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.orchestration.requests.builder import RunRequestBuilder
+from backend.app.orchestration.runs.authorization.snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.result_payloads import run_output_payload
+from backend.app.orchestration.tasks.models import Task
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.shared.config import Settings
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 
@@ -330,7 +328,7 @@ def test_policy_failure_appends_redacted_durable_event() -> None:
 def test_guardrail_execution_rejects_invalid_direct_contract(
     kind: str, config: dict[str, object]
 ) -> None:
-    from backend.app.domains.agents.runtime.guardrails import evaluate_guardrail
+    from backend.app.agents.execution.guardrails import evaluate_guardrail
 
     with pytest.raises(ValueError):
         evaluate_guardrail(

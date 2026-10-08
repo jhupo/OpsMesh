@@ -7,11 +7,8 @@ from uuid import uuid4
 import pytest
 from agents.tool_context import ToolContext
 
-import backend.app.domains.agents.runtime.providers.openai.runner as openai_runtime
-from backend.app.core.config import Settings
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+import backend.app.agents.execution.providers.openai.runner as openai_runtime
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,
@@ -20,16 +17,17 @@ from backend.app.domains.agents.runtime.contracts import (
     AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
 )
-from backend.app.domains.agents.runtime.providers.openai.runner import OpenAIAgentsRunner
-from backend.app.domains.orchestration.requests.builder import RunRequestBuilder
-from backend.app.domains.orchestration.runs.authorization.snapshot import (
-    RunAuthorizationSnapshotService,
-)
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.runs.result_payloads import run_output_payload
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.runtime.workers.contracts import JobPayload, JobType
+from backend.app.agents.execution.providers.openai.runner import OpenAIAgentsRunner
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.orchestration.requests.builder import RunRequestBuilder
+from backend.app.orchestration.runs.authorization.snapshot import RunAuthorizationSnapshotService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.result_payloads import run_output_payload
+from backend.app.orchestration.tasks.models import Task
+from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.shared.config import Settings
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 

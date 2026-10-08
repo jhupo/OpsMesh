@@ -12,29 +12,23 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.queue import (
-    get_worker_queue,
-)
-from backend.app.api.dependencies.redis import get_redis_client
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.profiles.models import AgentProfile, AgentProfileVersion
-from backend.app.domains.agents.providers.credentials import (
-    ModelProviderCredentialCommandService,
-)
-from backend.app.domains.agents.sessions.models import (
-    PersistentAgentSession,
-    PersistentAgentSessionItem,
-)
-from backend.app.domains.workspace.reviews.service import ResourceReview
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
+from backend.app.agents.profiles.models import AgentProfile, AgentProfileVersion
+from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.agents.sessions.models import PersistentAgentSession, PersistentAgentSessionItem
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.governance.reviews.service import ResourceReview
+from backend.app.identity.users.models import User
 from backend.app.main import create_app
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.runtime.workers.queue import RedisQueue
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.redis.dependencies import get_redis_client
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.shared.security.secrets import SecretEncryptionService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 TOKEN = "test-token"
 
@@ -50,7 +44,7 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
+        "backend.app.governance.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
         fake_review,
     )
 
@@ -563,7 +557,7 @@ def test_agent_update_requires_resource_review_for_high_impact_changes(monkeypat
         )
 
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
+        "backend.app.governance.reviews.service.ResourcePolicyReviewBuilder.review_agent_profile",
         review_agent_profile,
     )
 

@@ -5,7 +5,10 @@ function Table({ className, ...props }: React.ComponentProps<'table'>) {
   return (
     <div
       data-slot='table-container'
-      className='relative w-full overflow-x-auto'
+      className='relative w-full min-w-0 overflow-x-auto focus-visible:outline-ring'
+      tabIndex={0}
+      role={props['aria-label'] ? 'region' : undefined}
+      aria-label={props['aria-label']}
     >
       <table
         data-slot='table'

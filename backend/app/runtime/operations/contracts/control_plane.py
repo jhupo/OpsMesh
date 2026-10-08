@@ -5,7 +5,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
-from backend.app.core.security.redaction import redact_sensitive_payload
 from backend.app.runtime.operations.contracts.capacity import (
     OperationsRuntimeCapacityResponse,
     WorkerCapacityAggregateResponse,
@@ -19,6 +18,7 @@ from backend.app.runtime.operations.contracts.queue import (
     QueueMetricsResponse,
 )
 from backend.app.runtime.operations.contracts.scheduler import OperationsSchedulerResponse
+from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class OperationsOverviewResponse(BaseModel):

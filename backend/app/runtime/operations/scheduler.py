@@ -7,21 +7,10 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.pagination import PageParams
-from backend.app.core.utils import (
-    ensure_aware_utc,
-    non_empty_string_or_none,
-    positive_int_or_none,
-    string_list,
-)
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.workflows.definitions.blocked_reasons import (
-    explain_blocked_reason,
-)
-from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUS_VALUES
-from backend.app.domains.workspace.tenants.models import Workspace
-from backend.app.domains.workspace.tenants.settings import scheduler_settings
+from backend.app.orchestration.definitions.blocked_reasons import explain_blocked_reason
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.statuses import ACTIVE_RUN_STATUS_VALUES
+from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.runtime.operations.contracts.scheduler import (
     BlockedStepExplanationResponse,
     OperationsSchedulerResponse,
@@ -30,6 +19,15 @@ from backend.app.runtime.operations.contracts.scheduler import (
     SchedulerPolicyResponse,
     SchedulerPriorityBucketResponse,
 )
+from backend.app.shared.pagination import PageParams
+from backend.app.shared.utils import (
+    ensure_aware_utc,
+    non_empty_string_or_none,
+    positive_int_or_none,
+    string_list,
+)
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.management.settings import scheduler_settings
 
 
 class SchedulerPolicyService:

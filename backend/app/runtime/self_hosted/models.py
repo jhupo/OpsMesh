@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConst
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from backend.app.core.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from backend.app.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class RuntimeEnrollmentToken(UUIDPrimaryKeyMixin, TimestampMixin, Base):

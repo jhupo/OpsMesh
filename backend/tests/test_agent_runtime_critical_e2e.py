@@ -13,51 +13,49 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.config import Settings
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
     AgentRuntimeStructuredOutput,
 )
-from backend.app.domains.orchestration.approvals.decisions import ApprovalDecisionService
-from backend.app.domains.orchestration.approvals.models import Approval, PendingToolInvocation
-from backend.app.domains.orchestration.runs.models import AgentRun, AgentRunStateSnapshot
-from backend.app.domains.orchestration.runs.service import RunOrchestrationService
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.collaboration.transfers import (
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.orchestration.approvals.decisions import ApprovalDecisionService
+from backend.app.orchestration.approvals.models import Approval, PendingToolInvocation
+from backend.app.orchestration.planning.attempt_models import TaskPlanningAttempt
+from backend.app.orchestration.runs.models import AgentRun, AgentRunStateSnapshot
+from backend.app.orchestration.runs.service import RunOrchestrationService
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.tasks.collaboration.transfers import (
     TaskTransferCommand,
     TaskTransferDecision,
     TaskTransferService,
 )
-from backend.app.domains.orchestration.tasks.contracts import (
-    TaskDeliveryDecisionRequest,
-)
-from backend.app.domains.orchestration.tasks.delivery.decisions import TaskDeliveryDecisionService
-from backend.app.domains.orchestration.tasks.models import Task, TaskStep
-from backend.app.domains.orchestration.tasks.state import TaskStatus
-from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
-from backend.app.domains.workspace.projects.models import (
+from backend.app.orchestration.tasks.contracts import TaskDeliveryDecisionRequest
+from backend.app.orchestration.tasks.delivery.decisions import TaskDeliveryDecisionService
+from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.orchestration.tasks.state import TaskStatus
+from backend.app.resources.artifacts.models import Artifact
+from backend.app.resources.files.models import WorkspaceFile
+from backend.app.resources.storage.storage import LocalStorage
+from backend.app.runtime.instances.contracts import RuntimeCommandResult
+from backend.app.runtime.instances.models import RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.shared.config import Settings
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.shared.security.secrets import SecretEncryptionService
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
+from backend.app.workspaces.projects.models import (
     WorkspaceProject,
     WorkspaceProjectConfigurationVersion,
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from backend.app.domains.workspace.projects.snapshots.format import sha256_json
-from backend.app.domains.workspace.storage.artifact_models import Artifact
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.storage.storage import LocalStorage
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.runtime.environment.contracts import RuntimeCommandResult
-from backend.app.runtime.environment.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.runtime.workers.queue import RedisQueue, consume_once
-from backend.app.runtime.workers.registry import WorkerJobHandler
+from backend.app.workspaces.projects.snapshots.format import sha256_json
 from backend.tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
     _seed_workspace,
@@ -66,9 +64,9 @@ from backend.tests.test_worker_run_execution import (
 
 @pytest.fixture(autouse=True)
 def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.app.domains.workspace.reviews.model_request import ModelRequestReview
-    from backend.app.domains.workspace.reviews.models import ResourceReview
-    from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
+    from backend.app.governance.reviews.model_request import ModelRequestReview
+    from backend.app.governance.reviews.models import ResourceReview
+    from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 
     monkeypatch.setattr(
         ResourcePolicyReviewBuilder,
@@ -81,7 +79,7 @@ def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
     monkeypatch.setattr(
-        "backend.app.domains.workspace.reviews.model_request.ModelRequestReviewService.review_request",
+        "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         lambda self, **kwargs: ModelRequestReview(
             required=False,
             risk_level="low",
@@ -297,7 +295,7 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
         ]
     )
     session.flush()
-    from backend.app.domains.capabilities.resources.models import CapabilityResource
+    from backend.app.capabilities.references.models import CapabilityResource
 
     runtime_resource = CapabilityResource(
         workspace_id=workspace.id,
@@ -648,7 +646,7 @@ def _session() -> Session:
     from sqlalchemy import create_engine
 
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
-    from backend.app.core.db.base import Base
+    from backend.app.shared.db.base import Base
 
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()

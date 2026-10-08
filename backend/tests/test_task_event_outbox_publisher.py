@@ -9,18 +9,20 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.models import User
-from backend.app.domains.orchestration.tasks.event_outbox import (
+from backend.app.bootstrap.worker import build_worker_runner
+from backend.app.identity.users.models import User
+from backend.app.orchestration.tasks.event_outbox import (
     TaskEventOutboxPublisher,
     TaskEventOutboxService,
 )
-from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
-from backend.app.domains.orchestration.tasks.models import Task, TaskEventOutbox
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.runtime.workers.queue import RedisQueue
-from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
+from backend.app.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
+from backend.app.orchestration.tasks.models import Task, TaskEventOutbox
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.runtime.workers.runner import WorkerRunnerConfig
+from backend.app.shared.db.base import Base
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 def test_task_event_outbox_publisher_publishes_pending_event() -> None:
@@ -120,7 +122,7 @@ def test_worker_maintenance_publishes_task_event_outbox() -> None:
         workspace_id = workspace.id
         task_id = task.id
 
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="worker-events", queue_name="agent_runs"),

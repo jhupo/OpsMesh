@@ -16,43 +16,40 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.app.api.dependencies.queue import (
-    get_worker_queue,
-)
-from backend.app.api.dependencies.redis import get_redis_client
-from backend.app.core.config import Settings, get_settings
-from backend.app.core.db.base import Base
-from backend.app.core.db.session import get_db_session
-from backend.app.core.redis.keys import RedisKeyBuilder
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.memory.models import (
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.bootstrap.worker import build_worker_runner
+from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.identity.users.models import User
+from backend.app.main import create_app
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.resources.artifacts.models import Artifact
+from backend.app.resources.files.models import FileAccessEvent, WorkspaceFile
+from backend.app.resources.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEntry,
     memory_content_fingerprint,
 )
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.capabilities.skills.models import (
-    Skill,
-    WorkspaceSkillInstall,
-)
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.workspace.data_transfer.models import WorkspaceExportJob
-from backend.app.domains.workspace.projects.models import (
+from backend.app.resources.storage.storage import LocalStorage
+from backend.app.resources.transfers.models import WorkspaceExportJob
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue
+from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
+from backend.app.runtime.workers.runner import WorkerRunnerConfig
+from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.db.base import Base
+from backend.app.shared.db.session import get_db_session
+from backend.app.shared.redis.dependencies import get_redis_client
+from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
+from backend.app.workspaces.projects.models import (
     WorkspaceProject,
     WorkspaceProjectConfigurationVersion,
     WorkspaceProjectFile,
     WorkspaceProjectOutput,
 )
-from backend.app.domains.workspace.storage.artifact_models import Artifact
-from backend.app.domains.workspace.storage.models import FileAccessEvent, WorkspaceFile
-from backend.app.domains.workspace.storage.storage import LocalStorage
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.main import create_app
-from backend.app.observability.audit.models import AuditEvent
-from backend.app.runtime.environment.spaces.models import RuntimeSpace, RuntimeSpaceQuota
-from backend.app.runtime.workers.queue import RedisQueue
-from backend.app.runtime.workers.runner import WorkerRunner, WorkerRunnerConfig
 
 TOKEN = "test-token"
 
@@ -805,7 +802,7 @@ def test_workspace_recovery_readiness_actions_run_restore_import_test(
     )
     assert created.status_code == 202
     job_id = created.json()["id"]
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -890,7 +887,7 @@ def test_workspace_recovery_readiness_actions_verify_stale_archive_integrity(
         email="owner-recovery-integrity-action@example.com",
         slug="owner-recovery-integrity-action",
     )
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(
@@ -3986,7 +3983,7 @@ def test_workspace_archive_export_job_runs_in_worker_and_downloads_zip(
     assert created.json()["status"] == "queued"
     assert "storage_key" not in created.json()
     assert created.json()["has_storage_object"] is False
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="export-worker", queue_name="agent_runs"),
@@ -4070,7 +4067,7 @@ def test_workspace_archive_export_job_verify_reports_tampered_archive(
     )
     assert created.status_code == 202
     job_id = created.json()["id"]
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="verify-worker", queue_name="agent_runs"),
@@ -4125,7 +4122,7 @@ def test_workspace_archive_restore_drill_is_recorded_in_recovery_readiness(
     )
     assert created.status_code == 202
     job_id = created.json()["id"]
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="drill-worker", queue_name="agent_runs"),
@@ -4200,7 +4197,7 @@ def test_worker_maintenance_enqueues_due_workspace_backup_job(tmp_path: Path) ->
         }
     }
     session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="lifecycle-worker", queue_name="agent_runs"),
@@ -4317,7 +4314,7 @@ def test_worker_maintenance_applies_due_workspace_retention(tmp_path: Path) -> N
         ],
     }
     session.commit()
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="retention-worker", queue_name="agent_runs"),
@@ -4390,7 +4387,7 @@ def test_worker_maintenance_runs_due_workspace_restore_drill(tmp_path: Path) -> 
     )
     assert created.status_code == 202
     job_id = created.json()["id"]
-    runner = WorkerRunner(
+    runner = build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=WorkerRunnerConfig(worker_id="restore-drill-worker", queue_name="agent_runs"),

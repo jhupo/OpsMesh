@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.domains.workspace.storage.models import WorkspaceFile
-from backend.app.domains.workspace.storage.service import WorkspaceFileService
-from backend.app.domains.workspace.storage.storage import LocalStorage
+from backend.app.resources.files.models import WorkspaceFile
+from backend.app.resources.files.service import WorkspaceFileService
+from backend.app.resources.storage.storage import LocalStorage
 from backend.tests.test_product_tools import _seed_workspace, _session
 
 

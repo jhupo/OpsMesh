@@ -6,34 +6,30 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.core.utils import dict_or_empty, uuid_or_none
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.providers.metadata import (
-    budget_metadata_summary,
-)
-from backend.app.domains.agents.providers.model_api import (
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.metadata import budget_metadata_summary
+from backend.app.agents.providers.model_api import (
     canonical_model_api,
     model_api_for_provider,
     model_api_options_for_provider,
 )
-from backend.app.domains.agents.providers.models import ModelProviderCredential
-from backend.app.domains.agents.providers.policy import (
+from backend.app.agents.providers.models import ModelProviderCredential
+from backend.app.agents.providers.policy import (
     credential_is_selectable,
     credential_not_selectable_reasons,
 )
-from backend.app.domains.agents.providers.views import (
-    agent_model_provider_summary,
-)
-from backend.app.domains.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.domains.orchestration.workflows.statuses import ACTIVE_RUN_STATUSES
-from backend.app.domains.workspace.tenants.models import Workspace
+from backend.app.agents.providers.views import agent_model_provider_summary
+from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.statuses import ACTIVE_RUN_STATUSES
 from backend.app.runtime.operations.contracts.providers import (
     ModelProviderOperationsAgentResponse,
     ModelProviderOperationsCredentialResponse,
     ModelProviderOperationsResponse,
     ModelProviderOperationsRunResponse,
 )
+from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
+from backend.app.shared.utils import dict_or_empty, uuid_or_none
+from backend.app.workspaces.management.models import Workspace
 
 
 class ModelProviderOperationsService:

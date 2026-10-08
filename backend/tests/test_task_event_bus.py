@@ -8,12 +8,12 @@ from uuid import uuid4
 import fakeredis
 from redis.exceptions import ConnectionError
 
-from backend.app.api.routes.orchestration.tasks.streaming import (
+from backend.app.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
+from backend.app.orchestration.tasks.routes.streaming import (
     _read_task_bus_events,
     _sse_event,
     _task_event_stream_payload,
 )
-from backend.app.domains.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
 
 
 def test_redis_task_event_bus_publishes_and_reads_stream_events() -> None:

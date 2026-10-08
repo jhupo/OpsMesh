@@ -10,48 +10,40 @@ from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.core.db.base import Base
-from backend.app.core.security.secrets import SecretEncryptionService
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.access.models import User
-from backend.app.domains.agents.memory.models import (
-    WorkspaceMemoryEntry,
-    memory_content_fingerprint,
-)
-from backend.app.domains.agents.messages.models import AgentMessage, AgentMessageThread
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.agents.runtime.contracts import (
+from backend.app.agents.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeExecutionBinding,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolDefinition,
 )
-from backend.app.domains.agents.runtime.tools.executor import BackendToolExecutor
-from backend.app.domains.capabilities.catalog.effective import effective_catalog_fingerprint
-from backend.app.domains.capabilities.catalog.product_tools import PRODUCT_TOOL_CATALOG
-from backend.app.domains.capabilities.mcp.models import (
+from backend.app.agents.execution.tools.executor import BackendToolExecutor
+from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.capabilities.catalog.effective import effective_catalog_fingerprint
+from backend.app.capabilities.catalog.product_tools import PRODUCT_TOOL_CATALOG
+from backend.app.capabilities.mcp.models import (
     McpCredentialReference,
     McpServer,
     McpToolAllowlist,
     McpToolCallLog,
 )
-from backend.app.domains.capabilities.resources.models import CapabilityResource
-from backend.app.domains.capabilities.tools.contracts import ToolPermissionError
-from backend.app.domains.orchestration.runs.models import (
-    AgentRun,
-    authorization_snapshot_fingerprint,
-)
-from backend.app.domains.orchestration.runs.state import RunStatus
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.reviews.models import ResourceReview
-from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
-from backend.app.domains.workspace.tenants.models import Workspace, WorkspaceMember
-from backend.app.runtime.environment.contracts import (
-    RuntimeCommandInputFile,
-    RuntimeCommandResult,
-)
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.capabilities.references.models import CapabilityResource
+from backend.app.capabilities.tools.contracts import ToolPermissionError
+from backend.app.governance.reviews.models import ResourceReview
+from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.identity.users.models import User
+from backend.app.orchestration.runs.models import AgentRun, authorization_snapshot_fingerprint
+from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.tasks.models import Task
+from backend.app.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
+from backend.app.runtime.instances.contracts import RuntimeCommandInputFile, RuntimeCommandResult
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.models import SelfHostedMcpJob
+from backend.app.shared.db.base import Base
+from backend.app.shared.security.secrets import SecretEncryptionService
+from backend.app.workspaces.management.models import Workspace
+from backend.app.workspaces.members.models import WorkspaceMember
 
 
 @pytest.fixture(autouse=True)
@@ -588,7 +580,7 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
         raise ValueError("provider rejected api_key=sk-product-tool-secret")
 
     monkeypatch.setattr(
-        "backend.app.domains.capabilities.tools.mailbox."
+        "backend.app.capabilities.tools.mailbox."
         "AgentMailboxProductTools.send_agent_message",
         fail_send_agent_message,
     )
@@ -1273,7 +1265,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
 
 
 def test_waiting_runtime_status_transition_is_allowed() -> None:
-    from backend.app.domains.orchestration.runs.state import can_transition_run
+    from backend.app.orchestration.runs.state import can_transition_run
 
     assert can_transition_run(RunStatus.RUNNING, RunStatus.WAITING_RUNTIME)
     assert can_transition_run(RunStatus.WAITING_RUNTIME, RunStatus.QUEUED)

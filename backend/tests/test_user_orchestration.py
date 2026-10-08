@@ -5,37 +5,30 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from backend.app.domains.access.execution import ExecutionIdentityService
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.orchestration.approvals.models import Approval
-from backend.app.domains.orchestration.runs.eligibility import RunEligibilityService
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task, TaskMessage, TaskStep
-from backend.app.domains.orchestration.tasks.observation.execution import (
-    TaskExecutionDiagnosticsService,
-)
-from backend.app.domains.orchestration.workflows.definitions.application import (
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.governance.audit.models import AuditEvent
+from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.orchestration.approvals.models import Approval
+from backend.app.orchestration.definitions.application import (
     OrchestrationDefinitionApplicationService,
 )
-from backend.app.domains.orchestration.workflows.definitions.commands import (
+from backend.app.orchestration.definitions.commands import (
     OrchestrationDefinitionCreate,
     OrchestrationDefinitionUpdate,
     OrchestrationEditScope,
 )
-from backend.app.domains.orchestration.workflows.definitions.conditions import (
+from backend.app.orchestration.definitions.conditions import (
     evaluate_task_step_condition,
     validate_condition,
 )
-from backend.app.domains.orchestration.workflows.definitions.contracts import (
-    WorkflowCondition,
-    WorkflowNode,
-)
-from backend.app.domains.orchestration.workflows.definitions.service import (
-    OrchestrationDefinitionService,
-)
-from backend.app.domains.orchestration.workflows.planning.attempt_models import TaskPlanningAttempt
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.observability.audit.models import AuditEvent
+from backend.app.orchestration.definitions.contracts import WorkflowCondition, WorkflowNode
+from backend.app.orchestration.definitions.service import OrchestrationDefinitionService
+from backend.app.orchestration.planning.attempt_models import TaskPlanningAttempt
+from backend.app.orchestration.runs.eligibility import RunEligibilityService
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.orchestration.tasks.observation.execution import TaskExecutionDiagnosticsService
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.tests.test_capability_resources import (
     _client as _api_client,
 )
@@ -171,7 +164,7 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
         user.id,
     )
     service.publish_definition(workspace.id, definition.id, user.id)
-    from backend.app.domains.orchestration.models import OrchestrationRevision
+    from backend.app.orchestration.definitions.models import OrchestrationRevision
 
     service.update_definition(
         workspace.id,
@@ -194,7 +187,7 @@ def test_unconditional_nodes_publish_and_revisions_survive_draft_edits() -> None
 
 
 def test_authored_plan_cannot_be_replaced_by_automatic_regeneration() -> None:
-    from backend.app.domains.orchestration.workflows.planning.lifecycle import (
+    from backend.app.orchestration.planning.lifecycle import (
         TaskPlanLifecycleService,
         TaskPlanRegenerateCommand,
     )
@@ -426,7 +419,7 @@ def test_execution_diagnostics_exposes_node_results_attempts_and_approval_state(
     )
     session.add(step)
     session.flush()
-    from backend.app.domains.orchestration.runs.models import AgentRun
+    from backend.app.orchestration.runs.models import AgentRun
 
     run = AgentRun(
         workspace_id=workspace.id,
@@ -548,15 +541,15 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
     from opsmesh_plugin_sdk.packaging.packages import SignedPluginPackage, sign_package
     from sqlalchemy.orm import sessionmaker
 
-    from backend.app.core.config import get_settings
-    from backend.app.core.security.secrets import SecretEncryptionService
-    from backend.app.domains.capabilities.plugins.downloads import PluginDownloadWorker
-    from backend.app.domains.capabilities.plugins.models import PluginDownload
-    from backend.app.domains.capabilities.plugins.transport import PluginHttpFetcher
-    from backend.app.domains.integrations.automations import AutomationService
-    from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
-    from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
-    from backend.app.domains.integrations.webhooks.models import WebhookDeliveryAttempt
+    from backend.app.capabilities.plugins.downloads import PluginDownloadWorker
+    from backend.app.capabilities.plugins.models import PluginDownload
+    from backend.app.capabilities.plugins.transport import PluginHttpFetcher
+    from backend.app.orchestration.automations.service import AutomationService
+    from backend.app.orchestration.webhooks.delivery import WebhookDeliveryService
+    from backend.app.orchestration.webhooks.http_client import WebhookHttpResponse
+    from backend.app.orchestration.webhooks.models import WebhookDeliveryAttempt
+    from backend.app.shared.config import get_settings
+    from backend.app.shared.security.secrets import SecretEncryptionService
     from backend.tests.test_webhooks import _RecordingHttpClient
 
     client, session = _api_client()
@@ -629,8 +622,8 @@ def test_configured_automation_admits_workflow_and_delivers_reply(
     assert created.status_code == 201, created.text
     path = f"{base}/automations/{created.json()['id']}/events"
     if trigger_type == "message":
-        from backend.app.domains.access.models import User
-        from backend.app.domains.workspace.tenants.models import WorkspaceMember
+        from backend.app.identity.users.models import User
+        from backend.app.workspaces.members.models import WorkspaceMember
 
         employee = User(email="message-user@example.com", display_name="Message user")
         session.add(employee)
@@ -1104,14 +1097,14 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
     from opsmesh_plugin_sdk.messaging.webhooks import parse_automation_delivery
 
-    from backend.app.core.config import get_settings
-    from backend.app.core.security.secrets import SecretEncryptionService
-    from backend.app.domains.integrations.automations import AutomationService
-    from backend.app.domains.integrations.webhooks.delivery import WebhookDeliveryService
-    from backend.app.domains.integrations.webhooks.http_client import WebhookHttpResponse
-    from backend.app.domains.integrations.webhooks.models import WebhookDeliveryAttempt
-    from backend.app.domains.orchestration.tasks.models import TaskMessage
-    from backend.app.runtime.workers.contracts import JobPayload, JobType
+    from backend.app.orchestration.automations.service import AutomationService
+    from backend.app.orchestration.tasks.models import TaskMessage
+    from backend.app.orchestration.webhooks.delivery import WebhookDeliveryService
+    from backend.app.orchestration.webhooks.http_client import WebhookHttpResponse
+    from backend.app.orchestration.webhooks.models import WebhookDeliveryAttempt
+    from backend.app.runtime.queues.contracts import JobPayload, JobType
+    from backend.app.shared.config import get_settings
+    from backend.app.shared.security.secrets import SecretEncryptionService
     from backend.tests.test_webhooks import _RecordingHttpClient
     from backend.tests.test_worker_run_execution import (
         _run_agent_sync,
@@ -1380,24 +1373,21 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     from opsmesh_plugin_sdk.services.observability import PluginLog
     from opsmesh_plugin_sdk.services.storage import StoreWrite
 
-    from backend.app.api.dependencies.queue import get_worker_queue
-    from backend.app.api.dependencies.redis import get_redis_client
-    from backend.app.core.config import get_settings
-    from backend.app.domains.access.models import User
-    from backend.app.domains.agents.runtime.contracts import (
-        AgentRunResult,
-        AgentRuntimeStructuredOutput,
-    )
-    from backend.app.domains.agents.runtime.observer import AgentRuntimeExecutionObserver
-    from backend.app.domains.integrations.automations import AutomationService
-    from backend.app.domains.workspace.reviews.model_request import (
+    from backend.app.agents.execution.contracts import AgentRunResult, AgentRuntimeStructuredOutput
+    from backend.app.agents.execution.observer import AgentRuntimeExecutionObserver
+    from backend.app.governance.reviews.model_request import (
         ModelRequestReview,
         ModelRequestReviewService,
     )
-    from backend.app.domains.workspace.reviews.models import ResourceReview
-    from backend.app.domains.workspace.reviews.service import ResourcePolicyReviewBuilder
-    from backend.app.domains.workspace.tenants.models import WorkspaceMember
-    from backend.app.runtime.workers.contracts import JobPayload, JobType
+    from backend.app.governance.reviews.models import ResourceReview
+    from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
+    from backend.app.identity.users.models import User
+    from backend.app.orchestration.automations.service import AutomationService
+    from backend.app.runtime.queues.contracts import JobPayload, JobType
+    from backend.app.runtime.queues.dependencies import get_worker_queue
+    from backend.app.shared.config import get_settings
+    from backend.app.shared.redis.dependencies import get_redis_client
+    from backend.app.workspaces.members.models import WorkspaceMember
     from backend.tests.test_webhooks import _queue
     from backend.tests.test_worker_run_execution import (
         _run_agent_sync,

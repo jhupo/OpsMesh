@@ -6,7 +6,6 @@ from uuid import UUID
 from redis import Redis
 from sqlalchemy.orm import Session
 
-from backend.app.core.redis.keys import RedisKeyBuilder
 from backend.app.runtime.operations.contracts.capacity import (
     OperationsCapacityResponse,
     OperationsRuntimeCapacityResponse,
@@ -17,6 +16,7 @@ from backend.app.runtime.operations.runtimes.provider_capacity import (
 )
 from backend.app.runtime.operations.runtimes.space_saturation import RuntimeSpaceSaturationService
 from backend.app.runtime.operations.workers.capacity import OperationsWorkerCapacityService
+from backend.app.shared.redis.keys import RedisKeyBuilder
 
 
 class OperationsCapacityPayloadService:

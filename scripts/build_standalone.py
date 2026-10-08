@@ -53,7 +53,7 @@ def copy_server_assets(target: Path) -> None:
     )
     shutil.copytree(ROOT / "deploy/server", target / "deploy/server")
     shutil.copy2(ROOT / "deploy/server/env.example", target / ".env.example")
-    shutil.copy2(ROOT / "docs/standalone-distributions.md", target / "DISTRIBUTION.md")
+    shutil.copy2(ROOT / "deploy/DISTRIBUTIONS.md", target / "DISTRIBUTION.md")
     shutil.copy2(ROOT / "deploy/server/opsmesh-server", target / "opsmesh-server")
     (target / "opsmesh-server").chmod(0o755)
     (target / "scripts").mkdir()
@@ -168,7 +168,7 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str) -> Path:
                 str(ROOT / "scripts/cli_entry.py"),
             )
             bundle = work / "frozen/opsmesh"
-            shutil.copy2(ROOT / "docs/standalone-distributions.md", bundle / "DISTRIBUTION.md")
+            shutil.copy2(ROOT / "deploy/DISTRIBUTIONS.md", bundle / "DISTRIBUTION.md")
         else:
             installs = work / "managed-python"
             run(uv, "python", "install", PYTHON_VERSION, "--install-dir", str(installs), "--no-bin")

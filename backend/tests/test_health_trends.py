@@ -1,6 +1,6 @@
 from backend.app.bootstrap.models import register_models
-from backend.app.domains.workspace.tenants.health.trends import risk_changes
-from backend.app.domains.workspace.tenants.models import WorkspaceHealthSnapshot
+from backend.app.workspaces.management.health.trends import risk_changes
+from backend.app.workspaces.management.models import WorkspaceHealthSnapshot
 
 register_models()
 

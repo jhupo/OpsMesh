@@ -8,9 +8,12 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 
-export function AppTitle() {
+export function AppTitle({ platformAdmin }: { platformAdmin: boolean }) {
   const { setOpenMobile } = useSidebar()
   const { t } = useTranslation()
+  const destination = platformAdmin
+    ? { to: '/admin/$section' as const, params: { section: 'overview' } }
+    : { to: '/' as const }
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -20,8 +23,7 @@ export function AppTitle() {
           asChild
         >
           <Link
-            to='/admin/$section'
-            params={{ section: 'overview' }}
+            {...destination}
             onClick={() => setOpenMobile(false)}
             className='flex min-w-0 flex-1 items-center gap-2'
           >
@@ -33,7 +35,9 @@ export function AppTitle() {
                 OpsMesh
               </span>
               <span className='truncate text-xs'>
-                {t('platformAdmin.role')}
+                {platformAdmin
+                  ? t('platformAdmin.role')
+                  : t('navigation.workspaceMode')}
               </span>
             </span>
           </Link>

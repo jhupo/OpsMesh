@@ -13,6 +13,8 @@ from importlib.metadata import version
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from backend.app.identity.users.accounts import AccountService
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="opsmesh-server")
@@ -41,15 +43,14 @@ def main() -> None:
         print(json.dumps({"version": version("opsmesh"), "python": sys.version.split()[0]}))
         return
     if args.command in {"bootstrap-admin", "reset-admin-password"}:
-        from backend.app.core.db.session import SessionLocal
-        from backend.app.domains.access.service import AuthorizationService
+
+        from backend.app.shared.db.session import SessionLocal
 
         with SessionLocal() as session:
-            service = AuthorizationService(session)
             if args.command == "bootstrap-admin":
-                user, password = service.create_platform_admin()
+                user, password = AccountService(session).create_platform_admin()
             else:
-                user, password = service.reset_platform_admin_password()
+                user, password = AccountService(session).reset_platform_admin_password()
         payload = json.dumps(
             {
                 "username": user.username,
@@ -86,7 +87,7 @@ def main() -> None:
         module = (
             "backend.app.runtime.workers.cli"
             if args.command == "worker"
-            else "backend.app.domains.platform.updates.daemon"
+            else "backend.app.platform.updates.daemon"
         )
         sys.argv = [module, *remaining]
         runpy.run_module(module, run_name="__main__")
@@ -103,7 +104,7 @@ def check_runtime(directory: Path) -> None:
         "docker",
         "backend.app.main",
         "backend.app.runtime.workers.cli",
-        "backend.app.domains.platform.updates.daemon",
+        "backend.app.platform.updates.daemon",
     ):
         importlib.import_module(module)
     from alembic.config import Config

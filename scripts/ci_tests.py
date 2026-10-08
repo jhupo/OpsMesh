@@ -11,12 +11,20 @@ from pathlib import Path
 def select_tests(changed: list[str]) -> list[str]:
     # Select product boundaries, not helper filenames or implementation classes.
     flows = {
-        "access": {"test_auth_api.py", "test_tenant_isolation_matrix.py"},
+        "identity": {"test_auth_api.py", "test_tenant_isolation_matrix.py", "test_admin_api.py"},
         "agents": {"test_agent_runtime_critical_e2e.py"},
         "capabilities": {"test_capabilities_api.py", "test_marketplace_api.py"},
-        "integrations": {"test_user_orchestration.py", "test_webhooks.py"},
-        "orchestration": {"test_user_orchestration.py", "test_agent_runtime_recovery_e2e.py"},
-        "workspace": {"test_workspace_projects.py", "test_workspace_export_api.py"},
+        "orchestration": {
+            "test_user_orchestration.py", "test_agent_runtime_recovery_e2e.py", "test_webhooks.py"
+        },
+        "workspaces": {"test_workspace_projects.py", "test_workspace_export_api.py"},
+        "teams": {"test_worker_runner.py", "test_workspace_api.py"},
+        "resources": {"test_file_api.py", "test_workspace_export_api.py"},
+        "messaging": {"test_notifications_api.py", "test_platform_mail_invitations.py"},
+        "governance": {"test_audit_integrity_api.py", "test_cost_api.py"},
+        "runtime": {"test_worker_runner.py", "test_agent_runtime_recovery_e2e.py"},
+        "shared": {"test_auth_api.py", "test_user_orchestration.py", "test_operations_api.py"},
+        "bootstrap": {"test_model_registration.py", "test_worker_runner.py", "test_admin_api.py"},
         "platform": {"test_platform_updates.py"},
     }
     tests: set[str] = set()
@@ -35,22 +43,8 @@ def select_tests(changed: list[str]) -> list[str]:
         if name.startswith("backend/app/"):
             tests.add("test_health.py")
             for domain, targets in flows.items():
-                if name.startswith(
-                    (f"backend/app/domains/{domain}/", f"backend/app/api/routes/{domain}/")
-                ):
+                if name.startswith(f"backend/app/{domain}/"):
                     tests.update(targets)
-            if name.startswith("backend/app/runtime/"):
-                tests.add("test_agent_runtime_recovery_e2e.py")
-            if name.startswith("backend/app/observability/"):
-                evidence_flows = {
-                    "audit": "test_audit_integrity_api.py",
-                    "costs": "test_cost_api.py",
-                    "notifications": "test_notifications_api.py",
-                    "telemetry": "test_operations_api.py",
-                }
-                target = evidence_flows.get(path.parts[3])
-                if target is not None:
-                    tests.add(target)
     return sorted(f"backend/tests/{name}" for name in tests)
 
 

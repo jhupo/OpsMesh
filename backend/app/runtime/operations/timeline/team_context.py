@@ -5,11 +5,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.domains.agents.profiles.models import AgentProfile
-from backend.app.domains.orchestration.runs.models import AgentRun
-from backend.app.domains.orchestration.tasks.models import Task
-from backend.app.domains.workspace.teams.models import AgentTeam, AgentTeamMember
-from backend.app.runtime.environment.models import WorkspaceRuntime
+from backend.app.agents.profiles.models import AgentProfile
+from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.tasks.models import Task
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 
 
 def team_runtime_team_id(capabilities: dict[str, object]) -> str | None:

@@ -1,19 +1,16 @@
 import pytest
 
-from backend.app.core.security.egress import (
+from backend.app.runtime.backends.docker import _docker_network_environment, _docker_network_mode
+from backend.app.runtime.instances.contracts import RuntimeCreateRequest, RuntimeLimits
+from backend.app.runtime.instances.policies.egress import (
+    RuntimeEgressPolicyError,
+    resolve_egress_policy,
+)
+from backend.app.shared.security.egress import (
     EgressUrlPolicy,
     EgressUrlValidationError,
     url_host,
     validate_egress_url,
-)
-from backend.app.runtime.environment.backends.docker import (
-    _docker_network_environment,
-    _docker_network_mode,
-)
-from backend.app.runtime.environment.contracts import RuntimeCreateRequest, RuntimeLimits
-from backend.app.runtime.environment.policies.egress import (
-    RuntimeEgressPolicyError,
-    resolve_egress_policy,
 )
 
 

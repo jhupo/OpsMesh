@@ -19,6 +19,7 @@ type DataTableToolbarProps<TData> = {
       icon?: React.ComponentType<{ className?: string }>
     }[]
   }[]
+  columnLabels?: (columnId: string) => string
 }
 
 export function DataTableToolbar<TData>({
@@ -26,6 +27,7 @@ export function DataTableToolbar<TData>({
   searchPlaceholder,
   searchKey,
   filters = [],
+  columnLabels,
 }: DataTableToolbarProps<TData>) {
   const isFiltered =
     table.getState().columnFilters.length > 0 || table.getState().globalFilter
@@ -34,8 +36,8 @@ export function DataTableToolbar<TData>({
   const placeholder = searchPlaceholder ?? t('data_table.filter')
 
   return (
-    <div className='flex items-center justify-between'>
-      <div className='flex flex-1 flex-col-reverse items-start gap-y-2 sm:flex-row sm:items-center sm:space-x-2'>
+    <div className='flex items-start justify-between gap-2'>
+      <div className='flex min-w-0 flex-1 flex-wrap items-center gap-2'>
         {searchKey ? (
           <Input
             placeholder={placeholder}
@@ -45,17 +47,17 @@ export function DataTableToolbar<TData>({
             onChange={(event) =>
               table.getColumn(searchKey)?.setFilterValue(event.target.value)
             }
-            className='h-8 w-37.5 lg:w-62.5'
+            className='h-8 w-full sm:w-37.5 lg:w-62.5'
           />
         ) : (
           <Input
             placeholder={placeholder}
             value={table.getState().globalFilter ?? ''}
             onChange={(event) => table.setGlobalFilter(event.target.value)}
-            className='h-8 w-37.5 lg:w-62.5'
+            className='h-8 w-full sm:w-37.5 lg:w-62.5'
           />
         )}
-        <div className='flex gap-x-2'>
+        <div className='flex flex-wrap gap-2'>
           {filters.map((filter) => {
             const column = table.getColumn(filter.columnId)
             if (!column) return null
@@ -83,7 +85,7 @@ export function DataTableToolbar<TData>({
           </Button>
         )}
       </div>
-      <DataTableViewOptions table={table} />
+      <DataTableViewOptions table={table} columnLabels={columnLabels} />
     </div>
   )
 }
