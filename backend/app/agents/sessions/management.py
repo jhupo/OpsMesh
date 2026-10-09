@@ -120,7 +120,6 @@ class PersistentAgentSessionManagementService:
         if session is None:
             return 0
         deleted = self._repository.delete_items(workspace_id=workspace_id, session_id=session.id)
-        session.openai_conversation_id = None
         session.updated_at = datetime.now(UTC)
         self._db_session.flush()
         return deleted
@@ -143,7 +142,6 @@ class PersistentAgentSessionManagementService:
         summaries: list[PersistentSessionSummary] = []
         for session in sessions:
             self._repository.delete_items(workspace_id=workspace_id, session_id=session.id)
-            session.openai_conversation_id = None
             session.status = ACTIVE_SESSION_STATUS
             session.updated_at = reset_at
             session.session_metadata = {

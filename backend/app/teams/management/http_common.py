@@ -53,7 +53,6 @@ def _enqueue_team_runtime_control(
         workspace_id=context.workspace.id,
         team_id=team_id,
         requested_by_user_id=context.user.user_id,
-        idempotency_suffix=f"runtime-{action}-{team_id}",
         priority=10,
         routing={
             "source": "workspace_api",

@@ -44,9 +44,7 @@ def test_connector_executes_real_official_mcp_server_and_completes(tmp_path: Pat
     completion = api.completions[0][1]
     assert completion.status == "completed"
     assert completion.response_payload is not None
-    assert completion.response_payload["structuredContent"] == {
-        "message": "self-hosted-ready"
-    }
+    assert completion.response_payload["structuredContent"] == {"message": "self-hosted-ready"}
 
 
 def test_connector_replays_recorded_result_after_restart_without_reexecution(
@@ -112,7 +110,7 @@ def test_connector_rejects_invalid_job_contract_and_reports_sanitized_failure(
     tmp_path: Path,
 ) -> None:
     job = _job()
-    job.request_payload["contract_version"] = 2
+    job.request_payload["contract_version"] = 1
     api = _RecordingApi(job)
     executions: list[dict[str, object]] = []
 

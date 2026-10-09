@@ -199,7 +199,6 @@ class TeamExecutionLoopQueueDispatcher:
             workspace_id=candidate["workspace_id"],
             team_id=candidate["team_id"],
             requested_by_user_id=candidate["requested_by_user_id"],
-            idempotency_suffix=f"maintenance:{window}",
             priority=candidate["priority"],
             routing={
                 "source": "worker_maintenance",

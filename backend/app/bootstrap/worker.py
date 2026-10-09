@@ -12,11 +12,13 @@ from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.capabilities.mcp.managed_maintenance import reconcile_managed_mcp
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.orchestration.conversations.maintenance import ConversationMaintenanceService
+from backend.app.orchestration.runs.async_execution import AsyncAgentRunExecutor
 from backend.app.orchestration.scheduling.maintenance import WorkerMaintenanceService
 from backend.app.platform.updates.service import maintenance_enabled
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
 from backend.app.runtime.operations.admin_requests import AdminOperationService
 from backend.app.runtime.operations.history import PlatformHistoryService
+from backend.app.runtime.queues.contracts import JobType
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.runtime.workers.maintenance_contracts import (
     WorkerMaintenanceConfig,
@@ -96,6 +98,15 @@ def build_worker_runner(
         queue=queue,
         session_factory=session_factory,
         config=config,
+        async_handlers={
+            JobType.AGENT_RUN: AsyncAgentRunExecutor(
+                session_factory=session_factory,
+                queue=queue,
+                settings=settings or get_settings(),
+                agent_runner=agent_runner,
+                docker_client=runtime_docker_client,
+            ).handle
+        },
         handler_factory=lambda session: WorkerJobHandler(
             session=session,
             queue=queue,

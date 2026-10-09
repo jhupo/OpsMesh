@@ -28,7 +28,6 @@ def enqueue_team_execution_loop_job(
     workspace_id: UUID,
     team_id: UUID,
     requested_by_user_id: UUID | None,
-    idempotency_suffix: str,
     priority: int = 0,
     routing: dict[str, object] | None = None,
 ) -> bool:
@@ -52,14 +51,14 @@ def enqueue_team_execution_loop_job(
             raise ResourceAccessDenied()
     else:
         identity = identities.capture(workspace_id, requested_by_user_id)
-    return queue.enqueue(
+    return queue.enqueue_coalesced(
         JobPayload(
             workspace_id=workspace_id,
             job_type=JobType.TEAM_EXECUTION_LOOP,
             resource_id=team_id,
             requested_by_user_id=requested_by_user_id,
             execution_identity=identity,
-            idempotency_key=f"team.execution_loop:{workspace_id}:{team_id}:{idempotency_suffix}",
+            idempotency_key=f"team.execution_loop:{workspace_id}:{team_id}",
             priority=priority,
             routing=routing or {},
         )

@@ -20,6 +20,7 @@ from opentelemetry.trace import SpanKind
 from redis import Redis
 
 from backend.app.runtime.queues.contracts import JobPayload, JobType
+from backend.app.runtime.queues.run_lock import renewable_run_lock
 from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.shared.telemetry.request_context import request_id_var
 from backend.app.shared.telemetry.trace_context import current_trace_context, telemetry_span
@@ -199,6 +200,10 @@ class RedisQueue:
             "stop",
         }:
             raise ValueError("Only runtime start/stop jobs support reusable deduplication")
+        return self.enqueue_coalesced(job)
+
+    def enqueue_coalesced(self, job: JobPayload) -> bool:
+        """Keep one queued/processing/retrying projection for a resource operation."""
         job = job.with_trace_context()
         return bool(
             self.redis.eval(  # type: ignore[no-untyped-call]
@@ -287,13 +292,8 @@ class RedisQueue:
     @contextmanager
     def run_lock(self, workspace_id: str, run_id: str, ttl_seconds: int = 600) -> Iterator[bool]:
         lock_key = self.keys.run_lock(workspace_id, run_id)
-        lock = self.redis.lock(lock_key, timeout=ttl_seconds, blocking=False)
-        acquired = lock.acquire()
-        try:
+        with renewable_run_lock(self.redis, lock_key, ttl_seconds) as acquired:
             yield acquired
-        finally:
-            if acquired:
-                lock.release()
 
     def reclaim_expired(self, *, limit: int = 100, now: float | None = None) -> list[JobPayload]:
         if limit <= 0:

@@ -377,7 +377,6 @@ def _session_payload(summary: PersistentSessionSummary | None) -> dict[str, obje
         "agent_profile_id": summary.agent_profile_id,
         "agent_team_id": summary.agent_team_id,
         "item_count": summary.item_count,
-        "openai_conversation_id": summary.openai_conversation_id,
         "latest_item_metadata": _redacted_dict_or_none(summary.latest_item_metadata),
         "updated_at": summary.updated_at,
     }

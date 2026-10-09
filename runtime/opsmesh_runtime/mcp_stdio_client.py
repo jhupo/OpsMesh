@@ -6,16 +6,14 @@ import asyncio
 import json
 import re
 import sys
-from datetime import timedelta
 from importlib.metadata import version
 from typing import cast
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from .mcp_sdk import RuntimeMCPServerStdio
 
-MCP_SDK_PACKAGE = "mcp"
-MCP_SDK_STDIO_ENTRYPOINT = "mcp.client.stdio.stdio_client"
-RUNTIME_CONTRACT_VERSION = 1
+MCP_SDK_PACKAGE = "openai-agents"
+MCP_SDK_STDIO_ENTRYPOINT = "agents.mcp.MCPServerStdio"
+RUNTIME_CONTRACT_VERSION = 2
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _MAX_ENVIRONMENT_VARIABLES = 128
 _MAX_ENVIRONMENT_BYTES = 65_536
@@ -26,22 +24,21 @@ async def execute_request(request: dict[str, object]) -> dict[str, object]:
     validate_request_contract(request)
     server = _mapping(request, "server")
     tool = _mapping(request, "tool")
-    server_parameters = StdioServerParameters(
-        command=_string(server, "command"),
-        args=_string_list(server, "args"),
-        env=_optional_string_mapping(server, "env"),
-    )
     timeout_seconds = _positive_int(tool, "timeout_seconds")
     async with asyncio.timeout(timeout_seconds):
-        async with (
-            stdio_client(server_parameters) as (read_stream, write_stream),
-            ClientSession(read_stream, write_stream) as session,
-        ):
-            await session.initialize()
+        async with RuntimeMCPServerStdio(
+            params={
+                "command": _string(server, "command"),
+                "args": _string_list(server, "args"),
+                "env": _optional_string_mapping(server, "env"),
+            },
+            name="opsmesh-runtime-stdio",
+            client_session_timeout_seconds=timeout_seconds,
+            max_retry_attempts=0,
+        ) as session:
             result = await session.call_tool(
                 _string(tool, "name"),
                 arguments=_mapping(tool, "arguments"),
-                read_timeout_seconds=timedelta(seconds=timeout_seconds),
             )
     return cast(dict[str, object], result.model_dump(mode="json", by_alias=True, exclude_none=True))
 
@@ -76,8 +73,7 @@ def capability_report() -> dict[str, object]:
         "contract_version": RUNTIME_CONTRACT_VERSION,
         "sdk_package": MCP_SDK_PACKAGE,
         "sdk_version": version(MCP_SDK_PACKAGE),
-        "stdio_client": "available",
-        "client_session": "available",
+        "stdio_server": "available",
     }
 
 

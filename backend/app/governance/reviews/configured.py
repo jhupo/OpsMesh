@@ -15,7 +15,7 @@ from backend.app.governance.reviews.approval_config import (
 )
 from backend.app.governance.reviews.command_matching import command_invocations
 from backend.app.governance.reviews.llm import LlmResourceReviewer
-from backend.app.orchestration.approvals.service import ApprovalService
+from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
 from backend.app.shared.config import Settings
@@ -192,7 +192,7 @@ class ConfiguredApprovalService:
         )
         if signals.get("verdict") in {"approve", "reject"}:
             run_id = context.get("agent_run_id") or context.get("run_id")
-            approval = ApprovalService(self.session).create_approval(
+            approval = Approval(
                 workspace_id=workspace_id,
                 task_id=None,
                 agent_run_id=UUID(run_id) if isinstance(run_id, str) else None,
@@ -200,10 +200,12 @@ class ConfiguredApprovalService:
                 approval_type=f"automatic.{action}",
                 risk_level=review.risk_level,
                 payload=evidence,
+                created_at=datetime.now(UTC),
+                status="approved" if signals["verdict"] == "approve" else "rejected",
+                decided_at=datetime.now(UTC),
+                decision_reason="approval_model." + str(signals["verdict"]),
             )
-            approval.status = "approved" if signals["verdict"] == "approve" else "rejected"
-            approval.decided_at = datetime.now(UTC)
-            approval.decision_reason = "approval_model." + str(signals["verdict"])
+            self.session.add(approval)
         # Store only the decision/evidence, never credentials or raw arguments.
         AuditService(self.session).record_system_action(
             workspace_id=workspace_id,

@@ -32,7 +32,7 @@ from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 
 class _ToolExecutor:
-    def review_tool_call(self, **kwargs: object) -> dict[str, object]:
+    async def review_tool_call(self, **kwargs: object) -> dict[str, object]:
         return {"decision": "allow"}
 
     async def execute_tool(self, **kwargs: object) -> AgentRuntimeToolResult:
@@ -112,7 +112,7 @@ def test_direct_tool_node_uses_authorized_executor_without_model_execution() -> 
             session,
             RunExecutionDependencies(
                 lifecycle=None,  # type: ignore[arg-type]
-                runtime_backends=build_runtime_backend_registry(None),
+                runtime_backends=build_runtime_backend_registry(None, lambda: 60),
             ),
         )._run_non_agent_node(run, job, request, "tool")
     )

@@ -1,23 +1,19 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.agents.execution.contracts import AgentRuntimeToolResult
 from backend.app.agents.execution.tokens import truncate_to_token_bound
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.resources.memory.configuration import initial_embedding_status
 from backend.app.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
 from backend.app.resources.memory.policy import WorkingMemoryPolicy
 from backend.app.shared.security.redaction import (
     redact_sensitive_payload,
-    redact_sensitive_text,
     redact_text_fragments,
 )
 from backend.app.shared.utils import ensure_aware_utc
@@ -29,49 +25,6 @@ WORKING_MEMORY_SOURCE = "run_working_memory"
 class AgentWorkingMemoryService:
     def __init__(self, session: Session) -> None:
         self._session = session
-
-    def prepare_run(
-        self,
-        *,
-        run: AgentRun,
-        profile: AgentProfile,
-        task: Task | None,
-        session_key: str | None,
-        policy: WorkingMemoryPolicy,
-    ) -> list[WorkspaceMemoryEntry]:
-        if not policy.enabled:
-            return []
-        entries: list[WorkspaceMemoryEntry] = []
-        if task is not None:
-            entries.append(
-                self.put(
-                    run=run,
-                    profile=profile,
-                    key="objective",
-                    title="Current objective",
-                    content="\n".join(part for part in (task.title, task.description) if part),
-                    entry_type="objective",
-                    metadata={"task_id": str(task.id)},
-                    session_key=session_key,
-                    policy=policy,
-                )
-            )
-            plan = self._plan_for_run(run, task)
-            if plan:
-                entries.append(
-                    self.put(
-                        run=run,
-                        profile=profile,
-                        key="plan",
-                        title="Current execution plan",
-                        content=json.dumps(plan, ensure_ascii=False, sort_keys=True, default=str),
-                        entry_type="plan",
-                        metadata={"task_id": str(task.id)},
-                        session_key=session_key,
-                        policy=policy,
-                    )
-                )
-        return entries
 
     def put(
         self,
@@ -165,51 +118,6 @@ class AgentWorkingMemoryService:
         self._session.add(entry)
         self._session.flush([entry])
         return entry
-
-    def record_tool_result(
-        self,
-        *,
-        context_workspace_id: UUID,
-        run_id: UUID,
-        tool_name: str,
-        tool_call_id: str | None,
-        result: AgentRuntimeToolResult,
-        policy: WorkingMemoryPolicy,
-    ) -> WorkspaceMemoryEntry | None:
-        run = self._session.scalar(
-            select(AgentRun).where(
-                AgentRun.workspace_id == context_workspace_id,
-                AgentRun.id == run_id,
-            )
-        )
-        if run is None or run.agent_profile_id is None or not policy.enabled:
-            return None
-        profile = self._session.scalar(
-            select(AgentProfile).where(
-                AgentProfile.workspace_id == context_workspace_id,
-                AgentProfile.id == run.agent_profile_id,
-            )
-        )
-        if profile is None:
-            return None
-        payload = redact_sensitive_payload(
-            {
-                "status": result.status,
-                "output": result.output,
-                "error": result.error,
-            }
-        )
-        return self.put(
-            run=run,
-            profile=profile,
-            key=f"tool:{tool_call_id or tool_name}",
-            title=f"Tool result: {tool_name}",
-            content=json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str),
-            entry_type="tool_result",
-            metadata={"tool_name": tool_name, "tool_call_id": tool_call_id},
-            session_key=None,
-            policy=policy,
-        )
 
     def active_for_run(
         self,
@@ -329,41 +237,6 @@ class AgentWorkingMemoryService:
             entry.archived_at = now
         self._session.flush(entries)
         return len(entries)
-
-    def _plan_for_run(self, run: AgentRun, task: Task) -> dict[str, object]:
-        plan: dict[str, object] = {}
-        if isinstance(task.project_plan, dict) and task.project_plan:
-            plan["project_plan"] = redact_sensitive_payload(task.project_plan)
-        if run.task_step_id is not None:
-            step = self._session.scalar(
-                select(TaskStep).where(
-                    TaskStep.workspace_id == run.workspace_id,
-                    TaskStep.task_id == task.id,
-                    TaskStep.id == run.task_step_id,
-                )
-            )
-            if step is not None:
-                plan["current_step"] = {
-                    "id": str(step.id),
-                    "title": redact_sensitive_text(step.title),
-                    "description": redact_sensitive_text(step.description),
-                    "acceptance_criteria": [
-                        redact_sensitive_text(item) for item in step.acceptance_criteria
-                    ],
-                    "expected_artifacts": [
-                        redact_sensitive_text(item) for item in step.expected_artifacts
-                    ],
-                }
-        return plan
-
-
-def working_memory_context(entries: list[WorkspaceMemoryEntry]) -> str:
-    if not entries:
-        return ""
-    lines = ["Current run working memory:"]
-    for entry in entries:
-        lines.append(f"- {entry.title}: {entry.content}")
-    return "\n".join(lines)
 
 
 def _bounded_key(value: str) -> str:

@@ -75,7 +75,6 @@ class AgentTeamExecutionLoopRunRequest(BaseModel):
 
 
 class AgentTeamExecutionLoopEnqueueRequest(BaseModel):
-    idempotency_suffix: str = Field(default="api", min_length=1, max_length=160)
     priority: int = Field(default=0, ge=-100, le=100)
     reason: str | None = Field(default=None, max_length=1_000)
     metadata: dict[str, object] = Field(default_factory=dict)

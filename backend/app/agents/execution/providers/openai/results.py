@@ -5,6 +5,8 @@ from typing import Any
 
 from agents import Agent, Tool
 from agents import __version__ as agents_sdk_version
+from agents.usage import Usage
+from pydantic import TypeAdapter
 
 from backend.app.agents.execution.contracts import (
     AgentRuntimeAgentRef,
@@ -15,6 +17,7 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeStreamEvent,
     AgentRuntimeStructuredOutput,
 )
+from backend.app.agents.execution.providers.openai.mcp import RuntimeMCPServer
 from backend.app.agents.execution.providers.openai.tools import OpenAIProductFunctionTool
 from backend.app.shared.security.redaction import redact_sensitive_payload
 
@@ -27,7 +30,7 @@ class OpenAIAgentsResultMapper:
         if isinstance(value, str):
             return value, None
         normalized = jsonable(value)
-        output_schema = getattr(result, "_current_agent_output_schema", None)
+        output_schema = getattr(getattr(result, "last_agent", None), "output_type", None)
         schema_name = None
         if output_schema is not None:
             name = getattr(output_schema, "name", None)
@@ -46,27 +49,12 @@ class OpenAIAgentsResultMapper:
     def safe_raw_output(self, result: Any) -> dict[str, object]:
         final_output, _ = self.final_output(result)
         payload: dict[str, object] = {"final_output": final_output}
-        sdk_continuation: dict[str, object] = {
-            "provider": "openai_agents",
-            "mode": "sdk_continuation_snapshot",
-            "native_tool_call_continuation": False,
-        }
-        last_response_id = getattr(result, "last_response_id", None)
-        if isinstance(last_response_id, str) and last_response_id:
-            payload["last_response_id"] = last_response_id
-            sdk_continuation["last_response_id"] = last_response_id
-        conversation_id = getattr(result, "conversation_id", None)
-        if isinstance(conversation_id, str) and conversation_id:
-            payload["conversation_id"] = conversation_id
-            sdk_continuation["conversation_id"] = conversation_id
         last_agent = getattr(result, "last_agent", None)
         if last_agent is not None:
             payload["last_agent"] = str(getattr(last_agent, "name", last_agent))
-        self._capture_resume_input(result, payload, sdk_continuation)
-        usage = getattr(result, "usage", None)
-        if usage is not None:
-            payload["usage"] = jsonable(usage)
-        payload["sdk_continuation"] = sdk_continuation
+        usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
+        if isinstance(usage, Usage):
+            payload["usage"] = TypeAdapter(Usage).dump_python(usage, mode="json")
         return redact_sensitive_payload(payload)
 
     def resume_state(self, result: Any) -> AgentRuntimeResumeState | None:
@@ -122,12 +110,26 @@ class OpenAIAgentsResultMapper:
                 if isinstance(tool, OpenAIProductFunctionTool)
                 else {}
             )
+            agent = getattr(item, "agent", None)
+            servers = agent.mcp_servers if isinstance(agent, Agent) else []
+            mcp_server = next(
+                (
+                    server
+                    for server in servers
+                    if isinstance(server, RuntimeMCPServer) and tool_name in server.definitions
+                ),
+                None,
+            )
+            if mcp_server is not None:
+                review = mcp_server.approval_reviews.get(call_id, {})
             mapped.append(
                 AgentRuntimeInterruption(
                     tool_call_id=call_id,
                     tool_name=tool_name,
                     tool_kind=tool.tool_kind
                     if isinstance(tool, OpenAIProductFunctionTool)
+                    else "mcp"
+                    if mcp_server is not None
                     else "unknown",
                     arguments=arguments,
                     policy_decision=dict(review),
@@ -211,23 +213,6 @@ class OpenAIAgentsResultMapper:
                 )
             )
         return mapped
-
-    def _capture_resume_input(
-        self,
-        result: Any,
-        payload: dict[str, object],
-        sdk_continuation: dict[str, object],
-    ) -> None:
-        to_input_list = getattr(result, "to_input_list", None)
-        if not callable(to_input_list):
-            return
-        try:
-            resume_input = jsonable(to_input_list(mode="normalized"))
-            payload["resume_input"] = resume_input
-            sdk_continuation["resume_input"] = resume_input
-        except Exception as exc:  # pragma: no cover - SDK internals are best-effort.
-            payload["resume_input_error"] = type(exc).__name__
-            sdk_continuation["resume_input_error"] = type(exc).__name__
 
 
 def runtime_event_from_sdk_item(item: object) -> AgentRuntimeEvent | None:

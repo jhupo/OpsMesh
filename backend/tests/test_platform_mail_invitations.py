@@ -62,6 +62,7 @@ def test_smtp_transport_requires_verified_tls_and_reports_recipient_rejection(
     )
     with raises(smtplib.SMTPRecipientsRefused):
         send_smtp_message(
+            timeout_seconds=10,
             host="smtp.example.com",
             port=587,
             security="starttls",

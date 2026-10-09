@@ -12,6 +12,7 @@ from backend.app.identity.authorization.execution import ExecutionIdentityServic
 from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.state import RunStatus
+from backend.app.runtime.queues.execution_control import current_execution_control
 
 
 @dataclass(slots=True)
@@ -39,6 +40,11 @@ class DatabaseRunCancellation:
         )
 
     async def is_cancelled(self) -> bool:
+        control = current_execution_control()
+        if control is not None and (
+            control.ownership_lost.is_set() or control.cancel_requested.is_set()
+        ):
+            self._cancelled.set()
         if self._cancelled.is_set():
             return True
         factory = sessionmaker(bind=self.bind, autoflush=False, expire_on_commit=False)

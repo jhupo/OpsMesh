@@ -373,7 +373,7 @@ def create_execution(
         execution_identity=turn.execution_identity,
         parent_run_id=parent_run_id,
         command=TaskCreateCommand(
-            title=turn.body[:240],
+            title=conversation.title if purpose == "manager" else body[:240],
             description=body,
             agent_profile_id=agent_id,
             agent_team_id=team_id,

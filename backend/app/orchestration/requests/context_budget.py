@@ -8,7 +8,6 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentTool,
     AgentRuntimeOutputSchema,
-    AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
 )
 from backend.app.agents.execution.errors import AgentRuntimePolicyError
@@ -105,7 +104,6 @@ class ContextBudgetManager:
         policy: ContextBudgetPolicy,
         instructions: str,
         tool_definitions: tuple[AgentRuntimeToolDefinition, ...] = (),
-        continuations: tuple[AgentRuntimeToolContinuation, ...] = (),
         handoff_agents: tuple[AgentRuntimeAgentDefinition, ...] = (),
         agent_tools: tuple[AgentRuntimeAgentTool, ...] = (),
         output_schema: AgentRuntimeOutputSchema | None = None,
@@ -116,7 +114,6 @@ class ContextBudgetManager:
             policy=policy,
             instructions=instructions,
             tool_definitions=tool_definitions,
-            continuations=continuations,
             handoff_agents=handoff_agents,
             agent_tools=agent_tools,
             output_schema=output_schema,
@@ -140,7 +137,6 @@ class ContextBudgetManager:
         policy: ContextBudgetPolicy,
         instructions: str,
         tool_definitions: tuple[AgentRuntimeToolDefinition, ...],
-        continuations: tuple[AgentRuntimeToolContinuation, ...],
         handoff_agents: tuple[AgentRuntimeAgentDefinition, ...],
         agent_tools: tuple[AgentRuntimeAgentTool, ...],
         output_schema: AgentRuntimeOutputSchema | None,
@@ -149,7 +145,6 @@ class ContextBudgetManager:
         fixed_tokens = fixed_context_tokens(
             instructions=instructions,
             tool_definitions=tool_definitions,
-            continuations=continuations,
             handoff_agents=handoff_agents,
             agent_tools=agent_tools,
             output_schema=output_schema,
@@ -232,7 +227,6 @@ def fixed_context_tokens(
     *,
     instructions: str,
     tool_definitions: tuple[AgentRuntimeToolDefinition, ...],
-    continuations: tuple[AgentRuntimeToolContinuation, ...],
     handoff_agents: tuple[AgentRuntimeAgentDefinition, ...],
     agent_tools: tuple[AgentRuntimeAgentTool, ...],
     output_schema: AgentRuntimeOutputSchema | None,
@@ -240,7 +234,6 @@ def fixed_context_tokens(
     payload: dict[str, object] = {
         "instructions": instructions,
         "tools": tool_definitions,
-        "continuations": continuations,
         "handoff_agents": handoff_agents,
         "agent_tools": agent_tools,
         "output_schema": output_schema,

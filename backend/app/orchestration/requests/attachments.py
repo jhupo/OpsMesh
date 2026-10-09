@@ -1,6 +1,5 @@
 """Materialize authorized message inputs at the model execution boundary only."""
 
-from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,6 +9,7 @@ from backend.app.orchestration.automations.authorization import (
     require_automation_principal,
     require_event_principal,
 )
+from backend.app.orchestration.automations.contracts import AutomationMessage
 from backend.app.orchestration.automations.models import Automation, AutomationEvent
 from backend.app.orchestration.automations.plugin_attachments import PluginAttachmentService
 from backend.app.orchestration.tasks.models import Task
@@ -35,7 +35,7 @@ def message_attachments(
     )
     if event is None or not event.input_payload.get("attachments"):
         return ()
-    message = IncomingMessage.model_validate(event.input_payload)
+    message = AutomationMessage.model_validate(event.input_payload)
     item = session.scalar(
         select(Automation).where(
             Automation.workspace_id == task.workspace_id,

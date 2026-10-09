@@ -202,7 +202,7 @@ def _approval_hook(
         executor = request.tool_executor
         if executor is None:
             raise ValueError("Claude tool execution requires a runtime tool executor")
-        review: object = executor.review_tool_call(
+        review: object = await executor.review_tool_call(
             context=request.context,
             tool_name=product_name,
             arguments=dict(input_data["tool_input"]),

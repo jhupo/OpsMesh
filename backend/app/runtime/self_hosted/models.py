@@ -125,6 +125,7 @@ class SelfHostedJobClaim(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class SelfHostedMcpJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "self_hosted_mcp_jobs"
     __table_args__ = (
+        UniqueConstraint("agent_run_id", "tool_call_id", name="uq_self_hosted_mcp_sdk_call"),
         Index("ix_self_hosted_mcp_jobs_workspace_status", "workspace_id", "status"),
         Index("ix_self_hosted_mcp_jobs_workspace_worker", "workspace_id", "worker_id"),
         Index("ix_self_hosted_mcp_jobs_agent_run", "agent_run_id"),
@@ -151,6 +152,7 @@ class SelfHostedMcpJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     tool_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    tool_call_id: Mapped[str | None] = mapped_column(String(240), nullable=True)
     request_payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     response_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     error_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)

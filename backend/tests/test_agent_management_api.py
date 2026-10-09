@@ -1,6 +1,9 @@
 import json
 from collections.abc import Generator
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from uuid import UUID
+from weakref import finalize
 
 import fakeredis
 import pytest
@@ -14,7 +17,11 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.profiles.models import AgentProfile, AgentProfileVersion
 from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
-from backend.app.agents.sessions.models import PersistentAgentSession, PersistentAgentSessionItem
+from backend.app.agents.sessions.models import (
+    PersistentAgentSession,
+    SDKAgentMessage,
+    SDKAgentSession,
+)
 from backend.app.governance.audit.models import AuditEvent
 from backend.app.governance.reviews.service import ResourceReview
 from backend.app.identity.users.models import User
@@ -65,6 +72,7 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
             "name": "Researcher",
             "role": "researcher",
             "instructions": "Remember the company strategy.",
+            "model": "gpt-4.1",
             "model_settings": {"temperature": 0.2, "model_api": "responses"},
         },
     )
@@ -163,19 +171,17 @@ def test_agent_management_lifecycle_versions_and_sessions() -> None:
     )
     session.add(persistent_session)
     session.flush()
+    session.add(SDKAgentSession(session_id=persistent_session.session_key))
+    session.flush()
     session.add_all(
         [
-            PersistentAgentSessionItem(
-                workspace_id=workspace.id,
-                persistent_session_id=persistent_session.id,
-                sequence=1,
-                item={"role": "user", "content": "first"},
+            SDKAgentMessage(
+                session_id=persistent_session.session_key,
+                message_data=json.dumps({"role": "user", "content": "first"}),
             ),
-            PersistentAgentSessionItem(
-                workspace_id=workspace.id,
-                persistent_session_id=persistent_session.id,
-                sequence=2,
-                item={"role": "assistant", "content": "second"},
+            SDKAgentMessage(
+                session_id=persistent_session.session_key,
+                message_data=json.dumps({"role": "assistant", "content": "second"}),
             ),
         ]
     )
@@ -411,18 +417,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
         "requested_model_api": None,
         "model_apis": ["anthropic_messages"],
         "default_model_api": "anthropic_messages",
-        "model_capability": {
-            "provider": "anthropic",
-            "model": "claude-sonnet-4-5",
-            "display_name": "Claude Sonnet 4.5",
-            "capabilities": ["tools", "vision", "streaming"],
-            "supports_tools": True,
-            "supports_vision": True,
-            "supports_json_mode": False,
-            "supports_streaming": True,
-            "context_window_tokens": 200000,
-            "notes": None,
-        },
+        "model_capability": None,
         "credential_status": "active",
         "credential_health_status": "unknown",
         "failure_count": 0,
@@ -448,8 +443,7 @@ def test_agent_management_validates_model_provider_credentials_across_versions()
     ]
     assert patched.json()["model_provider"]["model_api"] == "responses"
     assert patched.json()["model_provider"]["default_model_api"] is None
-    assert patched.json()["model_provider"]["model_capability"]["model"] == "*"
-    assert patched.json()["model_provider"]["model_capability"]["supports_json_mode"] is True
+    assert patched.json()["model_provider"]["model_capability"] is None
     assert patched.json()["model_provider"]["readiness_status"] == "degraded"
     assert patched.json()["model_provider"]["warnings"] == ["model_provider_unknown"]
     listed = client.get(
@@ -592,8 +586,9 @@ def test_agent_management_patch_rejects_unknown_status_field() -> None:
 
 def _client() -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
+    directory = TemporaryDirectory(prefix="opsmesh-api-", ignore_cleanup_errors=True)
     engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
+        f"sqlite+pysqlite:///{Path(directory.name) / 'api.db'}",
         future=True,
         json_serializer=json.dumps,
         connect_args={"check_same_thread": False},
@@ -602,6 +597,7 @@ def _client() -> tuple[TestClient, Session]:
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     seed_session = session_factory()
+    finalize(seed_session, _cleanup_database, engine, directory)
     redis = fakeredis.FakeRedis(decode_responses=True)
     app = create_app(
         Settings(
@@ -660,3 +656,8 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
+
+
+def _cleanup_database(engine, directory):
+    engine.dispose()
+    directory.cleanup()

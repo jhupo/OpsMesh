@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from backend.app.agents.execution.contracts import (
     AgentRuntimeProfile,
     AgentRuntimeResourceGrant,
-    AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
 )
 from backend.app.agents.profiles.models import AgentProfile
@@ -654,37 +653,6 @@ def file_scope_ids_for_snapshot(snapshot: dict[str, object]) -> tuple[UUID, ...]
             raise ValueError("Authorization snapshot file scope is invalid")
         ids.append(file_id)
     return tuple(ids)
-
-
-def tool_continuations_for_run(
-    run_input: dict[str, object],
-) -> tuple[AgentRuntimeToolContinuation, ...]:
-    results = run_input.get("pending_tool_results")
-    if not isinstance(results, list):
-        return ()
-    continuations: list[AgentRuntimeToolContinuation] = []
-    for item in results:
-        if not isinstance(item, dict):
-            continue
-        tool_name = item.get("tool_name")
-        status = item.get("status")
-        if not isinstance(tool_name, str) or not isinstance(status, str):
-            continue
-        metadata = {
-            key: value
-            for key, value in item.items()
-            if key not in {"tool_name", "status", "response", "error", "request"}
-        }
-        continuations.append(
-            AgentRuntimeToolContinuation(
-                tool_name=tool_name,
-                status=status,
-                result=dict_or_empty(item.get("response")),
-                error=dict_or_empty(item.get("error")),
-                metadata=dict_or_empty(metadata),
-            )
-        )
-    return tuple(continuations)
 
 
 def skill_mcp_tool_matches(

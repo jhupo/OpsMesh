@@ -105,6 +105,7 @@ class ManagedMcpToolAdapter:
             raise McpExecutionError(
                 "Managed MCP runtime is unavailable", code="mcp_process_not_ready"
             )
+        self.session.commit()
         result = await asyncio.to_thread(
             process_request,
             self.docker,

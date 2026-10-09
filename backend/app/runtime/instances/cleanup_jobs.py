@@ -220,8 +220,8 @@ class RuntimeCleanupService:
                     runtime.connection_status = "online"
                     runtime.last_heartbeat_at = datetime.now(UTC)
                     continue
-                if runtime.connection_status == "offline":
-                    continue
+            if runtime.connection_status == "offline":
+                continue
             stale.append(runtime)
         return stale
 

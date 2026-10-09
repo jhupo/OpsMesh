@@ -38,6 +38,7 @@ from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.shared.db.base import Base
 from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.teams.management.models import AgentTeam
+from backend.tests.fixtures.execution import test_agent_id
 from backend.tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
     _seed_workspace,
@@ -97,6 +98,7 @@ def test_duplicate_delivery_is_terminally_idempotent() -> None:
     task = Task(
         execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
+        owner_agent_profile_id=test_agent_id(session, workspace.id),
         created_by_user_id=user.id,
         title="Duplicate delivery",
         status=TaskStatus.QUEUED.value,
@@ -138,6 +140,7 @@ def test_runtime_timeout_marks_run_failed_with_durable_evidence(
     task = Task(
         execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
+        owner_agent_profile_id=test_agent_id(session, workspace.id),
         created_by_user_id=user.id,
         title="Runtime timeout",
         status=TaskStatus.QUEUED.value,
@@ -149,11 +152,11 @@ def test_runtime_timeout_marks_run_failed_with_durable_evidence(
         session=session,
         dependencies=RunExecutionDependencies(
             lifecycle=_run_lifecycle(session),
-            runtime_backends=build_runtime_backend_registry(None),
+            runtime_backends=build_runtime_backend_registry(None, lambda: 60),
         ),
         agent_runner=SlowRunner(),
     )
-    monkeypatch.setattr(RunExecutionService, "_runtime_timeout_seconds", lambda _self, _run: 0.01)
+    monkeypatch.setattr(RunExecutionService, "runtime_timeout_seconds", lambda _self, _run: 0.01)
     job = _job(workspace.id, run.id, user.id)
 
     result = service.run_agent_sync(job)
@@ -258,7 +261,7 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
         session=session,
         dependencies=RunExecutionDependencies(
             lifecycle=_run_lifecycle(session),
-            runtime_backends=build_runtime_backend_registry(None),
+            runtime_backends=build_runtime_backend_registry(None, lambda: 60),
         ),
         agent_runner=ExplodingRunner(),
     ).run_agent_sync(_job(workspace.id, run.id, user.id))
@@ -311,6 +314,7 @@ def test_runtime_space_quota_denial_does_not_create_reservation() -> None:
     task = Task(
         execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
+        owner_agent_profile_id=test_agent_id(session, workspace.id),
         created_by_user_id=user.id,
         title="Quota denied",
         status=TaskStatus.QUEUED.value,
@@ -360,6 +364,7 @@ def test_worker_loss_fails_stale_run_and_releases_execution_state() -> None:
     task = Task(
         execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
+        owner_agent_profile_id=test_agent_id(session, workspace.id),
         created_by_user_id=user.id,
         title="Worker lost",
         status=TaskStatus.RUNNING.value,

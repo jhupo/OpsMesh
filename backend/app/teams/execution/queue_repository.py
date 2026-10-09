@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.state import TERMINAL_TASK_STATUSES
 from backend.app.runtime.instances.models import WorkspaceRuntime
@@ -28,7 +29,35 @@ class TeamExecutionLoopQueueRepository:
         return list(
             self._session.scalars(
                 select(Task)
+                .join(
+                    AgentTeam,
+                    (AgentTeam.id == Task.agent_team_id)
+                    & (AgentTeam.workspace_id == Task.workspace_id),
+                )
                 .where(
+                    or_(
+                        AgentTeam.default_task_policy[TEAM_RUNTIME_STATUS_KEY]["status"]
+                        .as_string()
+                        .is_(None),
+                        AgentTeam.default_task_policy[TEAM_RUNTIME_STATUS_KEY]["status"]
+                        .as_string()
+                        .not_in([TEAM_RUNTIME_PAUSED, TEAM_RUNTIME_STOPPED]),
+                    ),
+                    ~exists(
+                        select(AgentRun.id).where(
+                            AgentRun.workspace_id == Task.workspace_id,
+                            AgentRun.task_id == Task.id,
+                            AgentRun.status.in_(
+                                [
+                                    "queued",
+                                    "running",
+                                    "waiting_approval",
+                                    "waiting_runtime",
+                                    "waiting_subworkflow",
+                                ]
+                            ),
+                        )
+                    ),
                     Task.agent_team_id.is_not(None),
                     Task.created_by_user_id.is_not(None),
                     ~Task.status.in_([status.value for status in TERMINAL_TASK_STATUSES]),

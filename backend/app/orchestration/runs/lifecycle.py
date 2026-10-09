@@ -35,7 +35,6 @@ from backend.app.orchestration.tasks.steps import (
 
 AppendEvent = Callable[[AgentRun, str, str, dict[str, object] | None], RunEvent]
 ReleaseRunReservations = Callable[[AgentRun, datetime], None]
-SyncConversation = Callable[[AgentRun], None]
 CreateNextRuns = Callable[[Task, UUID | None], list[AgentRun]]
 ScheduleWorkspaceSteps = Callable[[UUID, UUID | None], list[AgentRun]]
 TaskHasOpenTeamWork = Callable[[Task], bool]
@@ -45,7 +44,6 @@ TaskHasOpenTeamWork = Callable[[Task], bool]
 class RunLifecycleCallbacks:
     append_event: AppendEvent
     release_reservations: ReleaseRunReservations
-    sync_provider_conversation_id: SyncConversation
     create_next_runs: CreateNextRuns
     schedule_workspace_steps: ScheduleWorkspaceSteps
     task_has_open_team_work: TaskHasOpenTeamWork
@@ -146,7 +144,6 @@ class RunLifecycleService:
             RunStatus.COMPLETED,
             output=run_output_payload(result),
         )
-        self.callbacks.sync_provider_conversation_id(run)
         self.callbacks.append_event(run, "run.completed", "Run completed", None)
         completed_at = run.completed_at
         if completed_at is None:

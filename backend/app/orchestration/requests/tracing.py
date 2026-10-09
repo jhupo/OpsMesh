@@ -1,7 +1,6 @@
 from backend.app.agents.execution.contracts import AgentRuntimeProfile, AgentRunTracing
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
-from backend.app.shared.utils import json_safe_payload
 
 
 def agent_run_tracing(
@@ -56,13 +55,7 @@ def trace_metadata_for_agent_run(
     team_context = metadata.get("team_context")
     if isinstance(team_context, dict):
         trace_metadata["team"] = team_trace_metadata(team_context)
-    tool_continuations = metadata.get("tool_continuations")
-    if isinstance(tool_continuations, list):
-        trace_metadata["tool_continuations"] = [
-            item
-            for item in (json_safe_payload(item) for item in tool_continuations)
-            if isinstance(item, dict)
-        ]
+
     if task is not None:
         trace_metadata["agent_team_id"] = str(task.agent_team_id) if task.agent_team_id else None
     return {key: value for key, value in trace_metadata.items() if value is not None}

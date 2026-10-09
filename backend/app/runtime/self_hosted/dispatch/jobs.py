@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.mcp.execution.events import McpToolCallLogService
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.state import RunStateService, RunStatus
 from backend.app.orchestration.runs.statuses import ACTIVE_RUN_STATUSES
@@ -245,24 +246,25 @@ class SelfHostedJobFinalizer:
         run: AgentRun,
         job: SelfHostedMcpJob,
     ) -> None:
-        run_input = dict(run.input) if isinstance(run.input, dict) else {}
-        pending_results = run_input.get("pending_tool_results")
-        if not isinstance(pending_results, list):
-            pending_results = []
-        pending_results.append(
-            {
-                "kind": "mcp",
-                "mcp_job_id": str(job.id),
-                "mcp_server_id": str(job.mcp_server_id),
-                "tool_name": job.tool_name,
-                "status": job.status,
-                "response": job.response_payload,
-                "error": job.error_payload,
-                "completed_at": dt_iso(job.completed_at),
-            }
+        McpToolCallLogService(self._session).complete_runtime_rpc(
+            workspace_id=job.workspace_id,
+            run_id=run.id,
+            job_id=job.id,
+            status=job.status,
+            response=job.response_payload,
+            error=job.error_payload,
         )
-        run_input["pending_tool_results"] = pending_results
-        run.input = run_input
+        step = (
+            self._session.get(TaskStep, run.task_step_id) if run.task_step_id is not None else None
+        )
+        direct_tool = (
+            step is not None
+            and step.workspace_id == run.workspace_id
+            and step.dependencies.get("node_type") in {"tool", "mcp"}
+        )
+        if job.tool_call_id is not None and not direct_tool:
+            # Active SDK tool awaits RPC under its original call ID. No new user input.
+            return
         if job.status == "completed" and run.status == RunStatus.WAITING_RUNTIME.value:
             RunStateService().transition(run, RunStatus.QUEUED)
         elif job.status in {"failed", "expired"} and run.status == RunStatus.WAITING_RUNTIME.value:

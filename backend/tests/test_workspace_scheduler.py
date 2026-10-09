@@ -41,6 +41,8 @@ from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 from backend.app.workspaces.quotas.models import WorkspaceQuota, WorkspaceReservation
 from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
+from backend.tests.fixtures.execution import test_agent_id
+from backend.tests.test_worker_run_execution import _seed_default_model_provider
 
 
 def test_workspace_scheduler_orders_steps_by_task_priority_and_run_quota() -> None:
@@ -1107,6 +1109,7 @@ def _seed_task_step(
         status=TaskStatus.QUEUED.value,
         runtime_space_id=runtime_space_id,
         agent_team_id=agent_team_id,
+        owner_agent_profile_id=assigned_agent_profile_id or test_agent_id(session, workspace.id),
     )
     session.add(task)
     session.flush()
@@ -1117,7 +1120,7 @@ def _seed_task_step(
         status="queued",
         order_index=0,
         runtime_space_id=runtime_space_id,
-        assigned_agent_profile_id=assigned_agent_profile_id,
+        assigned_agent_profile_id=assigned_agent_profile_id or test_agent_id(session, workspace.id),
         dependencies=dependencies or {},
     )
     session.add(step)
@@ -1307,21 +1310,17 @@ def _run_step_launcher(session: Session) -> RunStepLauncher:
 
 def _run_lifecycle(session: Session) -> RunLifecycleService:
     orchestration = RunOrchestrationService(session)
-    builder = RunRequestBuilder(session, None)
     eligibility = RunEligibilityService(session)
     return RunLifecycleService(
         session,
         RunLifecycleCallbacks(
             append_event=RunEventRecorder(session).append_event,
-            release_reservations=lambda run, released_at: (
-                _run_reservations(session).release_for_run(run, released_at=released_at)
-            ),
-            sync_provider_conversation_id=builder.sync_provider_conversation_id,
-            create_next_runs=lambda task, user_id: (
-                orchestration._create_and_enqueue_next_step_runs(
-                    task,
-                    requested_by_user_id=user_id,
-                )
+            release_reservations=lambda run, released_at: _run_reservations(
+                session
+            ).release_for_run(run, released_at=released_at),
+            create_next_runs=lambda task, user_id: orchestration._create_and_enqueue_next_step_runs(
+                task,
+                requested_by_user_id=user_id,
             ),
             schedule_workspace_steps=lambda workspace_id, user_id: (
                 orchestration.schedule_workspace_steps(
@@ -1369,6 +1368,7 @@ def _seed_workspace(
     membership = WorkspaceMember(workspace=workspace, user=user, role="owner")
     session.add_all([user, workspace, membership])
     session.commit()
+    _seed_default_model_provider(session, workspace_id=workspace.id, user_id=user.id)
     return user, workspace
 
 

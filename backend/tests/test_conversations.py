@@ -255,7 +255,7 @@ def test_conversation_is_private_and_cancelled_messages_are_not_dispatched() -> 
         .join(ConversationExecution, ConversationExecution.task_id == Task.id)
         .where(ConversationExecution.turn_id == UUID(accepted.json()["id"]))
     )
-    assert '"status": "cancelled"' in task.description
+    assert task.description == "What happened?"
 
 
 def test_conversation_rechecks_revoked_membership_before_dispatch() -> None:
@@ -476,3 +476,237 @@ def test_conversation_runs_configured_expert_without_platform_prompts(target: st
         task = session.get(Task, execution.task_id)
         assert task.orchestration_definition_id == definition.id
         assert task.orchestration_version == 1
+
+
+def test_conversation_reuses_sdk_history_across_turns_and_isolates_delegates() -> None:
+    import asyncio
+
+    from agents import Agent, Model, RunConfig, Runner, function_tool
+    from agents.items import ModelResponse
+    from agents.usage import Usage
+    from openai.types.responses import (
+        ResponseFunctionToolCall,
+        ResponseOutputMessage,
+        ResponseOutputText,
+    )
+    from sqlalchemy.orm import sessionmaker
+
+    from backend.app.agents.sessions.gateway import AuthorizedSDKSession
+    from backend.app.shared.concurrency import BlockingIO
+    from backend.app.shared.db.operations import DatabaseOperations
+
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    profile = AgentProfile(
+        workspace_id=workspace.id, name="Manager", role="manager", instructions="Help"
+    )
+    session.add(profile)
+    session.commit()
+    base = f"/api/v1/workspaces/{workspace.id}/conversations"
+    created = client.post(
+        base,
+        headers=_headers(owner.id),
+        json={"mode": "agent", "agent_profile_id": str(profile.id)},
+    )
+    assert created.status_code == 201
+    cid = created.json()["id"]
+    url = f"{base}/{cid}/messages"
+    first = client.post(
+        url,
+        headers={**_headers(owner.id), "Idempotency-Key": "first"},
+        json={"body": "Lookup the incident"},
+    )
+    second = client.post(
+        url,
+        headers={**_headers(owner.id), "Idempotency-Key": "second"},
+        json={"body": "Explain that result"},
+    )
+    assert first.status_code == second.status_code == 202
+    maintenance = ConversationMaintenanceService(session)
+    assert maintenance.process_one()
+    session.commit()
+    first_turn = session.get(ConversationTurn, UUID(first.json()["id"]))
+    first_link = session.scalar(
+        select(ConversationExecution).where(ConversationExecution.turn_id == first_turn.id)
+    )
+    first_task = session.get(Task, first_link.task_id)
+    first_run = session.scalar(select(AgentRun).where(AgentRun.task_id == first_task.id))
+    assert first_task.description == first_turn.body
+    assert session.get(ConversationTurn, UUID(second.json()["id"])).status == "queued"
+    control_url = f"/api/v1/workspaces/{workspace.id}/tasks/{first_task.id}/control"
+    for removed in (
+        {"action": "add_instruction", "instruction": "Removed action"},
+        {"action": "pause", "delivery_mode": "live"},
+    ):
+        rejected = client.post(control_url, headers=_headers(owner.id), json=removed)
+        assert rejected.status_code == 422
+
+    seen = []
+
+    class OfflineModel(Model):
+        async def get_response(self, *args, **kwargs):
+            seen.append(kwargs["input"])
+            output = (
+                [
+                    ResponseFunctionToolCall(
+                        id="tool-1",
+                        type="function_call",
+                        name="lookup",
+                        arguments="{}",
+                        call_id="incident-1",
+                    )
+                ]
+                if len(seen) == 1
+                else [
+                    ResponseOutputMessage(
+                        id=f"message-{len(seen)}",
+                        type="message",
+                        role="assistant",
+                        status="completed",
+                        content=[
+                            ResponseOutputText(
+                                type="output_text", text="Found incident", annotations=[]
+                            )
+                        ],
+                    )
+                ]
+            )
+            return ModelResponse(output=output, usage=Usage(), response_id=f"offline-{len(seen)}")
+
+        async def stream_response(self, *args, **kwargs):
+            raise AssertionError("Streaming is not used in this history test")
+            yield
+
+    @function_tool
+    def lookup() -> str:
+        return "incident-code-42"
+
+    sdk_agent = Agent(name="Offline", model=OfflineModel(), tools=[lookup])
+    factory = sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+
+    def sdk_storage(run, task):
+        service = RunRequestSessionService(session)
+        ref = service.persistent_session_ref_for_run(run, task, profile)
+        storage = service.persistent_session_for_run(
+            run, task, profile, ref, sdk_provider="openai_agents"
+        )
+        session.commit()
+        return ref, storage
+
+    first_ref, first_storage = sdk_storage(first_run, first_task)
+
+    async def execute(storage, run_id, text):
+        with BlockingIO(1, name="conversation-history") as io:
+            database = DatabaseOperations(factory, io, lambda: None)
+            native = AuthorizedSDKSession(storage, database, run_id)
+            try:
+                return await Runner.run(
+                    sdk_agent, text, session=native, run_config=RunConfig(tracing_disabled=True)
+                )
+            finally:
+                await native.close()
+
+    result = asyncio.run(execute(first_storage, first_run.id, first_task.description))
+    first_run.status = first_task.status = "completed"
+    first_task.final_output = {"final_output": result.final_output}
+    session.commit()
+    assert maintenance.process_one()
+    session.commit()
+    assert maintenance.process_one()
+    session.commit()
+    second_link = session.scalar(
+        select(ConversationExecution).where(
+            ConversationExecution.turn_id == UUID(second.json()["id"])
+        )
+    )
+    second_task = session.get(Task, second_link.task_id)
+    second_run = session.scalar(select(AgentRun).where(AgentRun.task_id == second_task.id))
+    assert second_task.id != first_task.id
+    assert second_task.description == "Explain that result"
+    second_ref, second_storage = sdk_storage(second_run, second_task)
+    assert second_ref == first_ref
+    assert second_ref.scope_type == "conversation_agent"
+    asyncio.run(execute(second_storage, second_run.id, second_task.description))
+    assert [item["content"] for item in seen[-1] if item.get("role") == "user"] == [
+        "Lookup the incident",
+        "Explain that result",
+    ]
+    assert any(item.get("output") == "incident-code-42" for item in seen[-1])
+    assert any(item.get("type") == "function_call" for item in seen[-1])
+    from backend.app.orchestration.tasks.service import TaskCreateCommand, WorkspaceTaskService
+
+    expert = AgentProfile(workspace_id=workspace.id, name="Expert", role="expert")
+    session.add(expert)
+    session.flush()
+    delegated = WorkspaceTaskService(session).create_conversation_task(
+        workspace_id=workspace.id,
+        user_id=owner.id,
+        execution_identity=second_task.execution_identity,
+        command=TaskCreateCommand(
+            title="Expert review",
+            description="Independent review",
+            agent_profile_id=expert.id,
+        ),
+        parent_run_id=second_run.id,
+    )
+    delegate_run = session.scalar(select(AgentRun).where(AgentRun.task_id == delegated.id))
+    delegate_storage = RunRequestSessionService(session).persistent_session_for_run(
+        delegate_run, delegated, expert, sdk_provider="openai_agents"
+    )
+    session.commit()
+    assert delegate_storage.session_id != first_storage.session_id
+    assert delegate_storage.session_id != second_storage.session_id
+    delegated.status = delegate_run.status = "completed"
+    delegated.final_output = {"final_output": "reviewed"}
+
+    other = client.post(
+        base,
+        headers=_headers(owner.id),
+        json={"mode": "agent", "agent_profile_id": str(profile.id)},
+    ).json()
+    other_message = client.post(
+        f"{base}/{other['id']}/messages",
+        headers={**_headers(owner.id), "Idempotency-Key": "other"},
+        json={"body": "Independent question"},
+    )
+    assert other_message.status_code == 202
+    # Finish the active turn so maintenance can advance the independent conversation.
+    second_run.status = second_task.status = "completed"
+    second_task.final_output = {"final_output": "done"}
+    session.commit()
+    for _ in range(3):
+        maintenance.process_one()
+        session.commit()
+    other_link = session.scalar(
+        select(ConversationExecution).where(
+            ConversationExecution.turn_id == UUID(other_message.json()["id"])
+        )
+    )
+    other_task = session.get(Task, other_link.task_id)
+    other_run = session.scalar(select(AgentRun).where(AgentRun.task_id == other_task.id))
+    other_ref, other_storage = sdk_storage(other_run, other_task)
+    assert other_ref.session_key != first_ref.session_key
+    assert other_storage.session_id != first_storage.session_id
+
+    async def verify_isolation():
+        with BlockingIO(1, name="history-isolation") as io:
+            database = DatabaseOperations(factory, io, lambda: None)
+            native = AuthorizedSDKSession(other_storage, database, other_run.id)
+            forged = AuthorizedSDKSession(first_storage, database, other_run.id)
+            try:
+                assert await native.get_items() == []
+                with pytest.raises(ResourceAccessDenied):
+                    await forged.get_items()
+                with pytest.raises(ResourceAccessDenied):
+                    await forged.add_items([{"role": "user", "content": "unauthorized"}])
+            finally:
+                await native.close()
+                await forged.close()
+
+    asyncio.run(verify_isolation())
+    other_run.session_key = first_ref.session_key
+    with pytest.raises(ResourceAccessDenied):
+        RunRequestSessionService(session).persistent_session_ref_for_run(
+            other_run, other_task, profile
+        )
+    session.rollback()

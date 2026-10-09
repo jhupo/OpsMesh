@@ -29,6 +29,10 @@ from backend.app.identity.authorization.execution import ExecutionIdentityServic
 from backend.app.identity.users.models import User
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.tasks.models import Task
+from backend.app.platform.settings.policy import (
+    OperationalConfigurationService,
+    operational_configuration,
+)
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.storage.storage import LocalStorage
 from backend.app.shared.config import Settings
@@ -243,13 +247,19 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
             "capability_catalog_fingerprint": "sha256:catalog",
         },
     )
+    configuration = operational_configuration(session)
+    OperationalConfigurationService(session).replace(
+        configuration.model_copy(
+            update={"files": configuration.files.model_copy(update={"agent_read_bytes": 4})}
+        ),
+        actor_id="test",
+    )
     storage = LocalStorage(str(tmp_path / "storage"))
     storage.write(allowed_file.storage_key, b"safe")
     storage.write(blocked_file.storage_key, b"safe")
     storage.write(oversized_file.storage_key, b"large")
     executor = BackendToolExecutor(
         session,
-        _UnusedMcpAdapter(),
         settings=Settings(environment="test", agent_file_read_max_bytes=4),
         storage=storage,
     )

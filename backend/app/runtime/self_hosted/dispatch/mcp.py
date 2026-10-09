@@ -30,6 +30,7 @@ class SelfHostedMcpJobService:
         mcp_server_id: UUID,
         tool_name: str,
         request_payload: dict[str, object],
+        tool_call_id: str | None = None,
     ) -> SelfHostedMcpJob:
         run = self._session.get(AgentRun, agent_run_id)
         server = self._session.get(McpServer, mcp_server_id)
@@ -44,12 +45,26 @@ class SelfHostedMcpJobService:
             or run.runtime_id != runtime_id
         ):
             raise ValueError("Self-hosted MCP job scope is invalid")
+        existing = self._session.scalar(
+            select(SelfHostedMcpJob).where(
+                SelfHostedMcpJob.workspace_id == workspace_id,
+                SelfHostedMcpJob.agent_run_id == agent_run_id,
+                SelfHostedMcpJob.tool_call_id == tool_call_id,
+                SelfHostedMcpJob.tool_name == tool_name,
+                SelfHostedMcpJob.mcp_server_id == mcp_server_id,
+            )
+        )
+        if existing is not None and tool_call_id is not None:
+            if existing.request_payload != request_payload:
+                raise ValueError("Runtime RPC tool call was reused with a different request")
+            return existing
         job = SelfHostedMcpJob(
             workspace_id=workspace_id,
             workspace_runtime_id=runtime_id,
             agent_run_id=agent_run_id,
             mcp_server_id=mcp_server_id,
             tool_name=tool_name,
+            tool_call_id=tool_call_id,
             request_payload=request_payload,
         )
         self._session.add(job)

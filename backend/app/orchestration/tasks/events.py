@@ -45,7 +45,7 @@ class TaskEvent:
         return event
 
 
-class TaskEventBus(Protocol):
+class TaskEventPublisher(Protocol):
     def publish(
         self,
         *,
@@ -57,6 +57,8 @@ class TaskEventBus(Protocol):
         outbox_id: str | None = None,
     ) -> str: ...
 
+
+class TaskEventBus(TaskEventPublisher, Protocol):
     def read(
         self,
         *,

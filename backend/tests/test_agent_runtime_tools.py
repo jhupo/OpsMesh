@@ -63,7 +63,11 @@ def _approve_semantic_tool_execution_review(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
 
-def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
+def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.app.agents.execution.tools.mcp.ContextualMcpAdapterResolver.resolve",
+        lambda *args: StaticMcpAdapter(),
+    )
     session = _session()
     _, workspace = _seed_workspace(session)
     task = Task(
@@ -98,7 +102,7 @@ def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
     session.commit()
 
     result = asyncio.run(
-        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session).execute_tool(
             context=AgentRuntimeContext(
                 user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
@@ -122,7 +126,11 @@ def test_backend_tool_executor_routes_allowed_tool_to_mcp_execution() -> None:
     assert isinstance(result.metadata["mcp_tool_call_log_id"], str)
 
 
-def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
+def test_backend_tool_executor_records_team_runtime_tool_provenance(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.app.agents.execution.tools.mcp.ContextualMcpAdapterResolver.resolve",
+        lambda *args: StaticMcpAdapter(),
+    )
     session = _session()
     _, workspace = _seed_workspace(session)
     task = Task(
@@ -164,7 +172,7 @@ def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
     agent_profile_id = uuid4()
 
     result = asyncio.run(
-        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session).execute_tool(
             context=AgentRuntimeContext(
                 user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
@@ -227,7 +235,11 @@ def test_backend_tool_executor_records_team_runtime_tool_provenance() -> None:
     assert "responsibilities" not in result.metadata["team"]["current_member"]
 
 
-def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
+def test_backend_tool_executor_enforces_mcp_per_run_call_limit(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.app.agents.execution.tools.mcp.ContextualMcpAdapterResolver.resolve",
+        lambda *args: StaticMcpAdapter(),
+    )
     session = _session()
     _, workspace = _seed_workspace(session)
     task = Task(
@@ -261,7 +273,7 @@ def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
     session.flush()
     _set_mcp_snapshot(run, workspace, server, allow)
     session.commit()
-    executor = BackendToolExecutor(session, StaticMcpAdapter())
+    executor = BackendToolExecutor(session)
     context = AgentRuntimeContext(
         user_id=workspace.owner_user_id,
         workspace_id=workspace.id,
@@ -298,7 +310,11 @@ def test_backend_tool_executor_enforces_mcp_per_run_call_limit() -> None:
     assert logs[1].error_code == "mcp_tool_run_call_limit_exceeded"
 
 
-def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> None:
+def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.app.agents.execution.tools.mcp.ContextualMcpAdapterResolver.resolve",
+        lambda *args: StaticMcpAdapter(),
+    )
     session = _session()
     _, workspace = _seed_workspace(session)
     task = Task(
@@ -343,7 +359,7 @@ def test_backend_tool_executor_enforces_mcp_hourly_call_limit_across_runs() -> N
     _set_mcp_snapshot(first_run, workspace, server, allow)
     _set_mcp_snapshot(second_run, workspace, server, allow)
     session.commit()
-    executor = BackendToolExecutor(session, StaticMcpAdapter())
+    executor = BackendToolExecutor(session)
 
     first = asyncio.run(
         executor.execute_tool(
@@ -421,7 +437,7 @@ def test_backend_tool_executor_enforces_runtime_allowed_tools() -> None:
     session.commit()
 
     result = asyncio.run(
-        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session).execute_tool(
             context=AgentRuntimeContext(
                 user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
@@ -475,7 +491,7 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
     )
     session.add(run)
     session.commit()
-    executor = BackendToolExecutor(session, StaticMcpAdapter())
+    executor = BackendToolExecutor(session)
     context = AgentRuntimeContext(
         user_id=workspace.owner_user_id,
         workspace_id=workspace.id,
@@ -579,13 +595,12 @@ def test_backend_tool_executor_redacts_product_tool_failure_messages(
         raise ValueError("provider rejected api_key=sk-product-tool-secret")
 
     monkeypatch.setattr(
-        "backend.app.capabilities.tools.mailbox."
-        "AgentMailboxProductTools.send_agent_message",
+        "backend.app.capabilities.tools.mailbox.AgentMailboxProductTools.send_agent_message",
         fail_send_agent_message,
     )
 
     result = asyncio.run(
-        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session).execute_tool(
             context=AgentRuntimeContext(
                 user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
@@ -652,7 +667,7 @@ def test_backend_tool_executor_dispatches_agent_inbox_product_tools() -> None:
     )
     session.add_all([message, run])
     session.commit()
-    executor = BackendToolExecutor(session, StaticMcpAdapter())
+    executor = BackendToolExecutor(session)
     context = AgentRuntimeContext(
         user_id=workspace.owner_user_id,
         workspace_id=workspace.id,
@@ -760,7 +775,7 @@ def test_backend_tool_executor_scopes_agent_inbox_to_runtime_metadata() -> None:
     session.commit()
 
     result = asyncio.run(
-        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session).execute_tool(
             context=AgentRuntimeContext(
                 user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
@@ -845,7 +860,7 @@ def test_backend_tool_executor_scopes_mark_read_to_runtime_metadata() -> None:
     session.commit()
 
     result = asyncio.run(
-        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session).execute_tool(
             context=AgentRuntimeContext(
                 user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
@@ -930,7 +945,7 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
     )
     session.add(run)
     session.commit()
-    executor = BackendToolExecutor(session, StaticMcpAdapter())
+    executor = BackendToolExecutor(session)
     context = AgentRuntimeContext(
         user_id=workspace.owner_user_id,
         workspace_id=workspace.id,
@@ -1028,7 +1043,7 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
             WorkspaceMemoryEntry.entry_type == "tool_result",
         )
     ).all()
-    assert len(working_results) == 3
+    assert working_results == []
 
 
 def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
@@ -1087,7 +1102,7 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
     session.commit()
 
     result = asyncio.run(
-        BackendToolExecutor(session, StaticMcpAdapter()).execute_tool(
+        BackendToolExecutor(session).execute_tool(
             context=AgentRuntimeContext(
                 user_id=workspace.owner_user_id,
                 workspace_id=workspace.id,
@@ -1110,19 +1125,19 @@ def test_backend_tool_executor_queues_self_hosted_stdio_mcp_job() -> None:
     assert result.status == "waiting_self_hosted"
     assert result.output is not None
     assert result.output["mcp_job_id"] == str(job.id)
-    assert job.request_payload["contract_version"] == 1
+    assert job.request_payload["contract_version"] == 2
     assert job.request_payload["transport"] == "stdio"
     assert job.request_payload["sdk"] == {
-        "package": "mcp",
-        "entrypoint": "mcp.client.stdio.stdio_client",
+        "package": "openai-agents",
+        "entrypoint": "agents.mcp.MCPServerStdio",
     }
     assert job.request_payload["environment_refs"] == {"MCP_IMAGE_API_KEY": "MCP_IMAGE_API_KEY"}
     assert "runtime-secret" not in str(job.request_payload)
     assert job.request_payload["request"] == {
-        "contract_version": 1,
+        "contract_version": 2,
         "client": {
-            "package": "mcp",
-            "entrypoint": "mcp.client.stdio.stdio_client",
+            "package": "openai-agents",
+            "entrypoint": "agents.mcp.MCPServerStdio",
         },
         "server": {"command": "mcp-image", "args": []},
         "tool": {
@@ -1199,9 +1214,9 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
             RuntimeCommandResult(
                 exit_code=0,
                 stdout=(
-                    '{"status":"ready","contract_version":1,"sdk_package":"mcp",'
-                    '"sdk_version":"1.27.1","stdio_client":"available",'
-                    '"client_session":"available"}'
+                    '{"status":"ready","contract_version":2,"sdk_package":"openai-agents",'
+                    '"sdk_version":"0.17.2",'
+                    '"stdio_server":"available"}'
                 ),
                 stderr="",
             ),
@@ -1216,7 +1231,6 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
     result = asyncio.run(
         BackendToolExecutor(
             session,
-            StaticMcpAdapter(),
             docker_client=docker,
             secret_service=secret_service,
         ).execute_tool(
@@ -1239,7 +1253,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
     )
 
     assert result.status == "completed"
-    assert result.output == {"asset_id": "img_123"}
+    assert result.output == {"structuredContent": {"asset_id": "img_123"}}
     assert docker.exec_calls[0]["command"] == [
         "python",
         "-m",

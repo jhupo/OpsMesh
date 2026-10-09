@@ -140,7 +140,6 @@ class RunEventRecorder:
                 else None,
                 "allowed_tool_count": len(request.context.allowed_tools),
                 "agent_tool_count": len(request.agent_tools),
-                "continuation_count": len(request.continuations),
                 "has_tool_executor": request.tool_executor is not None,
                 "context_budget": metadata.get("context_budget", {}),
                 "memory_retrieval": metadata.get("memory_retrieval", {}),
@@ -166,7 +165,6 @@ class RunEventRecorder:
                 "fallback_selected": fallback_selected,
                 "allowed_tool_count": len(request.context.allowed_tools),
                 "agent_tool_count": len(request.agent_tools),
-                "continuation_count": len(request.continuations),
             },
         )
 
