@@ -74,6 +74,10 @@ class WorkspaceService:
             lifecycle_policy=default_lifecycle_policy(),
         )
         self._session.add_all([workspace, membership, memory_configuration])
+        self._session.flush()
+        validate_resource_review_settings(
+            self._session, workspace_id=workspace.id, settings=workspace.settings
+        )
         commit_or_raise_conflict(self._session, "Workspace slug already exists")
         self._session.refresh(workspace)
         return workspace

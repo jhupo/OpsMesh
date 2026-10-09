@@ -534,14 +534,13 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
         )
     )
 
-    stored = session.query(AgentMessage).one()
+    stored = session.get(AgentMessage, UUID(sent.output["message"]["id"]))
     assert sent.output["message"]["payload"] == {"scope": "backend"}
     assert listed.status == "completed"
     assert listed.output is not None
     assert listed.output["total"] == 1
     assert stored.payload == {"scope": "backend"}
-    assert sensitive.status == "waiting_approval"
-    assert sensitive.metadata["review_risk_level"] == "high"
+    assert sensitive.status == "completed"
     assert blocked.status == "failed"
     assert blocked.error is not None
     assert blocked.error["code"] == "user_resource_denied"

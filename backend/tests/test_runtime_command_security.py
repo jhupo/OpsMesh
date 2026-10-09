@@ -73,6 +73,20 @@ class FakeDockerClient:
 
 def test_risky_queued_command_is_blocked_and_audited_without_raw_command() -> None:
     session, runtime = _runtime()
+    workspace = session.get(Workspace, runtime.workspace_id)
+    workspace.settings = {
+        "approvals": {
+            "rules": [
+                {
+                    "id": "deny-echo",
+                    "action": "runtime_command",
+                    "command_prefix": ["echo"],
+                    "decision": "deny",
+                }
+            ]
+        }
+    }
+    session.commit()
     secret = "token-secret-value"
     settings = Settings(environment="test")
     command = RuntimeControlService(
@@ -151,6 +165,64 @@ def _runtime() -> tuple[Session, WorkspaceRuntime]:
     session.add(runtime)
     session.commit()
     return session, runtime
+
+
+def test_command_approval_resume_rechecks_policy_and_binds_exact_payload():
+    from unittest.mock import Mock
+
+    from backend.app.orchestration.approvals.models import Approval
+    from backend.app.runtime.commands.approvals import apply_command_decision
+
+    session, runtime = _runtime()
+    workspace = session.get(Workspace, runtime.workspace_id)
+    workspace.settings = {
+        "approvals": {
+            "rules": [
+                {
+                    "id": "review-echo",
+                    "action": "runtime_command",
+                    "command_prefix": ["echo"],
+                    "decision": "review",
+                }
+            ]
+        }
+    }
+    session.commit()
+    settings = Settings(environment="test")
+    service = RuntimeControlService(
+        session,
+        settings=settings,
+        manager_provider=DockerRuntimeManagerProvider(session, settings, FakeDockerClient()),
+    )
+    command = service.queue_command(
+        workspace_id=workspace.id, runtime_id=runtime.id, command=["echo", "hello"]
+    )
+    assert command.status == "waiting_approval"
+    approval = session.scalars(select(Approval)).one()
+    queue = Mock()
+    apply_command_decision(session, approval, workspace.owner_user_id, "approved", queue)
+    approval.status = "approved"
+    session.commit()
+    queue.enqueue.assert_called_once()
+    result = service.execute_queued_command(
+        workspace_id=workspace.id,
+        runtime_id=runtime.id,
+        command_id=command.id,
+        command=["echo", "hello"],
+    )
+    assert result.status == "completed"
+    # A fresh record never reuses the previous command's approval.
+    second = service.queue_command(
+        workspace_id=workspace.id, runtime_id=runtime.id, command=["echo", "hello"]
+    )
+    assert second.status == "waiting_approval"
+    second_approval = session.scalars(select(Approval).where(Approval.status == "pending")).one()
+    workspace.settings = {"approvals": {"default": "deny"}}
+    session.commit()
+    import pytest
+
+    with pytest.raises(ValueError, match="policy changed"):
+        apply_command_decision(session, second_approval, workspace.owner_user_id, "approved", queue)
 
 
 def _patch_portable_types_for_sqlite() -> None:

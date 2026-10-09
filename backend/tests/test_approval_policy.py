@@ -39,7 +39,7 @@ def test_identical_policy_inputs_produce_the_same_decision_for_every_action_kind
         assert decisions == {expected}
 
 
-def test_high_risk_action_cannot_be_automatically_allowed() -> None:
+def test_explicit_allow_is_not_overridden_by_risk_annotation() -> None:
     decision = ApprovalPolicyEngine.resolve(
         ApprovalPolicyInput(
             action_kind="product_tool",
@@ -48,8 +48,8 @@ def test_high_risk_action_cannot_be_automatically_allowed() -> None:
         )
     )
 
-    assert decision.decision == ApprovalPolicyOutcome.REQUIRE_APPROVAL
-    assert "policy.human_approval.required" in decision.reasons
+    assert decision.decision == ApprovalPolicyOutcome.ALLOW
+    assert "policy.human_approval.required" not in decision.reasons
 
 
 def test_block_and_invalid_policy_inputs_fail_closed() -> None:

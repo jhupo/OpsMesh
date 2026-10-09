@@ -9,34 +9,22 @@ from pydantic import (
     field_validator,
 )
 
-from backend.app.governance.reviews.policy import (
-    DEFAULT_RESOURCE_REVIEW_MODEL,
-    MODEL_REQUEST_REVIEW_SETTINGS_KEY,
-    PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY,
-    PUBLIC_RESOURCE_REVIEW_SETTINGS_KEY,
-    RESOURCE_REVIEW_SETTINGS_KEY,
-    SEMANTIC_REVIEW_SETTINGS_KEY,
-)
+from backend.app.governance.reviews.approval_config import approval_configuration
 from backend.app.shared.contracts import TimestampedModel
 from backend.app.shared.security.redaction import redact_sensitive_payload
-
-_RESOURCE_REVIEW_SCOPE_KEYS = frozenset(
-    {
-        "agent_profile",
-        "skill",
-        "mcp_server",
-        "mcp_tool_allowlist",
-        "mcp_credential_reference",
-        "plugin",
-        "capability",
-    }
-)
 
 
 class WorkspaceCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     slug: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9][a-z0-9-]*$")
     settings: dict[str, object] = Field(default_factory=dict)
+
+    @field_validator("settings")
+    @classmethod
+    def validate_settings(cls, value: dict[str, object]) -> dict[str, object]:
+        _validate_scheduler_settings(value)
+        _validate_resource_review_settings(value)
+        return value
 
 
 class WorkspaceUpdateRequest(BaseModel):
@@ -72,84 +60,11 @@ def _validate_scheduler_settings(settings: dict[str, object]) -> None:
 
 
 def _validate_resource_review_settings(settings: dict[str, object]) -> None:
-    raw_resource_review = settings.get(RESOURCE_REVIEW_SETTINGS_KEY)
-    if raw_resource_review is None:
-        return
-    if not isinstance(raw_resource_review, dict):
-        raise ValueError("resource_review settings must be an object")
-    _validate_model_request_review_settings(raw_resource_review)
-    _validate_resource_review_scope_settings(raw_resource_review)
-    raw_semantic = raw_resource_review.get(SEMANTIC_REVIEW_SETTINGS_KEY)
-    if raw_semantic is None:
-        return
-    if not isinstance(raw_semantic, dict):
-        raise ValueError("resource_review.semantic_review must be an object")
-    enabled = raw_semantic.get("enabled")
-    if enabled is not None and not isinstance(enabled, bool):
-        raise ValueError("resource_review.semantic_review.enabled must be a boolean")
-    credential_id = raw_semantic.get("model_provider_credential_id")
-    if credential_id not in (None, ""):
-        try:
-            UUID(str(credential_id))
-        except ValueError as exc:
-            raise ValueError(
-                "resource_review.semantic_review.model_provider_credential_id must be a UUID"
-            ) from exc
-    model = raw_semantic.get("model")
-    if model is None:
-        raw_semantic["model"] = DEFAULT_RESOURCE_REVIEW_MODEL
-    elif not isinstance(model, str) or not model.strip():
-        raise ValueError("resource_review.semantic_review.model must be a non-empty string")
-    timeout_seconds = raw_semantic.get("timeout_seconds")
-    if timeout_seconds is not None and (
-        isinstance(timeout_seconds, bool)
-        or not isinstance(timeout_seconds, int | float)
-        or not 1 <= timeout_seconds <= 120
-    ):
+    if "resource_review" in settings:
         raise ValueError(
-            "resource_review.semantic_review.timeout_seconds must be between 1 and 120"
+            "resource_review was replaced by approvals; migrate settings before saving"
         )
-    fail_closed = raw_semantic.get("fail_closed")
-    if fail_closed is not None and not isinstance(fail_closed, bool):
-        raise ValueError("resource_review.semantic_review.fail_closed must be a boolean")
-    if fail_closed is False:
-        raise ValueError("resource_review.semantic_review.fail_closed must remain true")
-
-
-def _validate_resource_review_scope_settings(resource_review: dict[str, object]) -> None:
-    for scope_key in (
-        PRIVATE_RESOURCE_REVIEW_SETTINGS_KEY,
-        PUBLIC_RESOURCE_REVIEW_SETTINGS_KEY,
-    ):
-        raw_scope = resource_review.get(scope_key)
-        if raw_scope is None:
-            continue
-        if not isinstance(raw_scope, dict):
-            raise ValueError(f"resource_review.{scope_key} must be an object")
-        unknown = sorted(set(raw_scope) - _RESOURCE_REVIEW_SCOPE_KEYS)
-        if unknown:
-            raise ValueError(
-                f"resource_review.{scope_key} has unsupported resource types: {', '.join(unknown)}"
-            )
-        for resource_type, enabled in raw_scope.items():
-            if not isinstance(enabled, bool):
-                raise ValueError(f"resource_review.{scope_key}.{resource_type} must be a boolean")
-            if scope_key == PUBLIC_RESOURCE_REVIEW_SETTINGS_KEY and not enabled:
-                raise ValueError(f"resource_review.{scope_key}.{resource_type} cannot be disabled")
-
-
-def _validate_model_request_review_settings(resource_review: dict[str, object]) -> None:
-    raw_model_request = resource_review.get(MODEL_REQUEST_REVIEW_SETTINGS_KEY)
-    if raw_model_request is None:
-        return
-    if not isinstance(raw_model_request, dict):
-        raise ValueError("resource_review.model_request_review must be an object")
-    semantic_mode = raw_model_request.get("semantic_mode")
-    if semantic_mode is None:
-        raw_model_request["semantic_mode"] = "always"
-        return
-    if semantic_mode != "always":
-        raise ValueError("resource_review.model_request_review.semantic_mode must be always")
+    approval_configuration(settings)
 
 
 class WorkspaceResponse(TimestampedModel):

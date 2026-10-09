@@ -55,19 +55,10 @@ Dockerfile 提供 Python、Node/npm 和 uv/uvx。
 
 ## 调用审批
 
-发现的工具默认 `risk_level: "medium"`、`requires_approval: true`。MCP 自报的
-`readOnlyHint` 等 annotations 不作为免审批依据。管理员或具备能力管理权限的成员确认
-工具风险后，可通过 `PATCH /api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{id}/tools/{allowlist_id}`
-设置 `{"risk_level":"low","requires_approval":false}`。该配置变更仍经过资源审核、审计和版本校验。
-
-已启用且明确配置为低风险免审批的工具，名称、参数和策略未出现敏感信号时，不调用语义
-审核模型，直接执行；显式审批要求、敏感参数或高风险操作仍执行原有审核与平台限制。
-发现工具定义或凭据发生变化时恢复保守配置，需重新审核，普通健康刷新不清除现有设置。
-
-模型请求审核只检查请求构建器实际组装的输入，不扫描完整 Run 授权快照或内部运行元数据。
-默认 `resource_review.model_request_review.semantic_mode` 为 `risk_based`：低风险输入直接通过，
-有风险信号的输入进入语义审核，审核不可用仍保守处理。显式配置 `always` 可继续强制逐次
-语义审核；不支持关闭全部审核。工具执行权限与审批独立检查，不因模型请求通过而跳过。
+调用审批由工作空间 `settings.approvals` 和工具显式 `requires_approval` 配置决定。
+普通对话、已启用工具默认免审批；新发现工具仍须启用，定义变化会重新进入 discovered。
+需要审核的操作可选择人工或独立模型审核，批准后继续；无内置危险词表或固定审核模型。
+完整配置、命令规则和迁移说明见 [配置驱动审批](approval-configuration.md)。
 
 ## 生命周期
 
