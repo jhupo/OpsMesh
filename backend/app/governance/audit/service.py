@@ -51,9 +51,9 @@ class AuditService:
         target_id: UUID | str,
         metadata: dict[str, object] | None = None,
     ) -> AuditEvent:
-        created_at = datetime.now(UTC)
         evidence = current_evidence_context()
         self._lock_workspace(workspace_id)
+        created_at = datetime.now(UTC)
         event = AuditEvent(
             id=uuid4(),
             workspace_id=workspace_id,
@@ -88,9 +88,9 @@ class AuditService:
         metadata: dict[str, object] | None = None,
         actor_id: str = "opsmesh.worker",
     ) -> AuditEvent:
-        created_at = datetime.now(UTC)
         evidence = current_evidence_context()
         self._lock_workspace(workspace_id)
+        created_at = datetime.now(UTC)
         event = AuditEvent(
             id=uuid4(),
             workspace_id=workspace_id,
@@ -155,10 +155,7 @@ class AuditService:
             filters.append(AuditEvent.workspace_id == workspace_id)
 
         eligible_count = int(
-            self._session.scalar(
-                select(func.count()).select_from(AuditEvent).where(*filters)
-            )
-            or 0
+            self._session.scalar(select(func.count()).select_from(AuditEvent).where(*filters)) or 0
         )
         if self._settings.audit_event_worm_enabled:
             return AuditRetentionCleanupResult(
@@ -221,8 +218,10 @@ class AuditService:
         return AuditHashChainVerification(checked_events=len(events), valid=True)
 
     def _lock_workspace(self, workspace_id: UUID) -> None:
+        # FK inserts already hold KEY SHARE on this row. NO KEY UPDATE still
+        # serializes audit writers without two writers upgrading into a deadlock.
         workspace = self._session.scalar(
-            select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()
+            select(Workspace.id).where(Workspace.id == workspace_id).with_for_update(key_share=True)
         )
         if workspace is None:
             raise ValueError("Workspace not found")
