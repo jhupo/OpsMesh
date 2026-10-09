@@ -10,6 +10,7 @@ from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class TaskCreateRequest(BaseModel):
+    agent_profile_id: UUID | None = None
     agent_team_id: UUID | None = None
     runtime_space_id: UUID | None = None
     workspace_project_id: UUID | None = None

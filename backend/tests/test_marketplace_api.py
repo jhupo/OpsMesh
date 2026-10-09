@@ -291,7 +291,19 @@ def test_private_plugin_review_can_be_enabled_per_workspace(monkeypatch) -> None
         email="plugin-reviewer@example.com",
         slug="plugin-reviewer",
     )
-    workspace.settings = {"resource_review": {"private_resources": {"plugin": True}}}
+    workspace.settings = {
+        "approvals": {
+            "reviewer": "human",
+            "rules": [
+                {
+                    "id": "private-plugin",
+                    "action": "resource",
+                    "name": "plugin",
+                    "decision": "review",
+                }
+            ],
+        }
+    }
     session.commit()
 
     def require_review(self, **kwargs):  # noqa: ANN001, ANN202
@@ -836,6 +848,13 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
     assert agent["tool_policy"] == {"mcp_tools": ["generate_image"], "nested": {}}
     assert agent["runtime_policy"] == {"provider": "docker", "limits": {"cpu": 2}}
     assert agent["memory_policy"] == {
+        "sdk_memory": {
+            "enabled": False,
+            "read": True,
+            "generate": False,
+            "live_update": False,
+            "max_raw_memories": 32,
+        },
         "context_retrieval": {
             "enabled": True,
             "max_context_tokens": 4_096,
@@ -1148,6 +1167,7 @@ def test_hr_recommendations_rank_market_candidates_and_detect_team_gaps() -> Non
         json={
             "objective": "完成 Q2 市场分析，包含竞品、趋势、数据结论",
             "team_type": "research",
+            "required_roles": ["researcher", "analyst"],
             "team_id": str(team.id),
             "skill_tags": ["research", "market"],
             "capability_tags": ["web.search"],
@@ -1179,6 +1199,7 @@ def test_hr_recommendations_reject_foreign_team() -> None:
         json={
             "objective": "找人做市场分析",
             "team_type": "research",
+            "required_roles": ["researcher", "analyst"],
             "team_id": str(other_team.id),
         },
     )
@@ -1454,7 +1475,46 @@ def _client() -> tuple[TestClient, Session]:
 
 def _seed_workspace(session: Session, *, email: str, slug: str) -> tuple[User, Workspace]:
     user = User(email=email, display_name=email.split("@")[0])
-    workspace = Workspace(owner=user, name=slug.title(), slug=slug, settings={})
+    workspace = Workspace(
+        owner=user,
+        name=slug.title(),
+        slug=slug,
+        settings={
+            "approvals": {
+                "reviewer": "human",
+                "rules": [
+                    {
+                        "id": "publish-agent",
+                        "action": "resource",
+                        "name": "agent_profile",
+                        "visibility": "public",
+                        "decision": "review",
+                    },
+                    {
+                        "id": "publish-plugin",
+                        "action": "resource",
+                        "name": "plugin",
+                        "visibility": "public",
+                        "decision": "review",
+                    },
+                    {
+                        "id": "publish-skill",
+                        "action": "resource",
+                        "name": "skill",
+                        "visibility": "public",
+                        "decision": "review",
+                    },
+                    {
+                        "id": "publish-mcp",
+                        "action": "resource",
+                        "name": "mcp_server",
+                        "visibility": "public",
+                        "decision": "review",
+                    },
+                ],
+            }
+        },
+    )
     membership = WorkspaceMember(workspace=workspace, user=user, role="owner")
     session.add_all([user, workspace, membership])
     session.commit()

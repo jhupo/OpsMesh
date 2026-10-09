@@ -177,12 +177,14 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
         model="gpt-4.1",
         capabilities={"resource_ids": []},
     )
+    session.add_all([planner, builder, handoff_target])
+    session.flush()
     team = AgentTeam(
         workspace_id=workspace.id,
         name="Critical workflow team",
         manager_agent_profile_id=planner.id,
     )
-    session.add_all([planner, builder, handoff_target, team])
+    session.add(team)
     session.flush()
     session.add_all(
         [
@@ -368,7 +370,14 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
                                 "depends_on": [],
                                 "expected_artifacts": ["report"],
                                 "acceptance_criteria": ["Report is produced."],
-                            }
+                            },
+                            {
+                                "package_id": "report-review",
+                                "title": "Review report",
+                                "assigned_agent_profile_id": str(planner.id),
+                                "depends_on": ["build-report"],
+                                "review_policy": {"mode": "final_acceptance", "reviewer": "user"},
+                            },
                         ],
                     },
                     schema_name="task_plan",
@@ -405,7 +414,7 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
     summary_step = session.scalar(
         select(TaskStep).where(
             TaskStep.workspace_id == workspace.id,
-            TaskStep.work_package_id == "manager-summary",
+            TaskStep.work_package_id == "report-review",
         )
     )
     assert build_step is not None and summary_step is not None
