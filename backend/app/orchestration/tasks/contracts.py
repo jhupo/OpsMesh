@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -15,6 +16,7 @@ class TaskCorrectionRequest(BaseModel):
 
 
 class TaskControlActionRequest(BaseModel):
+    delivery_mode: Literal["next_run", "live"] = "next_run"
     action: str = Field(pattern="^(pause|resume|add_instruction|create_correction|cancel)$")
     instruction: str | None = Field(default=None, max_length=4_000)
     reason: str | None = Field(default=None, max_length=1_000)

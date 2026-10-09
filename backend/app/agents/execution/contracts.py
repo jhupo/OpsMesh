@@ -21,6 +21,7 @@ class AgentRuntimeCapability(StrEnum):
     GUARDRAILS = "guardrails"
     SESSIONS = "sessions"
     CANCELLATION = "cancellation"
+    LIVE_STEER = "live_steer"
     LIFECYCLE_EVENTS = "lifecycle_events"
     USAGE = "usage"
 
@@ -328,7 +329,7 @@ class AgentRuntimeToolContinuation:
 
 
 class AgentRuntimeToolExecutor(Protocol):
-    def review_tool_call(
+    async def review_tool_call(
         self,
         *,
         context: AgentRuntimeContext,

@@ -42,7 +42,7 @@ class CancellableExecutor:
     def __init__(self) -> None:
         self.cancelled = False
 
-    def review_tool_call(self, **_: object) -> dict[str, object]:
+    async def review_tool_call(self, **_: object) -> dict[str, object]:
         return {"decision": "allow", "risk_level": "low", "reasons": []}
 
     async def execute_tool(self, **_: object) -> AgentRuntimeToolResult:

@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from collections.abc import Callable, Iterator
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from contextlib import contextmanager
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from functools import partial
 from threading import Event
 
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
 
-from backend.app.runtime.queues.contracts import JobPayload
+from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.queues.execution_control import (
     ExecutionControl,
     ExecutionOwnershipLostError,
@@ -21,7 +22,6 @@ from backend.app.runtime.queues.execution_control import (
 from backend.app.runtime.queues.service import QueueLease, RedisQueue
 from backend.app.runtime.workers.capacity import WorkerCapacitySnapshotService, worker_can_run_job
 from backend.app.runtime.workers.contracts import WorkerFailureHandler, WorkerJobTypeHandler
-from backend.app.runtime.workers.lease_supervisor import ActiveExecution, LeaseSupervisor
 from backend.app.runtime.workers.maintenance_contracts import (
     WorkerMaintenanceSummary,
 )
@@ -29,6 +29,7 @@ from backend.app.runtime.workers.models import WorkerRunnerConfig, WorkerRunSumm
 from backend.app.runtime.workers.nodes import WorkerHeartbeatOperationsService
 from backend.app.runtime.workers.reporting import WorkerLeaseReporter
 from backend.app.runtime.workers.state import WorkerRunState
+from backend.app.shared.concurrency import BlockingIO
 from backend.app.shared.config import Settings
 from backend.app.shared.telemetry.request_context import log_context
 from backend.app.shared.telemetry.trace_context import (
@@ -40,6 +41,12 @@ from backend.app.shared.telemetry.trace_context import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ActiveExecution:
+    lease: QueueLease
+    control: ExecutionControl
 
 
 @dataclass(frozen=True)
@@ -60,9 +67,14 @@ class WorkerRunner:
         admission_blocked: Callable[[Session], bool],
         on_job_failure: WorkerFailureHandler,
         settings: Settings | None = None,
+        async_handlers: dict[
+            JobType, Callable[[JobPayload, BlockingIO, BlockingIO], Awaitable[None]]
+        ]
+        | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        self._async_handlers = async_handlers or {}
         self._queue = queue
         self._session_factory = session_factory
         self._config = config
@@ -79,7 +91,7 @@ class WorkerRunner:
         )
 
     def _claim(self) -> ClaimedJob | None:
-        # Only the coordinator calls this, and only while a local slot is free.
+        # Only admission calls this, and only while a local asyncio Task slot is free.
         with self._session_scope() as session:
             if self._admission_blocked(session):
                 return None
@@ -119,70 +131,95 @@ class WorkerRunner:
             return ClaimedJob(lease=lease, execute=True)
 
     def run_once(self) -> bool:
-        claimed = self._claim()
-        if claimed is None:
-            return False
-        lease = claimed.lease
-        if claimed.execute:
-            control = ExecutionControl()
-            with LeaseSupervisor(
-                self._config.heartbeat_interval_seconds, self._pulse
-            ) as supervisor:
-                supervisor.add(ActiveExecution(lease, control))
-                self._execute(lease, control)
-        return True
+        return asyncio.run(self.run_once_async())
 
-    def _execute(self, lease: QueueLease, control: ExecutionControl) -> None:
-        job, claim_token = lease.job, lease.lease_token
+    async def run_once_async(self) -> bool:
+        with (
+            BlockingIO(self._config.blocking_io_concurrency, name="opsmesh-io") as io,
+            BlockingIO(2, name="opsmesh-control") as controls,
+        ):
+            claimed = await controls.run(self._claim)
+            if claimed is None:
+                return False
+            if claimed.execute:
+                control = ExecutionControl()
+                active = ActiveExecution(claimed.lease, control)
+                supervisor = asyncio.create_task(self._supervise(lambda: [active], controls))
+                try:
+                    await self._execute(claimed.lease, control, io, controls)
+                finally:
+                    supervisor.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await supervisor
+            return True
+
+    async def _execute(
+        self, lease: QueueLease, control: ExecutionControl, io: BlockingIO, controls: BlockingIO
+    ) -> None:
+        job = lease.job
         with self._job_log_context(job), execution_control(control):
             try:
                 control.check_ownership()
-                self._handle_job(job)
+                handler = self._async_handlers.get(job.job_type)
+                if handler is not None:
+                    await handler(job, io, controls)
+                else:
+                    await io.run(lambda: self._handle_job(job))
                 control.check_ownership()
             except ExecutionOwnershipLostError:
-                # A replacement owner/recovery process owns the durable state and projection.
                 raise
             except Exception as exc:
-                control.check_ownership()
-                retry_job = (
-                    job
-                    if not control.cancel_requested.is_set()
-                    else job.model_copy(
-                        update={"max_attempts": job.attempt + 1},
-                    )
-                )
-                status = "retrying" if retry_job.can_retry else "failed"
-                with control.lease_transition:
-                    control.check_ownership()
-                    if not self._lease_reporter.finish_lease(
-                        job,
-                        claim_token=claim_token,
-                        status=status,
-                        metadata={"error": str(exc)},
-                    ):
-                        raise ExecutionOwnershipLostError(
-                            "Worker lease was lost on failure"
-                        ) from exc
-                    self._on_job_failure(job, status=status, error=exc)
-                    self._queue.retry_or_dead_letter(
-                        retry_job,
-                        error=exc,
-                        delay_seconds=self._retry_delay(job),
-                        lease_token=claim_token,
-                    )
-                    control.settled.set()
+                await controls.run(partial(self._settle_failure, lease, control, exc))
                 raise
-            with control.lease_transition:
-                control.check_ownership()
-                if not self._lease_reporter.finish_lease(
-                    job,
-                    claim_token=claim_token,
-                    status="completed",
-                ):
-                    raise ExecutionOwnershipLostError("Worker lease was lost before completion")
-                if not self._queue.ack(job, lease_token=claim_token):
-                    raise ExecutionOwnershipLostError("Queue lease was lost before acknowledgement")
-                control.settled.set()
+            await controls.run(lambda: self._settle_success(lease, control))
+
+    def _settle_failure(
+        self, lease: QueueLease, control: ExecutionControl, error: Exception
+    ) -> None:
+        job, claim_token = lease.job, lease.lease_token
+        retry_job = (
+            job
+            if not control.cancel_requested.is_set()
+            else job.model_copy(update={"max_attempts": job.attempt + 1})
+        )
+        status = "retrying" if retry_job.can_retry else "failed"
+        with control.lease_transition:
+            control.check_ownership()
+            if not self._lease_reporter.finish_lease(
+                job, claim_token=claim_token, status=status, metadata={"error": str(error)}
+            ):
+                raise ExecutionOwnershipLostError("Worker lease was lost on failure") from error
+            self._on_job_failure(job, status=status, error=error)
+            self._queue.retry_or_dead_letter(
+                retry_job,
+                error=error,
+                delay_seconds=self._retry_delay(job),
+                lease_token=claim_token,
+            )
+            control.settled.set()
+
+    def _settle_success(self, lease: QueueLease, control: ExecutionControl) -> None:
+        job, claim_token = lease.job, lease.lease_token
+        with control.lease_transition:
+            control.check_ownership()
+            if not self._lease_reporter.finish_lease(
+                job, claim_token=claim_token, status="completed"
+            ):
+                raise ExecutionOwnershipLostError("Worker lease was lost before completion")
+            if not self._queue.ack(job, lease_token=claim_token):
+                raise ExecutionOwnershipLostError("Queue lease was lost before acknowledgement")
+            control.settled.set()
+
+    async def _supervise(
+        self, active: Callable[[], list[ActiveExecution]], controls: BlockingIO
+    ) -> None:
+        interval = self._config.heartbeat_interval_seconds
+        if interval <= 0:
+            return
+        while True:
+            await asyncio.sleep(interval)
+            snapshot = active()
+            await controls.run(partial(self._pulse, snapshot))
 
     def _pulse(self, active: list[ActiveExecution]) -> None:
         for execution in active:
@@ -259,127 +296,160 @@ class WorkerRunner:
             yield
 
     def run(
-        self,
-        *,
-        max_jobs: int | None = None,
-        stop_event: Event | None = None,
+        self, *, max_jobs: int | None = None, stop_event: Event | None = None
+    ) -> WorkerRunSummary:
+        return asyncio.run(self.run_async(max_jobs=max_jobs, stop_event=stop_event))
+
+    async def run_async(
+        self, *, max_jobs: int | None = None, stop_event: Event | None = None
     ) -> WorkerRunSummary:
         if max_jobs is not None and max_jobs < 1:
             raise ValueError("max_jobs must be positive")
         state = WorkerRunState()
-        active: dict[Future[None], ActiveExecution] = {}
+        active: dict[asyncio.Task[None], ActiveExecution] = {}
         next_heartbeat_at = 0.0
         next_maintenance_at = 0.0
-        maintenance: Future[WorkerMaintenanceSummary] | None = None
+        maintenance: asyncio.Task[WorkerMaintenanceSummary] | None = None
         claimed = 0
         initialized = False
         health_status = "online"
-        # Only free slots are submitted. The executor's internal queue never holds extra Jobs.
         with (
-            ThreadPoolExecutor(
-                max_workers=self._config.concurrency,
-                thread_name_prefix="opsmesh-job",
-            ) as executor,
-            ThreadPoolExecutor(max_workers=1, thread_name_prefix="opsmesh-maintenance") as upkeep,
-            LeaseSupervisor(self._config.heartbeat_interval_seconds, self._pulse) as supervisor,
+            BlockingIO(self._config.blocking_io_concurrency, name="opsmesh-io") as io,
+            BlockingIO(2, name="opsmesh-control") as controls,
+            BlockingIO(1, name="opsmesh-maintenance") as upkeep,
         ):
-            while True:
-                stopping = self._is_stopped(stop_event)
-                if stopping:
-                    for execution in active.values():
-                        execution.control.cancel_requested.set()
-                for future in list(active):
-                    if not future.done():
-                        continue
-                    supervisor.remove(active.pop(future).lease.job.job_id)
-                    try:
-                        future.result()
-                        state.processed += 1
-                        health_status = "online"
-                    except Exception as exc:
-                        state.failed += 1
-                        state.last_error = str(exc)
-                        health_status = "degraded"
-                        logger.error("Worker job failed", exc_info=exc)
-                if maintenance is not None and maintenance.done():
-                    try:
-                        state.record_maintenance(maintenance.result())
-                    except Exception as exc:
-                        state.last_error = str(exc)
-                        logger.error("Worker maintenance failed", exc_info=exc)
-                    maintenance = None
-                    initialized = True
-                    next_maintenance_at = self._monotonic() + max(
-                        self._config.maintenance_interval_seconds,
-                        0.01,
-                    )
-                now = self._monotonic()
-                if now >= next_heartbeat_at:
-                    details = state.heartbeat_details(self._config)
-                    details.update(
-                        active_jobs=len(active),
-                        available_slots=self._config.concurrency - len(active),
-                    )
-                    self.record_heartbeat("stopping" if stopping else health_status, details)
-                    next_heartbeat_at = (
-                        now + self._config.heartbeat_interval_seconds
-                        if self._config.heartbeat_interval_seconds > 0
-                        else float("inf")
-                    )
-                exhausted = max_jobs is not None and claimed >= max_jobs
-                if stopping or exhausted:
-                    if not active and maintenance is None:
-                        break
-                else:
-                    if maintenance is None and now >= next_maintenance_at:
-                        maintenance = upkeep.submit(self.run_maintenance)
-                        next_maintenance_at = now + max(
-                            self._config.maintenance_interval_seconds, 0.01
-                        )
-                    # Startup recovery finishes before the first admission.
-                    if maintenance is not None and not initialized:
-                        wait([maintenance], timeout=0.01)
-                        continue
-                    if len(active) < self._config.concurrency:
+            supervisor = asyncio.create_task(
+                self._supervise(lambda: list(active.values()), controls),
+                name="worker-lease-renewal",
+            )
+            try:
+                while True:
+                    stopping = self._is_stopped(stop_event)
+                    if stopping:
+                        for execution in active.values():
+                            execution.control.cancel_requested.set()
+                    for task in list(active):
+                        if not task.done():
+                            continue
+                        active.pop(task)
                         try:
-                            lease = self._claim()
+                            task.result()
+                            state.processed += 1
+                            health_status = "online"
                         except Exception as exc:
-                            claimed += 1
                             state.failed += 1
                             state.last_error = str(exc)
                             health_status = "degraded"
-                            self._sleep(max(self._config.idle_sleep_seconds, 0.01))
+                            logger.error("Worker job failed", exc_info=exc)
+                    if maintenance is not None and maintenance.done():
+                        try:
+                            state.record_maintenance(maintenance.result())
+                        except Exception as exc:
+                            state.last_error = str(exc)
+                            logger.error("Worker maintenance failed", exc_info=exc)
+                        maintenance = None
+                        initialized = True
+                        next_maintenance_at = self._monotonic() + max(
+                            self._config.maintenance_interval_seconds, 0.01
+                        )
+                    now = self._monotonic()
+                    if now >= next_heartbeat_at:
+                        details = state.heartbeat_details(self._config)
+                        details.update(
+                            active_jobs=len(active),
+                            available_slots=self._config.concurrency - len(active),
+                        )
+                        await controls.run(
+                            partial(
+                                self.record_heartbeat,
+                                "stopping" if stopping else health_status,
+                                details,
+                            )
+                        )
+                        next_heartbeat_at = (
+                            now + self._config.heartbeat_interval_seconds
+                            if self._config.heartbeat_interval_seconds > 0
+                            else float("inf")
+                        )
+                    exhausted = max_jobs is not None and claimed >= max_jobs
+                    if stopping or exhausted:
+                        if not active and maintenance is None:
+                            break
+                    else:
+                        if maintenance is None and now >= next_maintenance_at:
+                            maintenance = asyncio.create_task(upkeep.run(self.run_maintenance))
+                        if maintenance is not None and not initialized:
+                            await asyncio.wait([maintenance], timeout=0.01)
                             continue
-                        if lease is not None:
-                            claimed += 1
-                            if not lease.execute:
-                                state.processed += 1
-                            else:
-                                control = ExecutionControl()
-                                execution = ActiveExecution(lease.lease, control)
-                                supervisor.add(execution)
-                                future = executor.submit(self._execute, lease.lease, control)
-                                active[future] = execution
-                            continue
-                        state.idle_polls += 1
-                        if not active:
-                            self._sleep(max(0.01, self._config.idle_sleep_seconds))
-                # Completion and stop are checked at least every 100ms; no busy-spin at capacity.
-                timeout = min(0.1, max(0.01, self._config.idle_sleep_seconds))
+                        if len(active) < self._config.concurrency:
+                            try:
+                                candidate = await controls.run(self._claim)
+                            except Exception as exc:
+                                claimed += 1
+                                state.failed += 1
+                                state.last_error = str(exc)
+                                health_status = "degraded"
+                                await io.run(
+                                    lambda: self._sleep(max(self._config.idle_sleep_seconds, 0.01))
+                                )
+                                continue
+                            if candidate is not None:
+                                claimed += 1
+                                if not candidate.execute:
+                                    state.processed += 1
+                                else:
+                                    control = ExecutionControl()
+                                    execution = ActiveExecution(candidate.lease, control)
+                                    task = asyncio.create_task(
+                                        self._execute(candidate.lease, control, io, controls),
+                                        name=f"job:{candidate.lease.job.job_id}",
+                                    )
+                                    active[task] = execution
+                                continue
+                            state.idle_polls += 1
+                            if not active:
+                                await io.run(
+                                    lambda: self._sleep(max(0.01, self._config.idle_sleep_seconds))
+                                )
+                    timeout = min(0.1, max(0.01, self._config.idle_sleep_seconds))
+                    waiting: set[asyncio.Task[None] | asyncio.Task[WorkerMaintenanceSummary]] = set(
+                        active
+                    )
+                    if maintenance is not None:
+                        waiting.add(maintenance)
+                    if waiting:
+                        await asyncio.wait(
+                            waiting, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+                        )
+                    else:
+                        await asyncio.sleep(timeout)
+            finally:
+                # External coroutine cancellation also requests cooperative stop. Do not
+                # orphan active adapters or abandon an owned queue lease.
+                for execution in active.values():
+                    execution.control.cancel_requested.set()
                 if active:
-                    wait(active, timeout=timeout, return_when=FIRST_COMPLETED)
-                elif maintenance is not None:
-                    wait([maintenance], timeout=timeout)
-                else:
-                    self._sleep(max(0.01, self._config.idle_sleep_seconds))
-        self.record_heartbeat(
-            "stopping" if self._is_stopped(stop_event) else health_status,
-            state.heartbeat_details(self._config),
-        )
+                    await asyncio.gather(*active, return_exceptions=True)
+                if maintenance is not None:
+                    await maintenance
+                supervisor.cancel()
+                with suppress(asyncio.CancelledError):
+                    await supervisor
+            await controls.run(
+                lambda: self.record_heartbeat(
+                    "stopping" if self._is_stopped(stop_event) else health_status,
+                    state.heartbeat_details(self._config),
+                )
+            )
         return state.summary(stopped=self._is_stopped(stop_event))
 
     def record_heartbeat(self, status: str, details: dict[str, object]) -> None:
         details = self._heartbeat_trace_details(details)
+        details = dict(
+            details,
+            execution_backend="asyncio",
+            blocking_io_concurrency=self._config.blocking_io_concurrency,
+        )
         try:
             with self._session_scope() as session:
                 WorkerHeartbeatOperationsService(session).record_worker_heartbeat(

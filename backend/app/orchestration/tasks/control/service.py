@@ -264,7 +264,13 @@ class TaskControlService:
         request: TaskControlActionRequest,
         commit: bool,
     ) -> dict[str, object]:
-        if not request.instruction:
+        if TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
+            raise ValueError("Terminal tasks require a correction or a new conversation turn")
+        if request.delivery_mode == "live":
+            raise ValueError(
+                "The current Agent SDK adapter does not support live instruction delivery"
+            )
+        if not request.instruction or not request.instruction.strip():
             raise ValueError("instruction is required")
         control = task_control_state(task)
         control["instruction_count"] = int_or_zero(control.get("instruction_count")) + 1
@@ -276,7 +282,11 @@ class TaskControlService:
             action="add_instruction",
             instruction=request.instruction,
             reason=request.reason,
-            metadata=request.metadata,
+            metadata={
+                **request.metadata,
+                "delivery_mode": "next_run",
+                "delivery_status": "accepted",
+            },
         )
         self._audit(
             task,
@@ -289,9 +299,13 @@ class TaskControlService:
         return self._response(
             task,
             request=request,
-            status="applied",
+            status="accepted",
             message_id=message.id,
-            details={"instruction_count": control["instruction_count"]},
+            details={
+                "instruction_count": control["instruction_count"],
+                "delivery_mode": "next_run",
+                "delivery_status": "accepted",
+            },
         )
 
     def _create_correction(

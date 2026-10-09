@@ -55,6 +55,7 @@ from backend.app.orchestration.runs.authorization.validation import (
     tool_definitions_for_snapshot,
 )
 from backend.app.orchestration.runs.cancellation import DatabaseRunCancellation
+from backend.app.orchestration.runs.instructions import RunInstructionService
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.queries import authorization_snapshot_for_run
 from backend.app.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
@@ -350,6 +351,10 @@ class RunRequestBuilder:
             run=run,
             session_ref=session_ref,
         )
+        # SDK Session is the history authority for this request. Mixing local full
+        # history with server-managed conversation/response state duplicates input.
+        if persistent_session is not None:
+            provider_continuation = {"previous_response_id": None, "conversation_id": None}
         if provider_continuation["previous_response_id"] is not None:
             metadata["previous_response_id"] = provider_continuation["previous_response_id"]
         if provider_continuation["conversation_id"] is not None:
@@ -408,6 +413,10 @@ class RunRequestBuilder:
             allowed_tools=inputs.allowed_tools,
             runtime_metadata=runtime.metadata,
         )
+        instruction_fragment, instruction_ids = RunInstructionService(self.session).context(run)
+        runtime.metadata["task_instruction_ids"] = instruction_ids
+        if instruction_fragment is not None:
+            fragments += (instruction_fragment,)
         for attachment in attachments:
             if attachment.kind == "audio":
                 text = "Voice transcript:\n" + attachment.transcript

@@ -25,7 +25,10 @@ from backend.app.resources.memory.policy import working_memory_policy
 from backend.app.resources.memory.working import AgentWorkingMemoryService
 from backend.app.resources.storage.storage import ObjectStorage
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
-from backend.app.runtime.queues.execution_control import current_execution_control
+from backend.app.runtime.queues.execution_control import (
+    ExecutionOwnershipLostError,
+    current_execution_control,
+)
 from backend.app.shared.config import Settings
 from backend.app.shared.security.secrets import SecretEncryptionService
 
@@ -153,6 +156,8 @@ class BackendToolExecutor:
                 tool_call_id=tool_call_id,
                 approval_granted=True,
             )
+        except ExecutionOwnershipLostError:
+            raise
         except Exception as exc:
             result = AgentRuntimeToolResult(
                 status="failed",
@@ -165,7 +170,7 @@ class BackendToolExecutor:
         pending.complete_execution(invocation, _tool_result_payload(result))
         return result
 
-    def review_tool_call(
+    async def review_tool_call(
         self,
         *,
         context: AgentRuntimeContext,
@@ -336,7 +341,7 @@ class BackendToolExecutor:
 
 
 class DisabledToolExecutor:
-    def review_tool_call(
+    async def review_tool_call(
         self,
         *,
         context: AgentRuntimeContext,

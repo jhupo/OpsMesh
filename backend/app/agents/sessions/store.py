@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -15,6 +17,11 @@ from backend.app.agents.sessions.models import (
     PersistentAgentSessionRef,
 )
 from backend.app.runtime.queues.execution_control import current_execution_control
+
+if TYPE_CHECKING:
+    from backend.app.agents.sessions.gateway import ScopedAgentSession
+    from backend.app.shared.db.operations import DatabaseOperations
+
 
 SESSION_WRITE_MAX_RETRIES = 3
 
@@ -46,6 +53,21 @@ class SQLAlchemyAgentSession:
         items = self._get_items_sync(limit)
         self._commit()
         return items
+
+    def scoped(self, database: DatabaseOperations, run_id: UUID) -> ScopedAgentSession:
+        from copy import deepcopy
+
+        from backend.app.agents.sessions.gateway import ScopedAgentSession
+
+        return ScopedAgentSession(
+            database=database,
+            ref=self._ref,
+            run_id=run_id,
+            agent_profile_id=self._agent_profile_id,
+            agent_team_id=self._agent_team_id,
+            task_id=self._task_id,
+            metadata=deepcopy(self._metadata),
+        )
 
     async def add_items(self, items: list[AgentRuntimeSessionItem]) -> None:
         if not items:

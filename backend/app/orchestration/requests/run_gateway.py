@@ -17,12 +17,17 @@ from backend.app.agents.execution.errors import (
     AgentRuntimePolicyError,
     AgentRuntimeProviderError,
 )
-from backend.app.governance.costs.service import CostAccountingService, CostBudgetExceededError
+from backend.app.governance.costs.service import (
+    CostAccountingService,
+    CostBudgetDecision,
+    CostBudgetExceededError,
+)
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.provider_audit import ModelProviderAuditService
 from backend.app.orchestration.requests.provider_routing import ModelProviderRoutingService
 from backend.app.orchestration.requests.request_approval import ModelRequestApprovalService
 from backend.app.orchestration.runs.events import RunEventRecorder
+from backend.app.orchestration.runs.instructions import RunInstructionService
 from backend.app.orchestration.runs.live_events import LiveToolExecutor, RunLivePublisher
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.events import TaskEventBus
@@ -140,6 +145,53 @@ class ModelRunGateway:
         *,
         fallback_selected: bool,
     ) -> AgentRunResult:
+        request, budget_decision = self.prepare_model_request(
+            run, request, fallback_selected=fallback_selected
+        )
+        with telemetry_span(
+            "opsmesh.model.request",
+            parent=current_trace_context(),
+            kind=SpanKind.CLIENT,
+            attributes={
+                "opsmesh.workspace.id": str(run.workspace_id),
+                "opsmesh.run.id": str(run.id),
+                "gen_ai.provider.name": request.provider or "openai",
+                "gen_ai.request.model": request.model or request.agent_profile.model,
+                "opsmesh.model.fallback": fallback_selected,
+            },
+        ):
+            try:
+                result = await self.agent_runner.run(request)
+                control = current_execution_control()
+                if control is not None:
+                    control.check_ownership()
+                await raise_if_cancelled(request.cancellation)
+            except ExecutionOwnershipLostError:
+                self.session.rollback()
+                raise
+            except Exception as exc:
+                self.record_model_failure(
+                    run,
+                    request,
+                    job,
+                    fallback_selected=fallback_selected,
+                    budget_decision=budget_decision,
+                    error=exc,
+                )
+                raise
+            self.record_model_success(
+                run,
+                request,
+                job,
+                result,
+                fallback_selected=fallback_selected,
+                budget_decision=budget_decision,
+            )
+        return result
+
+    def prepare_model_request(
+        self, run: AgentRun, request: AgentRunRequest, *, fallback_selected: bool
+    ) -> tuple[AgentRunRequest, CostBudgetDecision]:
         if self.event_bus is not None and run.task_id is not None:
             step = (
                 self.session.scalar(
@@ -170,8 +222,6 @@ class ModelRunGateway:
                 if request.tool_executor
                 else None,
             )
-        routing = self.routing()
-        audit = self.audit()
         costs = CostAccountingService(self.session)
         try:
             budget_decision = costs.assert_budget_available(
@@ -204,114 +254,122 @@ class ModelRunGateway:
             fallback_selected=fallback_selected,
         )
         self.session.commit()
+        return request, budget_decision
+
+    def record_model_failure(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        job: JobPayload,
+        *,
+        fallback_selected: bool,
+        budget_decision: CostBudgetDecision,
+        error: Exception,
+    ) -> None:
+        costs = CostAccountingService(self.session)
+        routing = self.routing()
+        audit = self.audit()
         request_sequence = 1 if fallback_selected else 0
-        with telemetry_span(
-            "opsmesh.model.request",
-            parent=current_trace_context(),
-            kind=SpanKind.CLIENT,
-            attributes={
-                "opsmesh.workspace.id": str(run.workspace_id),
-                "opsmesh.run.id": str(run.id),
-                "gen_ai.provider.name": request.provider or "openai",
-                "gen_ai.request.model": request.model or request.agent_profile.model,
-                "opsmesh.model.fallback": fallback_selected,
-            },
-        ):
-            try:
-                result = await self.agent_runner.run(request)
-                control = current_execution_control()
-                if control is not None:
-                    control.check_ownership()
-                await raise_if_cancelled(request.cancellation)
-            except ExecutionOwnershipLostError:
-                self.session.rollback()
-                raise
-            except AgentRuntimeCancelledError as exc:
-                control = current_execution_control()
-                if control is not None:
-                    control.check_ownership()
-                costs.record_attempt(
-                    run=run,
-                    request=request,
-                    result=None,
-                    job_attempt=job.attempt,
-                    request_sequence=request_sequence,
-                    attempt_outcome="cancelled",
-                    budget_decision=budget_decision,
-                    error=exc,
-                )
-                self.events.append_event(
-                    run,
-                    "model.request_cancelled",
-                    "Cancellation reached the active agent SDK run",
-                    {
-                        "model": request.model,
-                        "provider": request.provider,
-                        "propagated": True,
-                    },
-                )
-                self.session.commit()
-                raise
-            except Exception as exc:
-                # A database failure in a tool invalidates the transaction. End
-                # it before metering/auditing the failure, preserving the cause.
-                if isinstance(exc, SQLAlchemyError):
-                    self.session.rollback()
-                costs.record_attempt(
-                    run=run,
-                    request=request,
-                    result=None,
-                    job_attempt=job.attempt,
-                    request_sequence=request_sequence,
-                    attempt_outcome="failed",
-                    budget_decision=budget_decision,
-                    error=exc,
-                )
-                self.events.append_model_request_failed_event(run, request, exc)
-                audit.record_request_failed(run, request, job, exc)
-                if isinstance(exc, AgentRuntimeProviderError):
-                    routing.record_failure(
-                        run,
-                        request.model_provider_credential_id,
-                        exc,
-                    )
-                self.session.commit()
-                raise
-            usage_record = costs.record_attempt(
+        exc = error
+        if isinstance(exc, AgentRuntimeCancelledError):
+            control = current_execution_control()
+            if control is not None:
+                control.check_ownership()
+            costs.record_attempt(
                 run=run,
                 request=request,
-                result=result,
+                result=None,
                 job_attempt=job.attempt,
                 request_sequence=request_sequence,
-                attempt_outcome="succeeded",
+                attempt_outcome="cancelled",
                 budget_decision=budget_decision,
+                error=exc,
             )
             self.events.append_event(
                 run,
-                "cost.usage_recorded",
-                "Model usage and cost recorded",
+                "model.request_cancelled",
+                "Cancellation reached the active agent SDK run",
                 {
-                    "model_usage_record_id": str(usage_record.id),
-                    "metering_status": usage_record.metering_status,
-                    "currency": usage_record.currency,
-                    "total_cost": str(usage_record.total_cost)
-                    if usage_record.total_cost is not None
-                    else None,
-                    "total_tokens": usage_record.total_tokens,
-                    "job_attempt": usage_record.job_attempt,
-                    "request_sequence": usage_record.request_sequence,
+                    "model": request.model,
+                    "provider": request.provider,
+                    "propagated": True,
                 },
             )
-            self.events.append_model_response_received_event(run, request, result)
-            self.events.append_model_provider_used_event(run, request)
-            audit.record_provider_used(
+            self.session.commit()
+            return
+        # A database failure in a tool invalidates the transaction. End
+        # it before metering/auditing the failure, preserving the cause.
+        if isinstance(exc, SQLAlchemyError):
+            self.session.rollback()
+        costs.record_attempt(
+            run=run,
+            request=request,
+            result=None,
+            job_attempt=job.attempt,
+            request_sequence=request_sequence,
+            attempt_outcome="failed",
+            budget_decision=budget_decision,
+            error=exc,
+        )
+        self.events.append_model_request_failed_event(run, request, exc)
+        audit.record_request_failed(run, request, job, exc)
+        if isinstance(exc, AgentRuntimeProviderError):
+            routing.record_failure(
                 run,
-                request,
-                job,
-                fallback_selected=fallback_selected,
+                request.model_provider_credential_id,
+                exc,
             )
-            routing.record_success(run, request.model_provider_credential_id)
-        return result
+        self.session.commit()
+
+    def record_model_success(
+        self,
+        run: AgentRun,
+        request: AgentRunRequest,
+        job: JobPayload,
+        result: AgentRunResult,
+        *,
+        fallback_selected: bool,
+        budget_decision: CostBudgetDecision,
+    ) -> None:
+        RunInstructionService(self.session).consumed(run)
+        costs = CostAccountingService(self.session)
+        routing = self.routing()
+        audit = self.audit()
+        request_sequence = 1 if fallback_selected else 0
+        usage_record = costs.record_attempt(
+            run=run,
+            request=request,
+            result=result,
+            job_attempt=job.attempt,
+            request_sequence=request_sequence,
+            attempt_outcome="succeeded",
+            budget_decision=budget_decision,
+        )
+        self.events.append_event(
+            run,
+            "cost.usage_recorded",
+            "Model usage and cost recorded",
+            {
+                "model_usage_record_id": str(usage_record.id),
+                "metering_status": usage_record.metering_status,
+                "currency": usage_record.currency,
+                "total_cost": str(usage_record.total_cost)
+                if usage_record.total_cost is not None
+                else None,
+                "total_tokens": usage_record.total_tokens,
+                "job_attempt": usage_record.job_attempt,
+                "request_sequence": usage_record.request_sequence,
+            },
+        )
+        self.events.append_model_response_received_event(run, request, result)
+        self.events.append_model_provider_used_event(run, request)
+        audit.record_provider_used(
+            run,
+            request,
+            job,
+            fallback_selected=fallback_selected,
+        )
+        routing.record_success(run, request.model_provider_credential_id)
 
     def approvals(self) -> ModelRequestApprovalService:
         return ModelRequestApprovalService(

@@ -1013,7 +1013,7 @@ def test_openai_tool_bridge_maps_dynamic_sdk_approval_interruption() -> None:
     calls: list[str] = []
 
     class Executor:
-        def review_tool_call(self, **_: object) -> dict[str, object]:
+        async def review_tool_call(self, **_: object) -> dict[str, object]:
             return {
                 "decision": "require_approval",
                 "risk_level": "high",
@@ -1096,7 +1096,7 @@ def test_openai_tool_bridge_maps_dynamic_sdk_approval_interruption() -> None:
 @pytest.mark.parametrize("decision", [None, "unknown", "deny"])
 def test_openai_tool_bridge_denies_non_allowing_policy_decisions(decision: str | None) -> None:
     class Executor:
-        def review_tool_call(self, **_: object) -> dict[str, object]:
+        async def review_tool_call(self, **_: object) -> dict[str, object]:
             return {"decision": decision}
 
         async def execute_tool(self, **_: object) -> AgentRuntimeToolResult:
@@ -1314,7 +1314,7 @@ class RecordingToolExecutor:
         self.output = output or {"ok": True}
         self.calls: list[str] = []
 
-    def review_tool_call(self, **_: object) -> dict[str, object]:
+    async def review_tool_call(self, **_: object) -> dict[str, object]:
         return {"decision": "allow", "risk_level": "low", "reasons": []}
 
     async def execute_tool(

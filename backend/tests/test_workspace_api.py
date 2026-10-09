@@ -12335,6 +12335,8 @@ def test_task_control_and_delivery_routes_close_manual_intervention_loop() -> No
 
     assert instruction.status_code == 200
     assert instruction.json()["action"] == "add_instruction"
+    assert instruction.json()["status"] == "accepted"
+    assert instruction.json()["details"]["delivery_mode"] == "next_run"
     assert diagnostics.status_code == 200
     assert diagnostics.json()["control"]["instruction_count"] == 1
     assert review.status_code == 200

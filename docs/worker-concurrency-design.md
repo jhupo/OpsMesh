@@ -1,84 +1,92 @@
-# Worker 并发执行架构
+# Worker 协程并发与任务控制
 
-日期：2026-10-09。本文描述本次实现；服务器 Worker 尚未部署重启。
+日期：2026-10-09。本文描述当前分支实现。代码尚未部署，服务器 OpsMesh Worker 保持停止。
+
+## 用户配置边界
+
+平台保留用户配置的 Agent/Manager、工具权限、团队、项目、知识库和记忆机制，不增加内置业务意图分类器、向量路由或自动决策模型。业务意图由用户指定的 Manager 处理，权限、准入和风险门禁仍由平台校验。
+
+U号租客服 Manager 的服务器配置已通过现有 Agent API 更新为 gpt-5.5，版本 7，保留 reasoning.effort=medium、Responses API、原凭据和其他配置。未调用模型验证供应商是否提供该模型，未再次查询业务订单。
 
 ## 执行模型
 
-API 保存 Task/Run 并入队。Worker 协调器只有空闲槽时才领取 Job；默认 concurrency=4，四个 Job 可同时运行，其余留队列。ThreadPoolExecutor 内部不预存额外 Job。
+Worker 每次启动一个长期 asyncio 事件循环。空闲活动槽才领取 Job，领取后创建独立 asyncio Task，直到持久结算和 ACK；超过槽数的 Job 留在 Redis。普通 Job 失败单独结算，不取消其他用户的 Task。
 
-每个 Job 的完整执行由同一个线程承载到持久结算和 ACK。现有服务层使用同步 SQLAlchemy，故采用有界线程消费池，每 Job 独立 Session、handler、身份和日志上下文。线程内调用原有异步 SDK 入口；等待网络不忙等。不同角色共用执行协议，不各建一个池。多个 Worker 可通过原有原子队列领取和 token 租约横向扩容。
+Agent Run 的模型等待在事件循环中 await 原生 SDK，不占用一个完整 Job 线程。现有同步数据库和工具通过有界 BlockingIO 适配器执行。每次数据库阶段重新创建、提交、关闭 Session，仅将 DTO/SDK 合同对象返回协调器。SDK Session 回调、工具审查、工具执行各自拥有 Session，不与主 Run 或其他协程共享 ORM 对象。
 
-Task 是持久业务流程，Run 是一次角色执行，Job 是本次投递，线程和 asyncio Task 是进程内载体。编码、复核、测试、Manager、知识处理的就绪阶段均可并发；依赖、审批和子流程等待使用既有持久恢复机制。
-
-SDK 负责一次 Run 的模型、工具和 handoff 循环。平台负责准入、租约、阶段依赖、审批、取消和结果。消费队列的常驻循环不会周期性重新调用同一个正在执行的 SDK Run。
+Task、Run、Job、asyncio Task 是四个不同概念：Task 是持久业务流程，Run 是一次 Agent 执行，Job 是队列投递，asyncio Task 是本进程执行载体。长时间编码、复核、测试等待不会因为超过一次队列轮询而重新调用 SDK。
 
 ```mermaid
 flowchart LR
-    API[API 保存请求] --> DB[(PostgreSQL Task / Run)]
-    API --> Q[(Redis Job 队列)]
-    Q --> C[协调器: 有空槽才领取]
-    C --> P[有界执行线程池]
-    P --> S[独立 Session / handler]
-    S --> SDK[异步 SDK 原生循环]
-    SDK --> R[现有批准的 Runtime 工具边界]
-    S --> DB
-    P --> ACK[持久结算后 ACK]
-    H[独立续租线程] --> P
-    M[单槽维护线程] --> DB
+    API[API 保存请求] --> PG[(PostgreSQL)]
+    API --> Q[(Redis Job)]
+    Q --> A[有空槽才领取]
+    A --> T[独立 asyncio Task]
+    T --> P[短事务准备请求]
+    P --> SDK[await 原生 SDK]
+    SDK --> G[独立 Session / 工具网关]
+    SDK --> F[短事务结算]
+    F --> ACK[持久完成后 ACK]
+    IO[有界同步 I/O 池] --> P
+    IO --> G
+    IO --> F
+    C[独立控制 I/O 与续租协程] --> T
+    M[单槽维护池] --> PG
 ```
 
-## 职责和事务
+SDK 负责一次 Run 的模型/工具循环。平台负责领取、授权、配额、阶段依赖、审批、取消和恢复。消费队列的常驻循环不重启完成的 SDK Run。Provider fallback 仍遵守冻结的既有策略，最多选择一次备用 Provider，不是业务意图路由。
 
-| 组件 | 职责 |
+## 池与配置
+
+| 配置或组件 | 当前行为 |
 | --- | --- |
-| 协调器 | 领取、准入、槽位、Future 收割、Worker 心跳、统计 |
-| Job 池 | 最多 N 个完整 Job，各自创建 Session 和 handler |
-| 租约监督线程 | 独立续期队列租约和 WorkerLease，不受 SDK 或维护等待影响 |
-| Run 锁续期线程 | 每活动 Run 一个等待线程，按 TTL/3 比较 token 续期和释放 |
-| 维护执行器 | 单槽恢复和低频维护；不重叠，启动恢复后才准入 |
+| --concurrency | 活动 asyncio Task 上限，默认 32 |
+| --blocking-io-concurrency | 同步数据库/工具/业务 handler 的执行线程上限，默认 8 |
+| 控制 I/O | 独立 2 线程，执行领取、Worker 心跳、租约与取消状态读取 |
+| 维护 I/O | 独立 1 线程，恢复与低频维护不重叠 |
+| --max-jobs | 本次总领取数量上限，与并发槽数独立 |
+| --once | 领取至多一个 Job，使用相同异步执行路径 |
 
-同步 handler 不改成伪 async，ORM Session 不跨线程传递。续租和结算使用每 Job 的短互斥区，已结算 Job 不再续租，避免 ACK 后的晚到心跳误报失租。
+BlockingIO 在提交线程池前取得信号量，不往线程池内部无界堆积操作；取消 await 时等待已提交操作完成后才释放容量。进程内等待者仍受活动 Job 上限限制。第三方 SDK 和 Docker 适配器可能额外使用其自身受限线程，以上数字不是进程总线程数承诺。
 
-领取事务重新检查 Worker 状态、容量、路由并登记 WorkerLease，再开始执行。SDK Session 读写回调结束提交，释放追加锁；工具回调提交结果；MCP 意图在远端 I/O 前提交。模型等待不持有前一次 Session 追加事务。
+其他同步任务（Runtime 管理、MCP 独立 Job、索引、导出、Webhook 等）进入有界 I/O 池，当前仍会在其操作期间占一个线程。CPU 密集索引没有迁移到独立计算服务。单 Run 产品工具暂时保持顺序执行；没有因此承诺副作用工具可安全并行。
 
-单个 Run 的产品工具仍共享该 Job 的同步 Session，所以 OpenAI parallel_tool_calls=False。不同 Run 可并发。以后需要单 Run 内工具并行时，应先拆成每调用独立事务和费用预留；不能并发使用一个 Session。
+WorkerNode.capacity.max_jobs 继续表示持久领域容量，不是旧参数兼容别名。心跳报告 active_jobs、available_slots、execution_backend=asyncio、blocking_io_concurrency。多副本仍需唯一 Worker ID，数据库/Provider/Runtime 配额仍适用。
 
-ExecutionControl 通过 ContextVar 绑定 Job，上下文退出恢复 token；线程间只共享控制信号。模型结果、工具调用、会话提交和 Run 终态边界检查所有权。
+32 是默认准入上限，尚未证明生产吞吐。不能按注册用户数直接设置容量；应根据到达率、执行时长、资源预算、排队 p95、event-loop lag、线程/RSS、DB 池等待和 Provider 429 调整。
 
-## 长任务、取消与恢复
+## 事务与所有权
 
-长编码、复核、测试占用一个执行槽直到本次 Job 结束。消费池容量不代替 Run 期限。Run 锁不再固定 600 秒后过期，持有期间持续续期；模型轮数和 Runtime 操作期限继续由现有配置控制。
+准备请求、预算和请求审查、模型尝试计量、最终结算均通过独立 Session 完成。同步基础设施适配器在自己的线程内创建与关闭 Session；模型等待期间不保留主 Run Session。MCP 仍在远端调用前提交调用意图，结果回写前检查所有权。
 
-失租立即设置 ownership_lost，SDK 取消检查器能观察它。旧执行者不得提交模型结果、完成租约、ACK 或重试。Run 留给现有恢复流程核对，不把失租伪装成业务取消，也不保证外部副作用 exactly-once。
+执行上下文通过 ContextVar 隔离。DatabaseOperations 在每次操作开始、提交前和内层 Session.commit 前检查所有权。失租后旧执行者不得提交、ACK 或重新投递；由恢复流程核对持久 Run。工具外部副作用仍不保证 exactly-once。
 
-SIGINT/SIGTERM 停止领取，并向所有活动 SDK Run 发协作取消信号；停止导致的错误不再重试。Python 线程不能强制终止，不支持协作取消的同步 handler 需等待自身超时或返回。本次没有增加任意强杀线程或 Runtime 的逻辑。管理接口 drain 仍停止领取并等待现有 Job 自然结束。
+Agent Run 锁在事件循环中按 TTL/3 续期，不再为每个模型 Run 创建续租线程；Redis 同步命令走控制适配器，保留原有原子 token 语义。队列租约由独立协程续期，不占活动 Job 槽。同步 direct workflow 节点仍使用原领域执行路径及其锁。
 
-## 团队推进
+实时文本/工具预览使用每个模型请求最多 64 条的内存缓冲，由 I/O 适配器发布，不在 SDK 回调中同步访问 Redis。拥塞时允许丢弃旧预览；PostgreSQL 的持久事件与 Outbox 不经过该缓冲。
 
-team.execution_loop 保持单次状态推进语义。workspace+team 的稳定幂等键合并 queued、processing、retry 投递；移除时间窗口 suffix 参数，没有旧参数兼容映射。
+## 续接、补充指令和纠正
 
-维护查询排除 stopped/paused 团队，跳过已有 queued、running、waiting_approval、waiting_runtime、waiting_subworkflow Run 的 Task。正常执行中的 Run 不因扫描重新驱动。保留低频调度和恢复扫描。
+已完成后追加输入继续使用 Conversation 新 turn；ConversationMaintenance 绑定既有授权入口并读取先前会话结果。同一会话按 sequence 顺序推进，不同会话可并发。
 
-本次未重写为完整事务 Outbox 推进器。处理期间触发被合并，依靠既有完成触发及低频扫描继续推进；不能宣称逐事件可靠消费。
+审批恢复继续使用同 Run、加密 SDK 快照和已审批工具决定；重建 Worker 后可以续接，结束时标记快照 consumed。本地 SDK Session 作为历史事实来源时，不同时传递 previous_response_id/conversation_id，避免重复注入完整历史。
 
-## 配置
+add_instruction 返回 status=accepted、delivery_mode=next_run、delivery_status=accepted，表示保存成功，供后续 Run 使用。当前 Run 构建请求时冻结消息 ID，并记录 task.instructions.delivered；SDK 返回后记录 consumed。冻结空集合，确保运行中到达的指令不会在 Provider fallback 或审批续接时混入当前 Run。
 
-运行命令：python -m backend.app.runtime.workers.cli --concurrency 8
+这些指令是 Task 的持续补充要求，可被后续 Run 读取；不会自动创建额外 Run。已终态 Task 必须创建 correction 或新会话输入。delivery_mode=live 当前明确拒绝；OpenAI/Claude 适配器没有宣称 LIVE_STEER。没有伪装成 Codex turn/steer，也没有为不支持的 SDK 修改内部私有状态。
 
---concurrency 表示同时执行槽数，默认 4；--max-jobs 表示本次总处理数量上限，达到后等已领取 Job 结算再退出；--once 处理至多一个 Job。WorkerRunnerConfig 只接受 concurrency，没有旧 max_jobs 配置别名。
+已有 TaskCorrectionService 继续创建跟进 Step，保留目标 ID、修订说明和 Manager 复核策略。本次未增加完整产物版本锁定和 expected_version 控制 Inbox。
 
-WorkerNode 的持久领域容量 capacity.max_jobs 保存执行容量，值来自 concurrency；它不是 RunnerConfig 兼容层。心跳包含 active_jobs、available_slots。多副本必须使用唯一 Worker ID。
+SIGINT/SIGTERM 停止领取，向活动 SDK 设置协作取消。停止导致的错误不再重试；失租与业务取消区分。同步 handler 和已发出的外部工具只能等待自己的取消能力、超时或返回，不能强杀 Python 线程。drain 保持停止领取、等待当前工作结束。
 
-数据库、Redis、模型、Runtime 和 MCP 容量要按所有进程合计。共享账号/目录仍遵守原有锁和限制。增加 Worker 槽不等于解除各项资源上限。
+## 验证与限制
 
-## 验证和范围
+- 聚焦回归 119 passed / 6 PostgreSQL skipped，MCP 执行与适配器回归 37 passed；PostgreSQL 6 组在独立进程通过；修改前提交复现了 2 个 URL 规范化断言和 1 个旧 Runtime 工厂测试失败。Ruff 与 mypy（1081 个文件）通过。
+- 完整 Worker 流程验证活动槽有界、两个 SDK Run 位于同一 OS 线程不同 asyncio Task、单 I/O 线程不限制 SDK 等待并发、第三个 Job 留队列、取消、失租和维护。
+- 相同工作空间/不同工作空间 × complete/cancel/lost 共 6 种 PostgreSQL 流程通过，测试在隔离 schema 强制 create_all(checkfirst=False)。没有业务订单/真实模型调用。
+- 会话历史独立事务、晚到指令冻结、审批快照跨 Worker 重建恢复、快照加密与消费、live 指令拒绝、慢预览不阻塞控制池、异步锁超 TTL 与 replacement token 保护均有流程验证。
+- PostgreSQL 旧夹具先前误写 public 的 3 组测试工作空间已归档、测试用户/凭据禁用、测试 Worker 记录移除，保留不可变审计；本轮隔离 schema 验证没有重复该问题。
 
-可控异步 SDK 通过真实 consumer pool 执行持久 AgentRun，无真实模型、订单或业务 MCP 请求。容量 2 下验证两个 Run 实际同时进入 SDK、第三个留队列、独立线程/Session、停止取消，以及失租后不写终态。complete/cancel/lost 三种模式分别通过文件 SQLite 和 PostgreSQL 验证；另验证 Run 锁超过 TTL 仍阻止第二执行者，释放后可再领取。
+尚未实现：SDK 进程整体迁移到 Runtime host/RPC、原生 redis.asyncio/AsyncSession 全栈迁移、实时 steer、完整控制 Inbox/Outbox、跨租户公平队列、服务等级保留槽、独立 CPU 计算服务、跨地区部署及生产压力验收。现有 Runtime 工具边界继续生效，但不宣称 SDK 宿主已隔离迁移完成。
 
-PostgreSQL 夹具强制在隔离 schema 建表，使用 checkfirst=False，避免 public 表满足建表检查。首次验证前的旧夹具曾误落入 public，写入 3 组测试数据；这些工作空间已归档，测试用户/凭据已禁用，测试 Worker 记录已移除，不可变审计证据予以保留。
-
-已实现：有界线程消费池、独立维护与续租、协作取消、所有权信号、Session/工具事务释放、团队投递合并。未实现：全服务层协程化、SDK Runtime host 重构、事件 Outbox 推进、服务等级保留槽、公平队列、跨地区数据投递和模糊副作用恢复协议。
-
-服务器 Worker 保持停止，本次代码未部署；线上订单与模型不重测。
-
-参考：[Celery 消费池](https://docs.celeryq.dev/en/stable/userguide/concurrency/index.html)、[Celery 预取和长任务](https://docs.celeryq.dev/en/stable/userguide/optimizing.html)、[SQLAlchemy Session 线程边界](https://docs.sqlalchemy.org/en/20/orm/session_basics.html#is-the-session-thread-safe-is-asyncsession-safe-to-share-in-concurrent-tasks)。
+服务器只更新了 U号租 Manager 配置；Worker 代码未部署重启。

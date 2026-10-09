@@ -58,7 +58,7 @@ class OpenAIToolBridge:
             arguments: dict[str, object],
             call_id: str,
         ) -> bool:
-            review = executor.review_tool_call(
+            review = await executor.review_tool_call(
                 context=runtime_context,
                 tool_name=definition.name,
                 arguments=arguments,

@@ -32,7 +32,7 @@ from backend.tests.test_worker_run_execution import _seed_workspace, _session
 
 
 class _ToolExecutor:
-    def review_tool_call(self, **kwargs: object) -> dict[str, object]:
+    async def review_tool_call(self, **kwargs: object) -> dict[str, object]:
         return {"decision": "allow"}
 
     async def execute_tool(self, **kwargs: object) -> AgentRuntimeToolResult:

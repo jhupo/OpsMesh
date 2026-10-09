@@ -16,7 +16,8 @@ class WorkerRunnerConfig:
     worker_id: str
     worker_type: str = "cloud"
     queue_name: str = "agent_runs"
-    concurrency: int = 4
+    concurrency: int = 32
+    blocking_io_concurrency: int = 8
     heartbeat_interval_seconds: float = 30.0
     idle_sleep_seconds: float = 1.0
     maintenance_interval_seconds: float = 60.0
@@ -27,6 +28,8 @@ class WorkerRunnerConfig:
     retry_max_delay_seconds: float = 300.0
 
     def __post_init__(self) -> None:
+        if self.blocking_io_concurrency < 1:
+            raise ValueError("Worker blocking I/O concurrency must be positive")
         if self.concurrency < 1:
             raise ValueError("Worker concurrency must be positive")
 

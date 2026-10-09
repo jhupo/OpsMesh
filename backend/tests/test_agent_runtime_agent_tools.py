@@ -35,7 +35,7 @@ class RecordingExecutor:
     def __init__(self) -> None:
         self.contexts: list[AgentRuntimeContext] = []
 
-    def review_tool_call(self, **_: object) -> dict[str, object]:
+    async def review_tool_call(self, **_: object) -> dict[str, object]:
         return {"decision": "allow", "risk_level": "low", "reasons": []}
 
     async def execute_tool(

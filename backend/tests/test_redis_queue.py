@@ -460,3 +460,29 @@ def test_lost_run_lock_rejects_result_and_preserves_replacement_token() -> None:
         assert acquired
         queue.redis.set(key, "replacement-owner", ex=600)
     assert queue.redis.get(key) == "replacement-owner"
+
+
+def test_async_run_lock_renews_and_preserves_replacement_owner() -> None:
+    import asyncio
+
+    from backend.app.runtime.queues.async_run_lock import async_run_lock
+    from backend.app.runtime.queues.execution_control import ExecutionOwnershipLostError
+    from backend.app.shared.concurrency import BlockingIO
+
+    queue = _queue(fakeredis.FakeRedis(decode_responses=True))
+
+    async def scenario() -> None:
+        with BlockingIO(1, name="test-ownership") as io:
+            async with async_run_lock(queue, "workspace", "run", io, ttl_seconds=1) as owned:
+                assert owned
+                await asyncio.sleep(1.3)
+                async with async_run_lock(queue, "workspace", "run", io) as duplicate:
+                    assert not duplicate
+            key = queue.keys.run_lock("workspace", "run")
+            with pytest.raises(ExecutionOwnershipLostError):
+                async with async_run_lock(queue, "workspace", "run", io) as owned:
+                    assert owned
+                    queue.redis.set(key, "replacement", ex=600)
+            assert queue.redis.get(key) == "replacement"
+
+    asyncio.run(scenario())
