@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from typing import cast
 
 from agents import OpenAIResponsesCompactionSession, Session
 from openai import AsyncOpenAI
 
 from backend.app.agents.execution.contracts import AgentRunRequest
-from backend.app.agents.execution.providers.openai.session import OpenAISessionAdapter
 from backend.app.agents.execution.tokens import estimate_token_upper_bound
 from backend.app.agents.providers.model_api import OPENAI_CHAT_COMPLETIONS_API, canonical_model_api
 from backend.app.agents.providers.policy import (
@@ -22,7 +22,7 @@ async def openai_run_session(
 ) -> AsyncIterator[Session | None]:
     """Use the OpenAI SDK's native Responses compaction for persistent sessions."""
 
-    session = OpenAISessionAdapter(request.session) if request.session is not None else None
+    session = cast(Session | None, request.session)
     if session is None or not _supports_native_compaction(request):
         yield session
         return

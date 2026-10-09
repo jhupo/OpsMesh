@@ -1,7 +1,7 @@
 import base64
 import json
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 from agents import (
     Agent,
@@ -10,6 +10,7 @@ from agents import (
     Runner,
     RunState,
     Session,
+    ToolExecutionConfig,
 )
 from agents.exceptions import (
     InputGuardrailTripwireTriggered,
@@ -22,8 +23,9 @@ from agents.handoffs import HandoffInputData
 from agents.handoffs import handoff as sdk_handoff
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
-from agents.sandbox import SandboxAgent
+from agents.usage import Usage
 from openai import APIConnectionError, APITimeoutError, OpenAIError
+from pydantic import TypeAdapter
 
 from backend.app.agents.execution.base import BaseSDKAgentRuntimeAdapter
 from backend.app.agents.execution.contracts import (
@@ -37,6 +39,7 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeCapability,
     AgentRuntimeEvent,
     AgentRuntimeGuardrailResult,
+    AgentRuntimeStructuredOutput,
 )
 from backend.app.agents.execution.errors import (
     AgentRuntimeGuardrailBlockedError,
@@ -44,7 +47,7 @@ from backend.app.agents.execution.errors import (
     AgentRuntimeProviderError,
     normalize_agent_error,
 )
-from backend.app.agents.execution.guardrails import guardrail_events, validated_structured_output
+from backend.app.agents.execution.guardrails import guardrail_events
 from backend.app.agents.execution.observer import AgentRuntimeExecutionObserver
 from backend.app.agents.execution.providers.openai.compaction import openai_run_session
 from backend.app.agents.execution.providers.openai.guardrails import (
@@ -55,8 +58,17 @@ from backend.app.agents.execution.providers.openai.guardrails import (
     openai_output_guardrails,
 )
 from backend.app.agents.execution.providers.openai.lifecycle import OpenAIRuntimeHooks
+from backend.app.agents.execution.providers.openai.mcp import (
+    GovernedAgent,
+    GovernedSandboxAgent,
+    runtime_mcp_servers,
+)
+from backend.app.agents.execution.providers.openai.memory_usage import memory_usage
 from backend.app.agents.execution.providers.openai.results import OpenAIAgentsResultMapper, jsonable
-from backend.app.agents.execution.providers.openai.sandbox import sandbox_run_config
+from backend.app.agents.execution.providers.openai.sandbox import (
+    sandbox_capabilities,
+    sandbox_run_config,
+)
 from backend.app.agents.execution.providers.openai.settings import OpenAIModelSettingsMapper
 from backend.app.agents.execution.providers.openai.streaming import run_openai_streamed
 from backend.app.agents.execution.providers.openai.tools import OpenAIToolBridge
@@ -91,8 +103,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             }
         ),
         limits={"max_agent_tool_depth": 3, "max_agent_tool_turns": 20},
-        unsupported_reasons={
-        },
+        unsupported_reasons={},
     )
 
     def __init__(self) -> None:
@@ -101,6 +112,17 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         self._result_mapper = OpenAIAgentsResultMapper()
 
     async def _run_once(
+        self,
+        request: AgentRunRequest,
+        observer: AgentRuntimeExecutionObserver,
+    ) -> AgentRunResult:
+        token = memory_usage.set(Usage())
+        try:
+            return await self._run_with_errors(request, observer)
+        finally:
+            memory_usage.reset(token)
+
+    async def _run_with_errors(
         self,
         request: AgentRunRequest,
         observer: AgentRuntimeExecutionObserver,
@@ -185,8 +207,6 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                     max_turns=request.max_turns,
                     hooks=hooks,
                     run_config=self._run_config(request),
-                    previous_response_id=request.previous_response_id,
-                    conversation_id=request.conversation_id,
                     session=session,
                 )
             except OpenAIRuntimeOutputSchemaError as exc:
@@ -199,13 +219,19 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
 
         async with openai_run_session(request) as run_session:
             result = await invoke_sdk(run_session)
+        usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
+        meter = memory_usage.get()
+        if isinstance(usage, Usage) and meter is not None:
+            usage.add(meter)
         guardrail_results = merged_openai_guardrail_results(result, guardrail_results)
         interruptions = self._result_mapper.interruptions(result)
         final_output, structured_output = self._result_mapper.final_output(result)
         if request.output_schema is not None and not interruptions:
-            structured_output = validated_structured_output(
-                request.output_schema,
-                getattr(result, "final_output", None),
+            structured_output = AgentRuntimeStructuredOutput(
+                value=getattr(result, "final_output", None),
+                schema_name=request.output_schema.name,
+                schema_version=request.output_schema.version,
+                validated=True,
             )
             final_output = json.dumps(
                 structured_output.value,
@@ -241,7 +267,9 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             handoffs=tuple(handoffs),
             agent_tool_calls=tuple(agent_tool_calls),
             guardrail_results=tuple(guardrail_results),
-            usage=runtime_usage(getattr(result, "usage", None)),
+            usage=runtime_usage(TypeAdapter(Usage).dump_python(usage, mode="json"))
+            if isinstance(usage, Usage)
+            else None,
         )
 
     def _validate_request(self, request: AgentRunRequest) -> None:
@@ -254,9 +282,9 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
     ) -> str | list[Any] | RunState[Any]:
         if request.resume_state is None:
             if not request.attachments:
-                return self._input_for_request(request)
+                return request.input_text
             content: list[dict[str, object]] = [
-                {"type": "input_text", "text": self._input_for_request(request)}
+                {"type": "input_text", "text": request.input_text}
             ]
             for attachment in request.attachments:
                 if attachment.kind == "audio":
@@ -334,6 +362,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         guardrail_results: list[AgentRuntimeGuardrailResult] | None = None,
     ) -> Agent[Any]:
         profile = request.agent_profile
+        capabilities = sandbox_capabilities(request)
         model_name = request.model or profile.model
         if request.api_key is None:
             raise ValueError("OpenAI-compatible runtime requires an explicit provider API key")
@@ -362,13 +391,18 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             request,
             runtime_guardrail_results,
         )
-        agent_class = SandboxAgent if request.sandbox is not None else Agent
+        agent_class = GovernedSandboxAgent if request.sandbox is not None else GovernedAgent
         return agent_class(
+            **cast(
+                dict[str, Any],
+                {"capabilities": capabilities} if request.sandbox else {},
+            ),
             name=profile.name,
             instructions=profile.instructions,
             model=model,
             model_settings=self._settings_mapper.map_settings(profile.model_settings),
             tools=tools,
+            mcp_servers=runtime_mcp_servers(request),
             handoffs=self._build_handoffs(
                 request,
                 handoff_audits if handoff_audits is not None else {},
@@ -504,14 +538,24 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             scoped_request,
             guardrail_results,
         )
-        agent_class = SandboxAgent if scoped_request.sandbox is not None else Agent
+        capabilities = sandbox_capabilities(
+            scoped_request,
+            profile_id=definition.target.ref.profile_id,
+            model_settings=definition.target.model_settings,
+        )
+        agent_class = GovernedSandboxAgent if scoped_request.sandbox is not None else GovernedAgent
         return agent_class(
+            **cast(
+                dict[str, Any],
+                {"capabilities": capabilities} if scoped_request.sandbox else {},
+            ),
             name=definition.target.ref.name,
             handoff_description=definition.target.handoff_description,
             instructions=definition.target.instructions,
             model=model,
             model_settings=self._settings_mapper.map_settings(definition.target.model_settings),
             tools=tools,
+            mcp_servers=runtime_mcp_servers(scoped_request),
             input_guardrails=input_guardrails,
             output_guardrails=output_guardrails,
         )
@@ -633,6 +677,11 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         guardrail_results: list[AgentRuntimeGuardrailResult],
     ) -> Agent[Any]:
         model_name = definition.model or request.model or request.agent_profile.model
+        capabilities = sandbox_capabilities(
+            replace(request, model=model_name),
+            profile_id=definition.ref.profile_id,
+            model_settings=definition.model_settings,
+        )
         if request.api_key is None:
             raise ValueError("OpenAI-compatible runtime requires an explicit provider API key")
         model: str | Model = OpenAIProvider(
@@ -644,14 +693,19 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             request,
             guardrail_results,
         )
-        agent_class = SandboxAgent if request.sandbox is not None else Agent
+        agent_class = GovernedSandboxAgent if request.sandbox is not None else GovernedAgent
         return agent_class(
+            **cast(
+                dict[str, Any],
+                {"capabilities": capabilities} if request.sandbox else {},
+            ),
             name=definition.ref.name,
             handoff_description=definition.handoff_description,
             instructions=definition.instructions,
             model=model,
             model_settings=self._settings_mapper.map_settings(definition.model_settings),
             tools=self._tool_bridge.tools(request),
+            mcp_servers=runtime_mcp_servers(request),
             output_type=(
                 OpenAIRuntimeOutputSchema(request.output_schema)
                 if request.output_schema is not None
@@ -662,10 +716,9 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         )
 
     def _run_config(self, request: AgentRunRequest) -> RunConfig | None:
-        if request.tracing is None and request.sandbox is None:
-            return None
         tracing = request.tracing
         return RunConfig(
+            tool_execution=ToolExecutionConfig(max_function_tool_concurrency=1),
             workflow_name=tracing.workflow_name if tracing else "OpsMesh agent run",
             trace_id=tracing.trace_id if tracing else None,
             group_id=tracing.group_id if tracing else None,

@@ -599,15 +599,6 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
     assert task.status == TaskStatus.COMPLETED.value
     assert run.output is not None
     assert run.output["final_output"] == "sdk-e2e-ok"
-    assert run.output["raw_output"]["last_response_id"] == "resp_sdk_e2e"
-    assert run.output["raw_output"]["conversation_id"] == "conv_sdk_e2e"
-    assert run.output["raw_output"]["sdk_continuation"] == {
-        "provider": "openai_agents",
-        "mode": "sdk_continuation_snapshot",
-        "native_tool_call_continuation": False,
-        "last_response_id": "resp_sdk_e2e",
-        "conversation_id": "conv_sdk_e2e",
-    }
     assert captured["input_text"]
     assert captured["agent"].name == "Researcher"
     assert captured["agent"].instructions == "Return the requested research summary."
@@ -2603,79 +2594,6 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert request.context.tool_definitions[0].mcp_server_id == server.id
 
 
-def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
-    session = _session()
-    user, workspace = _seed_workspace(session)
-    task = Task(
-        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
-        workspace_id=workspace.id,
-        created_by_user_id=user.id,
-        title="Create image",
-        description="Use the render result.",
-    )
-    session.add(task)
-    session.flush()
-    run = AgentRun(
-        workspace_id=workspace.id,
-        task_id=task.id,
-        status=RunStatus.QUEUED.value,
-        input={
-            "authorization_snapshot": _authorization_snapshot(
-                session,
-                workspace_id=str(workspace.id),
-                task_id=str(task.id),
-            ),
-            "pending_tool_results": [
-                {
-                    "tool_name": "generate_image",
-                    "status": "completed",
-                    "response": {"asset_id": "img_123"},
-                    "request": {"prompt": "do not include this original prompt"},
-                }
-            ],
-        },
-    )
-    session.add(run)
-    session.commit()
-
-    request = _build_agent_request(
-        session,
-        run,
-        JobPayload(
-            workspace_id=workspace.id,
-            job_type=JobType.AGENT_RUN,
-            resource_id=run.id,
-            requested_by_user_id=user.id,
-            idempotency_key="resumed-tool-result",
-        ),
-        settings=Settings(environment="test"),
-    )
-
-    assert request.continuations[0].tool_name == "generate_image"
-    assert request.continuations[0].status == "completed"
-    assert request.continuations[0].result == {"asset_id": "img_123"}
-    assert request.context.metadata["tool_continuations"] == [
-        {
-            "tool_name": "generate_image",
-            "status": "completed",
-            "metadata": {},
-        }
-    ]
-    assert request.tracing is not None
-    assert request.tracing.workflow_name == "opsmesh.agent_run"
-    assert request.tracing.group_id == f"task:{task.id}"
-    assert request.tracing.metadata["tool_continuations"] == [
-        {
-            "tool_name": "generate_image",
-            "status": "completed",
-            "metadata": {},
-        }
-    ]
-    assert "Completed runtime tool results" not in request.input_text
-    assert "img_123" not in request.input_text
-    assert "do not include this original prompt" not in request.input_text
-
-
 def test_queued_team_run_freezes_model_provider_snapshot_without_secret() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
@@ -3026,7 +2944,6 @@ def test_agent_request_uses_sdk_session_without_provider_native_history() -> Non
             scope_id=f"{task.id}:{agent.id}",
             agent_profile_id=agent.id,
             task_id=task.id,
-            openai_conversation_id="conv_existing",
         )
     )
     first_run = AgentRun(
@@ -3038,12 +2955,6 @@ def test_agent_request_uses_sdk_session_without_provider_native_history() -> Non
         completed_at=datetime.now(UTC) - timedelta(minutes=1),
         output={
             "final_output": "Earlier result",
-            "raw_output": {
-                "sdk_continuation": {
-                    "last_response_id": "resp_previous",
-                    "resume_input": [{"role": "user", "content": "continue"}],
-                }
-            },
         },
     )
     second_run = AgentRun(
@@ -3085,8 +2996,6 @@ def test_agent_request_uses_sdk_session_without_provider_native_history() -> Non
     assert len(runner.requests) == 1
     request = runner.requests[0]
     assert request.session is not None
-    assert request.previous_response_id is None
-    assert request.conversation_id is None
     assert "previous_response_id" not in request.context.metadata
     assert "conversation_id" not in request.context.metadata
 
@@ -3308,60 +3217,6 @@ def test_model_request_review_does_not_repeat_after_admin_approval() -> None:
 
     assert len(runner.requests) == 1
     assert run.status == RunStatus.COMPLETED.value
-
-
-def test_completed_run_updates_persistent_session_conversation_id() -> None:
-    session = _session()
-    user, workspace = _seed_workspace(session)
-    agent = AgentProfile(
-        workspace_id=workspace.id,
-        name="Writer",
-        role="writer",
-        model="gpt-4.1",
-    )
-    task = Task(
-        execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
-        workspace_id=workspace.id,
-        created_by_user_id=user.id,
-        title="Draft continued note",
-        status=TaskStatus.RUNNING.value,
-    )
-    session.add_all([agent, task])
-    session.flush()
-    persistent_session = PersistentAgentSession(
-        workspace_id=workspace.id,
-        session_key=f"{workspace.id}:{user.id}:task_agent:{task.id}:{agent.id}",
-        scope_type="task_agent",
-        scope_id=f"{task.id}:{agent.id}",
-        agent_profile_id=agent.id,
-        task_id=task.id,
-        openai_conversation_id="conv_old",
-    )
-    run = AgentRun(
-        workspace_id=workspace.id,
-        task_id=task.id,
-        agent_profile_id=agent.id,
-        status=RunStatus.RUNNING.value,
-        input={},
-    )
-    session.add_all([persistent_session, run])
-    session.flush()
-
-    _run_lifecycle(session).mark_run_completed(
-        run,
-        AgentRunResult(
-            final_output="continued",
-            raw_output={
-                "sdk_continuation": {
-                    "conversation_id": "conv_new",
-                    "last_response_id": "resp_new",
-                }
-            },
-        ),
-        requested_by_user_id=user.id,
-    )
-
-    assert persistent_session.openai_conversation_id == "conv_new"
 
 
 @pytest.mark.parametrize("member_revoked", [False, True])
@@ -6690,7 +6545,6 @@ def test_run_lifecycle_does_not_transition_foreign_task_references() -> None:
 
 def _run_lifecycle(session: Session) -> RunLifecycleService:
     orchestration = RunOrchestrationService(session)
-    builder = RunRequestBuilder(session, None)
     eligibility = RunEligibilityService(session)
     return RunLifecycleService(
         session,
@@ -6699,7 +6553,6 @@ def _run_lifecycle(session: Session) -> RunLifecycleService:
             release_reservations=lambda run, released_at: _run_reservations(
                 session
             ).release_for_run(run, released_at=released_at),
-            sync_provider_conversation_id=builder.sync_provider_conversation_id,
             create_next_runs=lambda task, user_id: orchestration._create_and_enqueue_next_step_runs(
                 task,
                 requested_by_user_id=user_id,

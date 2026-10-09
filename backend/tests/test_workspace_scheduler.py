@@ -1307,21 +1307,17 @@ def _run_step_launcher(session: Session) -> RunStepLauncher:
 
 def _run_lifecycle(session: Session) -> RunLifecycleService:
     orchestration = RunOrchestrationService(session)
-    builder = RunRequestBuilder(session, None)
     eligibility = RunEligibilityService(session)
     return RunLifecycleService(
         session,
         RunLifecycleCallbacks(
             append_event=RunEventRecorder(session).append_event,
-            release_reservations=lambda run, released_at: (
-                _run_reservations(session).release_for_run(run, released_at=released_at)
-            ),
-            sync_provider_conversation_id=builder.sync_provider_conversation_id,
-            create_next_runs=lambda task, user_id: (
-                orchestration._create_and_enqueue_next_step_runs(
-                    task,
-                    requested_by_user_id=user_id,
-                )
+            release_reservations=lambda run, released_at: _run_reservations(
+                session
+            ).release_for_run(run, released_at=released_at),
+            create_next_runs=lambda task, user_id: orchestration._create_and_enqueue_next_step_runs(
+                task,
+                requested_by_user_id=user_id,
             ),
             schedule_workspace_steps=lambda workspace_id, user_id: (
                 orchestration.schedule_workspace_steps(

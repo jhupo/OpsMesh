@@ -4,9 +4,9 @@ import json
 
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionError
 
-MCP_PYTHON_SDK_PACKAGE = "mcp"
-MCP_PYTHON_SDK_STDIO_ENTRYPOINT = "mcp.client.stdio.stdio_client"
-MCP_STDIO_CONTRACT_VERSION = 1
+MCP_PYTHON_SDK_PACKAGE = "openai-agents"
+MCP_PYTHON_SDK_STDIO_ENTRYPOINT = "agents.mcp.MCPServerStdio"
+MCP_STDIO_CONTRACT_VERSION = 2
 
 
 def string_setting(payload: dict[str, object], key: str) -> str | None:
@@ -103,15 +103,7 @@ def result_from_sdk_output(raw_body: bytes | str) -> dict[str, object]:
             "MCP stdio tool failed",
             code="mcp_remote_error",
         )
-    structured_content = body.get("structuredContent")
-    if isinstance(structured_content, dict):
-        return {
-            str(key): value
-            for key, value in structured_content.items()
-            if isinstance(key, str)
-        }
-    content = body.get("content")
-    return {"content": content if isinstance(content, list) else []}
+    return body
 
 
 def capability_report_from_sdk_output(raw_body: bytes | str) -> dict[str, object]:
@@ -136,4 +128,3 @@ def capability_report_from_sdk_output(raw_body: bytes | str) -> dict[str, object
             code="mcp_stdio_runtime_not_ready",
         )
     return body
-

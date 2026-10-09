@@ -1161,8 +1161,6 @@ def test_self_hosted_mcp_job_poll_claim_and_complete_flow() -> None:
     assert queued_job.status == "completed"
     assert queued_job.response_payload == {"ok": True}
     assert run.status == "queued"
-    assert run.input["pending_tool_results"][0]["mcp_job_id"] == str(queued_job.id)
-    assert run.input["pending_tool_results"][0]["response"] == {"ok": True}
     assert [event.event_type for event in events] == [
         "self_hosted.mcp_job_claimed",
         "self_hosted.mcp_job_completed",
@@ -1396,7 +1394,6 @@ def test_self_hosted_worker_cleanup_expires_stale_mcp_jobs_idempotently() -> Non
     assert run.status == "failed"
     assert run.error is not None
     assert run.error["code"] == "self_hosted_mcp_job_expired"
-    assert run.input["pending_tool_results"][0]["status"] == "expired"
     assert event.event_metadata["mcp_job_id"] == str(stale_job.id)
 
 

@@ -77,7 +77,6 @@ class AgentSessionSummaryResponse(ORMModel):
     agent_profile_id: UUID | None
     agent_team_id: UUID | None
     task_id: UUID | None
-    openai_conversation_id: str | None
     metadata: dict[str, object]
     item_count: int
     latest_item_metadata: dict[str, object] | None
@@ -93,8 +92,7 @@ class AgentSessionSummaryResponse(ORMModel):
 
 
 class AgentSessionItemResponse(ORMModel):
-    id: UUID
-    sequence: int
+    id: int
     item: dict[str, object]
     created_at: datetime
     metadata: dict[str, object]

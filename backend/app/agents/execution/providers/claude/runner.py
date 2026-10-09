@@ -48,18 +48,19 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeGuardrailResult,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
+    AgentRuntimeSession,
     AgentRuntimeStreamEvent,
     AgentRuntimeStructuredOutput,
 )
 from backend.app.agents.execution.errors import (
     AgentRuntimeCancelledError,
+    AgentRuntimeOutputValidationError,
     AgentRuntimePolicyError,
     AgentRuntimeProviderError,
 )
 from backend.app.agents.execution.guardrails import (
     evaluate_guardrail_stage,
     guardrail_events,
-    validated_structured_output,
 )
 from backend.app.agents.execution.observer import AgentRuntimeExecutionObserver
 from backend.app.agents.execution.providers.claude.sessions import (
@@ -172,7 +173,9 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
     ) -> AgentRunResult:
         session_id = _session_id(request)
         store = (
-            ClaudeAgentSessionStore(request.session, session_id=session_id)
+            ClaudeAgentSessionStore(
+                cast(AgentRuntimeSession, request.session), session_id=session_id
+            )
             if request.session is not None
             else None
         )
@@ -206,7 +209,7 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             observer,
             resume_existing,
         )
-        prompt = self._input_for_request(request)
+        prompt = request.input_text
         guardrail_results: list[AgentRuntimeGuardrailResult] = []
         if request.guardrails is not None and request.resume_state is None:
             evaluate_guardrail_stage(
@@ -477,9 +480,17 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
         validate_output: bool = True,
     ) -> tuple[str, AgentRuntimeStructuredOutput | None]:
         if request.output_schema is not None and validate_output:
-            structured = validated_structured_output(
-                request.output_schema,
-                result.structured_output if result.structured_output is not None else result.result,
+            if result.structured_output is None:
+                raise AgentRuntimeOutputValidationError(
+                    schema_name=request.output_schema.name,
+                    schema_version=request.output_schema.version,
+                    validator="missing_sdk_output",
+                )
+            structured = AgentRuntimeStructuredOutput(
+                value=result.structured_output,
+                schema_name=request.output_schema.name,
+                schema_version=request.output_schema.version,
+                validated=True,
             )
             return (
                 json.dumps(structured.value, ensure_ascii=False, sort_keys=True),

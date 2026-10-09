@@ -10,7 +10,8 @@ from backend.app.agents.execution.contracts import AgentRuntimeContext
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionError
 from backend.app.capabilities.mcp.managed_runtime import ManagedMcpToolAdapter
 from backend.app.capabilities.mcp.models import McpServer
-from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
+from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter
+from backend.app.capabilities.mcp.transport.runtime_http import DockerRuntimeHttpMcpToolAdapter
 from backend.app.capabilities.mcp.transport.stdio import (
     DockerRuntimeStdioMcpToolAdapter,
     SelfHostedStdioMcpToolAdapter,
@@ -30,14 +31,12 @@ class ContextualMcpAdapterResolver:
     def __init__(
         self,
         session: Session,
-        default_adapter: McpToolAdapter | McpToolAdapterResolver,
         context: AgentRuntimeContext,
         settings: Settings | None = None,
         docker_client: DockerRuntimeClient | None = None,
         secret_service: SecretEncryptionService | None = None,
     ) -> None:
         self._session = session
-        self._default_adapter = default_adapter
         self._context = context
         self._settings = settings
         self._docker_client = docker_client
@@ -45,7 +44,17 @@ class ContextualMcpAdapterResolver:
 
     def resolve(self, server: McpServer) -> McpToolAdapter:
         if server.server_type != "stdio":
-            return self._default_adapter_for(server)
+            run = self._current_run()
+            if run is None or server.workspace_id != self._context.workspace_id:
+                self._deny_stdio("mcp_runtime_scope_invalid", "MCP Runtime scope is invalid")
+            runtime = self._authorized_runtime_for_run(run)
+            if runtime.runtime_provider != "cloud_docker" or self._docker_client is None:
+                self._deny_stdio(
+                    "mcp_http_runtime_unsupported", "HTTP MCP requires a Docker Runtime"
+                )
+            return DockerRuntimeHttpMcpToolAdapter(
+                RuntimeManager(self._session, self._docker_client), runtime, self._secret_service
+            )
         if server.connection.get("runtime") == "managed":
             if server.workspace_id != self._context.workspace_id or self._current_run() is None:
                 self._deny_stdio(
@@ -83,16 +92,12 @@ class ContextualMcpAdapterResolver:
                 service=SelfHostedMcpJobService(self._session),
                 runtime=runtime,
                 agent_run_id=run.id,
+                tool_call_id=self._context.metadata.get("sdk_tool_call_id"),
             )
         self._deny_stdio(
             "stdio_runtime_provider_unsupported",
             "Authorized runtime provider does not support MCP stdio execution",
         )
-
-    def _default_adapter_for(self, server: McpServer) -> McpToolAdapter:
-        if isinstance(self._default_adapter, McpToolAdapterResolver):
-            return self._default_adapter.resolve(server)
-        return self._default_adapter
 
     def _current_run(self) -> AgentRun | None:
         run = self._session.get(AgentRun, self._context.run_id)

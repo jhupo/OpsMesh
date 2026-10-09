@@ -1,8 +1,7 @@
-import asyncio
 import json
 from uuid import uuid4
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
@@ -14,81 +13,12 @@ from backend.app.agents.sessions.models import (
     ARCHIVED_SESSION_STATUS,
     FROZEN_SESSION_STATUS,
     PersistentAgentSession,
-    PersistentAgentSessionItem,
-    PersistentAgentSessionRef,
+    SDKAgentMessage,
+    SDKAgentSession,
 )
-from backend.app.agents.sessions.store import SQLAlchemyAgentSession
 from backend.app.identity.users.models import User
 from backend.app.shared.db.base import Base
 from backend.app.workspaces.management.models import Workspace
-
-
-def test_sqlalchemy_agent_session_persists_items_across_instances() -> None:
-    session = _session()
-    workspace = _add_workspace(session)
-    ref = PersistentAgentSessionRef(
-        session_key=f"{workspace.id}:team_agent:team-1:agent-1",
-        workspace_id=workspace.id,
-        scope_type="team_agent",
-        scope_id="team-1:agent-1",
-    )
-    first = SQLAlchemyAgentSession(db_session=session, ref=ref)
-
-    asyncio.run(
-        first.add_items(
-            [
-                {"role": "user", "content": "remember company strategy"},
-                {"role": "assistant", "content": "strategy stored"},
-            ]
-        )
-    )
-
-    second = SQLAlchemyAgentSession(db_session=session, ref=ref)
-    assert asyncio.run(second.get_items()) == [
-        {"role": "user", "content": "remember company strategy"},
-        {"role": "assistant", "content": "strategy stored"},
-    ]
-    assert asyncio.run(second.get_items(limit=1)) == [
-        {"role": "assistant", "content": "strategy stored"}
-    ]
-
-    stored_session = session.scalar(
-        select(PersistentAgentSession).where(
-            PersistentAgentSession.workspace_id == workspace.id,
-            PersistentAgentSession.session_key == ref.session_key,
-        )
-    )
-    assert stored_session is not None
-    assert stored_session.scope_type == "team_agent"
-    assert stored_session.scope_id == "team-1:agent-1"
-    assert session.scalar(select(PersistentAgentSessionItem)) is not None
-
-
-def test_sqlalchemy_agent_session_pop_and_clear() -> None:
-    session = _session()
-    workspace = _add_workspace(session)
-    ref = PersistentAgentSessionRef(
-        session_key=f"{workspace.id}:task_agent:task-1:agent-1",
-        workspace_id=workspace.id,
-        scope_type="task_agent",
-        scope_id="task-1:agent-1",
-    )
-    agent_session = SQLAlchemyAgentSession(db_session=session, ref=ref)
-    asyncio.run(
-        agent_session.add_items(
-            [
-                {"role": "user", "content": "first"},
-                {"role": "assistant", "content": "second"},
-            ]
-        )
-    )
-
-    assert asyncio.run(agent_session.pop_item()) == {"role": "assistant", "content": "second"}
-    assert asyncio.run(agent_session.get_items()) == [{"role": "user", "content": "first"}]
-
-    asyncio.run(agent_session.clear_session())
-
-    assert asyncio.run(agent_session.get_items()) == []
 
 
 def test_session_management_lists_filters_and_paginates_workspace_sessions() -> None:
@@ -160,7 +90,6 @@ def test_session_management_status_clear_and_workspace_scope() -> None:
         session,
         workspace_id=workspace.id,
         session_key="target",
-        openai_conversation_id="conv_123",
         items=[
             {"role": "user", "content": "first"},
             {"role": "assistant", "content": "second"},
@@ -185,47 +114,9 @@ def test_session_management_status_clear_and_workspace_scope() -> None:
     deleted = service.clear_session_items(workspace_id=workspace.id, session_id=target.id)
     assert deleted == 2
     session.refresh(target)
-    assert target.openai_conversation_id is None
     cleared = service.get_session(workspace_id=workspace.id, session_id=target.id)
     assert cleared is not None
     assert cleared.session.item_count == 0
-
-
-def test_sqlalchemy_agent_session_does_not_mutate_archived_or_frozen_sessions() -> None:
-    session = _session()
-    workspace = _add_workspace(session)
-    ref = PersistentAgentSessionRef(
-        session_key=f"{workspace.id}:team_agent:team-1:agent-1",
-        workspace_id=workspace.id,
-        scope_type="team_agent",
-        scope_id="team-1:agent-1",
-    )
-    agent_session = SQLAlchemyAgentSession(db_session=session, ref=ref)
-    asyncio.run(agent_session.add_items([{"role": "user", "content": "first"}]))
-    stored_session = session.scalar(
-        select(PersistentAgentSession).where(
-            PersistentAgentSession.workspace_id == workspace.id,
-            PersistentAgentSession.session_key == ref.session_key,
-        )
-    )
-    assert stored_session is not None
-
-    stored_session.status = FROZEN_SESSION_STATUS
-    session.flush()
-    asyncio.run(agent_session.add_items([{"role": "assistant", "content": "ignored"}]))
-    assert asyncio.run(agent_session.pop_item()) is None
-    stored_session.status = ARCHIVED_SESSION_STATUS
-    session.flush()
-
-    assert asyncio.run(agent_session.get_items()) == []
-    assert (
-        session.scalar(
-            select(func.count(PersistentAgentSessionItem.id)).where(
-                PersistentAgentSessionItem.persistent_session_id == stored_session.id
-            )
-        )
-        == 1
-    )
 
 
 def _session() -> Session:
@@ -255,7 +146,6 @@ def _add_persistent_session(
     agent_profile_id=None,
     agent_team_id=None,
     task_id=None,
-    openai_conversation_id: str | None = None,
     items: list[dict[str, object]] | None = None,
 ) -> PersistentAgentSession:
     persistent_session = PersistentAgentSession(
@@ -266,18 +156,17 @@ def _add_persistent_session(
         agent_profile_id=agent_profile_id,
         agent_team_id=agent_team_id,
         task_id=task_id,
-        openai_conversation_id=openai_conversation_id,
         session_metadata={"source": "test"},
     )
     session.add(persistent_session)
     session.flush()
-    for sequence, item in enumerate(items or [], start=1):
+    session.add(SDKAgentSession(session_id=persistent_session.session_key))
+    session.flush()
+    for item in items or []:
         session.add(
-            PersistentAgentSessionItem(
-                workspace_id=workspace_id,
-                persistent_session_id=persistent_session.id,
-                sequence=sequence,
-                item=item,
+            SDKAgentMessage(
+                session_id=persistent_session.session_key,
+                message_data=json.dumps(item),
             )
         )
     session.flush()

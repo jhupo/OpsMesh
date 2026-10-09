@@ -243,7 +243,6 @@ class RunOrchestrationService:
             RunLifecycleCallbacks(
                 append_event=self._run_events().append_event,
                 release_reservations=self._release_runtime_reservations_for_lifecycle,
-                sync_provider_conversation_id=self._request_builder().sync_provider_conversation_id,
                 create_next_runs=lambda task, user_id: self._create_and_enqueue_next_step_runs(
                     task,
                     requested_by_user_id=user_id,

@@ -144,15 +144,38 @@ def test_openai_sdk_guardrail_block_is_non_retryable(
 def test_openai_structured_output_fails_closed_on_invalid_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_run(*args: object, **kwargs: object) -> object:
-        return SimpleNamespace(
-            final_output={"wrong": True},
-            new_items=[],
-            events=[],
-            usage=None,
-        )
+    from agents.items import ModelResponse
+    from agents.models.interface import Model
+    from agents.usage import Usage
+    from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 
-    monkeypatch.setattr(openai_runtime.Runner, "run", fake_run)
+    class InvalidOutputModel(Model):
+        async def get_response(self, **kwargs):
+            return ModelResponse(
+                output=[
+                    ResponseOutputMessage(
+                        id="invalid",
+                        type="message",
+                        role="assistant",
+                        status="completed",
+                        content=[
+                            ResponseOutputText(
+                                type="output_text", text='{"wrong":true}', annotations=[]
+                            )
+                        ],
+                    )
+                ],
+                usage=Usage(requests=1),
+                response_id="offline",
+            )
+
+        async def stream_response(self, *args, **kwargs):
+            raise AssertionError("Streaming is disabled")
+            yield
+
+    monkeypatch.setattr(
+        openai_runtime.OpenAIProvider, "get_model", lambda *args, **kwargs: InvalidOutputModel()
+    )
 
     with pytest.raises(AgentRuntimeOutputValidationError) as raised:
         asyncio.run(OpenAIAgentsRunner().run(_request()))

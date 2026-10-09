@@ -12,18 +12,17 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeProfile,
     AgentRuntimeResourceGrant,
-    AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
     AgentRuntimeToolExecutor,
     AgentRunTracing,
+    AgentSessionBinding,
 )
+from backend.app.agents.execution.errors import AgentRuntimePolicyError
 from backend.app.agents.execution.guardrails import runtime_controls_from_snapshot
 from backend.app.agents.execution.state import AgentRunStateStore
 from backend.app.agents.execution.tools.executor import BackendToolExecutor
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.agents.sessions.models import PersistentAgentSessionRef
-from backend.app.agents.sessions.store import SQLAlchemyAgentSession
-from backend.app.capabilities.mcp.transport.resolver import McpAdapterResolver
 from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.orchestration.conversations.models import ConversationExecution
 from backend.app.orchestration.requests.attachments import message_attachments
@@ -51,7 +50,6 @@ from backend.app.orchestration.runs.authorization.validation import (
     authorized_task_for_run,
     file_scope_ids_for_snapshot,
     resource_grants_for_snapshot,
-    tool_continuations_for_run,
     tool_definitions_for_snapshot,
 )
 from backend.app.orchestration.runs.cancellation import DatabaseRunCancellation
@@ -61,9 +59,7 @@ from backend.app.orchestration.runs.runtime_metadata import RunRuntimeMetadataBu
 from backend.app.orchestration.tasks.models import Task
 from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.memory.context import AgentMemoryContext, AgentMemoryContextService
-from backend.app.resources.memory.models import WorkspaceMemoryEntry
-from backend.app.resources.memory.policy import context_budget_policy, working_memory_policy
-from backend.app.resources.memory.working import AgentWorkingMemoryService, working_memory_context
+from backend.app.resources.memory.policy import agent_memory_policy, context_budget_policy
 from backend.app.runtime.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.contracts import SandboxBinding, SandboxManifest
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
@@ -98,10 +94,8 @@ class _RuntimeRequestState:
 @dataclass(slots=True)
 class _MemoryRequestState:
     persistent_session_ref: PersistentAgentSessionRef
-    working_entries: list[WorkspaceMemoryEntry]
     retrieved_memory: AgentMemoryContext
-    persistent_session: SQLAlchemyAgentSession | None
-    continuations: tuple[AgentRuntimeToolContinuation, ...]
+    persistent_session: AgentSessionBinding | None
 
 
 @dataclass(slots=True)
@@ -306,25 +300,23 @@ class RunRequestBuilder:
         inputs: _AuthorizedRequestInputs,
         metadata: dict[str, object],
     ) -> _MemoryRequestState:
+        sdk_memory = agent_memory_policy(inputs.snapshot.get("memory_policy")).sdk_memory
+        if sdk_memory.enabled and inputs.model_provider["provider"] not in {
+            "openai",
+            "openai-compatible",
+        }:
+            raise AgentRuntimePolicyError(
+                code="sdk_memory_provider_unsupported",
+                message="SDK file memory requires the OpenAI Agents SDK",
+                event_type="agent.memory.blocked",
+                metadata={"provider": inputs.model_provider["provider"]},
+            )
+        metadata["sdk_memory"] = sdk_memory.model_dump(mode="json")
         session_ref = self.persistent_session_ref_for_run(
             run,
             inputs.task,
             inputs.profile,
         )
-        working_policy = working_memory_policy(inputs.snapshot.get("memory_policy"))
-        working_entries = AgentWorkingMemoryService(self.session).prepare_run(
-            run=run,
-            profile=inputs.profile,
-            task=inputs.task,
-            session_key=session_ref.session_key,
-            policy=working_policy,
-        )
-        metadata["working_memory"] = {
-            "enabled": working_policy.enabled,
-            "entry_count": len(working_entries),
-            "entry_ids": [str(entry.id) for entry in working_entries],
-            "policy": working_policy.model_dump(mode="json"),
-        }
         retrieved_memory = AgentMemoryContextService(
             self.session,
             self.mcp_secret_service(),
@@ -341,26 +333,19 @@ class RunRequestBuilder:
             inputs.task,
             inputs.profile,
             ref=session_ref,
+            sdk_provider=(
+                "claude_agent_sdk"
+                if inputs.model_provider["provider"] == "anthropic"
+                else "openai_agents"
+            ),
         )
         if persistent_session is not None:
             metadata["persistent_session_key"] = persistent_session.session_id
             metadata["persistent_session_mode"] = "sdk_session"
-        continuations = tool_continuations_for_run(run.input)
-        if continuations:
-            metadata["tool_continuations"] = [
-                {
-                    "tool_name": item.tool_name,
-                    "status": item.status,
-                    "metadata": item.metadata,
-                }
-                for item in continuations
-            ]
         return _MemoryRequestState(
             persistent_session_ref=session_ref,
-            working_entries=working_entries,
             retrieved_memory=retrieved_memory,
             persistent_session=persistent_session,
-            continuations=continuations,
         )
 
     def _build_context_state(
@@ -416,15 +401,6 @@ class RunRequestBuilder:
                     required=True,
                 ),
             )
-        rendered_working_memory = working_memory_context(memory.working_entries)
-        if rendered_working_memory:
-            fragments += (
-                ContextFragment(
-                    key="memory.working",
-                    text=rendered_working_memory,
-                    priority=ContextPriority.HIGH,
-                ),
-            )
         if memory.retrieved_memory.text:
             fragments += (
                 ContextFragment(
@@ -457,7 +433,6 @@ class RunRequestBuilder:
             policy=policy,
             instructions=inputs.runtime_profile.instructions,
             tool_definitions=inputs.tool_definitions,
-            continuations=memory.continuations,
             agent_tools=agent_tools,
             output_schema=output_schema,
         )
@@ -519,7 +494,6 @@ class RunRequestBuilder:
             model_api=inputs.model_provider["model_api"],
             model_provider_credential_id=inputs.model_provider["model_provider_credential_id"],
             tool_executor=self.build_tool_executor() if inputs.allowed_tools else None,
-            continuations=memory.continuations,
             session=memory.persistent_session,
             tracing=context.tracing,
             sandbox=runtime.sandbox,
@@ -602,7 +576,6 @@ class RunRequestBuilder:
     def build_tool_executor(self) -> AgentRuntimeToolExecutor:
         return BackendToolExecutor(
             self.session,
-            McpAdapterResolver(secret_service=self.mcp_secret_service()),
             settings=self.settings,
             docker_client=self.docker_client,
             secret_service=self.mcp_secret_service(),
@@ -638,11 +611,12 @@ class RunRequestBuilder:
         task: Task | None,
         profile: AgentProfile,
         ref: PersistentAgentSessionRef | None = None,
-    ) -> SQLAlchemyAgentSession | None:
-        return self.session_service.persistent_session_for_run(run, task, profile, ref)
-
-    def sync_provider_conversation_id(self, run: AgentRun) -> None:
-        self.session_service.sync_provider_conversation_id(run)
+        *,
+        sdk_provider: str,
+    ) -> AgentSessionBinding | None:
+        return self.session_service.persistent_session_for_run(
+            run, task, profile, ref, sdk_provider=sdk_provider
+        )
 
     def mailbox_context_for_run(
         self,

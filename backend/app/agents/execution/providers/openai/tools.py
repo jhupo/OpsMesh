@@ -41,6 +41,7 @@ class OpenAIToolBridge:
                 cancellation=request.cancellation,
             )
             for definition in request.context.tool_definitions
+            if definition.source == "product"
         ]
 
     def function_tool(

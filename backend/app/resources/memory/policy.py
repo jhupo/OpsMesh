@@ -64,10 +64,21 @@ class ContextMemoryRetrievalPolicy(BaseModel):
     query_max_tokens: int = Field(default=1_024, ge=128, le=8_192)
 
 
+class SDKMemoryPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    read: bool = True
+    generate: bool = False
+    live_update: bool = False
+    max_raw_memories: int = Field(default=32, ge=1, le=256)
+
+
 class AgentMemoryPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     context_budget: ContextBudgetPolicy = Field(default_factory=ContextBudgetPolicy)
+    sdk_memory: SDKMemoryPolicy = Field(default_factory=lambda: SDKMemoryPolicy())
     working_memory: WorkingMemoryPolicy = Field(default_factory=WorkingMemoryPolicy)
     episodic_memory: EpisodicMemoryPolicy = Field(default_factory=EpisodicMemoryPolicy)
     semantic_memory: SemanticMemoryPolicy = Field(default_factory=SemanticMemoryPolicy)

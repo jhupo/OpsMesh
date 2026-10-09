@@ -7,6 +7,8 @@ from uuid import uuid4
 
 import pytest
 from agents import OpenAIResponsesCompactionSession, RunContextWrapper
+from agents.extensions.memory import SQLAlchemySession
+from sqlalchemy.ext.asyncio import create_async_engine
 
 import backend.app.agents.execution.providers.openai.runner as openai_runtime
 from backend.app.agents.execution.contracts import (
@@ -19,7 +21,6 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeContext,
     AgentRuntimeHandoff,
     AgentRuntimeResumeState,
-    AgentRuntimeToolContinuation,
     AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
     AgentRunTracing,
@@ -36,8 +37,6 @@ from backend.app.agents.execution.providers.openai.tools import (
 )
 from backend.app.agents.execution.registry import ProviderAgentRuntimeRegistry
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.agents.sessions.models import PersistentAgentSessionRef
-from backend.app.agents.sessions.store import SQLAlchemyAgentSession
 from backend.app.bootstrap.providers import build_agent_runtime_registry
 from backend.app.runtime.contracts import (
     SandboxBinding,
@@ -292,7 +291,7 @@ def test_openai_agents_runner_normalizes_openai_compatible_base_url() -> None:
     agent = OpenAIAgentsRunner()._build_agent(request)
 
     assert agent.model != profile.model
-    assert agent.model._client.base_url == "https://llm.example.test/v1/"
+    assert agent.model._client.base_url == "https://llm.example.test/"
 
 
 def test_openai_agents_runner_uses_only_canonical_model_api_values() -> None:
@@ -332,47 +331,11 @@ def test_openai_agents_runner_registers_allowed_mcp_tools() -> None:
 
     agent = OpenAIAgentsRunner()._build_agent(request)
 
-    assert [tool.name for tool in agent.tools] == ["generate_image", "search.web"]
-
-
-def test_openai_agents_runner_renders_tool_continuations_at_runtime_boundary() -> None:
-    profile = AgentProfile(
-        workspace_id=uuid4(),
-        name="Designer",
-        role="designer",
-        instructions="Design carefully.",
-        model="gpt-4.1",
-    )
-    request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Continue after the tool result.",
-        context=AgentRuntimeContext(
-            workspace_id=profile.workspace_id,
-            task_id=None,
-            run_id=uuid4(),
-        ),
-        continuations=(
-            AgentRuntimeToolContinuation(
-                tool_name="generate_image",
-                status="completed",
-                result={"asset_id": "img_123"},
-            ),
-            AgentRuntimeToolContinuation(
-                tool_name="search_web",
-                status="failed",
-                error={"code": "timeout"},
-            ),
-        ),
-    )
-
-    rendered = OpenAIAgentsRunner()._input_for_request(request)
-
-    assert rendered.startswith("Continue after the tool result.")
-    assert "Completed runtime tool results:" in rendered
-    assert '"tool_name": "generate_image"' in rendered
-    assert '"asset_id": "img_123"' in rendered
-    assert '"tool_name": "search_web"' in rendered
-    assert '"code": "timeout"' in rendered
+    assert agent.tools == []
+    assert [tool.name for tool in asyncio.run(agent.mcp_servers[0].list_tools())] == [
+        "generate_image",
+        "search.web",
+    ]
 
 
 def test_deterministic_test_runner_returns_deterministic_output() -> None:
@@ -536,16 +499,11 @@ def test_provider_adapter_registry_rejects_unsupported_request_capabilities() ->
     assert caught.value.metadata["missing"] == ["handoffs"]
     assert normalize_agent_error(caught.value).retryable is False
 
-    class Usage:
-        def model_dump(self, mode: str) -> dict[str, object]:
-            assert mode == "json"
-            return {"requests": 1}
+    from agents.usage import Usage
 
     class Result:
         final_output = "done"
-        last_response_id = "resp_123"
-        conversation_id = "conv_123"
-        usage = Usage()
+        context_wrapper = RunContextWrapper(context=None, usage=Usage(requests=1))
 
         class last_agent:
             name = "Researcher"
@@ -562,34 +520,10 @@ def test_provider_adapter_registry_rejects_unsupported_request_capabilities() ->
 
     payload = OpenAIAgentsResultMapper().safe_raw_output(Result())
 
-    assert payload == {
-        "final_output": "done",
-        "last_response_id": "resp_123",
-        "conversation_id": "conv_123",
-        "last_agent": "Researcher",
-        "resume_input": [
-            {
-                "role": "assistant",
-                "content": "[redacted]",
-                "metadata": {"authorization": "[redacted]"},
-            }
-        ],
-        "usage": {"requests": 1},
-        "sdk_continuation": {
-            "provider": "openai_agents",
-            "mode": "sdk_continuation_snapshot",
-            "native_tool_call_continuation": False,
-            "last_response_id": "resp_123",
-            "conversation_id": "conv_123",
-            "resume_input": [
-                {
-                    "role": "assistant",
-                    "content": "[redacted]",
-                    "metadata": {"authorization": "[redacted]"},
-                }
-            ],
-        },
-    }
+    assert payload["final_output"] == "done"
+    assert payload["last_agent"] == "Researcher"
+    assert payload["usage"]["requests"] == 1
+    assert set(payload) == {"final_output", "last_agent", "usage"}
     serialized = json.dumps(payload)
     assert "sk-resume-secret" not in serialized
     assert "Bearer resume-token" not in serialized
@@ -825,8 +759,6 @@ def test_openai_agents_runner_wraps_persistent_session_with_native_compaction(
             run_id=uuid4(),
         ),
         session=session,
-        previous_response_id="resp_previous",
-        conversation_id="conv_123",
         api_key="sk-test",
     )
 
@@ -843,9 +775,7 @@ def test_openai_agents_runner_wraps_persistent_session_with_native_compaction(
     assert captured["kwargs"] == {
         "context": request.context,
         "max_turns": 10,
-        "run_config": None,
-        "previous_response_id": "resp_previous",
-        "conversation_id": "conv_123",
+        "run_config": captured["kwargs"]["run_config"],
     }
 
 
@@ -1001,7 +931,10 @@ def test_openai_agents_runner_tools_include_provenance_guardrail() -> None:
         api_key="sk-test",
     )
 
-    tool = OpenAIAgentsRunner()._build_agent(request).tools[0]
+    definition = _runtime_tool("generate_image")
+    tool = OpenAIToolBridge().function_tool(
+        definition, request.tool_executor, runtime_context=request.context
+    )
 
     assert tool.description == "Execute generate_image."
     assert tool.params_json_schema == _runtime_tool("generate_image").input_schema
@@ -1209,16 +1142,10 @@ def test_openai_agents_runner_real_sdk_smoke_uses_tool_and_persistent_session() 
         },
     )
     run_id = uuid4()
-    persistent_session = SQLAlchemyAgentSession(
-        db_session=session,
-        ref=PersistentAgentSessionRef(
-            session_key=f"{workspace.id}:openai-smoke:{run_id}",
-            workspace_id=workspace.id,
-            scope_type="openai_smoke",
-            scope_id=str(run_id),
-        ),
-        agent_profile_id=profile.id,
-        metadata={"source": "openai_smoke"},
+    persistent_session = SQLAlchemySession(
+        f"{workspace.id}:smoke:{run_id}",
+        engine=create_async_engine("sqlite+aiosqlite://"),
+        create_tables=True,
     )
     executor = RecordingToolExecutor(output={"echo": "persistent-tool-ok"})
     request = AgentRunRequest(
@@ -1285,7 +1212,7 @@ def test_openai_agents_runner_smoke_base_url_normalizes_root_url(
 ) -> None:
     monkeypatch.setenv("OPENAI_SMOKE_BASE_URL", "https://dash.ovload.com/")
 
-    assert _openai_smoke_base_url() == "https://dash.ovload.com/v1"
+    assert _openai_smoke_base_url() == "https://dash.ovload.com/"
 
 
 def test_openai_agents_runner_smoke_model_api_uses_env(

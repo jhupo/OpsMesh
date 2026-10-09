@@ -182,6 +182,34 @@ def _latency_ms_from_payload(
 class McpToolCallLogService:
     session: Session
 
+    def complete_runtime_rpc(
+        self,
+        *,
+        workspace_id: UUID,
+        run_id: UUID,
+        job_id: UUID,
+        status: str,
+        response: dict[str, object] | None,
+        error: dict[str, object] | None,
+    ) -> None:
+        logs = self.session.scalars(
+            select(McpToolCallLog).where(
+                McpToolCallLog.workspace_id == workspace_id,
+                McpToolCallLog.agent_run_id == run_id,
+                McpToolCallLog.status == "waiting_self_hosted",
+                McpToolCallLog.response["result"]["mcp_job_id"].as_string() == str(job_id),
+            )
+        ).all()
+        for log in logs:
+            log.status = "completed" if status == "completed" else "failed"
+            log.response = (
+                redact_sensitive_payload({"result": response}) if response is not None else None
+            )
+            log.response_sha256 = payload_hash(response) if response is not None else None
+            log.error = redact_sensitive_payload(error) if error is not None else None
+            log.error_code = error_code(error)
+        self.session.flush()
+
     def record(
         self,
         *,
@@ -196,9 +224,7 @@ class McpToolCallLogService:
     ) -> McpToolCallLog:
         argument_sha256 = payload_hash(request.arguments)
         response_sha256 = mcp_response_hash(response)
-        redacted_response = (
-            redact_sensitive_payload(response) if response is not None else None
-        )
+        redacted_response = redact_sensitive_payload(response) if response is not None else None
         redacted_error = redact_sensitive_payload(error) if error is not None else None
         evidence = current_evidence_context()
         log = McpToolCallLog(

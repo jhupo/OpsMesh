@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session as DbSession
 from backend.app.agents.sessions.models import (
     PERSISTENT_AGENT_SESSION_STATUSES,
     PersistentAgentSession,
-    PersistentAgentSessionItem,
+    SDKAgentMessage,
 )
 
 
@@ -98,15 +98,19 @@ class PersistentSessionRepository:
         session_id: UUID,
         limit: int,
         offset: int,
-    ) -> list[PersistentAgentSessionItem]:
+    ) -> list[SDKAgentMessage]:
         return list(
             self._db_session.scalars(
-                select(PersistentAgentSessionItem)
-                .where(
-                    PersistentAgentSessionItem.workspace_id == workspace_id,
-                    PersistentAgentSessionItem.persistent_session_id == session_id,
+                select(SDKAgentMessage)
+                .join(
+                    PersistentAgentSession,
+                    SDKAgentMessage.session_id == PersistentAgentSession.session_key,
                 )
-                .order_by(PersistentAgentSessionItem.sequence.asc())
+                .where(
+                    PersistentAgentSession.workspace_id == workspace_id,
+                    PersistentAgentSession.id == session_id,
+                )
+                .order_by(SDKAgentMessage.id.asc())
                 .offset(non_negative_offset(offset))
                 .limit(bounded_limit(limit))
             ).all()
@@ -117,24 +121,33 @@ class PersistentSessionRepository:
         *,
         workspace_id: UUID,
         session_id: UUID,
-    ) -> list[PersistentAgentSessionItem]:
+    ) -> list[SDKAgentMessage]:
         return list(
             self._db_session.scalars(
-                select(PersistentAgentSessionItem)
-                .where(
-                    PersistentAgentSessionItem.workspace_id == workspace_id,
-                    PersistentAgentSessionItem.persistent_session_id == session_id,
+                select(SDKAgentMessage)
+                .join(
+                    PersistentAgentSession,
+                    SDKAgentMessage.session_id == PersistentAgentSession.session_key,
                 )
-                .order_by(PersistentAgentSessionItem.sequence.asc())
+                .where(
+                    PersistentAgentSession.workspace_id == workspace_id,
+                    PersistentAgentSession.id == session_id,
+                )
+                .order_by(SDKAgentMessage.id.asc())
             ).all()
         )
 
     def item_count(self, workspace_id: UUID, session_id: UUID) -> int:
         return int(
             self._db_session.scalar(
-                select(func.count(PersistentAgentSessionItem.id)).where(
-                    PersistentAgentSessionItem.workspace_id == workspace_id,
-                    PersistentAgentSessionItem.persistent_session_id == session_id,
+                select(func.count(SDKAgentMessage.id))
+                .join(
+                    PersistentAgentSession,
+                    SDKAgentMessage.session_id == PersistentAgentSession.session_key,
+                )
+                .where(
+                    PersistentAgentSession.workspace_id == workspace_id,
+                    PersistentAgentSession.id == session_id,
                 )
             )
             or 0
@@ -144,24 +157,29 @@ class PersistentSessionRepository:
         self,
         workspace_id: UUID,
         session_id: UUID,
-    ) -> PersistentAgentSessionItem | None:
+    ) -> SDKAgentMessage | None:
         return self._db_session.scalar(
-            select(PersistentAgentSessionItem)
-            .where(
-                PersistentAgentSessionItem.workspace_id == workspace_id,
-                PersistentAgentSessionItem.persistent_session_id == session_id,
+            select(SDKAgentMessage)
+            .join(
+                PersistentAgentSession,
+                SDKAgentMessage.session_id == PersistentAgentSession.session_key,
             )
-            .order_by(PersistentAgentSessionItem.sequence.desc())
+            .where(
+                PersistentAgentSession.workspace_id == workspace_id,
+                PersistentAgentSession.id == session_id,
+            )
+            .order_by(SDKAgentMessage.id.desc())
             .limit(1)
         )
 
     def delete_items(self, *, workspace_id: UUID, session_id: UUID) -> int:
         item_count = self.item_count(workspace_id, session_id)
+        keys = select(PersistentAgentSession.session_key).where(
+            PersistentAgentSession.workspace_id == workspace_id,
+            PersistentAgentSession.id == session_id,
+        )
         self._db_session.execute(
-            delete(PersistentAgentSessionItem).where(
-                PersistentAgentSessionItem.workspace_id == workspace_id,
-                PersistentAgentSessionItem.persistent_session_id == session_id,
-            )
+            delete(SDKAgentMessage).where(SDKAgentMessage.session_id.in_(keys))
         )
         return item_count
 

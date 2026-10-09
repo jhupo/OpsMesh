@@ -153,7 +153,6 @@ class AgentTeamOperationsConsoleSessionResponse(BaseModel):
     agent_profile_id: UUID | None
     agent_team_id: UUID | None
     item_count: int
-    openai_conversation_id: str | None
     latest_item_metadata: dict[str, object] | None
     updated_at: datetime
 

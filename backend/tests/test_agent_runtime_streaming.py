@@ -2,6 +2,8 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+from agents import RunContextWrapper
+from agents.usage import Usage
 from claude_agent_sdk import ResultMessage, StreamEvent
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
@@ -81,7 +83,9 @@ def test_openai_streaming_maps_ordered_events_lifecycle_and_usage(
 ) -> None:
     class StreamResult:
         final_output = "done"
-        usage = {"requests": 1, "input_tokens": 7, "output_tokens": 3}
+        context_wrapper = RunContextWrapper(
+            context=None, usage=Usage(requests=1, input_tokens=7, output_tokens=3, total_tokens=10)
+        )
         interruptions: list[object] = []
         new_items: list[object] = []
         last_agent = None

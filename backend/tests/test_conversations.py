@@ -491,7 +491,7 @@ def test_conversation_reuses_sdk_history_across_turns_and_isolates_delegates() -
     )
     from sqlalchemy.orm import sessionmaker
 
-    from backend.app.agents.execution.providers.openai.session import OpenAISessionAdapter
+    from backend.app.agents.sessions.gateway import AuthorizedSDKSession
     from backend.app.shared.concurrency import BlockingIO
     from backend.app.shared.db.operations import DatabaseOperations
 
@@ -587,7 +587,9 @@ def test_conversation_reuses_sdk_history_across_turns_and_isolates_delegates() -
     def sdk_storage(run, task):
         service = RunRequestSessionService(session)
         ref = service.persistent_session_ref_for_run(run, task, profile)
-        storage = service.persistent_session_for_run(run, task, profile, ref)
+        storage = service.persistent_session_for_run(
+            run, task, profile, ref, sdk_provider="openai_agents"
+        )
         session.commit()
         return ref, storage
 
@@ -596,12 +598,13 @@ def test_conversation_reuses_sdk_history_across_turns_and_isolates_delegates() -
     async def execute(storage, run_id, text):
         with BlockingIO(1, name="conversation-history") as io:
             database = DatabaseOperations(factory, io, lambda: None)
-            return await Runner.run(
-                sdk_agent,
-                text,
-                session=OpenAISessionAdapter(storage.scoped(database, run_id)),
-                run_config=RunConfig(tracing_disabled=True),
-            )
+            native = AuthorizedSDKSession(storage, database, run_id)
+            try:
+                return await Runner.run(
+                    sdk_agent, text, session=native, run_config=RunConfig(tracing_disabled=True)
+                )
+            finally:
+                await native.close()
 
     result = asyncio.run(execute(first_storage, first_run.id, first_task.description))
     first_run.status = first_task.status = "completed"
@@ -648,11 +651,11 @@ def test_conversation_reuses_sdk_history_across_turns_and_isolates_delegates() -
     )
     delegate_run = session.scalar(select(AgentRun).where(AgentRun.task_id == delegated.id))
     delegate_storage = RunRequestSessionService(session).persistent_session_for_run(
-        delegate_run, delegated, expert
+        delegate_run, delegated, expert, sdk_provider="openai_agents"
     )
     session.commit()
     assert delegate_storage.session_id != first_storage.session_id
-    assert asyncio.run(delegate_storage.get_items()) == []
+    assert delegate_storage.session_id != second_storage.session_id
     delegated.status = delegate_run.status = "completed"
     delegated.final_output = {"final_output": "reviewed"}
 
@@ -683,7 +686,24 @@ def test_conversation_reuses_sdk_history_across_turns_and_isolates_delegates() -
     other_run = session.scalar(select(AgentRun).where(AgentRun.task_id == other_task.id))
     other_ref, other_storage = sdk_storage(other_run, other_task)
     assert other_ref.session_key != first_ref.session_key
-    assert asyncio.run(other_storage.get_items()) == []
+    assert other_storage.session_id != first_storage.session_id
+
+    async def verify_isolation():
+        with BlockingIO(1, name="history-isolation") as io:
+            database = DatabaseOperations(factory, io, lambda: None)
+            native = AuthorizedSDKSession(other_storage, database, other_run.id)
+            forged = AuthorizedSDKSession(first_storage, database, other_run.id)
+            try:
+                assert await native.get_items() == []
+                with pytest.raises(ResourceAccessDenied):
+                    await forged.get_items()
+                with pytest.raises(ResourceAccessDenied):
+                    await forged.add_items([{"role": "user", "content": "unauthorized"}])
+            finally:
+                await native.close()
+                await forged.close()
+
+    asyncio.run(verify_isolation())
     other_run.session_key = first_ref.session_key
     with pytest.raises(ResourceAccessDenied):
         RunRequestSessionService(session).persistent_session_ref_for_run(

@@ -23,7 +23,11 @@ from backend.app.agents.providers.probes import (
     ModelProviderHealthCheck,
     ModelProviderHealthCheckResult,
 )
-from backend.app.agents.sessions.models import PersistentAgentSession, PersistentAgentSessionItem
+from backend.app.agents.sessions.models import (
+    PersistentAgentSession,
+    SDKAgentMessage,
+    SDKAgentSession,
+)
 from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.governance.audit.models import AuditEvent
 from backend.app.governance.reviews.model_request import ModelRequestReview
@@ -2628,16 +2632,18 @@ def test_team_session_controls_manage_runtime_and_member_sessions() -> None:
     team_session_id = UUID(started.json()["team_session_id"])
     team_session = session.get(PersistentAgentSession, team_session_id)
     assert team_session is not None
-    for index, content in enumerate(("old", "middle", "recent"), start=1):
+    session.add(SDKAgentSession(session_id=team_session.session_key))
+    session.flush()
+    for content in ("old", "middle", "recent"):
         session.add(
-            PersistentAgentSessionItem(
-                workspace_id=workspace.id,
-                persistent_session_id=team_session.id,
-                sequence=index,
-                item={
-                    "role": "assistant",
-                    "content": f"{content} session content token sk-team-session-secret",
-                },
+            SDKAgentMessage(
+                session_id=team_session.session_key,
+                message_data=json.dumps(
+                    {
+                        "role": "assistant",
+                        "content": f"{content} session content token sk-team-session-secret",
+                    }
+                ),
             )
         )
     session.commit()
@@ -4183,18 +4189,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert model_provider["provider"] == "openai-compatible"
     assert model_provider["selected_model"] == "claude-opus-4-6"
     assert model_provider["agent_model"] == "workspace-default"
-    assert model_provider["model_capability"] == {
-        "provider": "openai-compatible",
-        "model": "*",
-        "display_name": "OpenAI-compatible model",
-        "capabilities": ["tools", "json_mode", "streaming"],
-        "supports_tools": True,
-        "supports_vision": False,
-        "supports_json_mode": True,
-        "supports_streaming": True,
-        "context_window_tokens": None,
-        "notes": "Actual support depends on the upstream gateway and selected model.",
-    }
+    assert model_provider["model_capability"] is None
     assert model_provider["default_model"] == "claude-opus-4-6"
     assert model_provider["model_api"] == "chat_completions"
     assert model_provider["base_url_configured"] is True
@@ -4247,9 +4242,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
         "chat_completions",
     ]
     assert provider_options[str(default_credential.id)]["default_model_api"] is None
-    assert {
-        item["model"] for item in provider_options[str(default_credential.id)]["model_options"]
-    }.issuperset({"gpt-5", "gpt-4.1-mini"})
+    assert provider_options[str(default_credential.id)]["model_options"] == []
     assert provider_options[str(credential.id)]["provider"] == "openai-compatible"
     assert provider_options[str(credential.id)]["model_api"] == "chat_completions"
     assert provider_options[str(credential.id)]["model_apis"] == [
@@ -4258,9 +4251,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     ]
     assert provider_options[str(credential.id)]["default_model_api"] is None
     assert provider_options[str(credential.id)]["base_url_host"] == "dash.ovload.com"
-    assert provider_options[str(credential.id)]["model_options"] == [
-        provider_options[str(credential.id)]["model_capability"]
-    ]
+    assert provider_options[str(credential.id)]["model_options"] == []
     assert provider_options[str(credential.id)]["scheduled_health_check"]["configured"] is True
     developer_binding = next(
         item
@@ -4281,18 +4272,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert developer_binding["credential_status"] == "active"
     assert developer_binding["credential_health_status"] == "unknown"
     assert developer_binding["budget_exhausted"] is False
-    assert developer_binding["model_capability"] == {
-        "provider": "openai-compatible",
-        "model": "*",
-        "display_name": "OpenAI-compatible model",
-        "capabilities": ["tools", "json_mode", "streaming"],
-        "supports_tools": True,
-        "supports_vision": False,
-        "supports_json_mode": True,
-        "supports_streaming": True,
-        "context_window_tokens": None,
-        "notes": "Actual support depends on the upstream gateway and selected model.",
-    }
+    assert developer_binding["model_capability"] is None
     assert developer_binding["available_credential_ids"] == [
         str(default_credential.id),
         str(credential.id),
@@ -7433,17 +7413,16 @@ def test_team_member_model_provider_can_be_bound_from_operations_context() -> No
         scope_id=f"{team.json()['id']}:{agent.json()['id']}",
         agent_profile_id=UUID(agent.json()["id"]),
         agent_team_id=UUID(team.json()["id"]),
-        openai_conversation_id="conv_old_provider",
         session_metadata={"source": "test"},
     )
     session.add(persistent_session)
     session.flush()
+    session.add(SDKAgentSession(session_id=persistent_session.session_key))
+    session.flush()
     session.add(
-        PersistentAgentSessionItem(
-            workspace_id=workspace.id,
-            persistent_session_id=persistent_session.id,
-            sequence=1,
-            item={"role": "user", "content": "old provider context"},
+        SDKAgentMessage(
+            session_id=persistent_session.session_key,
+            message_data=json.dumps({"role": "user", "content": "old provider context"}),
         )
     )
     session.commit()
@@ -7532,7 +7511,6 @@ def test_team_member_model_provider_can_be_bound_from_operations_context() -> No
     assert clear_credential.json()["model_provider_credential_id"] is None
     assert clear_credential.json()["model_settings"]["model_api"] == "responses"
     session.refresh(persistent_session)
-    assert persistent_session.openai_conversation_id is None
     assert persistent_session.status == "active"
     assert persistent_session.session_metadata["last_reset"]["reason"] == (
         "team_member_model_provider_updated"
@@ -7554,8 +7532,8 @@ def test_team_member_model_provider_can_be_bound_from_operations_context() -> No
     )
     assert (
         session.scalar(
-            select(func.count(PersistentAgentSessionItem.id)).where(
-                PersistentAgentSessionItem.persistent_session_id == persistent_session.id
+            select(func.count(SDKAgentMessage.id)).where(
+                SDKAgentMessage.session_id == persistent_session.session_key
             )
         )
         == 0
@@ -8457,10 +8435,10 @@ def test_run_api_redacts_sensitive_payloads() -> None:
         input={"prompt": "draft", "api_key": "sk-hidden"},
         output={
             "result": {"token": "hidden-token"},
-            "sdk_continuation": {
+            "tool_payload": {
                 "provider": "openai_agents",
-                "mode": "sdk_continuation_snapshot",
-                "resume_input": [
+                "mode": "tool_result",
+                "items": [
                     {
                         "role": "tool",
                         "base_url": "https://router.example.test/private",
@@ -8498,8 +8476,8 @@ def test_run_api_redacts_sensitive_payloads() -> None:
     payload = runs.json()["items"][0]
     assert payload["input"]["api_key"] == "[redacted]"
     assert payload["output"]["result"]["token"] == "[redacted]"
-    assert payload["output"]["sdk_continuation"]["resume_input"][0]["base_url"] == "[redacted]"
-    assert payload["output"]["sdk_continuation"]["resume_input"][0]["headers"] == "[redacted]"
+    assert payload["output"]["tool_payload"]["items"][0]["base_url"] == "[redacted]"
+    assert payload["output"]["tool_payload"]["items"][0]["headers"] == "[redacted]"
     assert payload["error"]["authorization"] == "[redacted]"
     assert "router.example.test/private" not in str(payload)
     assert "Bearer hidden" not in str(payload)

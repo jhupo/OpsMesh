@@ -6,13 +6,12 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.agents.execution.contracts import AgentRuntimeToolResult
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.identity.users.models import User
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.resources.memory.policy import WorkingMemoryPolicy
-from backend.app.resources.memory.working import AgentWorkingMemoryService, working_memory_context
+from backend.app.resources.memory.working import AgentWorkingMemoryService
 from backend.app.shared.db.base import Base
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
@@ -42,7 +41,10 @@ def test_working_memory_is_run_scoped_versioned_redacted_and_expirable() -> None
     session.add_all([profile, task])
     session.flush()
     step = TaskStep(
-        workspace_id=workspace.id, task_id=task.id, title="Build", description="Package",
+        workspace_id=workspace.id,
+        task_id=task.id,
+        title="Build",
+        description="Package",
         acceptance_criteria=["Tests pass", "token=criteria-secret"],
         expected_artifacts=["package.whl", "password=artifact-secret"],
     )
@@ -68,48 +70,25 @@ def test_working_memory_is_run_scoped_versioned_redacted_and_expirable() -> None
     service = AgentWorkingMemoryService(session)
     policy = WorkingMemoryPolicy()
 
-    prepared = service.prepare_run(
-        run=run,
-        profile=profile,
-        task=task,
-        session_key="session-one",
-        policy=policy,
-    )
-    task.description = "Prepare the signed final package."
-    updated = service.prepare_run(
-        run=run,
-        profile=profile,
-        task=task,
-        session_key="session-one",
-        policy=policy,
-    )
-    tool_entry = service.record_tool_result(
-        context_workspace_id=workspace.id,
-        run_id=run.id,
-        tool_name="build",
-        tool_call_id="call-1",
-        result=AgentRuntimeToolResult(
-            status="completed",
-            output={"summary": "done", "api_key": "tool-secret"},
-        ),
-        policy=policy,
-    )
+    def put(content):
+        return service.put(
+            run=run,
+            profile=profile,
+            key="note",
+            title="Explicit note",
+            content=content,
+            entry_type="note",
+            metadata={},
+            session_key="session-one",
+            policy=policy,
+        )
 
-    assert len(prepared) == 2
-    assert len(updated) == 2
-    assert updated[0].revision == 2
-    assert "objective-secret" not in updated[0].content
-    plan_content = " ".join(entry.content for entry in updated)
-    assert "Tests pass" in plan_content
-    assert "package.whl" in plan_content
-    assert "criteria-secret" not in plan_content
-    assert "artifact-secret" not in plan_content
-    assert tool_entry is not None
+    put("Verify release token=objective-secret")
+    tool_entry = put("Verify signed release token=tool-secret")
+    assert tool_entry.revision == 2
     assert "tool-secret" not in tool_entry.content
-    assert len(service.active_for_run(workspace_id=workspace.id, run_id=run.id)) == 3
+    assert len(service.active_for_run(workspace_id=workspace.id, run_id=run.id)) == 1
     assert service.active_for_run(workspace_id=workspace.id, run_id=other_run.id) == []
-    assert "Current run working memory:" in working_memory_context(updated)
-
     promoted = service.promote(
         workspace_id=workspace.id,
         run_id=run.id,
@@ -125,9 +104,8 @@ def test_working_memory_is_run_scoped_versioned_redacted_and_expirable() -> None
     assert promoted.scope_type == "task"
     assert tool_entry.status == "promoted"
 
-    assert service.expire_run(workspace_id=workspace.id, run_id=run.id) == 2
+    assert service.expire_run(workspace_id=workspace.id, run_id=run.id) == 0
     assert service.active_for_run(workspace_id=workspace.id, run_id=run.id) == []
-    assert all(entry.status == "expired" for entry in updated)
 
 
 def test_working_memory_rejects_cross_workspace_profile_binding() -> None:

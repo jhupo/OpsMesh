@@ -6,13 +6,27 @@ import asyncio
 import io
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, cast
+from uuid import UUID
 
+from agents.models.openai_provider import OpenAIProvider
 from agents.sandbox import Manifest, SandboxRunConfig
+from agents.sandbox.capabilities import Filesystem, Memory, Shell
+from agents.sandbox.capabilities.capability import Capability
+from agents.sandbox.config import MemoryGenerateConfig, MemoryLayoutConfig, MemoryReadConfig
+from agents.sandbox.errors import WorkspaceReadNotFoundError
 from agents.sandbox.manifest import Environment
 from agents.sandbox.session import BaseSandboxSession, SandboxSessionState
 from agents.sandbox.snapshot import NoopSnapshot
 from agents.sandbox.types import ExecResult, User
 
+from backend.app.agents.execution.contracts import AgentRunRequest
+from backend.app.agents.execution.providers.openai.memory_usage import (
+    MeteredMemoryModel,
+    memory_usage,
+)
+from backend.app.agents.execution.providers.openai.settings import OpenAIModelSettingsMapper
+from backend.app.agents.providers.model_api import OPENAI_RESPONSES_API, canonical_model_api
+from backend.app.resources.memory.policy import SDKMemoryPolicy
 from backend.app.runtime.contracts import SandboxBinding
 
 
@@ -78,13 +92,16 @@ class OpsMeshSandboxSession(BaseSandboxSession):
 
     async def read(self, path: Path, *, user: str | User | None = None) -> io.IOBase:
         del user
-        resolved = await self._check_read_with_exec(path)
+        try:
+            resolved = await self._check_read_with_exec(path)
+        except FileNotFoundError as exc:
+            raise WorkspaceReadNotFoundError(path=path, cause=exc) from exc
         content = await asyncio.to_thread(
             self._binding.session.executor.read_file,
             PurePosixPath(resolved.as_posix()),
         )
         if content is None:
-            raise FileNotFoundError(resolved)
+            raise WorkspaceReadNotFoundError(path=resolved)
         return io.BytesIO(content)
 
     async def write(
@@ -115,3 +132,56 @@ class OpsMeshSandboxSession(BaseSandboxSession):
 
 def sandbox_run_config(binding: SandboxBinding) -> SandboxRunConfig:
     return SandboxRunConfig(session=OpsMeshSandboxSession(binding))
+
+
+def sandbox_capabilities(
+    request: AgentRunRequest,
+    *,
+    profile_id: UUID | None = None,
+    model_settings: dict[str, object] | None = None,
+) -> list[Capability]:
+    """SDK Memory owns extraction and consolidation; platform selects its scoped storage."""
+    capabilities: list[Capability] = [Filesystem(), Shell()]
+    policy = SDKMemoryPolicy.model_validate(request.context.metadata.get("sdk_memory", {}))
+    if not policy.enabled:
+        return capabilities
+    if request.sandbox is None or not request.sandbox.session.persistent:
+        raise ValueError("SDK memory requires a persistent Runtime")
+    profile_id = profile_id or request.agent_profile.id
+    if request.context.user_id is None or profile_id is None:
+        raise ValueError("SDK memory requires an authorized user and agent profile")
+    if not policy.read and not policy.generate:
+        raise ValueError("SDK memory requires reading or generation")
+    generate = None
+    if policy.generate:
+        if request.api_key is None:
+            raise ValueError("SDK memory generation requires a frozen provider credential")
+        model = OpenAIProvider(
+            api_key=request.api_key,
+            base_url=request.base_url,
+            use_responses=canonical_model_api(request.model_api) == OPENAI_RESPONSES_API,
+        ).get_model(request.model or request.agent_profile.model)
+        meter = memory_usage.get()
+        if meter is not None:
+            model = MeteredMemoryModel(model, meter)
+        settings = OpenAIModelSettingsMapper().map_settings(
+            model_settings if model_settings is not None else request.agent_profile.model_settings
+        )
+        generate = MemoryGenerateConfig(
+            phase_one_model=model,
+            phase_two_model=model,
+            phase_one_model_settings=settings,
+            phase_two_model_settings=settings,
+            max_raw_memories_for_consolidation=policy.max_raw_memories,
+        )
+    scope = f".opsmesh/memory/{request.context.workspace_id}/{request.context.user_id}/{profile_id}"
+    capabilities.append(
+        Memory(
+            layout=MemoryLayoutConfig(
+                memories_dir=f"{scope}/memories", sessions_dir=f"{scope}/sessions"
+            ),
+            read=MemoryReadConfig(live_update=policy.live_update) if policy.read else None,
+            generate=generate,
+        )
+    )
+    return capabilities

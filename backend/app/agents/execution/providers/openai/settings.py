@@ -33,7 +33,7 @@ class OpenAIModelSettingsMapper:
             presence_penalty=float_setting(settings, "presence_penalty"),
             max_tokens=int_setting(settings, "max_tokens"),
             tool_choice=tool_choice_setting(settings),
-            parallel_tool_calls=False,  # Product tool/session transactions are sequential per Run.
+            parallel_tool_calls=bool_setting(settings, "parallel_tool_calls"),
             truncation=safe_truncation,
             verbosity=safe_verbosity,
             metadata=safe_metadata,

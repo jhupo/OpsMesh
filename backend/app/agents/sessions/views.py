@@ -1,17 +1,17 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from backend.app.agents.sessions.models import PersistentAgentSession, PersistentAgentSessionItem
+from backend.app.agents.sessions.models import PersistentAgentSession, SDKAgentMessage
 
 
 @dataclass(frozen=True)
 class PersistentSessionItemView:
-    id: UUID
-    sequence: int
+    id: int
     item: dict[str, Any]
     created_at: datetime
     metadata: dict[str, Any]
@@ -28,7 +28,6 @@ class PersistentSessionSummary:
     agent_profile_id: UUID | None
     agent_team_id: UUID | None
     task_id: UUID | None
-    openai_conversation_id: str | None
     metadata: dict[str, Any]
     item_count: int
     latest_item_metadata: dict[str, Any] | None
@@ -44,11 +43,10 @@ class PersistentSessionDetail:
     item_offset: int
 
 
-def session_item_view(row: PersistentAgentSessionItem) -> PersistentSessionItemView:
+def session_item_view(row: SDKAgentMessage) -> PersistentSessionItemView:
     return PersistentSessionItemView(
         id=row.id,
-        sequence=row.sequence,
-        item=dict(row.item),
+        item=json.loads(row.message_data),
         created_at=row.created_at,
         metadata=session_item_metadata(row),
     )
@@ -58,7 +56,7 @@ def session_summary(
     session: PersistentAgentSession,
     *,
     item_count: int,
-    latest_item: PersistentAgentSessionItem | None,
+    latest_item: SDKAgentMessage | None,
 ) -> PersistentSessionSummary:
     return PersistentSessionSummary(
         id=session.id,
@@ -70,7 +68,6 @@ def session_summary(
         agent_profile_id=session.agent_profile_id,
         agent_team_id=session.agent_team_id,
         task_id=session.task_id,
-        openai_conversation_id=session.openai_conversation_id,
         metadata=dict(session.session_metadata),
         item_count=item_count,
         latest_item_metadata=(
@@ -81,12 +78,11 @@ def session_summary(
     )
 
 
-def session_item_metadata(row: PersistentAgentSessionItem) -> dict[str, Any]:
-    item = row.item
+def session_item_metadata(row: SDKAgentMessage) -> dict[str, Any]:
+    item = json.loads(row.message_data)
     content = item.get("content")
     return {
         "id": str(row.id),
-        "sequence": row.sequence,
         "created_at": row.created_at.isoformat(),
         "role": item.get("role"),
         "type": item.get("type"),

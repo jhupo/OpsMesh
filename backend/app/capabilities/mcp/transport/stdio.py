@@ -130,10 +130,12 @@ class SelfHostedStdioMcpToolAdapter:
         service: SelfHostedMcpJobService,
         runtime: WorkspaceRuntime,
         agent_run_id: UUID,
+        tool_call_id: object = None,
     ) -> None:
         self._service = service
         self._runtime = runtime
         self._agent_run_id = agent_run_id
+        self._tool_call_id = tool_call_id if isinstance(tool_call_id, str) else None
 
     async def call(
         self,
@@ -168,7 +170,14 @@ class SelfHostedStdioMcpToolAdapter:
             mcp_server_id=server.id,
             tool_name=tool_name,
             request_payload=payload,
+            tool_call_id=self._tool_call_id,
         )
+        if job.status == "completed":
+            if job.response_payload is None:
+                raise McpExecutionError("Runtime RPC has no result", code="mcp_rpc_result_missing")
+            return job.response_payload
+        if job.status in {"failed", "expired"}:
+            raise McpExecutionError("Runtime RPC failed", code="mcp_rpc_failed")
         raise McpExecutionPending(
             "MCP tool is queued for self-hosted runtime execution",
             code="mcp_self_hosted_job_queued",
@@ -186,6 +195,5 @@ def _sdk_report_is_ready(report: object) -> bool:
         and report.get("status") == "ready"
         and report.get("contract_version") == MCP_STDIO_CONTRACT_VERSION
         and report.get("sdk_package") == MCP_PYTHON_SDK_PACKAGE
-        and report.get("stdio_client") == "available"
-        and report.get("client_session") == "available"
+        and report.get("stdio_server") == "available"
     )

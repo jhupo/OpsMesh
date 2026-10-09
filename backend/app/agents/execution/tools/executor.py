@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import UUID
 
 from sqlalchemy import select
@@ -18,17 +19,16 @@ from backend.app.agents.execution.tools.product import PRODUCT_TOOL_NAMES, Produ
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionRequest
 from backend.app.capabilities.mcp.execution.service import McpToolExecutionService
 from backend.app.capabilities.mcp.models import McpToolAllowlist
-from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
+from backend.app.capabilities.tools.contracts import ToolPermissionError
 from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.orchestration.approvals.policy import ApprovalPolicyEngine
-from backend.app.resources.memory.policy import working_memory_policy
-from backend.app.resources.memory.working import AgentWorkingMemoryService
 from backend.app.resources.storage.storage import ObjectStorage
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
 from backend.app.runtime.queues.execution_control import (
     ExecutionOwnershipLostError,
     current_execution_control,
 )
+from backend.app.runtime.self_hosted.models import SelfHostedMcpJob
 from backend.app.shared.config import Settings
 from backend.app.shared.security.secrets import SecretEncryptionService
 
@@ -37,7 +37,6 @@ class BackendToolExecutor:
     def __init__(
         self,
         session: Session,
-        adapter: McpToolAdapter | McpToolAdapterResolver,
         *,
         settings: Settings | None = None,
         docker_client: DockerRuntimeClient | None = None,
@@ -45,7 +44,6 @@ class BackendToolExecutor:
         storage: ObjectStorage | None = None,
     ) -> None:
         self._session = session
-        self._adapter = adapter
         self._settings = settings
         self._docker_client = docker_client
         self._secret_service = secret_service
@@ -73,6 +71,12 @@ class BackendToolExecutor:
                 control.check_ownership()
             self._session.commit()
             return result
+        except ToolPermissionError:
+            control = current_execution_control()
+            if control is not None:
+                control.check_ownership()
+            self._session.commit()
+            raise
         except BaseException:
             self._session.rollback()
             raise
@@ -108,6 +112,9 @@ class BackendToolExecutor:
                 ),
             )
         if not approval_granted or self._secret_service is None:
+            existing = self._runtime_rpc_result(context, prepared, tool_name, tool_call_id)
+            if existing is not None:
+                return existing
             return await self._execute_prepared(
                 context=context,
                 tool_name=tool_name,
@@ -124,6 +131,9 @@ class BackendToolExecutor:
             tool_call_id=tool_call_id,
         )
         if invocation is None:
+            existing = self._runtime_rpc_result(context, prepared, tool_name, tool_call_id)
+            if existing is not None:
+                return existing
             return await self._execute_prepared(
                 context=context,
                 tool_name=tool_name,
@@ -145,9 +155,14 @@ class BackendToolExecutor:
                 error={"code": "approved_tool_call_invalid", "message": str(exc)},
             )
         if stored is not None:
-            result = _tool_result_from_payload(stored)
-            self._record_working_memory(context, tool_name, tool_call_id, result)
-            return result
+            # A durable RPC may be reattached by its original call ID. Unknown
+            # local side effects still fail closed and are never replayed.
+            rpc_result = self._runtime_rpc_result(context, prepared, tool_name, tool_call_id)
+            if invocation.status not in {"executing", "outcome_unknown"} or rpc_result is None:
+                return _tool_result_from_payload(stored)
+            if rpc_result.status != "waiting_self_hosted":
+                pending.complete_execution(invocation, tool_result_payload(rpc_result))
+            return rpc_result
         try:
             result = await self._execute_prepared(
                 context=context,
@@ -167,8 +182,48 @@ class BackendToolExecutor:
         control = current_execution_control()
         if control is not None:
             control.check_ownership()
-        pending.complete_execution(invocation, _tool_result_payload(result))
+        if result.status != "waiting_self_hosted":
+            pending.complete_execution(invocation, tool_result_payload(result))
         return result
+
+    def _runtime_rpc_result(
+        self,
+        context: AgentRuntimeContext,
+        prepared: PreparedToolCall,
+        tool_name: str,
+        tool_call_id: str | None,
+    ) -> AgentRuntimeToolResult | None:
+        if tool_call_id is None or prepared.definition.source != "mcp":
+            return None
+        rpc = self._session.scalar(
+            select(SelfHostedMcpJob).where(
+                SelfHostedMcpJob.workspace_id == context.workspace_id,
+                SelfHostedMcpJob.agent_run_id == context.run_id,
+                SelfHostedMcpJob.tool_call_id == tool_call_id,
+                SelfHostedMcpJob.tool_name == tool_name,
+            )
+        )
+        if rpc is None:
+            return None
+        request = rpc.request_payload.get("request")
+        tool = request.get("tool") if isinstance(request, dict) else None
+        if (
+            not isinstance(tool, dict)
+            or tool.get("arguments") != prepared.arguments
+            or rpc.mcp_server_id != prepared.definition.mcp_server_id
+            or context.runtime_binding is None
+            or rpc.workspace_runtime_id != context.runtime_binding.workspace_runtime_id
+        ):
+            raise ValueError("Durable Runtime RPC does not match the authorized tool invocation")
+        if rpc.status in {"queued", "claimed"}:
+            return AgentRuntimeToolResult(
+                status="waiting_self_hosted", output={"mcp_job_id": str(rpc.id)}
+            )
+        return AgentRuntimeToolResult(
+            status="completed" if rpc.status == "completed" else "failed",
+            output=rpc.response_payload,
+            error=rpc.error_payload,
+        )
 
     async def review_tool_call(
         self,
@@ -242,7 +297,6 @@ class BackendToolExecutor:
                 resource_grants=prepared.resource_grants,
                 approval_granted=approval_granted,
             )
-            self._record_working_memory(context, tool_name, tool_call_id, result)
             return result
         if prepared.definition.source != "mcp":
             denial = ToolGatewayDenied(
@@ -260,8 +314,9 @@ class BackendToolExecutor:
             )
         resolver = ContextualMcpAdapterResolver(
             session=self._session,
-            default_adapter=self._adapter,
-            context=context,
+            context=replace(
+                context, metadata={**context.metadata, "sdk_tool_call_id": tool_call_id}
+            ),
             settings=self._settings,
             docker_client=self._docker_client,
             secret_service=self._secret_service,
@@ -295,29 +350,7 @@ class BackendToolExecutor:
                 },
             ),
         )
-        self._record_working_memory(context, tool_name, tool_call_id, tool_result)
         return tool_result
-
-    def _record_working_memory(
-        self,
-        context: AgentRuntimeContext,
-        tool_name: str,
-        tool_call_id: str | None,
-        result: AgentRuntimeToolResult,
-    ) -> None:
-        raw_working = context.metadata.get("working_memory")
-        raw_policy = raw_working.get("policy") if isinstance(raw_working, dict) else None
-        policy = working_memory_policy(
-            {"working_memory": raw_policy} if isinstance(raw_policy, dict) else {}
-        )
-        AgentWorkingMemoryService(self._session).record_tool_result(
-            context_workspace_id=context.workspace_id,
-            run_id=context.run_id,
-            tool_name=tool_name,
-            tool_call_id=tool_call_id,
-            result=result,
-            policy=policy,
-        )
 
     def _mcp_allowlist(self, prepared: PreparedToolCall, *, workspace_id: UUID) -> McpToolAllowlist:
         allowlist_id = prepared.definition.mcp_tool_allowlist_id
@@ -377,7 +410,7 @@ class DisabledToolExecutor:
         )
 
 
-def _tool_result_payload(result: AgentRuntimeToolResult) -> dict[str, object]:
+def tool_result_payload(result: AgentRuntimeToolResult) -> dict[str, object]:
     return {
         "status": result.status,
         "output": result.output,

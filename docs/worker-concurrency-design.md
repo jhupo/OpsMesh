@@ -79,30 +79,18 @@ Agent Run 锁在事件循环中按 TTL/3 续期，不再为每个模型 Run 创�
 
 ## SDK 能力核对
 
-核对日期：2026-10-09。以下官方资料描述 SDK 能力；实际接入状态以本分支代码为准。
+核对日期：2026-10-10。当前 SDK 原生存储、MCP、审批续接、Memory、压缩和结构化输出的实现、公共扩展缺口与升级要求见 [SDK 原生执行边界](sdk-native-execution.md)。
 
-- [SDK Session](https://openai.github.io/openai-agents-python/sessions/) 自动读取和保存用户、模型与工具消息。平台只传新输入和稳定 Session，不再自行拼接会话历史。SDK RunState 对输入执行 deepcopy 是进程内状态快照，不是额外的历史检索或模型请求。
-- [SQLAlchemySession](https://openai.github.io/openai-agents-python/sessions/sqlalchemy_session/) 是官方异步持久存储实现，可接 PostgreSQL AsyncEngine。当前项目仍使用 SQLAlchemyAgentSession/OpenAISessionAdapter 接入现有平台表、租户授权和执行所有权检查，尚未切换官方存储实现。若替换，应由 Alembic 管理官方表结构，保留平台授权边界及同会话顺序调度，并删除旧存储实现；本次没有新增两套存储或迁移兼容分支。
-- [本地上下文](https://openai.github.io/openai-agents-python/zh/context/) 的 context= / RunContextWrapper 向工具、hook 等传递依赖和运行身份，本身不会自动发送给模型；它不是多轮消息历史。模型可见的知识和长期记忆仍需通过工具结果或明确的输入提供。
-- [原生压缩](https://openai.github.io/openai-agents-python/sessions/#openai-responses-compaction-sessions) 使用 OpenAIResponsesCompactionSession 包装底层 Session，调用 responses.compact。当前 compaction.py 已使用该类；平台仅按输入预算设置触发阈值。Chat Completions 不走此路径。第三方模型网关是否提供 compact 接口未进行真实调用验证。
-- [SDK MCP](https://openai.github.io/openai-agents-python/zh/mcp/) 提供 HostedMCPTool、Streamable HTTP、SSE 和 stdio 接入。当前平台将治理后的工具接成 SDK FunctionTool，由平台工具网关在批准的 Runtime 执行 MCP，没有直接设置 Agent.mcp_servers。若接入原生 MCP，应在 Runtime 内管理 SDK MCP 连接，平台保留授权、凭据、审批、审计和网络策略；不能在 Worker 主进程启动用户 stdio 服务。本次未改造该执行边界。
-
-[Codex 公开记忆流水线](https://github.com/openai/codex/blob/main/codex-rs/memories/README.md) 在后台分两阶段处理：先按会话提取 raw_memory 和 rollout_summary，脱敏后存入状态数据库；再持有全局租约汇总选中的记录，更新文件并整理可复用记忆。提取并发有上限，汇总串行；失败采用退避重试。
-
-其 [v1 汇总模板](https://github.com/openai/codex/blob/main/codex-rs/memories/write/templates/memories/consolidation.md) 区分 memory_summary.md（常驻的短摘要和检索入口）、MEMORY.md（按需检索的详细知识）、rollout_summaries/（会话来源与证据）和 skills/（可复用操作步骤）；raw_memories.md 是汇总输入。这个层次管理跨会话经验，与当前会话 Session 历史和 token 压缩分开。OpsMesh 本次没有实现 Codex 的记忆汇总流水线。
+官方 SQLAlchemySession 是消息存储实现；平台仅在公共 Session 回调上增加授权和租约校验。Agent 使用原生 mcp_servers，实际传输由批准的 Runtime 中的官方 SDK 执行。自托管 RPC 的等待保留同一个工具 call ID，不再写入 pending_tool_results 或伪造用户消息。SDK Memory 默认关闭，启用后要求 persistent Runtime，并按工作空间、用户、Agent 设置文件目录。Responses 压缩是唯一压缩层，结构化输出只在 SDK 校验。
 
 SIGINT/SIGTERM 停止领取，向活动 SDK 设置协作取消。停止导致的错误不再重试；失租与业务取消区分。同步 handler 和已发出的外部工具只能等待自己的取消能力、超时或返回，不能强杀 Python 线程。drain 保持停止领取、等待当前工作结束。
 
 ## 验证与限制
 
-- 本轮会话、SDK Session、Worker、队列、健康与审批恢复回归 111 passed / 6 PostgreSQL skipped。真实 SDK Runner 配合离线模型替身验证跨 turn 自动读取消息及工具结果、独立专家与会话隔离；没有网络模型调用。SDK 历史适配器将校验后的延迟 Iterable 转为普通数据，防止续接时 RunState.deepcopy 失败。
-- 外部消息 Automation 产品流程 5 passed，覆盖 pending follow_up、结束后续接、外部会话和发送者隔离；任务控制与交付流程 1 passed，SDK Session 请求不混用 Provider 服务端历史的回归 1 passed。
-- 上轮 MCP 执行与适配器回归 37 passed，PostgreSQL 6 组在独立进程通过；2 个既有 URL 规范化断言和 1 个旧 Runtime 工厂测试失败已在上轮基线复现。本轮没有重复 PostgreSQL 验证。Ruff 与 mypy（1080 个文件）通过。
-- 完整 Worker 流程验证活动槽有界、两个 SDK Run 位于同一 OS 线程不同 asyncio Task、单 I/O 线程不限制 SDK 等待并发、第三个 Job 留队列、取消、失租和维护。
-- 相同工作空间/不同工作空间 × complete/cancel/lost 共 6 种 PostgreSQL 流程通过，测试在隔离 schema 强制 create_all(checkfirst=False)。没有业务订单/真实模型调用。
-- 会话历史独立事务、审批快照跨 Worker 重建恢复、快照加密与消费、慢预览不阻塞控制池、异步锁超 TTL 与 replacement token 保护均有流程验证。
-- PostgreSQL 旧夹具先前误写 public 的 3 组测试工作空间已归档、测试用户/凭据禁用、测试 Worker 记录移除，保留不可变审计；上轮隔离 schema 验证没有重复该问题。
+当前回归覆盖完整会话 turn、SDK Session、Worker 槽位、审批恢复、MCP、租户授权和取消流程；SDK 的模型部分使用离线替身。原生 stdio 与 HTTP 使用本地 MCP 服务验证。PostgreSQL 在独立本地集群和隔离 schema 中验证 Alembic 升级、SDK 消息读写、降级和再次升级，保留消息顺序与 call ID。
 
-尚未实现：SDK 进程整体迁移到 Runtime host/RPC、原生 redis.asyncio/AsyncSession 全栈迁移、完整控制 Inbox/Outbox、跨租户公平队列、服务等级保留槽、独立 CPU 计算服务、跨地区部署及生产压力验收。现有 Runtime 工具边界继续生效，但不宣称 SDK 宿主已隔离迁移完成。
+完整 Worker 流程验证活动槽有界、两个 SDK Run 位于同一 OS 线程不同 asyncio Task、单 I/O 线程不限制 SDK 等待并发、第三个 Job 留队列、取消、失租和维护。自托管 MCP 已验证 SDK await 中断后的重新接回：只有一个远程 Job、一次审批执行和一次 MCP 配额消耗，审计进入终态。
 
-服务器只更新了 U号租 Manager 配置；Worker 代码未部署重启。
+真实模型、第三方 compact、SDK Memory 生成计费、Runtime 镜像部署和生产压力尚未验收。SDK 进程整体迁移到 Runtime host/RPC、原生 redis.asyncio/AsyncSession 全栈迁移、完整控制 Inbox/Outbox、跨租户公平队列、服务等级保留槽、独立 CPU 计算服务及跨地区部署仍未实现。现有 Runtime 工具边界继续生效，不宣称 SDK 宿主隔离迁移已经完成。
+
+本轮未部署服务器；保持现有 Worker 停止状态。

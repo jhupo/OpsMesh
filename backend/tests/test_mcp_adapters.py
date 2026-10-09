@@ -27,12 +27,7 @@ from backend.app.shared.security.secrets import SecretEncryptionService
 def test_streamable_http_mcp_adapter_uses_official_client_session(monkeypatch) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(content=[_FakeContent({"type": "text", "text": "ok"})])])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.streamable_http_client",
-        sdk.streamable_http_client,
-    )
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
-        sdk.client_session,
+        "backend.app.capabilities.mcp.transport.remote.MCPServerStreamableHttp", sdk.server
     )
     secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
     encrypted = secret_service.encrypt_payload(
@@ -72,7 +67,7 @@ def test_streamable_http_mcp_adapter_uses_official_client_session(monkeypatch) -
         )
     )
 
-    assert response == {"content": [{"type": "text", "text": "ok"}]}
+    assert response == {"content": [{"type": "text", "text": "ok"}], "isError": False}
     assert sdk.transport_calls == [
         {
             "transport": "streamable_http",
@@ -103,12 +98,7 @@ def test_streamable_http_mcp_adapter_does_not_replay_failed_tool_call(monkeypatc
         ]
     )
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.streamable_http_client",
-        sdk.streamable_http_client,
-    )
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
-        sdk.client_session,
+        "backend.app.capabilities.mcp.transport.remote.MCPServerStreamableHttp", sdk.server
     )
     try:
         asyncio.run(
@@ -140,12 +130,7 @@ def test_streamable_http_mcp_adapter_runs_inside_async_runner(
 ) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(structured_content={"ok": True})])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.streamable_http_client",
-        sdk.streamable_http_client,
-    )
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
-        sdk.client_session,
+        "backend.app.capabilities.mcp.transport.remote.MCPServerStreamableHttp", sdk.server
     )
     adapter = StreamableHttpMcpToolAdapter(egress_policy=_local_test_egress_policy())
 
@@ -163,18 +148,17 @@ def test_streamable_http_mcp_adapter_runs_inside_async_runner(
             timeout_seconds=5,
         )
 
-    assert asyncio.run(invoke()) == {"ok": True}
+    assert asyncio.run(invoke()) == {
+        "content": [],
+        "structuredContent": {"ok": True},
+        "isError": False,
+    }
 
 
 def test_streamable_http_mcp_adapter_sanitizes_remote_errors(monkeypatch) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(is_error=True)])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.streamable_http_client",
-        sdk.streamable_http_client,
-    )
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
-        sdk.client_session,
+        "backend.app.capabilities.mcp.transport.remote.MCPServerStreamableHttp", sdk.server
     )
     try:
         asyncio.run(
@@ -202,12 +186,7 @@ def test_streamable_http_mcp_adapter_sanitizes_remote_errors(monkeypatch) -> Non
 def test_hosted_mcp_adapter_delegates_to_official_remote_http_transport(monkeypatch) -> None:
     sdk = _FakeMcpSdk([_FakeCallToolResult(structured_content={"ok": True})])
     monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.streamable_http_client",
-        sdk.streamable_http_client,
-    )
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
-        sdk.client_session,
+        "backend.app.capabilities.mcp.transport.remote.MCPServerStreamableHttp", sdk.server
     )
     secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
     encrypted = secret_service.encrypt_payload({"api_key": "secret-key"})
@@ -242,7 +221,7 @@ def test_hosted_mcp_adapter_delegates_to_official_remote_http_transport(monkeypa
         )
     )
 
-    assert response == {"ok": True}
+    assert response == {"content": [], "structuredContent": {"ok": True}, "isError": False}
     assert sdk.transport_calls[0]["headers"]["x-api-key"] == "secret-key"
 
 
@@ -306,11 +285,10 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
                 stdout=json.dumps(
                     {
                         "status": "ready",
-                        "contract_version": 1,
-                        "sdk_package": "mcp",
-                        "sdk_version": "1.27.1",
-                        "stdio_client": "available",
-                        "client_session": "available",
+                        "contract_version": 2,
+                        "sdk_package": "openai-agents",
+                        "sdk_version": "0.17.2",
+                        "stdio_server": "available",
                     }
                 ),
                 stderr="",
@@ -341,7 +319,7 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
         )
     )
 
-    assert response == {"ok": True}
+    assert response == {"structuredContent": {"ok": True}}
     assert runtime_manager.calls[0]["workspace_id"] == workspace_id
     assert runtime_manager.calls[0]["runtime"] is runtime
     assert runtime_manager.calls[0]["command"] == [
@@ -361,10 +339,10 @@ def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> N
     assert isinstance(input_file, RuntimeCommandInputFile)
     assert input_file.argument_name == "--request-file"
     payload = json.loads(input_file.content)
-    assert payload["contract_version"] == 1
+    assert payload["contract_version"] == 2
     assert payload["client"] == {
-        "package": "mcp",
-        "entrypoint": "mcp.client.stdio.stdio_client",
+        "package": "openai-agents",
+        "entrypoint": "agents.mcp.MCPServerStdio",
     }
     assert payload["server"] == {
         "command": "mcp-server",
@@ -388,11 +366,10 @@ def test_docker_runtime_stdio_mcp_adapter_reuses_valid_sdk_capability() -> None:
         capabilities={
             "mcp_stdio_sdk": {
                 "status": "ready",
-                "contract_version": 1,
-                "sdk_package": "mcp",
-                "sdk_version": "1.27.1",
-                "stdio_client": "available",
-                "client_session": "available",
+                "contract_version": 2,
+                "sdk_package": "openai-agents",
+                "sdk_version": "0.17.2",
+                "stdio_server": "available",
             }
         },
     )
@@ -424,7 +401,7 @@ def test_docker_runtime_stdio_mcp_adapter_reuses_valid_sdk_capability() -> None:
         )
     )
 
-    assert response == {"ok": True}
+    assert response == {"structuredContent": {"ok": True}}
     assert len(runtime_manager.calls) == 1
     assert runtime_manager.calls[0]["command"][:3] == [
         "python",
@@ -455,11 +432,10 @@ def test_docker_runtime_stdio_mcp_adapter_injects_hosted_credentials_via_stdin()
         capabilities={
             "mcp_stdio_sdk": {
                 "status": "ready",
-                "contract_version": 1,
-                "sdk_package": "mcp",
-                "sdk_version": "1.27.1",
-                "stdio_client": "available",
-                "client_session": "available",
+                "contract_version": 2,
+                "sdk_package": "openai-agents",
+                "sdk_version": "0.17.2",
+                "stdio_server": "available",
             }
         },
     )
@@ -487,7 +463,7 @@ def test_docker_runtime_stdio_mcp_adapter_injects_hosted_credentials_via_stdin()
     )
 
     call = runtime_manager.calls[0]
-    assert response == {"ok": True}
+    assert response == {"structuredContent": {"ok": True}}
     assert call["command"] == [
         "python",
         "-m",
@@ -652,6 +628,12 @@ class _FakeCallToolResult:
         self.structuredContent = structured_content
         self.isError = is_error
 
+    def model_dump(self, **kwargs):
+        payload = {"content": [item.model_dump() for item in self.content], "isError": self.isError}
+        if self.structuredContent is not None:
+            payload["structuredContent"] = self.structuredContent
+        return payload
+
 
 class _FakeContent:
     def __init__(self, payload: dict[str, object]) -> None:
@@ -672,80 +654,46 @@ class _FakeStatusResponse:
         self.status_code = status_code
 
 
-class _FakeTransport:
-    def __init__(self, streams: tuple[object, ...]) -> None:
-        self._streams = streams
-
-    async def __aenter__(self) -> tuple[object, ...]:
-        return self._streams
-
-    async def __aexit__(self, *exc_info: object) -> None:
-        return None
-
-
-class _FakeClientSession:
-    def __init__(self, sdk: _FakeMcpSdk) -> None:
-        self._sdk = sdk
-
-    async def __aenter__(self) -> _FakeClientSession:
-        return self
-
-    async def __aexit__(self, *exc_info: object) -> None:
-        return None
-
-    async def initialize(self) -> None:
-        self._sdk.initialize_calls += 1
-
-    async def call_tool(
-        self,
-        name: str,
-        *,
-        arguments: dict[str, object],
-        read_timeout_seconds: object,
-    ) -> _FakeCallToolResult:
-        self._sdk.tool_calls.append(
+class _FakeMcpServer:
+    def __init__(self, sdk, params, timeout):
+        self.sdk = sdk
+        self.timeout = timeout
+        sdk.transport_calls.append(
             {
-                "name": name,
-                "arguments": arguments,
-                "timeout_seconds": read_timeout_seconds.total_seconds(),
+                "transport": "streamable_http",
+                "url": params["url"],
+                "headers": params["headers"],
+                "timeout": params["timeout"],
             }
         )
-        outcome = self._sdk.outcomes.pop(0)
+
+    async def __aenter__(self):
+        self.sdk.initialize_calls += 1
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return None
+
+    async def call_tool(self, name, arguments):
+        self.sdk.tool_calls.append(
+            {"name": name, "arguments": arguments, "timeout_seconds": self.timeout}
+        )
+        outcome = self.sdk.outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
 
 
 class _FakeMcpSdk:
-    def __init__(self, outcomes: list[_FakeCallToolResult | Exception]) -> None:
+    def __init__(self, outcomes):
         self.outcomes = outcomes
-        self.transport_calls: list[dict[str, Any]] = []
+        self.transport_calls = []
         self.initialize_calls = 0
-        self.tool_calls: list[dict[str, Any]] = []
+        self.tool_calls = []
 
-    def streamable_http_client(
-        self,
-        url: str,
-        *,
-        http_client: Any,
-    ) -> _FakeTransport:
-        headers = {
-            key: value
-            for key, value in http_client.headers.items()
-            if key in {"authorization", "x-static", "x-tenant", "x-api-key"}
-        }
-        self.transport_calls.append(
-            {
-                "transport": "streamable_http",
-                "url": url,
-                "headers": headers,
-                "timeout": http_client.timeout.connect,
-            }
-        )
-        return _FakeTransport((object(), object(), None))
-
-    def client_session(self, read_stream: object, write_stream: object) -> _FakeClientSession:
-        return _FakeClientSession(self)
+    def server(self, *, params, client_session_timeout_seconds, max_retry_attempts, **kwargs):
+        assert max_retry_attempts == 0
+        return _FakeMcpServer(self, params, client_session_timeout_seconds)
 
 
 class RecordingRuntimeManager:

@@ -118,7 +118,7 @@ def managed(monkeypatch):
             settings=settings,
             queue=queue,
             runtime_docker_client=docker,
-            runtime_backends=build_runtime_backend_registry(docker),
+            runtime_backends=build_runtime_backend_registry(docker, lambda: 30),
         )
     )
     yield session, workspace, auth, request, service, queue, docker, handler
@@ -152,7 +152,7 @@ def test_import_start_reuse_stop_restart_and_secret_boundary(managed):
             credential_refs=[credential],
             timeout_seconds=10,
         )
-    ) == {"calls": 1}
+    ) == {"structuredContent": {"calls": 1}}
     service.control(workspace.id, server.id, auth, "stop")
     handler.handle(queue.jobs[-1])
     assert deployment.status == "stopped"
@@ -262,6 +262,13 @@ def test_persistent_standard_mcp_session_reuses_process_and_recovers():
                 "command": sys.executable,
                 "args": [str(Path(__file__).parent / "fixtures" / "mcp_persistent_server.py")],
                 "env": {"TEST_PASSWORD": "not-in-results"},
+                "restart_policy": {
+                    "mode": "on_failure",
+                    "max_restarts": 3,
+                    "initial_backoff_seconds": 0.05,
+                    "max_backoff_seconds": 0.1,
+                    "stable_after_seconds": 60,
+                },
             }
         )
         task = asyncio.create_task(process.supervise())

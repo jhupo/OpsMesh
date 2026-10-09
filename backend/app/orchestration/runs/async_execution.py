@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from opentelemetry.trace import SpanKind
 from sqlalchemy import select
@@ -17,6 +17,8 @@ from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
     AgentRuntimeExecutor,
+    AgentRuntimeSession,
+    AgentSessionBinding,
 )
 from backend.app.agents.execution.errors import (
     AgentRuntimeCancelledError,
@@ -24,7 +26,7 @@ from backend.app.agents.execution.errors import (
     AgentRuntimeProviderError,
 )
 from backend.app.agents.execution.tools.scoped import ScopedToolExecutor
-from backend.app.agents.sessions.store import SQLAlchemyAgentSession
+from backend.app.agents.sessions.gateway import AuthorizedSDKSession
 from backend.app.governance.costs.service import CostBudgetDecision, CostBudgetExceededError
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resource_queries import execution_resource_queries
@@ -132,11 +134,15 @@ class AsyncAgentRunExecutor:
         job: JobPayload,
     ) -> AgentRunRequest:
         storage = request.session
-        if storage is not None and not isinstance(storage, SQLAlchemyAgentSession):
+        if storage is not None and not isinstance(storage, AgentSessionBinding):
             raise TypeError("Run request contains an unsupported persistence adapter")
         return replace(
             request,
-            session=storage.scoped(database, job.resource_id) if storage is not None else None,
+            session=cast(
+                AgentRuntimeSession, AuthorizedSDKSession(storage, database, job.resource_id)
+            )
+            if storage is not None
+            else None,
             tool_executor=ScopedToolExecutor(database, self.settings, self.docker_client)
             if request.tool_executor is not None
             else None,
@@ -199,6 +205,11 @@ class AsyncAgentRunExecutor:
                 await self._fail(database, job, exc)
                 if not isinstance(exc, (CostBudgetExceededError, AgentRuntimePolicyError)):
                     raise
+            finally:
+                if prepared is not None and prepared.request is not None:
+                    native_session = prepared.request.session
+                    if isinstance(native_session, AuthorizedSDKSession):
+                        await native_session.close()
 
     def _execute_direct(self, session: Session, job: JobPayload) -> None:
         self._service(session).run_agent_sync(job)
@@ -333,7 +344,18 @@ class AsyncAgentRunExecutor:
             .routing()
             .fallback_request(run=run, job=job, failed_request=request, exc=error)
         )
-        return self._detach(selected, database, controls, job) if selected else None
+        if selected is None:
+            return None
+        if not isinstance(selected.session, AgentSessionBinding) or selected.session.session_id != (
+            request.session.session_id if request.session is not None else None
+        ):
+            raise ValueError("Provider fallback cannot change the authorized SDK session")
+        return replace(
+            selected,
+            session=request.session,
+            tool_executor=request.tool_executor,
+            cancellation=request.cancellation,
+        )
 
     def _record_failure(
         self,

@@ -37,8 +37,6 @@ async def run_openai_streamed(
         max_turns=request.max_turns,
         hooks=hooks,
         run_config=run_config,
-        previous_response_id=request.previous_response_id,
-        conversation_id=request.conversation_id,
         session=session,
     )
     cancelled = asyncio.Event()

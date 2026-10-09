@@ -16,8 +16,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from .mcp_sdk import RuntimeMCPServerStdio
 
 MAX_BYTES = 1_048_576
 ROOT = Path("/tmp/opsmesh-mcp")
@@ -91,59 +90,64 @@ class McpProcess:
 
     async def run_session(self) -> None:
         # Do not forward project stderr: it can contain environment credentials.
-        with open(os.devnull, "w") as errors:
-            async with (
-                stdio_client(StdioServerParameters(**self.config), errlog=errors) as (read, write),
-                ClientSession(read, write) as session,
-            ):
-                async with asyncio.timeout(45):
-                    await session.initialize()
-                self.state = "running"
-                while not self.stopped.is_set():
-                    try:
-                        request, future = await asyncio.wait_for(self.requests.get(), timeout=5)
-                    except TimeoutError:
-                        async with asyncio.timeout(10):
-                            await session.send_ping()
-                        continue
-                    if future.cancelled():
-                        continue
-                    try:
-                        timeout = min(50, max(1, int(request.get("timeout_seconds", 50))))
-                        async with asyncio.timeout(timeout):
-                            if request["action"] == "discover":
-                                tools: list[dict[str, Any]] = []
-                                cursor = None
-                                seen: set[str] = set()
-                                while True:
-                                    page = await session.list_tools(cursor=cursor)
-                                    tools.extend(
-                                        t.model_dump(mode="json", by_alias=True) for t in page.tools
-                                    )
-                                    if len(tools) > 1000:
-                                        raise ValueError("Too many MCP tools")
-                                    cursor = page.nextCursor
-                                    if not cursor:
-                                        break
-                                    if cursor in seen:
-                                        raise ValueError("Repeated MCP discovery cursor")
-                                    seen.add(cursor)
-                                result = {"tools": tools}
-                            else:
-                                response = await session.call_tool(
-                                    request["name"], request["arguments"]
+        async with RuntimeMCPServerStdio(
+            params={
+                "command": self.config["command"],
+                "args": self.config.get("args", []),
+                "env": self.config.get("env"),
+                "cwd": self.config.get("cwd"),
+            },
+            name="opsmesh-managed-mcp",
+            client_session_timeout_seconds=50,
+            max_retry_attempts=0,
+        ) as server:
+            session = server.session
+            if session is None:
+                raise RuntimeError("Native SDK MCP connection was not initialized")
+            self.state = "running"
+            while not self.stopped.is_set():
+                try:
+                    request, future = await asyncio.wait_for(self.requests.get(), timeout=5)
+                except TimeoutError:
+                    async with asyncio.timeout(10):
+                        await session.send_ping()
+                    continue
+                if future.cancelled():
+                    continue
+                try:
+                    timeout = min(50, max(1, int(request.get("timeout_seconds", 50))))
+                    async with asyncio.timeout(timeout):
+                        if request["action"] == "discover":
+                            tools: list[dict[str, Any]] = []
+                            cursor = None
+                            seen: set[str] = set()
+                            while True:
+                                page = await session.list_tools(cursor=cursor)
+                                tools.extend(
+                                    t.model_dump(mode="json", by_alias=True) for t in page.tools
                                 )
-                                result = response.model_dump(
-                                    mode="json", by_alias=True, exclude_none=True
-                                )
-                        if not future.done():
-                            future.set_result(result)
-                    except Exception:
-                        self.state = "restarting"
-                        if not future.done():
-                            # Never replay a tool after an ambiguous transport failure.
-                            future.set_result({"error": "mcp_process_call_failed"})
-                        raise
+                                if len(tools) > 1000:
+                                    raise ValueError("Too many MCP tools")
+                                cursor = page.nextCursor
+                                if not cursor:
+                                    break
+                                if cursor in seen:
+                                    raise ValueError("Repeated MCP discovery cursor")
+                                seen.add(cursor)
+                            result = {"tools": tools}
+                        else:
+                            response = await server.call_tool(request["name"], request["arguments"])
+                            result = response.model_dump(
+                                mode="json", by_alias=True, exclude_none=True
+                            )
+                    if not future.done():
+                        future.set_result(result)
+                except Exception:
+                    self.state = "restarting"
+                    if not future.done():
+                        # Never replay a tool after an ambiguous transport failure.
+                        future.set_result({"error": "mcp_process_call_failed"})
+                    raise
 
     async def supervise(self) -> None:
         while not self.stopped.is_set():

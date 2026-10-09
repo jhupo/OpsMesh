@@ -73,6 +73,13 @@ class AgentRuntimeSession(Protocol):
 
 
 @dataclass(frozen=True)
+class AgentSessionBinding:
+    session_id: str
+    workspace_id: UUID
+    database_url: str = field(repr=False)
+
+
+@dataclass(frozen=True)
 class AgentRuntimeAgentRef:
     name: str
     profile_id: UUID | None = None
@@ -318,15 +325,6 @@ class AgentRuntimeInterruption:
     metadata: dict[str, object] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class AgentRuntimeToolContinuation:
-    tool_name: str
-    status: str
-    result: dict[str, object] | None = None
-    error: dict[str, object] | None = None
-    metadata: dict[str, object] = field(default_factory=dict)
-
-
 class AgentRuntimeToolExecutor(Protocol):
     async def review_tool_call(
         self,
@@ -370,10 +368,7 @@ class AgentRunRequest:
     model_api: str | None = None
     model_provider_credential_id: UUID | None = None
     tool_executor: AgentRuntimeToolExecutor | None = None
-    continuations: tuple[AgentRuntimeToolContinuation, ...] = ()
-    session: AgentRuntimeSession | None = None
-    previous_response_id: str | None = None
-    conversation_id: str | None = None
+    session: AgentRuntimeSession | AgentSessionBinding | None = None
     tracing: AgentRunTracing | None = None
     resume_state: AgentRuntimeResumeState | None = None
     approval_decisions: tuple[AgentRuntimeApprovalDecision, ...] = ()

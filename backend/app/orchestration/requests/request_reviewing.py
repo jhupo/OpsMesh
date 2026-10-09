@@ -47,7 +47,6 @@ def model_request_review_fingerprint(request: AgentRunRequest, input_text: str) 
         if request.model_provider_credential_id is not None
         else None,
         "allowed_tools": sorted(request.context.allowed_tools),
-        "continuation_count": len(request.continuations),
     }
     encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     return sha256(encoded.encode("utf-8")).hexdigest()

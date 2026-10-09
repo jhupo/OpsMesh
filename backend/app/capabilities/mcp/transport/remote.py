@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import timedelta
+from typing import Any, cast
 
 import httpx
+from agents.mcp import MCPServerSse, MCPServerStreamableHttp
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
@@ -197,57 +198,25 @@ async def call_remote_mcp_async(
     timeout_seconds: int,
     transport: str,
 ) -> dict[str, object]:
+    params = {
+        "url": url,
+        "headers": headers,
+        "timeout": float(timeout_seconds),
+        "sse_read_timeout": float(timeout_seconds),
+    }
     try:
-        if transport == "http":
-            timeout = httpx.Timeout(timeout_seconds)
-            async with (
-                httpx.AsyncClient(headers=headers, timeout=timeout) as http_client,
-                streamable_http_client(
-                    url,
-                    http_client=http_client,
-                ) as (read_stream, write_stream, _),
-            ):
-                return await _call_tool(
-                    read_stream,
-                    write_stream,
-                    tool_name,
-                    arguments,
-                    timeout_seconds,
-                )
-        async with sse_client(
-            url,
-            headers=headers,
-            timeout=timeout_seconds,
-            sse_read_timeout=timeout_seconds,
-        ) as (read_stream, write_stream):
-            return await _call_tool(
-                read_stream,
-                write_stream,
-                tool_name,
-                arguments,
-                timeout_seconds,
-            )
+        server = (MCPServerStreamableHttp if transport == "http" else MCPServerSse)(
+            params=cast(Any, params),
+            name="opsmesh-remote-mcp",
+            client_session_timeout_seconds=timeout_seconds,
+            max_retry_attempts=0,
+        )
+        async with server:
+            return _result_payload(await server.call_tool(tool_name, arguments))
     except McpExecutionError:
         raise
     except Exception as exc:
         raise _normalize_remote_exception(exc, transport=transport) from exc
-
-
-async def _call_tool(
-    read_stream: object,
-    write_stream: object,
-    tool_name: str,
-    arguments: dict[str, object],
-    timeout_seconds: int,
-) -> dict[str, object]:
-    async with ClientSession(read_stream, write_stream) as session:  # type: ignore[arg-type]
-        await session.initialize()
-        result = await session.call_tool(
-            tool_name,
-            arguments=arguments,
-            read_timeout_seconds=timedelta(seconds=timeout_seconds),
-        )
-    return _result_payload(result)
 
 
 async def list_remote_mcp_tools_async(
@@ -312,18 +281,7 @@ async def _list_tools(read_stream: object, write_stream: object) -> list[dict[st
 def _result_payload(result: CallToolResult) -> dict[str, object]:
     if result.isError:
         raise McpExecutionError("Remote MCP tool failed", code="mcp_remote_error")
-    if isinstance(result.structuredContent, dict):
-        return {
-            str(key): value
-            for key, value in result.structuredContent.items()
-            if isinstance(key, str)
-        }
-    return {
-        "content": [
-            item.model_dump(mode="json", by_alias=True, exclude_none=True)
-            for item in result.content
-        ]
-    }
+    return result.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
 def _normalize_remote_exception(exc: Exception, *, transport: str) -> McpExecutionError:
