@@ -17,6 +17,7 @@ from backend.app.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
 )
+from backend.app.governance.reviews.approval_config import approval_configuration
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.orchestration.planning.agent_plan import (
     is_agent_planning_step,
@@ -69,6 +70,16 @@ class RunAuthorizationSnapshotService:
             profile=profile,
             agent_snapshot=agent_snapshot,
         )
+        workspace = self.session.get(Workspace, task.workspace_id)
+        if workspace is None:
+            raise ValueError("Execution workspace is unavailable")
+        profile_settings = dict_or_empty(runtime_profile.get("model_settings"))
+        runtime_profile["model_settings"] = {
+            **profile_settings,
+            "claude_permission_mode": approval_configuration(
+                workspace.settings or {}
+            ).claude_permission_mode,
+        }
         fallback_policy = self._model_provider_fallback_snapshot(task.workspace_id)
         runtime_policy = profile.runtime_policy if profile is not None else {}
         frozen_runtime_policy = runtime_policy_snapshot(runtime_policy)
@@ -241,7 +252,7 @@ class RunAuthorizationSnapshotService:
             if raw_credential_id is not None and credential_id is None:
                 raise ValueError("Team agent snapshot model credential is invalid")
         else:
-            agent_model = profile.model if profile is not None else "gpt-4.1"
+            agent_model = profile.model if profile is not None else "workspace-default"
             credential_id = None
         if credential_id is None and agent_snapshot is None and profile is not None:
             credential_id = profile.model_provider_credential_id
@@ -408,16 +419,7 @@ def agent_runtime_profile_snapshot(
 ) -> dict[str, object]:
     if agent_snapshot is None:
         if profile is None:
-            return {
-                "id": None,
-                "workspace_id": str(workspace_id),
-                "version": 1,
-                "name": "Default Agent",
-                "role": "worker",
-                "instructions": "Complete the assigned task.",
-                "model": "gpt-4.1",
-                "model_settings": {},
-            }
+            raise ValueError("Agent execution requires an assigned agent profile")
         source: dict[str, object] = {
             "id": str(profile.id),
             "version": profile.version,

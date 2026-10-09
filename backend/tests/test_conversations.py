@@ -151,7 +151,7 @@ def test_conversation_delegation_recovery_and_idempotency() -> None:
     child.status = "completed"
     child.final_output = {"final_output": "No permission defect found"}
     team_task = session.get(Task, UUID(team_result["task_id"]))
-    assert team_task.project_plan is not None
+    assert team_task.project_plan is not None, team_task.generic_state
     # Check session isolation independently of the team's model-provider admission gate.
     team_run = AgentRun(
         id=uuid4(), workspace_id=workspace.id, task_id=team_task.id, agent_profile_id=expert.id
@@ -396,3 +396,83 @@ def test_operator_manager_cannot_discover_or_delegate_ungranted_expert() -> None
         gateway.delegate(
             context, kind="agent", target_id=secret.id, body="private", request_key="x"
         )
+
+
+@pytest.mark.parametrize("target", ["auto", "agent", "team", "workflow"])
+def test_conversation_runs_configured_expert_without_platform_prompts(target: str) -> None:
+    from backend.app.orchestration.definitions.commands import OrchestrationDefinitionCreate
+    from backend.app.orchestration.definitions.contracts import WorkflowNode
+    from backend.app.orchestration.definitions.service import OrchestrationDefinitionService
+    from backend.app.orchestration.tasks.models import TaskStep
+
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    expert = AgentProfile(
+        workspace_id=workspace.id,
+        name="Custom expert",
+        role="custom",
+        instructions="Follow the user's requested process.",
+    )
+    session.add(expert)
+    session.flush()
+    payload = {"mode": target, "agent_profile_id": str(expert.id)}
+    if target in {"team", "workflow"}:
+        team = AgentTeam(
+            workspace_id=workspace.id, name="Custom team", manager_agent_profile_id=expert.id
+        )
+        session.add(team)
+        session.flush()
+        session.add(
+            AgentTeamMember(
+                workspace_id=workspace.id,
+                agent_team_id=team.id,
+                agent_profile_id=expert.id,
+                team_role="custom",
+            )
+        )
+        payload = {"mode": "team", "agent_team_id": str(team.id)}
+        if target == "workflow":
+            definitions = OrchestrationDefinitionService(session)
+            definition = definitions.create_definition(
+                workspace.id,
+                OrchestrationDefinitionCreate(
+                    key="conversation-flow",
+                    name="Conversation flow",
+                    nodes=[
+                        WorkflowNode(
+                            package_id="answer", title="Answer", assigned_agent_profile_id=expert.id
+                        )
+                    ],
+                ),
+                owner.id,
+            )
+            definitions.publish_definition(workspace.id, definition.id, owner.id)
+            payload.update(orchestration_definition_id=str(definition.id), orchestration_version=1)
+    session.commit()
+    prefix = f"/api/v1/workspaces/{workspace.id}/conversations"
+    created = client.post(prefix, headers=_headers(owner.id), json=payload)
+    assert created.status_code == 201, created.text
+    accepted = client.post(
+        f"{prefix}/{created.json()['id']}/messages",
+        headers={**_headers(owner.id), "Idempotency-Key": "configured-entry"},
+        json={"body": "Answer my question"},
+    )
+    assert accepted.status_code == 202, accepted.text
+    assert ConversationMaintenanceService(session).process_one()
+    session.commit()
+    turn = session.get(ConversationTurn, UUID(accepted.json()["id"]))
+    assert turn.status == "running", turn.error_code
+    execution = session.scalar(
+        select(ConversationExecution).where(ConversationExecution.turn_id == turn.id)
+    )
+    run = session.scalar(select(AgentRun).where(AgentRun.task_id == execution.task_id))
+    assert run.agent_profile_id == expert.id
+    frozen = run.input["authorization_snapshot"]["agent_profile"]
+    assert frozen["instructions"] == expert.instructions
+    steps = session.scalars(select(TaskStep).where(TaskStep.task_id == execution.task_id)).all()
+    assert len(steps) == (1 if target in {"team", "workflow"} else 0)
+    assert all(not step.review_policy for step in steps)
+    if target == "workflow":
+        task = session.get(Task, execution.task_id)
+        assert task.orchestration_definition_id == definition.id
+        assert task.orchestration_version == 1

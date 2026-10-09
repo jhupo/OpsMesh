@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.responses import PlainTextResponse
 
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.runtime.operations.metrics.prometheus import OperationsPrometheusMetricsService
 from backend.app.shared.config import Settings, get_settings
 from backend.app.shared.db.session import get_db_session
@@ -29,9 +30,11 @@ async def metrics(
             RedisKeyBuilder(settings.redis_key_prefix),
         ).prometheus_gauges(
             settings.worker_queue_name,
-            audit_integrity_stale_after_seconds=(
-                settings.audit_integrity_stale_after_seconds
-            ),
+            worker_stale_after_seconds=operational_configuration(
+                session
+            ).worker_stale_after_seconds,
+            queue_scan_limit=operational_configuration(session).queue_scan_limit,
+            audit_integrity_stale_after_seconds=(settings.audit_integrity_stale_after_seconds),
         )
     except (OSError, RedisError, SQLAlchemyError, TimeoutError):
         gauges = []

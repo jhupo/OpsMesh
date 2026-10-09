@@ -8,6 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.knowledge.models import KnowledgeSource
@@ -21,8 +22,6 @@ from backend.app.resources.memory.retrieval_search import (
 )
 from backend.app.shared.utils import stringify_or_none
 from backend.app.workspaces.domain_items.models import DomainItem
-
-SOURCE_LIMIT = 80
 
 
 class WorkspaceMemoryDocumentRepository:
@@ -72,7 +71,7 @@ class WorkspaceMemoryDocumentRepository:
                 WorkspaceMemoryEntry.importance.desc(),
                 WorkspaceMemoryEntry.updated_at.desc(),
             )
-            .limit(SOURCE_LIMIT)
+            .limit(operational_configuration(self._session).memory_source_limit)
         ).all()
         active_knowledge_source_ids = {
             str(source_id)
@@ -111,7 +110,7 @@ class WorkspaceMemoryDocumentRepository:
                 WorkspaceFile.status == "active",
             )
             .order_by(WorkspaceFile.created_at.desc())
-            .limit(SOURCE_LIMIT)
+            .limit(operational_configuration(self._session).memory_source_limit)
         ).all()
         return [
             MemorySearchDocument(
@@ -138,7 +137,7 @@ class WorkspaceMemoryDocumentRepository:
             select(Artifact)
             .where(Artifact.workspace_id == workspace_id)
             .order_by(Artifact.created_at.desc())
-            .limit(SOURCE_LIMIT)
+            .limit(operational_configuration(self._session).memory_source_limit)
         ).all()
         return [
             MemorySearchDocument(
@@ -175,7 +174,7 @@ class WorkspaceMemoryDocumentRepository:
             select(Task)
             .where(Task.workspace_id == workspace_id)
             .order_by(Task.created_at.desc())
-            .limit(SOURCE_LIMIT)
+            .limit(operational_configuration(self._session).memory_source_limit)
         ).all()
         return [
             MemorySearchDocument(
@@ -207,7 +206,7 @@ class WorkspaceMemoryDocumentRepository:
             select(TaskStep)
             .where(TaskStep.workspace_id == workspace_id)
             .order_by(TaskStep.created_at.desc())
-            .limit(SOURCE_LIMIT)
+            .limit(operational_configuration(self._session).memory_source_limit)
         ).all()
         return [
             MemorySearchDocument(
@@ -240,7 +239,7 @@ class WorkspaceMemoryDocumentRepository:
             select(TaskMessage)
             .where(TaskMessage.workspace_id == workspace_id)
             .order_by(TaskMessage.created_at.desc())
-            .limit(SOURCE_LIMIT)
+            .limit(operational_configuration(self._session).memory_source_limit)
         ).all()
         return [
             MemorySearchDocument(
@@ -266,7 +265,7 @@ class WorkspaceMemoryDocumentRepository:
             select(DomainItem)
             .where(DomainItem.workspace_id == workspace_id)
             .order_by(DomainItem.created_at.desc())
-            .limit(SOURCE_LIMIT)
+            .limit(operational_configuration(self._session).memory_source_limit)
         ).all()
         return [
             MemorySearchDocument(

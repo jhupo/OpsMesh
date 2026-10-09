@@ -8,7 +8,6 @@ from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.instances.policies.runtime import require_container
 
 RUNTIME_WORKSPACE_ROOT = "/workspace"
-PROJECT_FILE_TRANSFER_TIMEOUT_SECONDS = 60
 
 
 class DockerRunProjectFilesystem:
@@ -17,8 +16,11 @@ class DockerRunProjectFilesystem:
         client: DockerRuntimeClient,
         runtime: WorkspaceRuntime,
         run_id: UUID,
+        *,
+        timeout_seconds: int,
     ) -> None:
         require_container(runtime)
+        self._timeout_seconds = timeout_seconds
         self._client = client
         self._container_id = runtime.docker_container_id or ""
         self._root_path = f"{RUNTIME_WORKSPACE_ROOT}/runs/{run_id}"
@@ -33,7 +35,7 @@ class DockerRunProjectFilesystem:
             self._container_id,
             RUNTIME_WORKSPACE_ROOT,
             archive,
-            PROJECT_FILE_TRANSFER_TIMEOUT_SECONDS,
+            self._timeout_seconds,
         )
 
     def read_file(self, relative_path: str, *, max_bytes: int) -> bytes | None:
@@ -42,7 +44,7 @@ class DockerRunProjectFilesystem:
             self._container_id,
             f"{self._root_path}/{normalized}",
             max_bytes,
-            PROJECT_FILE_TRANSFER_TIMEOUT_SECONDS,
+            self._timeout_seconds,
         )
 
     def cleanup(self) -> None:
@@ -50,7 +52,7 @@ class DockerRunProjectFilesystem:
         result = self._client.exec_command(
             self._container_id,
             ["rm", "-rf", "--", self._root_path],
-            PROJECT_FILE_TRANSFER_TIMEOUT_SECONDS,
+            self._timeout_seconds,
             working_dir="/",
         )
         if result.exit_code != 0:

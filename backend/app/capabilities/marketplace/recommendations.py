@@ -25,157 +25,21 @@ class ScoredListing:
     missing_tags: list[str]
 
 
-TEAM_ROLE_PRESETS: dict[str, tuple[RoleSpec, ...]] = {
-    "research": (
-        RoleSpec(
-            "project_manager",
-            "manager",
-            "拆解目标、协调专家、控制交付节奏。",
-            ("planning", "coordination"),
-            (),
-        ),
-        RoleSpec(
-            "researcher",
-            "research_specialist",
-            "收集资料、验证来源、沉淀研究证据。",
-            ("research", "market"),
-            ("web.search",),
-        ),
-        RoleSpec(
-            "analyst",
-            "data_analyst",
-            "整理数据、发现趋势、输出可执行结论。",
-            ("analysis", "data"),
-            ("data.analysis",),
-        ),
-    ),
-    "novel": (
-        RoleSpec(
-            "editor",
-            "chief_editor",
-            "维护世界观、节奏和章节质量。",
-            ("writing", "editing"),
-            (),
-        ),
-        RoleSpec(
-            "writer",
-            "chapter_writer",
-            "按大纲生成章节内容并保持角色一致。",
-            ("writing", "story"),
-            ("longform.write",),
-        ),
-        RoleSpec(
-            "reviewer",
-            "continuity_reviewer",
-            "检查设定冲突、伏笔和人物动机。",
-            ("review", "continuity"),
-            (),
-        ),
-    ),
-    "software": (
-        RoleSpec(
-            "project_manager",
-            "tech_lead",
-            "拆分需求、安排实现顺序、验收交付。",
-            ("planning", "architecture"),
-            (),
-        ),
-        RoleSpec(
-            "software_engineer",
-            "backend_engineer",
-            "实现后端服务、工具调用和任务编排。",
-            ("backend", "python"),
-            ("code.execute",),
-        ),
-        RoleSpec(
-            "qa_engineer",
-            "qa_specialist",
-            "设计测试、复现问题、验证回归。",
-            ("testing", "quality"),
-            (),
-        ),
-    ),
-    "design": (
-        RoleSpec(
-            "product_manager",
-            "product_manager",
-            "明确用户目标、定义范围和验收标准。",
-            ("product", "planning"),
-            (),
-        ),
-        RoleSpec(
-            "designer",
-            "visual_designer",
-            "产出界面视觉、素材和交互稿。",
-            ("design", "ui"),
-            ("image.generate",),
-        ),
-        RoleSpec(
-            "reviewer",
-            "design_reviewer",
-            "检查一致性、可用性和交付质量。",
-            ("review", "ux"),
-            (),
-        ),
-    ),
-    "general": (
-        RoleSpec(
-            "project_manager",
-            "manager",
-            "拆解目标、安排人员、跟踪进度。",
-            ("planning", "coordination"),
-            (),
-        ),
-        RoleSpec(
-            "researcher",
-            "research_specialist",
-            "补齐信息、收集资料、形成判断依据。",
-            ("research",),
-            ("web.search",),
-        ),
-        RoleSpec(
-            "operator",
-            "operator",
-            "执行工具调用、整理产物、推动任务完成。",
-            ("operations",),
-            (),
-        ),
-    ),
-}
-
-
 def role_specs_for_request(data: TalentRecommendationRequest) -> list[RoleSpec]:
-    preset = list(TEAM_ROLE_PRESETS.get(data.team_type, TEAM_ROLE_PRESETS["general"]))
-    role_tags = tuple(normalize_tag(tag) for tag in data.skill_tags if tag)
-    capability_tags = tuple(normalize_tag(tag) for tag in data.capability_tags if tag)
+    # Roles are supplied by the caller (including a planning agent), never inferred
+    # from a built-in industry/team-type list.
     if not data.required_roles:
-        return [
-            RoleSpec(
-                role=spec.role,
-                team_role=spec.team_role,
-                reason=spec.reason,
-                skill_tags=tuple(dict.fromkeys((*spec.skill_tags, *role_tags))),
-                capability_tags=tuple(dict.fromkeys((*spec.capability_tags, *capability_tags))),
-            )
-            for spec in preset
-        ]
-    preset_by_role = {spec.role: spec for spec in preset}
-    specs: list[RoleSpec] = []
-    for role in data.required_roles:
-        normalized_role = normalize_role(role)
-        default = preset_by_role.get(normalized_role)
-        default_skills = default.skill_tags if default is not None else ()
-        default_capabilities = default.capability_tags if default is not None else ()
-        specs.append(
-            RoleSpec(
-                role=normalized_role,
-                team_role=default.team_role if default is not None else normalized_role,
-                reason=default.reason if default is not None else "老板需求中明确要求该岗位。",
-                skill_tags=tuple(dict.fromkeys((*default_skills, *role_tags))),
-                capability_tags=tuple(dict.fromkeys((*default_capabilities, *capability_tags))),
-            )
+        raise ValueError("Specify the roles required by this request")
+    return [
+        RoleSpec(
+            role=normalize_role(role),
+            team_role=role.strip(),
+            reason="Requested role",
+            skill_tags=tuple(normalize_tag(tag) for tag in data.skill_tags if tag),
+            capability_tags=tuple(normalize_tag(tag) for tag in data.capability_tags if tag),
         )
-    return specs
+        for role in data.required_roles
+    ]
 
 
 def missing_work_packages_from_task(task: Task) -> list[dict[str, object]]:
@@ -193,8 +57,6 @@ def missing_work_packages_from_task(task: Task) -> list[dict[str, object]]:
         if raw_package.get("assigned_agent_profile_id") is not None:
             continue
         role = string_or_default(raw_package.get("required_role"), "specialist")
-        if role == "project_manager":
-            continue
         missing.append(
             {
                 "package_id": string_or_default(raw_package.get("package_id"), "unknown"),

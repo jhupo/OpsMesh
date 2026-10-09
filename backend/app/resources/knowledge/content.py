@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.knowledge.models import KnowledgeSource
 from backend.app.resources.memory.indexing import TextChunk, chunk_text_with_offsets
@@ -18,7 +19,6 @@ from backend.app.resources.storage.storage import (
 )
 from backend.app.runtime.instances.url_fetch import RuntimeUrlFetchError
 
-MAX_SOURCE_BYTES = 10 * 1024 * 1024
 SUPPORTED_TEXT_TYPES = frozenset(
     {
         "text/plain",
@@ -76,7 +76,12 @@ def prepare_knowledge_content(
     content_sha256 = hashlib.sha256(raw).hexdigest()
     if expected_checksum is not None and content_sha256 != expected_checksum:
         raise KnowledgeContentError("source_checksum_mismatch")
-    chunks = tuple(chunk_text_with_offsets(text))
+    policy = operational_configuration(session)
+    chunks = tuple(
+        chunk_text_with_offsets(
+            text, size=policy.memory_chunk_size, overlap=policy.memory_chunk_overlap
+        )
+    )
     if not chunks:
         raise KnowledgeContentError("source_empty")
     return PreparedKnowledgeContent(
@@ -113,7 +118,7 @@ def _load_source_bytes(
                 workspace_id=source.workspace_id,
                 runtime_id=fetch_runtime_id(source.source_config),
                 url=source.uri,
-                max_bytes=MAX_SOURCE_BYTES,
+                max_bytes=operational_configuration(session).files.knowledge_source_bytes,
             )
         except RuntimeUrlFetchError as exc:
             raise KnowledgeContentError(exc.code) from exc
@@ -138,7 +143,10 @@ def _load_source_bytes(
     if storage is None:
         raise KnowledgeContentError("storage_unavailable")
     try:
-        raw = storage.read_limited(workspace_file.storage_key, MAX_SOURCE_BYTES)
+        raw = storage.read_limited(
+            workspace_file.storage_key,
+            operational_configuration(session).files.knowledge_source_bytes,
+        )
     except StorageObjectTooLargeError as exc:
         raise KnowledgeContentError("source_too_large") from exc
     except FileNotFoundError as exc:

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.orchestration.runs.queries import active_task_ids_by_agent
 from backend.app.orchestration.tasks.models import Task, TaskStep
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 
 
@@ -147,6 +148,7 @@ class TeamMemberCapacityResolver:
             manager_lookup[task.agent_team_id],
             step,
             active_task_ids_by_agent,
+            max_concurrent_tasks=operational_configuration(self._session).manager_task_capacity,
         )
         return manager_context or "team_member_unavailable"
 
@@ -173,35 +175,22 @@ def manager_capacity_context(
     team: AgentTeam | None,
     step: TaskStep,
     active_task_ids_by_agent: dict[UUID, set[UUID]],
+    *,
+    max_concurrent_tasks: int,
 ) -> MemberCapacityContext | None:
     if team is None or team.manager_agent_profile_id is None:
         return None
     if team.manager_agent_profile_id != step.assigned_agent_profile_id:
         return None
-    if not is_manager_owned_step(step):
-        return None
     return MemberCapacityContext(
         agent_profile_id=team.manager_agent_profile_id,
         team_member_id=team.id,
-        team_role="project_manager",
-        max_concurrent_tasks=1,
+        team_role=step.required_role or "",
+        max_concurrent_tasks=max_concurrent_tasks,
         active_task_ids=frozenset(
             active_task_ids_by_agent.get(team.manager_agent_profile_id, set())
         ),
     )
-
-
-def is_manager_owned_step(step: TaskStep) -> bool:
-    if step.work_package_id in {"manager-planning", "manager-summary"}:
-        return True
-    if isinstance(step.work_package_id, str) and step.work_package_id.startswith(
-        "manager-summary-revision-"
-    ):
-        return True
-    if step.required_role in {"project_manager", "manager", "team_lead", "lead"}:
-        return True
-    review_policy = step.review_policy if isinstance(step.review_policy, dict) else {}
-    return review_policy.get("mode") in {"self_review", "final_acceptance"}
 
 
 def snapshot_member_capacity_context(

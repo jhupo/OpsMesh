@@ -90,23 +90,6 @@ class PlannerCompletionService:
                 item["package_id"] in {"manager-planning", "manager-summary"} for item in packages
             ):
                 raise ProjectPlanValidationError("Reserved planner package ID")
-            for package in packages:
-                package["review_policy"] = {"reviewer": "manager", "mode": "manager_review"}
-            packages.append(
-                {
-                    "package_id": "manager-summary",
-                    "title": "Manager summary",
-                    "description": "Verify acceptance criteria and integrate every work package.",
-                    "required_role": "project_manager",
-                    "required_skills": [],
-                    "assigned_agent_profile_id": str(run.agent_profile_id),
-                    "depends_on": [item.package_id for item in proposal.work_packages],
-                    "join_policy": "all_selected",
-                    "expected_artifacts": [],
-                    "acceptance_criteria": ["All delivery criteria met."],
-                    "review_policy": {"reviewer": "user", "mode": "final_acceptance"},
-                }
-            )
             plan: dict[str, object] = {
                 "plan_version": 1,
                 "plan_id": str(attempt.id),

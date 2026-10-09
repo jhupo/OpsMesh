@@ -16,6 +16,7 @@ from backend.app.agents.providers.probes import (
     ModelProviderHealthTarget,
     probe_model_provider,
 )
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.shared.security.redaction import redact_sensitive_text
 from backend.app.shared.security.secrets import SecretEncryptionService
 
@@ -42,7 +43,12 @@ class ModelProviderHealthService:
         credential = self._queries().get(workspace_id=workspace_id, credential_id=credential_id)
         if credential is None:
             return
-        record_provider_failure(credential, error_code=error_code, error_message=error_message)
+        record_provider_failure(
+            credential,
+            error_code=error_code,
+            error_message=error_message,
+            failure_threshold=operational_configuration(self._session).provider_failure_threshold,
+        )
         self._session.flush([credential])
 
     async def run_health_check(
@@ -85,9 +91,6 @@ class ModelProviderHealthService:
         return ModelProviderCredentialQueryService(self._session, self._secret_service)
 
 
-PROVIDER_UNHEALTHY_FAILURE_THRESHOLD = 3
-
-
 def record_provider_success(credential: ModelProviderCredential) -> None:
     credential.health_status = "healthy"
     credential.failure_count = 0
@@ -97,13 +100,15 @@ def record_provider_success(credential: ModelProviderCredential) -> None:
 
 
 def record_provider_failure(
-    credential: ModelProviderCredential, *, error_code: str, error_message: str
+    credential: ModelProviderCredential,
+    *,
+    error_code: str,
+    error_message: str,
+    failure_threshold: int,
 ) -> None:
     credential.failure_count += 1
     credential.health_status = (
-        "unhealthy"
-        if credential.failure_count >= PROVIDER_UNHEALTHY_FAILURE_THRESHOLD
-        else "degraded"
+        "unhealthy" if credential.failure_count >= failure_threshold else "degraded"
     )
     credential.last_failure_at = datetime.now(UTC)
     credential.last_failure_code = error_code[:120]
@@ -169,7 +174,6 @@ def provider_credential_audit_metadata(credential: ModelProviderCredential) -> d
     }
 
 
-_HEALTH_CHECK_SCHEDULE_JOB_LIMIT = 10
 if TYPE_CHECKING:
     from backend.app.agents.providers.queries import ModelProviderCredentialQueryService
     from backend.app.orchestration.scheduling.models import WorkspaceScheduledJob
@@ -203,7 +207,7 @@ def model_provider_health_check_schedule_summary(
                 WorkspaceScheduledJob.next_run_at.asc(),
                 WorkspaceScheduledJob.created_at.desc(),
             )
-            .limit(_HEALTH_CHECK_SCHEDULE_JOB_LIMIT)
+            .limit(operational_configuration(session).provider_health_schedule_limit)
         )
     )
     active_jobs = [job for job in jobs if job.status == "active"]

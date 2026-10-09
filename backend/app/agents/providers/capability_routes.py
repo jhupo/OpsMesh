@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.contracts import AgentRuntimeCapability
 from backend.app.agents.execution.dependencies import get_agent_runtime_registry
 from backend.app.agents.execution.registry import ProviderAgentRuntimeRegistry
 from backend.app.agents.providers.capabilities import list_model_capabilities
 from backend.app.agents.providers.model_api import default_model_api, model_api_options_for_provider
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.providers.schemas import (
     AgentRuntimeAdapterCapabilityResponse,
     AgentRuntimeCapabilityFeatureResponse,
@@ -13,6 +16,7 @@ from backend.app.agents.providers.schemas import (
 from backend.app.identity.auth.dependencies import workspace_dependency
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.shared.db.session import get_db_session
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/model-provider-capabilities",
@@ -59,14 +63,22 @@ async def list_agent_runtime_adapter_capabilities(
 async def list_workspace_model_provider_capabilities(
     provider: str | None = Query(default=None),
     capability: str | None = Query(default=None),
+    session: Session = Depends(get_db_session),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
 ) -> list[ModelCapabilityResponse]:
-    del context
     return [
         ModelCapabilityResponse(
             **item.as_dict(),
             model_apis=list(model_api_options_for_provider(item.provider)),
             default_model_api=default_model_api(item.provider),
         )
-        for item in list_model_capabilities(provider=provider, capability=capability)
+        for credential in session.scalars(
+            select(ModelProviderCredential).where(
+                ModelProviderCredential.workspace_id == context.workspace.id,
+                ModelProviderCredential.status == "active",
+            )
+        )
+        for item in list_model_capabilities(
+            credential.model_capabilities, provider=provider, capability=capability
+        )
     ]

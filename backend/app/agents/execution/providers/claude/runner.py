@@ -5,7 +5,7 @@ import base64
 import json
 from collections.abc import AsyncIterable, AsyncIterator, Callable
 from contextlib import suppress
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -391,7 +391,7 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             system_prompt=request.agent_profile.instructions,
             mcp_servers=mcp_servers,
             strict_mcp_config=True,
-            permission_mode="default",
+            permission_mode=_permission_mode(model_settings),
             resume=resume_id,
             session_id=None if resume_id else session_id,
             max_turns=request.max_turns,
@@ -731,3 +731,10 @@ def _claude_api_error(
         code = "provider_unavailable"
         retryable = True
     return AgentRuntimeProviderError(code=code, message=message, retryable=retryable)
+
+
+def _permission_mode(settings: dict[str, object]) -> Literal["default", "auto"]:
+    mode = settings.get("claude_permission_mode", "default")
+    if mode not in {"default", "auto"}:
+        raise ValueError("Unsupported Claude approval mode")
+    return cast(Literal["default", "auto"], mode)

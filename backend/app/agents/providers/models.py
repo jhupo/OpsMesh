@@ -56,6 +56,9 @@ class ModelProviderCredential(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_failure_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_failure_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
     last_failure_message: Mapped[str | None] = mapped_column(String(1_000), nullable=True)
+    model_capabilities: Mapped[list[dict[str, object]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
     budget_metadata: Mapped[dict[str, object]] = mapped_column(
         JSONB,
         nullable=False,

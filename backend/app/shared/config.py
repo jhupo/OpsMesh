@@ -31,9 +31,7 @@ class Settings(BaseSettings):
     platform_history_interval_seconds: int = Field(default=60, ge=60, le=3600)
     platform_history_retention_days: int = Field(default=30, ge=1, le=366)
     cors_origins: list[str] = Field(default_factory=list)
-    database_url: str = Field(
-        default="postgresql+psycopg://opsmesh:opsmesh@localhost:5432/opsmesh"
-    )
+    database_url: str = Field(default="postgresql+psycopg://opsmesh:opsmesh@localhost:5432/opsmesh")
     database_pool_size: int = Field(default=_RESOURCE_RECOMMENDATION.database_pool_size, ge=1)
     database_max_overflow: int = Field(default=_RESOURCE_RECOMMENDATION.database_max_overflow, ge=0)
     database_pool_timeout_seconds: int = Field(default=30, ge=1)
@@ -50,7 +48,6 @@ class Settings(BaseSettings):
     redis_key_prefix: str = Field(default="opsmesh")
     worker_queue_name: str = Field(default="agent_runs")
     readiness_worker_check_enabled: bool = Field(default=False)
-    readiness_worker_stale_after_seconds: int = Field(default=300, ge=60)
     mcp_health_check_stale_after_seconds: int = Field(default=24 * 60 * 60, ge=1)
     mcp_tool_timeout_seconds: int = Field(default=30, ge=1, le=300)
     blocking_thread_pool_workers: int = Field(
@@ -67,9 +64,7 @@ class Settings(BaseSettings):
     otel_batch_max_queue_size: int = Field(default=2_048, ge=1)
     otel_batch_max_export_size: int = Field(default=512, ge=1)
     otel_batch_schedule_delay_ms: int = Field(default=5_000, ge=100, le=60_000)
-    otel_excluded_urls: str = Field(
-        default="/api/v1/health,/api/v1/health/live,/api/v1/metrics"
-    )
+    otel_excluded_urls: str = Field(default="/api/v1/health,/api/v1/health/live,/api/v1/metrics")
     request_slow_log_threshold_ms: int = Field(default=1_000, ge=1)
     internal_api_token: str = Field(default="change-me-in-production")
     platform_admin_token: str | None = Field(default=None)
@@ -175,9 +170,7 @@ class Settings(BaseSettings):
             if not self.api_rate_limit_enabled:
                 raise ValueError("OPSMESH_API_RATE_LIMIT_ENABLED must be true in production")
             if self.credential_encryption_secret == "change-me-credential-encryption-secret":
-                raise ValueError(
-                    "OPSMESH_CREDENTIAL_ENCRYPTION_SECRET must be set in production"
-                )
+                raise ValueError("OPSMESH_CREDENTIAL_ENCRYPTION_SECRET must be set in production")
             if not self.worker_heartbeat_token or not self.worker_heartbeat_token.strip():
                 raise ValueError("OPSMESH_WORKER_HEARTBEAT_TOKEN must be set in production")
             if not self.readiness_worker_check_enabled:
@@ -211,11 +204,7 @@ class Settings(BaseSettings):
 
     @property
     def internal_api_tokens(self) -> tuple[str, ...]:
-        return tuple(
-            token.strip()
-            for token in self.internal_api_token.split(",")
-            if token.strip()
-        )
+        return tuple(token.strip() for token in self.internal_api_token.split(",") if token.strip())
 
     def redacted_summary(self) -> dict[str, object]:
         return {
@@ -232,10 +221,7 @@ class Settings(BaseSettings):
             "redis_max_connections": self.redis_max_connections,
             "worker_queue_name": self.worker_queue_name,
             "readiness_worker_check_enabled": self.readiness_worker_check_enabled,
-            "readiness_worker_stale_after_seconds": self.readiness_worker_stale_after_seconds,
-            "mcp_health_check_stale_after_seconds": (
-                self.mcp_health_check_stale_after_seconds
-            ),
+            "mcp_health_check_stale_after_seconds": (self.mcp_health_check_stale_after_seconds),
             "mcp_tool_timeout_seconds": self.mcp_tool_timeout_seconds,
             "blocking_thread_pool_workers": self.blocking_thread_pool_workers,
             "tracing_enabled": self.tracing_enabled,
@@ -254,9 +240,7 @@ class Settings(BaseSettings):
             "trusted_proxy_hops": self.trusted_proxy_hops,
             "audit_event_retention_days": self.audit_event_retention_days,
             "audit_event_worm_enabled": self.audit_event_worm_enabled,
-            "audit_integrity_check_interval_seconds": (
-                self.audit_integrity_check_interval_seconds
-            ),
+            "audit_integrity_check_interval_seconds": (self.audit_integrity_check_interval_seconds),
             "audit_integrity_stale_after_seconds": self.audit_integrity_stale_after_seconds,
             "storage_backend": self.storage_backend,
             "storage_root": self.storage_root,
@@ -273,9 +257,7 @@ class Settings(BaseSettings):
             "s3_session_token_configured": bool(self.s3_session_token),
             "s3_use_ssl": self.s3_use_ssl,
             "s3_addressing_style": self.s3_addressing_style,
-            "secret_vault_providers": redact_secret_provider_configs(
-                self.secret_vault_providers
-            ),
+            "secret_vault_providers": redact_secret_provider_configs(self.secret_vault_providers),
             "release_update_enabled": self.release_update_enabled,
             "release_update_timeout_seconds": self.release_update_timeout_seconds,
             "release_update_repository": self.release_update_repository,

@@ -87,7 +87,7 @@ class WorkspaceAgentInstallResponse(TimestampedModel):
 class TalentRecommendationRequest(BaseModel):
     objective: str = Field(min_length=1, max_length=2_000)
     team_type: str = Field(default="general", max_length=80)
-    required_roles: list[str] = Field(default_factory=list, max_length=12)
+    required_roles: list[str] = Field(min_length=1, max_length=12)
     skill_tags: list[str] = Field(default_factory=list, max_length=24)
     capability_tags: list[str] = Field(default_factory=list, max_length=24)
     team_id: UUID | None = None

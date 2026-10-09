@@ -7,7 +7,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.capabilities.catalog.effective import EffectiveCapabilityCatalogService
 from backend.app.governance.audit.service import AuditService
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.execution import ExecutionIdentityService
@@ -37,7 +36,6 @@ from backend.app.shared.utils import uuid_or_none
 from backend.app.teams.management.models import AgentTeam
 
 TERMINAL = frozenset({"completed", "failed", "cancelled"})
-MANAGER_TOOLS = frozenset({"discover_conversation_targets", "delegate_conversation_task"})
 
 
 class ConversationService:
@@ -84,6 +82,7 @@ class ConversationService:
         for kind, key in (
             (ResourceKind.AGENT, "agent_profile_id"),
             (ResourceKind.TEAM, "agent_team_id"),
+            (ResourceKind.WORKFLOW, "orchestration_definition_id"),
             (ResourceKind.RUNTIME_SPACE, "runtime_space_id"),
             (ResourceKind.PROJECT, "workspace_project_id"),
         ):
@@ -100,16 +99,6 @@ class ConversationService:
             )
             if profile is None:
                 raise ConflictError("An active conversation agent must be configured")
-            if data.mode == "auto":
-                catalog = EffectiveCapabilityCatalogService(self.session).resolve(
-                    workspace_id=context.workspace.id,
-                    agent_profile_id=profile.id,
-                    user=context.user,
-                )
-                if not MANAGER_TOOLS.issubset({item.descriptor.name for item in catalog.tools}):
-                    raise ConflictError(
-                        "Manager requires authorized conversation discovery and delegation tools"
-                    )
         else:
             team = self.session.scalar(
                 select(AgentTeam).where(
@@ -388,6 +377,12 @@ def create_execution(
             description=body,
             agent_profile_id=agent_id,
             agent_team_id=team_id,
+            orchestration_definition_id=conversation.orchestration_definition_id
+            if purpose == "manager"
+            else None,
+            orchestration_version=conversation.orchestration_version
+            if purpose == "manager"
+            else None,
             runtime_space_id=conversation.runtime_space_id,
             workspace_project_id=conversation.workspace_project_id,
             input={"conversation_id": str(conversation.id), "turn_id": str(turn.id)},

@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +52,8 @@ class McpProcess:
         self.config = config
         self.state = "starting"
         self.restarts = 0
+        self.restart_policy = config["restart_policy"]
+        self.started_at = time.monotonic()
         self.stopped = asyncio.Event()
         self.requests: asyncio.Queue[tuple[dict[str, Any], asyncio.Future[dict[str, Any]]]] = (
             asyncio.Queue(maxsize=32)
@@ -145,6 +148,7 @@ class McpProcess:
     async def supervise(self) -> None:
         while not self.stopped.is_set():
             try:
+                self.started_at = time.monotonic()
                 await self.run_session()
                 return
             except Exception:
@@ -153,13 +157,25 @@ class McpProcess:
                     _, pending = self.requests.get_nowait()
                     if not pending.done():
                         pending.set_result({"error": "mcp_process_not_ready"})
-                if self.restarts >= 3:
+                if (
+                    time.monotonic() - self.started_at
+                    >= self.restart_policy["stable_after_seconds"]
+                ):
+                    self.restarts = 0
+                if self.restarts >= self.restart_policy["max_restarts"]:
                     self.state = "failed"
                     await self.stopped.wait()
                     return
                 self.restarts += 1
                 with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(self.stopped.wait(), timeout=2**self.restarts)
+                    await asyncio.wait_for(
+                        self.stopped.wait(),
+                        timeout=min(
+                            self.restart_policy["max_backoff_seconds"],
+                            self.restart_policy["initial_backoff_seconds"]
+                            * (2 ** min(self.restarts - 1, 30)),
+                        ),
+                    )
 
 
 async def serve(identifier: str, config: dict[str, Any]) -> None:

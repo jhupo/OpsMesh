@@ -13,7 +13,7 @@ class AgentProfileMutableFields(BaseModel):
     role: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=2_000)
     instructions: str = ""
-    model: str = Field(default="gpt-4.1", max_length=120)
+    model: str = Field(default="workspace-default", max_length=120)
     model_provider_credential_id: UUID | None = None
     model_settings: dict[str, object] = Field(default_factory=dict)
     capabilities: dict[str, object] = Field(default_factory=dict)

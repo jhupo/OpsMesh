@@ -205,12 +205,8 @@ class TaskManagerDiagnosticsService:
 
 
 def _manager_steps(steps: list[TaskStep]) -> ManagerSteps:
-    planning = next((step for step in steps if step.work_package_id == "manager-planning"), None)
-    summaries = [
-        step
-        for step in steps
-        if step.work_package_id == "manager-summary" or _review_mode(step) == "final_acceptance"
-    ]
+    planning = next((step for step in steps if _review_mode(step) == "agent_planning"), None)
+    summaries = [step for step in steps if _review_mode(step) == "final_acceptance"]
     revision_reviews = [
         step
         for step in steps

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -124,6 +125,7 @@ class ConfiguredApprovalService:
             raise ValueError("Approval model is not configured")
         signals = {
             **signals,
+            "prompt_sha256": sha256(model.instructions.encode()).hexdigest(),
             "reviewer": "model",
             "model": model.model,
             "model_provider_credential_id": str(model.model_provider_credential_id),
@@ -153,14 +155,15 @@ class ConfiguredApprovalService:
                 },
                 static_signals=signals,
                 timeout_seconds=model.timeout_seconds,
+                max_output_tokens=model.max_output_tokens,
                 instructions=model.instructions,
             )
             verdict = result.signals.get("verdict")
-            if verdict not in {"approve", "reject", "needs_human", "needs_admin_review"}:
+            if verdict not in {"approve", "reject", "needs_human"}:
                 raise ValueError("Invalid approval model verdict")
             signals.update(result.signals)
             review = ConfiguredReview(
-                verdict in {"needs_human", "needs_admin_review"},
+                verdict in {"needs_human"},
                 verdict == "reject",
                 result.risk_level,
                 result.reasons,

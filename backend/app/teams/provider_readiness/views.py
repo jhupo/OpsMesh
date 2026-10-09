@@ -61,6 +61,7 @@ def _provider_management_suggested_actions(
         )
     return actions
 
+
 def _model_provider_credential_option_payload(
     credential: ModelProviderCredential,
 ) -> dict[str, object]:
@@ -74,7 +75,9 @@ def _model_provider_credential_option_payload(
         if session is not None
         else _empty_health_check_schedule_payload()
     )
-    capability = resolve_model_capability(credential.provider, credential.default_model)
+    capability = resolve_model_capability(
+        credential.provider, credential.default_model, credential.model_capabilities
+    )
     return {
         "id": credential.id,
         "name": credential.name,
@@ -82,7 +85,9 @@ def _model_provider_credential_option_payload(
         "default_model": credential.default_model,
         "model_options": [
             capability.as_dict()
-            for capability in list_model_capabilities(provider=credential.provider)
+            for capability in list_model_capabilities(
+                credential.model_capabilities, provider=credential.provider
+            )
         ],
         "model_api": model_api_for_provider(
             credential.provider,
@@ -141,6 +146,7 @@ def _empty_health_check_schedule_payload() -> dict[str, object]:
         "next_run_at": None,
         "jobs": [],
     }
+
 
 def _agent_model_provider_payload(agent: AgentProfile) -> dict[str, object]:
     session = Session.object_session(agent)

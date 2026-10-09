@@ -6636,7 +6636,7 @@ def _run_agent_sync(
         settings=settings,
         dependencies=RunExecutionDependencies(
             lifecycle=_run_lifecycle(session),
-            runtime_backends=build_runtime_backend_registry(None),
+            runtime_backends=build_runtime_backend_registry(None, lambda: 60),
         ),
     ).run_agent_sync(job)
 

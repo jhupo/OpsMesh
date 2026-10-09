@@ -101,6 +101,7 @@ def agent_model_provider_summary(
                 "model_capability": _model_capability_payload(
                     credential.provider,
                     _selected_model(agent.model, credential),
+                    credential.model_capabilities,
                 ),
             }
             health = _agent_model_provider_health_summary(
@@ -131,7 +132,7 @@ def agent_model_provider_summary(
             "model_api": configured_model_api(agent.model_settings),
             "model_apis": [],
             "default_model_api": None,
-            "model_capability": _model_capability_payload(None, agent.model),
+            "model_capability": None,
             "credential_status": None,
             "credential_health_status": None,
             "failure_count": 0,
@@ -154,10 +155,6 @@ def agent_model_provider_summary(
     except ValueError:
         summary["model_api"] = None
     summary["requested_model_api"] = unsupported_model_api
-    summary["model_capability"] = _model_capability_payload(
-        _capability_provider(snapshot),
-        snapshot.selected_model,
-    )
     health = _agent_model_provider_health_summary(
         db_session, agent.workspace_id, snapshot.credential_id
     )
@@ -241,6 +238,7 @@ def _selected_model(agent_model: str, credential: ModelProviderCredential) -> st
 def _model_capability_payload(
     provider: str | None,
     model: str | None,
+    catalog: object,
 ) -> dict[str, object] | None:
-    capability = resolve_model_capability(provider, model)
+    capability = resolve_model_capability(provider, model, catalog)
     return capability.as_dict() if capability is not None else None

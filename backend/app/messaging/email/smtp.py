@@ -6,6 +6,7 @@ from email.utils import formataddr
 
 def send_smtp_message(
     *,
+    timeout_seconds: float,
     host: str,
     port: int,
     security: str,
@@ -24,9 +25,9 @@ def send_smtp_message(
     message.set_content(body)
     context = ssl.create_default_context()
     client = (
-        smtplib.SMTP_SSL(host, port, timeout=5, context=context)
+        smtplib.SMTP_SSL(host, port, timeout=timeout_seconds, context=context)
         if security == "tls"
-        else smtplib.SMTP(host, port, timeout=5)
+        else smtplib.SMTP(host, port, timeout=timeout_seconds)
     )
     with client:
         if security == "starttls":

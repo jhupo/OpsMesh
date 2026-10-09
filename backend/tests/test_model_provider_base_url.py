@@ -1,39 +1,26 @@
-from backend.app.agents.providers.policy import (
-    model_provider_base_url_host,
-    normalize_openai_compatible_base_url,
+import pytest
+
+from backend.app.agents.providers.policy import model_provider_base_url_host, validated_base_url
+from backend.app.shared.security.egress import EgressUrlPolicy
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://gateway.example.test/",
+        "https://gateway.example.test/v1",
+        "https://gateway.example.test/custom/openai",
+    ],
 )
-
-
-def test_normalize_openai_compatible_base_url_adds_v1_to_root_url() -> None:
+def test_provider_preserves_explicit_endpoint(url: str) -> None:
     assert (
-        normalize_openai_compatible_base_url("https://dash.ovload.com/")
-        == "https://dash.ovload.com/v1"
+        validated_base_url(
+            url,
+            provider="openai-compatible",
+            egress_policy=EgressUrlPolicy(allowed_schemes=("https",)),
+        )
+        == url
     )
-
-
-def test_normalize_openai_compatible_base_url_preserves_existing_v1() -> None:
-    assert (
-        normalize_openai_compatible_base_url("https://dash.ovload.com/v1")
-        == "https://dash.ovload.com/v1"
-    )
-
-
-def test_normalize_openai_compatible_base_url_appends_v1_to_provider_path() -> None:
-    assert (
-        normalize_openai_compatible_base_url("https://router.example.test/openai")
-        == "https://router.example.test/openai/v1"
-    )
-
-
-def test_normalize_openai_compatible_base_url_drops_query_and_fragment() -> None:
-    assert (
-        normalize_openai_compatible_base_url("https://dash.ovload.com/?token=secret#frag")
-        == "https://dash.ovload.com/v1"
-    )
-
-
-def test_normalize_openai_compatible_base_url_allows_none() -> None:
-    assert normalize_openai_compatible_base_url(None) is None
 
 
 def test_model_provider_base_url_host_returns_only_authority() -> None:

@@ -6,10 +6,9 @@ from backend.app.capabilities.tools.events import ProductToolEventRecorder
 from backend.app.capabilities.tools.files import WorkspaceFileProductTools
 from backend.app.capabilities.tools.mailbox import AgentMailboxProductTools
 from backend.app.capabilities.tools.memory import WorkspaceMemoryProductTools
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.artifacts.service import ArtifactPersistenceService
 from backend.app.resources.files.content import (
-    DEFAULT_AGENT_FILE_READ_MAX_BYTES,
-    DEFAULT_AGENT_READABLE_CONTENT_TYPES,
     WorkspaceFileContentReader,
 )
 from backend.app.resources.storage.storage import ObjectStorage
@@ -22,8 +21,6 @@ class ProductToolService:
         session: Session,
         *,
         storage: ObjectStorage | None = None,
-        max_file_read_bytes: int = DEFAULT_AGENT_FILE_READ_MAX_BYTES,
-        readable_content_types: frozenset[str] = DEFAULT_AGENT_READABLE_CONTENT_TYPES,
         memory_embedding_secret_service: SecretEncryptionService | None = None,
     ) -> None:
         from backend.app.capabilities.tools.conversations import ConversationProductTools
@@ -35,8 +32,10 @@ class ProductToolService:
         content_reader = (
             WorkspaceFileContentReader(
                 storage,
-                max_bytes=max_file_read_bytes,
-                allowed_content_types=readable_content_types,
+                max_bytes=operational_configuration(session).files.agent_read_bytes,
+                allowed_content_types=frozenset(
+                    operational_configuration(session).files.readable_content_types
+                ),
             )
             if storage is not None
             else None

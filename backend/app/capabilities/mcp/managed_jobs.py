@@ -192,7 +192,7 @@ class ManagedMcpJobHandler:
         server_config = {
             key: value
             for key, value in server.connection.items()
-            if key in {"command", "args", "cwd"}
+            if key in {"command", "args", "cwd", "restart_policy"}
         }
         environment = hosted_stdio_environment(
             [credential] if credential else [],

@@ -22,9 +22,7 @@ class ClaudeAgentSessionStore:
     def __init__(self, session: AgentRuntimeSession, *, session_id: str) -> None:
         self._session = session
         self._session_id = session_id
-        self._seen_entry_ids: set[
-            tuple[str | None, str | None, str]
-        ] | None = None
+        self._seen_entry_ids: set[tuple[str | None, str | None, str]] | None = None
 
     async def append(self, key: SessionKey, entries: list[SessionStoreEntry]) -> None:
         if key["session_id"] != self._session_id:
@@ -39,9 +37,7 @@ class ClaudeAgentSessionStore:
         for entry in entries:
             entry_id = entry.get("uuid")
             dedup_key = (
-                (project_key, subpath, entry_id)
-                if isinstance(entry_id, str) and entry_id
-                else None
+                (project_key, subpath, entry_id) if isinstance(entry_id, str) and entry_id else None
             )
             if dedup_key is not None and (dedup_key in seen or dedup_key in pending_ids):
                 continue

@@ -19,9 +19,7 @@ def handoff_chain(
             "phase": "manager_planning",
             "status": phase_status([planning_step] if isinstance(planning_step, TaskStep) else []),
             "step_ids": [step_id(planning_step)] if isinstance(planning_step, TaskStep) else [],
-            "blocked_reasons": (
-                [] if planning_step is not None else ["missing_manager_planning_step"]
-            ),
+            "blocked_reasons": [],
         },
         {
             "phase": "specialist_execution",
@@ -37,7 +35,7 @@ def handoff_chain(
             "phase": "manager_acceptance",
             "status": phase_status(summaries if isinstance(summaries, list) else []),
             "step_ids": [step_id(step) for step in summaries if isinstance(step, TaskStep)],
-            "blocked_reasons": [] if summaries else ["missing_manager_summary_step"],
+            "blocked_reasons": [],
         },
         {
             "phase": "follow_up",
@@ -162,12 +160,6 @@ def blocked_reasons(
     follow_up_cycles: list[FollowUpCycle],
 ) -> list[str]:
     reasons: list[str] = []
-    if manager_agent_id is None:
-        reasons.append("missing_manager")
-    if manager_steps["planning"] is None and manager_agent_id is not None:
-        reasons.append("missing_manager_planning_step")
-    if not manager_steps["summaries"] and manager_agent_id is not None:
-        reasons.append("missing_manager_summary_step")
     if specialist_steps and any(step.status != "completed" for step in specialist_steps):
         reasons.append("specialist_steps_incomplete")
     if manager_steps["summaries"] and not acceptance_messages:
@@ -253,7 +245,7 @@ def overall_status(blocked_reasons: list[str]) -> str:
 
 def phase_status(steps: list[TaskStep]) -> str:
     if not steps:
-        return "missing"
+        return "not_required"
     if all(step.status == "completed" for step in steps):
         return "completed"
     if any(step.status in {"running", "queued", "waiting_approval"} for step in steps):

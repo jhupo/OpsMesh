@@ -40,15 +40,8 @@ def is_cancelled(package: dict[str, object]) -> bool:
 
 
 def is_platform_package(package: dict[str, object]) -> bool:
-    package_id = str(package.get("package_id") or "")
     review_policy = package.get("review_policy")
-    mode = review_policy.get("mode") if isinstance(review_policy, dict) else None
-    return (
-        package_id == "manager-planning"
-        or package_id.startswith("manager-summary")
-        or package_id.startswith("executive-")
-        or mode in {"final_acceptance", "executive_review"}
-    )
+    return isinstance(review_policy, dict) and review_policy.get("mode") == "agent_planning"
 
 
 def reject(code: str, message: str) -> NoReturn:

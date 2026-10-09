@@ -118,7 +118,7 @@ class WorkflowNode(BaseModel):
     node_type: WorkflowNodeType = "agent"
     title: str = Field(min_length=1, max_length=240)
     description: str = Field(default="", max_length=8_000)
-    required_role: str = Field(default="specialist", min_length=1, max_length=120)
+    required_role: str | None = Field(default=None, min_length=1, max_length=120)
     required_skills: list[str] = Field(default_factory=list, max_length=32)
     assigned_agent_profile_id: UUID | None = None
     depends_on: list[str] = Field(default_factory=list, max_length=128)
@@ -128,8 +128,7 @@ class WorkflowNode(BaseModel):
     resource_requirements: dict[str, StrictInt] = Field(default_factory=dict, max_length=32)
     expected_artifacts: list[str] = Field(default_factory=list, max_length=32)
     acceptance_criteria: list[str] = Field(
-        default_factory=lambda: ["The work package produces a clear result summary."],
-        min_length=1,
+        default_factory=list,
         max_length=32,
     )
     review_policy: dict[str, object] = Field(default_factory=dict)

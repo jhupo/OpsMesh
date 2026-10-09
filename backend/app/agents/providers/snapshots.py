@@ -115,7 +115,11 @@ class ModelProviderResolutionService:
             default_model_api=default_model_api(capability_provider)
             if capability_provider is not None
             else None,
-            model_capability=_model_capability_payload(capability_provider, selected_model),
+            model_capability=_model_capability_payload(
+                capability_provider,
+                selected_model,
+                credential.model_capabilities if credential else [],
+            ),
             credential_status=credential.status if credential is not None else None,
             credential_health_status=credential.health_status if credential is not None else None,
             failure_count=credential.failure_count if credential is not None else 0,
@@ -175,6 +179,8 @@ def _capability_provider(
     return None
 
 
-def _model_capability_payload(provider: str | None, model: str | None) -> dict[str, object] | None:
-    capability = resolve_model_capability(provider, model)
+def _model_capability_payload(
+    provider: str | None, model: str | None, catalog: object
+) -> dict[str, object] | None:
+    capability = resolve_model_capability(provider, model, catalog)
     return capability.as_dict() if capability is not None else None

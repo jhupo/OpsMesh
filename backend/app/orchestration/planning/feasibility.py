@@ -225,10 +225,12 @@ class PlanFeasibilityService:
                 _reject("plan_agent_unavailable")
             actual_role = member.team_role
         else:
-            actual_role = "project_manager"
+            actual_role = profile.role
 
-        required_role = _required_text(package, "required_role")
-        if not _labels_match(required_role, actual_role):
+        required_role = package.get("required_role")
+        if required_role is not None and not _labels_match(
+            _required_text(package, "required_role"), actual_role
+        ):
             _reject("plan_agent_role_mismatch")
         if not _skills_available(
             profile,

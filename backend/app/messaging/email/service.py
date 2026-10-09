@@ -8,6 +8,7 @@ from backend.app.messaging.email.schemas import (
     MailConfigurationUpdate,
 )
 from backend.app.messaging.email.smtp import send_smtp_message
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.shared.config import Settings
 from backend.app.shared.errors import DomainError
 from backend.app.shared.security.secrets import SecretEncryptionService
@@ -73,6 +74,7 @@ class PlatformMailService:
                 )
                 password = str(secret.get("password", ""))
             send_smtp_message(
+                timeout_seconds=operational_configuration(self._session).smtp_timeout_seconds,
                 host=configuration.host,
                 port=configuration.port,
                 security=configuration.security,

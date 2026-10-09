@@ -68,7 +68,6 @@ from backend.app.agents.providers.model_api import (
 )
 from backend.app.agents.providers.policy import (
     is_openai_compatible_provider,
-    normalize_openai_compatible_base_url,
 )
 
 
@@ -339,7 +338,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             raise ValueError("OpenAI-compatible runtime requires an explicit provider API key")
         model: str | Model = OpenAIProvider(
             api_key=request.api_key,
-            base_url=normalize_openai_compatible_base_url(request.base_url),
+            base_url=request.base_url,
             use_responses=_use_responses_api(request.model_api),
         ).get_model(model_name)
         nested_calls = agent_tool_calls if agent_tool_calls is not None else []
@@ -474,7 +473,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             raise ValueError("OpenAI agent tool target requires an explicit provider API key")
         model = OpenAIProvider(
             api_key=definition.api_key,
-            base_url=normalize_openai_compatible_base_url(definition.base_url),
+            base_url=definition.base_url,
             use_responses=_use_responses_api(definition.model_api),
         ).get_model(definition.model)
         scoped_request = replace(
@@ -637,7 +636,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             raise ValueError("OpenAI-compatible runtime requires an explicit provider API key")
         model: str | Model = OpenAIProvider(
             api_key=request.api_key,
-            base_url=normalize_openai_compatible_base_url(request.base_url),
+            base_url=request.base_url,
             use_responses=_use_responses_api(request.model_api),
         ).get_model(model_name)
         input_guardrails, output_guardrails = _openai_guardrails(

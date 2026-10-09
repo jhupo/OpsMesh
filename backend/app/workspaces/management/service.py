@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.governance.audit.service import AuditService
 from backend.app.identity.authorization.permissions import WorkspaceRole
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.memory.models import WorkspaceMemoryConfiguration
 from backend.app.resources.memory.policy import default_lifecycle_policy, default_retrieval_policy
 from backend.app.shared.config import Settings, get_settings
@@ -68,8 +69,10 @@ class WorkspaceService:
         memory_configuration = WorkspaceMemoryConfiguration(
             workspace=workspace,
             embedding_enabled=False,
-            embedding_model="text-embedding-3-small",
-            embedding_dimensions=1_536,
+            embedding_model=operational_configuration(self._session).default_embedding_model,
+            embedding_dimensions=operational_configuration(
+                self._session
+            ).default_embedding_dimensions,
             retrieval_policy=default_retrieval_policy(),
             lifecycle_policy=default_lifecycle_policy(),
         )

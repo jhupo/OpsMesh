@@ -7,11 +7,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.approvals.service import ApprovalService
-from backend.app.orchestration.definitions.templates import (
-    ProjectPlanningService,
+from backend.app.orchestration.definitions.graph import (
     ProjectPlanValidationError,
     validate_project_plan,
 )
+from backend.app.orchestration.definitions.templates.builder import ProjectPlanningService
 from backend.app.orchestration.planning.agent_plan import (
     bootstrap_plan,
     is_agent_planning_step,
@@ -55,7 +55,7 @@ class TaskPlanningAttemptService:
         plan: dict[str, object] | None
         try:
             if planning_mode(task) == "agent":
-                plan = bootstrap_plan(task, attempt.id)
+                plan = bootstrap_plan(self._session, task, attempt.id)
                 attempt.strategy = "agent_sdk"
                 attempt.status = "queued"
                 attempt.planner_agent_profile_id = UUID(str(plan["planner_agent_profile_id"]))
@@ -80,6 +80,7 @@ class TaskPlanningAttemptService:
 
         now = datetime.now(UTC)
         attempt.status = "completed"
+        attempt.strategy = str(plan["strategy"]) if plan else "explicit_workflow"
         attempt.output_snapshot = plan
         attempt.completed_at = now
         task.project_plan = plan
@@ -90,8 +91,7 @@ class TaskPlanningAttemptService:
             payload={
                 "attempt_id": str(attempt.id),
                 "work_package_count": _work_package_count(plan),
-                "strategy": "deterministic_team_snapshot_v1",
-                "explicit_fallback": True,
+                "strategy": attempt.strategy,
             },
         )
         self._session.flush([attempt, task])
@@ -153,7 +153,7 @@ class TaskPlanningAttemptService:
             planner_agent_profile_id=_planner_agent_profile_id(task),
             attempt_number=self._next_attempt_number(task.workspace_id, task.id),
             status="running",
-            strategy="deterministic_team_snapshot_v1",
+            strategy="explicit_workflow",
             input_snapshot={
                 "title": task.title,
                 "description": task.description,

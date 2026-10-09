@@ -34,8 +34,6 @@ def is_reassignable_specialist_step(step: TaskStep) -> bool:
         return False
     if step.assigned_agent_profile_id is None:
         return False
-    if is_manager_role(step.required_role):
-        return False
     work_package_id = step.work_package_id or ""
     return not work_package_id.startswith("manager-")
 
@@ -88,16 +86,6 @@ def replacement_role_rank(
     return 2
 
 
-def is_manager_role(value: str | None) -> bool:
-    if value is None:
-        return False
-    normalized = value.lower().replace("-", "_")
-    return any(
-        marker in normalized
-        for marker in ("manager", "project_manager", "program_manager", "product_manager")
-    )
-
-
 def _replacement_candidate(
     *,
     step: TaskStep,
@@ -110,8 +98,6 @@ def _replacement_candidate(
     if agent is None or agent.workspace_id != step.workspace_id or agent.status != "active":
         return None
     if member.status != "active" or not member.accepts_tasks:
-        return None
-    if is_manager_role(member.team_role) or is_manager_role(agent.role):
         return None
     if not member_matches_step(member=member, agent=agent, step=step):
         return None

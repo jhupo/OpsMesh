@@ -1,0 +1,46 @@
+{
+  "operational_configuration": {
+    "provider_failure_threshold": 3,
+    "provider_health_schedule_limit": 10,
+    "worker_stale_after_seconds": 300,
+    "queue_scan_limit": 1000,
+    "smtp_timeout_seconds": 5.0,
+    "docker_control_timeout_seconds": 30,
+    "file_transfer_timeout_seconds": 60,
+    "url_fetch_timeout_seconds": 30,
+    "memory_chunk_size": 900,
+    "memory_chunk_overlap": 120,
+    "memory_source_limit": 80,
+    "memory_snippet_length": 220,
+    "default_embedding_model": "text-embedding-3-small",
+    "default_embedding_dimensions": 1536,
+    "default_context_window_tokens": 32768,
+    "manager_task_capacity": 1,
+    "agent_tool_depth": 3,
+    "agent_tool_turns": 20,
+    "agent_tool_targets": 10,
+    "agent_tool_graph_nodes": 25,
+    "files": {
+      "input_files": 512,
+      "output_files": 128,
+      "input_bytes": 536870912,
+      "output_bytes": 1073741824,
+      "staged_file_bytes": 536870912,
+      "agent_read_bytes": 1048576,
+      "readable_content_types": [
+        "application/json",
+        "application/toml",
+        "application/x-yaml",
+        "application/xml",
+        "text/csv",
+        "text/markdown",
+        "text/plain",
+        "text/tab-separated-values",
+        "text/x-python",
+        "text/xml",
+        "text/yaml"
+      ],
+      "knowledge_source_bytes": 10485760
+    }
+  }
+}

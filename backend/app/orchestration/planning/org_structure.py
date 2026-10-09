@@ -6,11 +6,6 @@ from uuid import UUID
 
 from backend.app.shared.utils import string_list, uuid_or_none
 
-EXECUTIVE_ROLES = {"ceo", "cto", "coo", "cfo", "chief_executive", "chief_technology_officer"}
-MANAGER_ROLES = {"project_manager", "product_manager", "program_manager", "manager", "pm"}
-LEAD_ROLES = {"team_lead", "tech_lead", "engineering_lead", "lead"}
-LEADERSHIP_ROLES = EXECUTIVE_ROLES | MANAGER_ROLES | LEAD_ROLES
-
 
 @dataclass(frozen=True)
 class OrgMember:
@@ -64,13 +59,23 @@ def build_org_structure(snapshot: dict[str, object] | None) -> OrgStructure:
             departments[member.department].append(member)
 
     cycle_ids = _reporting_cycle_member_ids(members)
+    team = (snapshot or {}).get("team")
+    explicit_manager_id = (
+        uuid_or_none(team.get("manager_agent_profile_id")) if isinstance(team, dict) else None
+    )
+    managers = tuple(
+        member
+        for member in members
+        if explicit_manager_id is not None and member.agent_profile_id == explicit_manager_id
+    )
+    leads = tuple(member for member in members if member.id in children and member not in managers)
     return OrgStructure(
         members=members,
-        executives=tuple(member for member in members if member.normalized_role in EXECUTIVE_ROLES),
-        managers=tuple(member for member in members if member.normalized_role in MANAGER_ROLES),
-        leads=tuple(member for member in members if member.normalized_role in LEAD_ROLES),
+        executives=(),
+        managers=managers,
+        leads=leads,
         contributors=tuple(
-            member for member in members if member.normalized_role not in LEADERSHIP_ROLES
+            member for member in members if member not in managers and member not in leads
         ),
         departments={
             department: tuple(sorted(items, key=_member_sort_key))
@@ -83,22 +88,6 @@ def build_org_structure(snapshot: dict[str, object] | None) -> OrgStructure:
         cycle_member_ids=tuple(sorted(cycle_ids)),
         orphan_member_ids=tuple(sorted(orphan_ids)),
     )
-
-
-def is_executive_role(role: str | None) -> bool:
-    return normalize_role(role) in EXECUTIVE_ROLES
-
-
-def is_manager_role(role: str | None) -> bool:
-    return normalize_role(role) in MANAGER_ROLES
-
-
-def is_lead_role(role: str | None) -> bool:
-    return normalize_role(role) in LEAD_ROLES
-
-
-def is_leadership_role(role: str | None) -> bool:
-    return normalize_role(role) in LEADERSHIP_ROLES
 
 
 def normalize_role(role: str | None) -> str:

@@ -38,7 +38,6 @@ from backend.app.runtime.instances.contracts import (
 from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.instances.project_files import DockerRunProjectFilesystem
 
-_DOCKER_CONTROL_TIMEOUT_SECONDS = 30
 _ARCHIVE_OVERHEAD_LIMIT_BYTES = 1_048_576
 _COMMAND_INPUT_LIMIT_BYTES = 1_048_576
 _INPUT_ARGUMENT_NAME = re.compile(r"^--[a-z][a-z0-9-]*$")
@@ -49,8 +48,11 @@ DockerClientFactory = Callable[[int], DockerClient]
 class DockerRuntimeBackend:
     capabilities = RuntimeBackendCapabilities(True, False, True, True)
 
-    def __init__(self, client: DockerRuntimeClient | None) -> None:
+    def __init__(
+        self, client: DockerRuntimeClient | None, transfer_timeout: Callable[[], int]
+    ) -> None:
         self._client = client
+        self._transfer_timeout = transfer_timeout
 
     def project_filesystem(
         self,
@@ -59,7 +61,9 @@ class DockerRuntimeBackend:
     ) -> RuntimeProjectFilesystem:
         if self._client is None:
             raise RuntimeError("Docker project files require a worker-injected client")
-        return DockerRunProjectFilesystem(self._client, runtime, run_id)
+        return DockerRunProjectFilesystem(
+            self._client, runtime, run_id, timeout_seconds=self._transfer_timeout()
+        )
 
     def sandbox_session(
         self,
@@ -147,7 +151,10 @@ class DockerSandboxSessionExecutor(SandboxSessionExecutor):
 class DockerSdkRuntimeClient(DockerRuntimeClient):
     """Docker runtime boundary implemented exclusively with the official Docker SDK."""
 
-    def __init__(self, client_factory: DockerClientFactory | None = None) -> None:
+    def __init__(
+        self, control_timeout: Callable[[], int], client_factory: DockerClientFactory | None = None
+    ) -> None:
+        self._control_timeout = control_timeout
         self._client_factory = client_factory or _create_docker_client
 
     def create_container(self, request: RuntimeCreateRequest) -> str:
@@ -160,7 +167,7 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
         if request.runtime_space_id is not None:
             labels["opsmesh.runtime_space_id"] = request.runtime_space_id
 
-        with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
+        with self._client(self._control_timeout()) as client:
             if request.process is not None:
                 try:
                     existing = client.containers.get(request.name)
@@ -209,30 +216,30 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
             return str(container.id)
 
     def start_container(self, container_id: str) -> None:
-        with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
+        with self._client(self._control_timeout()) as client:
             client.containers.get(container_id).start()
 
     def stop_container(self, container_id: str) -> None:
-        with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
-            client.containers.get(container_id).stop(timeout=_DOCKER_CONTROL_TIMEOUT_SECONDS)
+        with self._client(self._control_timeout()) as client:
+            client.containers.get(container_id).stop(timeout=self._control_timeout())
 
     def remove_container(self, container_id: str) -> None:
         try:
-            with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
+            with self._client(self._control_timeout()) as client:
                 client.containers.get(container_id).remove(force=True)
         except NotFound:
             return
 
     def remove_volume(self, volume_name: str) -> None:
         try:
-            with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
+            with self._client(self._control_timeout()) as client:
                 client.volumes.get(volume_name).remove(force=True)
         except NotFound:
             return
 
     def container_running(self, container_id: str) -> bool:
         try:
-            with self._client(_DOCKER_CONTROL_TIMEOUT_SECONDS) as client:
+            with self._client(self._control_timeout()) as client:
                 container = client.containers.get(container_id)
                 container.reload()
                 return container.status == "running"

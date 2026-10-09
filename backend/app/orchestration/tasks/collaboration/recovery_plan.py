@@ -304,13 +304,6 @@ def needs_manager_review(blocked_reasons: list[str]) -> bool:
     ) or any(reason.startswith("missing_manager_") for reason in reasons)
 
 
-def recovery_instruction(item: dict[str, object]) -> str | None:
-    action = item.get("action")
-    if action == "request_manager_review":
-        return "Review the current collaboration state and decide the next delivery action."
-    return None
-
-
 def uuid_list(value: object) -> list[UUID]:
     if not isinstance(value, list):
         return []

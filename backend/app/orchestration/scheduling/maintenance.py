@@ -16,6 +16,7 @@ from backend.app.orchestration.scheduling.service import WorkspaceScheduledJobSe
 from backend.app.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
 from backend.app.orchestration.tasks.events import RedisTaskEventBus
 from backend.app.orchestration.webhooks.scheduler import WebhookDeliveryScheduler
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.lifecycle.service import WorkspaceDataLifecycleService
 from backend.app.resources.memory.embedding_scheduler import WorkspaceMemoryEmbeddingScheduler
 from backend.app.resources.memory.lifecycle import WorkspaceMemoryLifecycleService
@@ -54,7 +55,13 @@ class WorkerMaintenanceService:
         self._config = config
         self._settings = settings
         self._runtime_docker_client = runtime_docker_client
-        self._runtime_backends = build_runtime_backend_registry(runtime_docker_client)
+        self._runtime_backends = build_runtime_backend_registry(
+            runtime_docker_client, self._transfer_timeout
+        )
+
+    def _transfer_timeout(self) -> int:
+        with self._session_factory() as session:
+            return operational_configuration(session).file_transfer_timeout_seconds
 
     def run(self) -> WorkerMaintenanceSummary:
         try:

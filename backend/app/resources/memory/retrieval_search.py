@@ -18,7 +18,6 @@ from backend.app.resources.memory.policy import HybridMemoryRetrievalPolicy, Mem
 from backend.app.shared.utils import datetime_or_none, ensure_aware_utc
 
 TOKEN_PATTERN = re.compile(r"[\w.-]+", re.UNICODE)
-SNIPPET_LENGTH = 220
 
 
 @dataclass(frozen=True)
@@ -47,6 +46,7 @@ class MemorySearchRequest:
     limit: int
     source_types: set[str] | None
     documents: list[MemorySearchDocument]
+    snippet_length: int
     memory_layers: set[str] | None = None
     access_scopes: tuple[AuthorizedMemoryScope, ...] | None = None
     layer_limits: dict[str, int] = field(default_factory=dict)
@@ -88,7 +88,7 @@ class LexicalMemorySearchBackend:
             MemorySearchHit(
                 document=document,
                 score=float(score),
-                snippet=snippet(document.text, terms),
+                snippet=snippet(document.text, terms, request.snippet_length),
                 backend_name=self.backend_name,
                 ranking_details={"lexical_score": score},
             )
@@ -129,7 +129,7 @@ class PostgresFullTextMemorySearchBackend:
             MemorySearchHit(
                 document=_entry_document(entry),
                 score=float(score or 0),
-                snippet=snippet(entry.content, query_terms(request.query)),
+                snippet=snippet(entry.content, query_terms(request.query), request.snippet_length),
                 backend_name=self.backend_name,
                 ranking_details={"full_text_score": float(score or 0)},
             )
@@ -162,6 +162,7 @@ class PostgresVectorMemorySearchBackend:
                 WorkspaceMemoryEntry.embedding_content_fingerprint
                 == WorkspaceMemoryEntry.content_fingerprint,
                 WorkspaceMemoryEntry.embedding.is_not(None),
+                func.vector_dims(WorkspaceMemoryEntry.embedding) == len(request.query_embedding),
             )
             .order_by(distance.asc(), WorkspaceMemoryEntry.id.asc())
             .limit(_backend_result_limit(request))
@@ -174,7 +175,7 @@ class PostgresVectorMemorySearchBackend:
                 MemorySearchHit(
                     document=_entry_document(entry),
                     score=max(0.0, 1.0 - cosine_distance),
-                    snippet=snippet(entry.content, terms),
+                    snippet=snippet(entry.content, terms, request.snippet_length),
                     backend_name=self.backend_name,
                     ranking_details={"cosine_distance": round(cosine_distance, 8)},
                 )
@@ -219,9 +220,7 @@ class HybridMemorySearchBackend:
             for rank, hit in enumerate(backend_hits, start=1):
                 identity = _deduplication_identity(hit.document)
                 candidate = candidates.get(identity)
-                contribution = weight / (
-                    self._retrieval_policy.reciprocal_rank_constant + rank
-                )
+                contribution = weight / (self._retrieval_policy.reciprocal_rank_constant + rank)
                 if candidate is None:
                     candidate = _FusedCandidate(hit=hit)
                     candidates[identity] = candidate
@@ -326,15 +325,15 @@ def lexical_score(document: MemorySearchDocument, terms: list[str], query: str) 
     return score
 
 
-def snippet(text: str, terms: list[str]) -> str:
+def snippet(text: str, terms: list[str], length: int) -> str:
     collapsed = " ".join(text.split())
     lower = collapsed.lower()
     positions = [lower.find(term) for term in terms if term in lower]
     start = max(0, min(positions) - 60) if positions else 0
-    value = collapsed[start : start + SNIPPET_LENGTH]
+    value = collapsed[start : start + length]
     if start > 0:
         value = f"...{value}"
-    if start + SNIPPET_LENGTH < len(collapsed):
+    if start + length < len(collapsed):
         value = f"{value}..."
     return value
 
@@ -391,9 +390,7 @@ def _source_type_condition(source_types: set[str]) -> ColumnElement[bool]:
     if indexed_types:
         conditions.append(
             and_(
-                WorkspaceMemoryEntry.entry_type.in_(
-                    ("indexed_chunk", "knowledge_chunk")
-                ),
+                WorkspaceMemoryEntry.entry_type.in_(("indexed_chunk", "knowledge_chunk")),
                 WorkspaceMemoryEntry.source_type.in_(indexed_types),
             )
         )
@@ -430,15 +427,13 @@ def memory_document_allowed(
     if access_scopes is None:
         return True
     tags = document.metadata.get("tags")
-    normalized_tags = {
-        item for item in tags if isinstance(item, str)
-    } if isinstance(tags, list) else set()
+    normalized_tags = (
+        {item for item in tags if isinstance(item, str)} if isinstance(tags, list) else set()
+    )
     scope_type = document.metadata.get("scope_type")
     normalized_scope_type = scope_type if isinstance(scope_type, str) else "workspace"
     scope_id = document.metadata.get("scope_id")
-    normalized_scope_id = (
-        scope_id if isinstance(scope_id, str) else str(workspace_id)
-    )
+    normalized_scope_id = scope_id if isinstance(scope_id, str) else str(workspace_id)
     return any(
         scope.allows(
             source_type=document.source_type,

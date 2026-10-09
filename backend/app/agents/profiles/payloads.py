@@ -59,7 +59,7 @@ NON_NULL_PROFILE_FIELDS = (
 CREATE_DEFAULTS: dict[str, object] = {
     "description": "",
     "instructions": "",
-    "model": "gpt-4.1",
+    "model": "workspace-default",
     "model_provider_credential_id": None,
     "model_settings": {},
     "capabilities": {},

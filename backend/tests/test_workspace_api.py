@@ -10369,7 +10369,7 @@ def test_task_operator_action_requests_manager_review_step() -> None:
     manager = AgentProfile(
         workspace_id=workspace.id,
         name="PM",
-        role="project_manager",
+        role="custom_delivery_owner",
     )
     developer = AgentProfile(
         workspace_id=workspace.id,
@@ -10429,13 +10429,27 @@ def test_task_operator_action_requests_manager_review_step() -> None:
     assert created_step is not None
     assert created_step.assigned_agent_profile_id == manager.id
     assert created_step.work_package_id == "manager-summary-operator-1"
-    assert created_step.required_role == "project_manager"
+    assert created_step.required_role is None
+    assert created_step.required_skills == []
+    assert created_step.description == "Review the implementation and decide whether to accept."
     assert created_step.status == "queued"
     assert created_step.dependencies["operator_action"]["reason"] == (
         "Operator wants acceptance check"
     )
     assert body["details"]["manager_agent_profile_id"] == str(manager.id)
     assert missing_manager.status_code == 404
+
+    expected_prompt = task.description or task.title
+    default_review = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/operator-actions",
+        headers=_headers(owner.id),
+        json={"action": "request_manager_review"},
+    )
+    assert default_review.status_code == 200, default_review.text
+    default_step = session.get(TaskStep, UUID(default_review.json()["created_step_ids"][0]))
+    assert default_step is not None
+    assert default_step.assigned_agent_profile_id == manager.id
+    assert default_step.description == expected_prompt
 
 
 def test_final_output_correction_creates_reconciliation_work() -> None:

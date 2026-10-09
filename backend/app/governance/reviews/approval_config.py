@@ -15,6 +15,7 @@ class ReviewModelConfig(BaseModel):
     model: str = Field(min_length=1)
     instructions: str = Field(min_length=1, max_length=16000)
     timeout_seconds: float = Field(default=30, ge=1, le=120)
+    max_output_tokens: int = Field(default=1200, ge=128, le=32768)
     on_error: Literal["human", "deny"] = "human"
 
 
@@ -47,6 +48,7 @@ class ApprovalRule(BaseModel):
 
 class ApprovalConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    claude_permission_mode: Literal["default", "auto"] = "default"
     default: Disposition = "allow"
     reviewer: Literal["human", "model"] = "human"
     opaque_commands: Literal["review", "deny"] = "review"
