@@ -1304,7 +1304,16 @@ def test_managed_runtime_cleanup_probes_live_container_instead_of_heartbeat() ->
         runtime_provider="self_hosted",
         last_heartbeat_at=old,
     )
-    session.add_all([managed, hosted])
+    stopped = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="stopped",
+        status="stopped",
+        connection_status="offline",
+        runtime_provider="cloud_docker",
+        docker_container_id="stopped-container",
+        last_heartbeat_at=old,
+    )
+    session.add_all([managed, hosted, stopped])
     session.commit()
 
     class Docker(FakeDockerClient):
@@ -1318,6 +1327,7 @@ def test_managed_runtime_cleanup_probes_live_container_instead_of_heartbeat() ->
     assert managed.last_heartbeat_at is not None
     assert managed.last_heartbeat_at.replace(tzinfo=UTC) > old
     assert hosted.connection_status == "offline"
+    assert stopped.status == "stopped"
 
 
 def test_docker_sdk_archive_rejects_non_normalized_paths() -> None:

@@ -249,7 +249,8 @@ class RuntimeCleanupService:
         source: str = "operations.cleanup",
     ) -> int:
         statement = select(WorkspaceRuntime).where(
-            WorkspaceRuntime.status.in_(["stopped", "failed"])
+            WorkspaceRuntime.status.in_(["stopped", "failed"]),
+            WorkspaceRuntime.docker_container_id.is_(None),
         )
         if workspace_id is not None:
             statement = statement.where(WorkspaceRuntime.workspace_id == workspace_id)
