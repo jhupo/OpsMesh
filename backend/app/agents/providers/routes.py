@@ -100,6 +100,9 @@ async def create_model_provider_credential(
             model_api=request.model_api,
             is_default=request.is_default,
             budget_metadata=request.budget_metadata,
+            model_capabilities=[item.model_dump() for item in request.model_capabilities]
+            if request.model_capabilities is not None
+            else None,
         )
     except EgressUrlValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -133,6 +136,9 @@ async def update_model_provider_credential(
             model_api_provided="model_api" in request.model_fields_set,
             is_default=request.is_default,
             budget_metadata=request.budget_metadata,
+            model_capabilities=[item.model_dump() for item in request.model_capabilities]
+            if request.model_capabilities is not None
+            else None,
         )
     except EgressUrlValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -283,9 +289,7 @@ def _secret_service(settings: Settings) -> SecretEncryptionService:
 def _model_provider_http_error(exc: ValueError) -> HTTPException:
     message = str(exc)
     code = (
-        status.HTTP_404_NOT_FOUND
-        if "not found" in message.lower()
-        else status.HTTP_400_BAD_REQUEST
+        status.HTTP_404_NOT_FOUND if "not found" in message.lower() else status.HTTP_400_BAD_REQUEST
     )
     return HTTPException(status_code=code, detail=message)
 

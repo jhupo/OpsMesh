@@ -23,7 +23,7 @@ class AgentProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     role: Mapped[str] = mapped_column(String(80), nullable=False)
     description: Mapped[str] = mapped_column(String(2_000), nullable=False, default="")
     instructions: Mapped[str] = mapped_column(String, nullable=False, default="")
-    model: Mapped[str] = mapped_column(String(120), nullable=False, default="gpt-4.1")
+    model: Mapped[str] = mapped_column(String(120), nullable=False, default="workspace-default")
     model_provider_credential_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("model_provider_credentials.id", ondelete="SET NULL"),
         nullable=True,

@@ -59,6 +59,7 @@ from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.queries import authorization_snapshot_for_run
 from backend.app.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
 from backend.app.orchestration.tasks.models import Task
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.memory.context import AgentMemoryContext, AgentMemoryContextService
 from backend.app.resources.memory.models import WorkspaceMemoryEntry
 from backend.app.resources.memory.policy import context_budget_policy, working_memory_policy
@@ -442,11 +443,28 @@ class RunRequestBuilder:
                     priority=ContextPriority.NORMAL,
                 ),
             )
+        policy = context_budget_policy(inputs.snapshot.get("memory_policy"))
+        provider_snapshot = inputs.snapshot.get("model_provider")
+        capability = (
+            provider_snapshot.get("model_capability")
+            if isinstance(provider_snapshot, dict)
+            else None
+        )
+        catalog_limit = (
+            capability.get("context_window_tokens") if isinstance(capability, dict) else None
+        )
+        configured_limit = policy.context_window_tokens
+        selected_limit = (
+            configured_limit
+            or catalog_limit
+            or operational_configuration(self.session).default_context_window_tokens
+        )
+        policy = policy.model_copy(update={"context_window_tokens": selected_limit})
         budget = ContextBudgetManager().build(
             fragments=fragments,
             provider=inputs.model_provider["provider"],
             model=inputs.model_provider["model"],
-            policy=context_budget_policy(inputs.snapshot.get("memory_policy")),
+            policy=policy,
             instructions=inputs.runtime_profile.instructions,
             tool_definitions=inputs.tool_definitions,
             continuations=memory.continuations,

@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEntry,
@@ -30,11 +31,15 @@ class WorkspaceMemoryMetadataImporter:
         if not context.request.import_memory:
             return
         source_config = context.request.export.memory_configurations[:1]
-        if source_config and self._session.scalar(
-            select(WorkspaceMemoryConfiguration.id).where(
-                WorkspaceMemoryConfiguration.workspace_id == context.workspace.id
+        if (
+            source_config
+            and self._session.scalar(
+                select(WorkspaceMemoryConfiguration.id).where(
+                    WorkspaceMemoryConfiguration.workspace_id == context.workspace.id
+                )
             )
-        ) is None:
+            is None
+        ):
             item = source_config[0]
             self._session.add(
                 WorkspaceMemoryConfiguration(
@@ -42,9 +47,18 @@ class WorkspaceMemoryMetadataImporter:
                     workspace_id=context.workspace.id,
                     embedding_enabled=False,
                     embedding_model=_string_field(
-                        item, "embedding_model", "text-embedding-3-small"
+                        item,
+                        "embedding_model",
+                        operational_configuration(self._session).default_embedding_model,
                     ),
-                    embedding_dimensions=max(_int_field(item, "embedding_dimensions", 1536), 1),
+                    embedding_dimensions=max(
+                        _int_field(
+                            item,
+                            "embedding_dimensions",
+                            operational_configuration(self._session).default_embedding_dimensions,
+                        ),
+                        1,
+                    ),
                     retrieval_policy=_dict_field(item, "retrieval_policy"),
                     lifecycle_policy=_dict_field(item, "lifecycle_policy"),
                     version=max(_int_field(item, "version", 1), 1),
@@ -68,16 +82,20 @@ class WorkspaceMemoryMetadataImporter:
                 continue
             source_id = _string_field(item, "id")
             memory_key = _optional_string_field(item, "memory_key")
-            if memory_key and self._session.scalar(
-                select(WorkspaceMemoryEntry.id).where(
-                    WorkspaceMemoryEntry.workspace_id == context.workspace.id,
-                    WorkspaceMemoryEntry.memory_layer
-                    == _string_field(item, "memory_layer", "semantic"),
-                    WorkspaceMemoryEntry.scope_type == scope_type,
-                    WorkspaceMemoryEntry.scope_id == scope_id,
-                    WorkspaceMemoryEntry.memory_key == memory_key,
+            if (
+                memory_key
+                and self._session.scalar(
+                    select(WorkspaceMemoryEntry.id).where(
+                        WorkspaceMemoryEntry.workspace_id == context.workspace.id,
+                        WorkspaceMemoryEntry.memory_layer
+                        == _string_field(item, "memory_layer", "semantic"),
+                        WorkspaceMemoryEntry.scope_type == scope_type,
+                        WorkspaceMemoryEntry.scope_id == scope_id,
+                        WorkspaceMemoryEntry.memory_key == memory_key,
+                    )
                 )
-            ) is not None:
+                is not None
+            ):
                 context.skipped_counts["memory_entries"] += 1
                 context.conflict_plan.append(
                     WorkspaceImportConflict(

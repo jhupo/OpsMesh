@@ -7,11 +7,11 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.runtime.instances.contracts import DockerRuntimeClient, RuntimeCommandInputFile
 from backend.app.runtime.instances.manager import RuntimeManager
 from backend.app.runtime.instances.models import WorkspaceRuntime
 
-MAX_FETCH_TIMEOUT_SECONDS = 30
 _FETCH_SCRIPT = """
 import json
 import sys
@@ -65,7 +65,7 @@ http_request = urllib.request.Request(
     headers={"User-Agent": "OpsMesh-KnowledgeFetcher/1"},
 )
 try:
-    with opener.open(http_request, timeout=30) as response:
+    with opener.open(http_request, timeout=request["timeout_seconds"]) as response:
         content = response.read(max_bytes + 1)
     if len(content) > max_bytes:
         raise ValueError("response exceeds the configured byte limit")
@@ -119,7 +119,14 @@ class RuntimeUrlFetcher:
         self._assert_network_policy(runtime, url)
         output_path = f"/tmp/opsmesh-knowledge-fetch-{uuid4().hex}.bin"
         request_payload = json.dumps(
-            {"url": url, "output_path": output_path, "max_bytes": max_bytes},
+            {
+                "url": url,
+                "output_path": output_path,
+                "max_bytes": max_bytes,
+                "timeout_seconds": operational_configuration(
+                    self._session
+                ).url_fetch_timeout_seconds,
+            },
             separators=(",", ":"),
         ).encode("utf-8")
         try:
@@ -142,7 +149,7 @@ class RuntimeUrlFetcher:
                 runtime.docker_container_id,
                 output_path,
                 max_bytes,
-                MAX_FETCH_TIMEOUT_SECONDS,
+                operational_configuration(self._session).url_fetch_timeout_seconds,
             )
             if content is None:
                 raise RuntimeUrlFetchError(

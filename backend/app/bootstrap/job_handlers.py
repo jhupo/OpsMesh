@@ -10,6 +10,7 @@ from backend.app.governance.credentials.jobs import SecretReencryptJobHandler
 from backend.app.orchestration.planning.jobs import TaskPlanJobHandler
 from backend.app.orchestration.runs.jobs import AgentRunJobHandler
 from backend.app.orchestration.webhooks.jobs import WebhookDeliveryJobHandler
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.knowledge.jobs import KnowledgeIngestJobHandler
 from backend.app.resources.memory.embedding_jobs import MemoryEmbeddingJobHandler
 from backend.app.resources.memory.index_jobs import MemoryIndexJobHandler
@@ -37,7 +38,10 @@ class WorkerJobHandler:
     ) -> None:
         context = WorkerJobHandlerContext(
             session=session,
-            runtime_backends=build_runtime_backend_registry(runtime_docker_client),
+            runtime_backends=build_runtime_backend_registry(
+                runtime_docker_client,
+                lambda: operational_configuration(session).file_transfer_timeout_seconds,
+            ),
             queue=queue,
             agent_runner=agent_runner,
             settings=settings,

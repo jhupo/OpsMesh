@@ -158,18 +158,10 @@ class ProductToolExecutor:
         )
 
     def _product_tool_service(self) -> ProductToolService:
-        if self._settings is None:
-            return ProductToolService(
-                self._session,
-                storage=self._storage,
-                memory_embedding_secret_service=self._secret_service,
-            )
         return ProductToolService(
             self._session,
             storage=self._storage,
             memory_embedding_secret_service=self._secret_service,
-            max_file_read_bytes=self._settings.agent_file_read_max_bytes,
-            readable_content_types=frozenset(self._settings.agent_file_read_content_types),
         )
 
     def _review_for_approval(

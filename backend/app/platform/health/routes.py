@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from starlette import status
 
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.storage.storage import create_storage
 from backend.app.runtime.workers.models import WorkerNode
 from backend.app.shared.config import Settings
@@ -139,7 +140,7 @@ def _check_workers_online(session: Session, settings: Settings) -> str:
         return "disabled"
     try:
         stale_before = datetime.now(UTC) - timedelta(
-            seconds=settings.readiness_worker_stale_after_seconds
+            seconds=operational_configuration(session).worker_stale_after_seconds
         )
         workers = session.scalars(
             select(WorkerNode).where(

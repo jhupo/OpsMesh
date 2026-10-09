@@ -235,6 +235,9 @@ def _approval_hook(
                     dict(input_data["tool_input"]),
                     call_id,
                 )
+            if (request.agent_profile.model_settings or {}).get("claude_permission_mode") == "auto":
+                # Platform authorization passed; let the SDK classifier decide permission.
+                return {}
             return {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",

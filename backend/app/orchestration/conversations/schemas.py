@@ -24,8 +24,15 @@ class ConversationCreate(BaseModel):
     runtime_space_id: UUID | None = None
     workspace_project_id: UUID | None = None
 
+    orchestration_definition_id: UUID | None = None
+    orchestration_version: int | None = Field(default=None, ge=1)
+
     @model_validator(mode="after")
     def validate_target(self) -> "ConversationCreate":
+        if self.orchestration_definition_id is not None and self.mode != "team":
+            raise ValueError("Workflow execution requires team mode")
+        if self.orchestration_version is not None and self.orchestration_definition_id is None:
+            raise ValueError("Workflow version requires a definition")
         if self.mode == "team":
             if self.agent_team_id is None or self.agent_profile_id is not None:
                 raise ValueError("Team mode requires only an agent_team_id")
@@ -45,6 +52,8 @@ class ConversationResponse(TimestampedModel):
     agent_team_id: UUID | None
     runtime_space_id: UUID | None
     workspace_project_id: UUID | None
+    orchestration_definition_id: UUID | None
+    orchestration_version: int | None
 
 
 class MessageCreate(BaseModel):

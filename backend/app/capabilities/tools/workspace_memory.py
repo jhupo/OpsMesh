@@ -10,6 +10,7 @@ from backend.app.capabilities.tools.workspace_memory_documents import (
     WorkspaceMemoryDocumentRepository,
     result_payload,
 )
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.memory.authorization import AuthorizedMemoryScope
 from backend.app.resources.memory.configuration import WorkspaceMemoryConfigurationService
 from backend.app.resources.memory.models import WorkspaceMemoryEntry, WorkspaceMemoryRetrievalEvent
@@ -61,6 +62,7 @@ class WorkspaceMemorySearchService:
             return []
 
         request = MemorySearchRequest(
+            snippet_length=operational_configuration(self._session).memory_snippet_length,
             workspace_id=workspace_id,
             query=query,
             limit=limit,
@@ -150,11 +152,7 @@ class WorkspaceMemorySearchService:
         workspace_id: UUID,
         hits: list[MemorySearchHit],
     ) -> None:
-        memory_entry_ids = {
-            parsed
-            for hit in hits
-            if (parsed := _memory_entry_id(hit)) is not None
-        }
+        memory_entry_ids = {parsed for hit in hits if (parsed := _memory_entry_id(hit)) is not None}
         if not memory_entry_ids:
             return
         entries = self._session.scalars(
@@ -179,9 +177,7 @@ class WorkspaceMemorySearchService:
         backend_name: str,
     ) -> None:
         ranking_policy: dict[str, object] = {"backend": backend_name}
-        configuration = WorkspaceMemoryConfigurationService(self._session).get(
-            request.workspace_id
-        )
+        configuration = WorkspaceMemoryConfigurationService(self._session).get(request.workspace_id)
         if configuration is not None:
             ranking_policy = {
                 "backend": backend_name,

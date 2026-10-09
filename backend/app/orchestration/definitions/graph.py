@@ -25,10 +25,7 @@ class ProjectPlanValidationError(ValueError):
 
 def is_pm_summary_step(step: TaskStep) -> bool:
     review_policy = step.review_policy if isinstance(step.review_policy, dict) else {}
-    return (
-        step.work_package_id == "manager-summary"
-        or review_policy.get("mode") == "final_acceptance"
-    )
+    return review_policy.get("mode") == "final_acceptance"
 
 
 def validate_project_plan(
@@ -61,7 +58,8 @@ def _validate_package_shape(packages: list[object], allowed_agent_ids: set[str])
             raise ProjectPlanValidationError(f"Duplicate work package id: {package_id}")
         package_ids.add(package_id)
         required_string(raw_package, "title")
-        required_string(raw_package, "required_role")
+        if raw_package.get("required_role") is not None:
+            required_string(raw_package, "required_role")
         node_type = raw_package.get("node_type", "agent")
         if node_type not in {
             "agent",

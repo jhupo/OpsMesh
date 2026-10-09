@@ -19,6 +19,10 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     agent_team_id: Mapped[UUID | None] = mapped_column(ForeignKey("agent_teams.id"))
     runtime_space_id: Mapped[UUID | None] = mapped_column(ForeignKey("runtime_spaces.id"))
     workspace_project_id: Mapped[UUID | None] = mapped_column(ForeignKey("workspace_projects.id"))
+    orchestration_definition_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("orchestration_definitions.id")
+    )
+    orchestration_version: Mapped[int | None] = mapped_column(Integer)
     next_sequence: Mapped[int] = mapped_column(Integer, default=1)
 
 

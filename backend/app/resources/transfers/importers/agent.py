@@ -53,7 +53,7 @@ class AgentMetadataImporter:
                     role=_string_field(item, "role"),
                     description=_string_field(item, "description"),
                     instructions=_string_field(item, "instructions"),
-                    model=_string_field(item, "model", "gpt-4.1"),
+                    model=_string_field(item, "model", "workspace-default"),
                     model_settings=_dict_field(item, "model_settings"),
                     capabilities=_dict_field(item, "capabilities"),
                     skills=_remap_agent_skills(
@@ -62,9 +62,7 @@ class AgentMetadataImporter:
                     ),
                     tool_policy=_dict_field(item, "tool_policy"),
                     runtime_policy=_dict_field(item, "runtime_policy"),
-                    memory_policy=normalized_memory_policy(
-                        _dict_field(item, "memory_policy")
-                    ),
+                    memory_policy=normalized_memory_policy(_dict_field(item, "memory_policy")),
                     approval_policy=_dict_field(item, "approval_policy"),
                     version=_int_field(item, "version", 1),
                     status="active",
@@ -74,9 +72,12 @@ class AgentMetadataImporter:
                 ctx.id_map["agents"][source_id] = str(agent.id)
 
     def _agent_exists(self, workspace_id: UUID, name: str) -> bool:
-        return self._session.scalar(
-            select(AgentProfile.id).where(
-                AgentProfile.workspace_id == workspace_id,
-                AgentProfile.name == name,
+        return (
+            self._session.scalar(
+                select(AgentProfile.id).where(
+                    AgentProfile.workspace_id == workspace_id,
+                    AgentProfile.name == name,
+                )
             )
-        ) is not None
+            is not None
+        )

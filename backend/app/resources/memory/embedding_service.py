@@ -18,7 +18,6 @@ from backend.app.agents.providers.policy import (
 )
 from backend.app.governance.costs.service import CostAccountingService, CostBudgetExceededError
 from backend.app.resources.memory.configuration import (
-    EMBEDDING_DIMENSIONS,
     WorkspaceMemoryConfigurationService,
 )
 from backend.app.resources.memory.models import (
@@ -414,10 +413,10 @@ class WorkspaceMemoryEmbeddingService:
 
 
 def _validate_vector(vector: list[float], dimensions: int) -> None:
-    if dimensions != EMBEDDING_DIMENSIONS or len(vector) != dimensions:
+    if dimensions < 1 or len(vector) != dimensions:
         raise MemoryEmbeddingError(
             "embedding_dimensions_invalid",
-            f"Embedding vector must contain {EMBEDDING_DIMENSIONS} values",
+            f"Embedding vector must contain {dimensions} values",
         )
     if any(not math.isfinite(value) for value in vector):
         raise MemoryEmbeddingError(

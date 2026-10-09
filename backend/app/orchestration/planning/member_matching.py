@@ -11,7 +11,7 @@ from backend.app.orchestration.definitions.templates.members import (
     request_department,
 )
 from backend.app.orchestration.definitions.templates.normalization import same_label
-from backend.app.orchestration.planning.org_structure import is_leadership_role, normalize_role
+from backend.app.orchestration.planning.org_structure import normalize_role
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.statuses import WORKLOAD_RUN_STATUS_VALUES
 from backend.app.orchestration.tasks.models import TaskStep
@@ -129,7 +129,6 @@ def _score_member(
     score = 0.0
     reasons: list[str] = []
     role = str(member.get("team_role") or "").lower()
-    normalized_role = normalize_role(role)
     normalized_required_role = normalize_role(required_role)
     if normalized_required_role and role == normalized_required_role:
         score += 100
@@ -159,14 +158,6 @@ def _score_member(
     if department and normalized_required_role and normalized_required_role in department:
         score += 12
         reasons.append("department_match")
-
-    if (
-        is_leadership_role(normalized_role)
-        and normalized_required_role
-        and normalized_required_role != normalized_role
-    ):
-        score -= 80
-        reasons.append("leadership_execution_penalty")
 
     if member.get("is_required") is True:
         score += 2
@@ -201,11 +192,7 @@ def requested_member_match(
         if requested_agent_id is None:
             return None
         return next(
-            (
-                member
-                for member in members
-                if member_agent_profile_id(member) == requested_agent_id
-            ),
+            (member for member in members if member_agent_profile_id(member) == requested_agent_id),
             None,
         )
     if matcher_agent_profile_id is not None:

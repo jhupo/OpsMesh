@@ -13,7 +13,6 @@ from backend.app.agents.execution.tokens import estimate_token_upper_bound
 from backend.app.agents.providers.model_api import OPENAI_CHAT_COMPLETIONS_API, canonical_model_api
 from backend.app.agents.providers.policy import (
     canonical_model_provider,
-    normalize_openai_compatible_base_url,
 )
 
 
@@ -32,7 +31,7 @@ async def openai_run_session(
         raise ValueError("OpenAI responses compaction requires an explicit provider API key")
     async with AsyncOpenAI(
         api_key=request.api_key,
-        base_url=normalize_openai_compatible_base_url(request.base_url),
+        base_url=request.base_url,
     ) as client:
         compacting_session = OpenAIResponsesCompactionSession(
             session_id=session.session_id,

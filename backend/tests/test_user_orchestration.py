@@ -2186,6 +2186,7 @@ def test_task_api_can_apply_a_published_orchestration_without_queueing() -> None
                 WorkflowNode(
                     package_id="manager-review",
                     title="Manager review",
+                    assigned_agent_profile_id=agent.id,
                     required_role="project_manager",
                     condition={
                         "path": "task.input.requires_review",

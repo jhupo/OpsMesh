@@ -130,9 +130,11 @@ class PmFollowUpWorkService:
         source_work_package_id = (
             source_step.work_package_id if source_step is not None else "unknown"
         )
-        required_role = optional_string(request.get("required_role")) or (
-            source_step.required_role if source_step is not None else None
-        ) or "specialist"
+        required_role = (
+            optional_string(request.get("required_role"))
+            or (source_step.required_role if source_step is not None else None)
+            or "specialist"
+        )
         required_skills = string_list(request.get("required_skills")) or (
             source_step.required_skills if source_step is not None else []
         )
@@ -261,8 +263,8 @@ class PmFollowUpWorkService:
             runtime_space_id=task.runtime_space_id,
             assigned_agent_profile_id=summary_step.assigned_agent_profile_id,
             work_package_id=f"manager-summary-revision-{revision_cycle}",
-            required_role=summary_step.required_role or "project_manager",
-            required_skills=summary_step.required_skills or ["review", "synthesis"],
+            required_role=summary_step.required_role,
+            required_skills=summary_step.required_skills,
             expected_artifacts=summary_step.expected_artifacts or ["final_delivery"],
             acceptance_criteria=summary_step.acceptance_criteria
             or ["The final answer integrates all completed work packages."],
@@ -272,10 +274,7 @@ class PmFollowUpWorkService:
                 "mode": "final_acceptance",
             },
             title=f"{summary_step.title} revision review",
-            description=(
-                "Review the completed revision and missing-work outputs, then return a "
-                "final PM acceptance decision."
-            ),
+            description=summary_step.description,
             status=STEP_STATUS_QUEUED,
             order_index=self.next_follow_up_order_index(task),
             dependencies={

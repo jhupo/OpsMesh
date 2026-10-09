@@ -8,9 +8,24 @@ from backend.app.capabilities.mcp.transport.stdio_credentials import _merge_envi
 from backend.app.shared.contracts import TimestampedModel
 
 
+class McpRestartPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    max_restarts: int = Field(default=5, ge=0, le=10000)
+    stable_after_seconds: float = Field(default=300, gt=0)
+    initial_backoff_seconds: float = Field(default=2, gt=0)
+    max_backoff_seconds: float = Field(default=60, gt=0)
+
+    @model_validator(mode="after")
+    def validate_backoff(self) -> "McpRestartPolicy":
+        if self.max_backoff_seconds < self.initial_backoff_seconds:
+            raise ValueError("Maximum backoff must not be smaller than initial backoff")
+        return self
+
+
 class StdioProjectConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    restart_policy: McpRestartPolicy = Field(default_factory=McpRestartPolicy)
     command: str = Field(min_length=1, max_length=512)
     type: Literal["stdio"] = Field(default="stdio", exclude=True)
     args: list[str] = Field(default_factory=list, max_length=128)

@@ -55,17 +55,6 @@ def skill_names(value: object) -> list[str]:
     return [str(key) for key in value if isinstance(key, str)]
 
 
-def expected_artifacts_for_role(role: str) -> list[str]:
-    normalized = role.lower()
-    if "design" in normalized or "ui" in normalized:
-        return ["design_artifact"]
-    if "developer" in normalized or "engineer" in normalized:
-        return ["implementation_artifact"]
-    if "qa" in normalized or "test" in normalized:
-        return ["test_report"]
-    return ["work_summary"]
-
-
 def requested_work_packages(task_input: object) -> list[dict[str, object]]:
     if not isinstance(task_input, dict):
         return []

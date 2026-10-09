@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.tasks.models import Task
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.files.runtime_policy import runtime_file_denial_code
@@ -19,8 +20,6 @@ from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.shared.utils import stringify_or_none
 
-_CHUNK_SIZE = 900
-_CHUNK_OVERLAP = 120
 _SUPPORTED_MEMORY_INDEX_SOURCES = frozenset({"task", "workspace_file", "artifact"})
 
 
@@ -183,7 +182,10 @@ class WorkspaceMemoryIndexingService:
             source_type=source_type,
             source_id=source_id_text,
         )
-        chunks = chunk_text(text)
+        policy = operational_configuration(self._session)
+        chunks = chunk_text(
+            text, size=policy.memory_chunk_size, overlap=policy.memory_chunk_overlap
+        )
         for index, chunk in enumerate(chunks):
             entry = WorkspaceMemoryEntry(
                 workspace_id=workspace_id,
@@ -240,18 +242,20 @@ class WorkspaceMemoryIndexingService:
         return len(entries)
 
 
-def chunk_text(text: str) -> list[str]:
-    return [chunk.text for chunk in chunk_text_with_offsets(text)]
+def chunk_text(text: str, *, size: int, overlap: int) -> list[str]:
+    return [chunk.text for chunk in chunk_text_with_offsets(text, size=size, overlap=overlap)]
 
 
-def chunk_text_with_offsets(text: str) -> list[TextChunk]:
+def chunk_text_with_offsets(text: str, *, size: int, overlap: int) -> list[TextChunk]:
+    if size < 1 or not 0 <= overlap < size:
+        raise ValueError("Invalid memory chunk policy")
     normalized = " ".join(text.split())
     if not normalized:
         return []
     chunks: list[TextChunk] = []
     start = 0
     while start < len(normalized):
-        end = min(len(normalized), start + _CHUNK_SIZE)
+        end = min(len(normalized), start + size)
         chunks.append(
             TextChunk(
                 text=normalized[start:end],
@@ -261,7 +265,7 @@ def chunk_text_with_offsets(text: str) -> list[TextChunk]:
         )
         if end == len(normalized):
             break
-        start = max(end - _CHUNK_OVERLAP, start + 1)
+        start = max(end - overlap, start + 1)
     return chunks
 
 

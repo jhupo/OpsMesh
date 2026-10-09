@@ -114,7 +114,7 @@ class ProjectPlanDiagnosticsService:
                 }
             )
         graph = _dependency_graph(_package_nodes(packages))
-        managed_plan = plan.get("strategy") != "user_authored"
+        managed_plan = plan.get("strategy") in {"agent_sdk", "agent_planning_pending"}
         org_health = _org_health(snapshot, packages, require_management=managed_plan)
         blocked_reasons = _plan_blocked_reasons(
             package_diagnostics=package_diagnostics,
@@ -301,8 +301,6 @@ def _plan_blocked_reasons(
         reasons.append("dependency_cycle")
     if require_management and manager["has_manager"] and not manager["has_manager_planning"]:
         reasons.append("missing_manager_planning")
-    if require_management and manager["has_manager"] and not manager["has_manager_summary"]:
-        reasons.append("missing_manager_summary")
     reasons.extend(string_list(org_health.get("blocked_reasons")))
     return reasons
 
@@ -321,12 +319,8 @@ def _org_health(
     }
     blocked_reasons: list[str] = []
     warnings: list[str] = []
-    if not org.executives:
-        warnings.append("missing_executive_role")
     if require_management and not org.managers:
         blocked_reasons.append("missing_project_manager_role")
-    if org.contributors and not org.leads:
-        warnings.append("missing_team_lead_role")
     if org.cycle_member_ids:
         blocked_reasons.append("reporting_cycle")
     if org.orphan_member_ids:

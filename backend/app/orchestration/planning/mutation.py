@@ -125,7 +125,7 @@ class TaskPlanMutationService:
             )
 
         state = _MutationState(
-        packages=[dict(package) for package in raw_packages(plan)],
+            packages=[dict(package) for package in raw_packages(plan)],
             steps=self._load_steps(task),
             active_run_step_ids=self._active_run_step_ids(task),
             created_package_ids=set(),
@@ -137,17 +137,6 @@ class TaskPlanMutationService:
         for operation in command.operations:
             self._apply_operation(state, operation, command.reason)
 
-        active_new_work = {
-            package_id
-            for package_id in state.new_work_package_ids
-            if package_id not in state.cancelled_package_ids
-        }
-        self._ensure_summary_coverage(
-            task,
-            state,
-            active_new_work,
-            command.reason,
-        )
         self._require_locked_regions_unchanged(raw_packages(plan), state.packages)
         next_plan = self._build_next_plan(plan, state.packages, command, actor_user_id, mutation_id)
         self._validate_next_plan(task, next_plan, state)
@@ -492,79 +481,6 @@ class TaskPlanMutationService:
                         rewritten.append(value)
             package["depends_on"] = rewritten
             state.changed_package_ids.add(package_id)
-
-    def _ensure_summary_coverage(
-        self,
-        task: Task,
-        state: _MutationState,
-        new_work_package_ids: set[str],
-        reason: str,
-    ) -> None:
-        if not new_work_package_ids:
-            return
-        summaries = [
-            package
-            for package in state.packages
-            if str(package.get("package_id") or "").startswith("manager-summary")
-        ]
-        if not summaries:
-            return
-        summary = summaries[-1]
-        summary_id = str(summary["package_id"])
-        summary_step = state.steps.get(summary_id)
-        if (
-            summary_step is not None
-            and summary_step.status in MUTABLE_STEP_STATUSES
-            and summary_step.id not in state.active_run_step_ids
-            and not is_cancelled(summary)
-        ):
-            dependencies = self._dependencies(summary)
-            for package_id in sorted(new_work_package_ids):
-                if package_id not in dependencies:
-                    dependencies.append(package_id)
-            summary["depends_on"] = dependencies
-            state.changed_package_ids.add(summary_id)
-            return
-
-        manager_id = self._uuid(
-            summary.get("assigned_agent_profile_id"),
-            "plan_mutation_summary_invalid",
-        )
-        existing_ids = {str(package.get("package_id")) for package in state.packages}
-        revision = self._next_revision(task.project_plan)
-        candidate_id = f"manager-summary-revision-{revision}"
-        suffix = 2
-        while candidate_id in existing_ids:
-            candidate_id = f"manager-summary-revision-{revision}-{suffix}"
-            suffix += 1
-        prior_dependencies = [
-            dependency
-            for dependency in self._dependencies(summary)
-            if dependency not in state.cancelled_package_ids
-        ]
-        if not is_cancelled(summary):
-            prior_dependencies.insert(0, summary_id)
-        dependencies = ordered_unique(prior_dependencies + sorted(new_work_package_ids))
-        summary_package = {
-            "package_id": candidate_id,
-            "title": "Manager summary revision",
-            "description": "Integrate newly completed future work into the delivery summary.",
-            "required_role": "project_manager",
-            "required_skills": [],
-            "assigned_agent_profile_id": str(manager_id),
-            "depends_on": dependencies,
-            "expected_artifacts": ["final_delivery"],
-            "acceptance_criteria": ["The delivery integrates all newly completed work."],
-            "review_policy": {"reviewer": "user", "mode": "final_acceptance"},
-            "required_tools": [],
-            "required_resource_ids": [],
-            "resource_requirements": {},
-            "estimated_cost_usd": 0,
-            "mutation": {"state": "generated_summary_revision", "reason": reason},
-        }
-        state.packages.append(summary_package)
-        state.created_package_ids.add(candidate_id)
-        state.changed_package_ids.add(candidate_id)
 
     def _require_locked_regions_unchanged(
         self,

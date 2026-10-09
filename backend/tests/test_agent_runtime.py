@@ -36,7 +36,6 @@ from backend.app.agents.execution.providers.openai.tools import (
 )
 from backend.app.agents.execution.registry import ProviderAgentRuntimeRegistry
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.agents.providers.policy import normalize_openai_compatible_base_url
 from backend.app.agents.sessions.models import PersistentAgentSessionRef
 from backend.app.agents.sessions.store import SQLAlchemyAgentSession
 from backend.app.bootstrap.providers import build_agent_runtime_registry
@@ -1336,9 +1335,7 @@ class RecordingToolExecutor:
 
 
 def _openai_smoke_base_url() -> str | None:
-    return normalize_openai_compatible_base_url(
-        os.getenv("OPENAI_SMOKE_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-    )
+    return os.getenv("OPENAI_SMOKE_BASE_URL") or os.getenv("OPENAI_BASE_URL")
 
 
 def _openai_smoke_model_api() -> str | None:

@@ -37,14 +37,10 @@ class WorkspaceMemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_workspace_memory_entries_workspace_scope", "workspace_id", "visibility_scope"),
         Index("ix_workspace_memory_entries_workspace_source", "workspace_id", "source_type"),
         Index(
-            "ix_workspace_memory_entries_embedding_hnsw", "embedding",
-            postgresql_using="hnsw", postgresql_ops={"embedding": "vector_cosine_ops"},
-            postgresql_where=text("status = 'active' AND embedding_status = 'ready'"),
-        ).ddl_if(dialect="postgresql"),
-        Index(
             "ix_workspace_memory_entries_fts_simple_active",
             text("to_tsvector('simple'::regconfig, (title::text || ' '::text) || content::text)"),
-            postgresql_using="gin", postgresql_where=text("status = 'active'"),
+            postgresql_using="gin",
+            postgresql_where=text("status = 'active'"),
         ).ddl_if(dialect="postgresql"),
         Index(
             "ix_workspace_memory_entries_full_text_gin",
@@ -146,7 +142,7 @@ class WorkspaceMemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     access_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    embedding: Mapped[list[float] | None] = mapped_column(VECTOR(1_536), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(VECTOR(), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(160), nullable=True)
     embedding_content_fingerprint: Mapped[str | None] = mapped_column(
         String(64),
@@ -233,7 +229,7 @@ class WorkspaceMemoryConfiguration(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("workspace_id", name="uq_workspace_memory_configurations_workspace"),
         CheckConstraint(
-            "embedding_dimensions = 1536",
+            "embedding_dimensions >= 1 AND embedding_dimensions <= 16000",
             name="ck_workspace_memory_configuration_dimensions",
         ),
         CheckConstraint(
@@ -259,9 +255,8 @@ class WorkspaceMemoryConfiguration(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     embedding_model: Mapped[str] = mapped_column(
         String(160),
         nullable=False,
-        default="text-embedding-3-small",
     )
-    embedding_dimensions: Mapped[int] = mapped_column(Integer, nullable=False, default=1_536)
+    embedding_dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
     retrieval_policy: Mapped[dict[str, object]] = mapped_column(
         JSONB,
         nullable=False,

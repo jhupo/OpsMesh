@@ -18,18 +18,13 @@ from backend.app.orchestration.runs.models import (
     authorization_snapshot_fingerprint,
 )
 from backend.app.orchestration.tasks.models import Task
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.files.runtime_policy import runtime_file_denial_code
 from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.workspaces.projects.io.support import ProjectRunIOError
 from backend.app.workspaces.projects.models import AgentRunProjectSnapshot
 from backend.app.workspaces.projects.snapshots.manifest import RunProjectManifest
-
-MAX_PROJECT_INPUT_FILES = 512
-MAX_PROJECT_OUTPUTS = 128
-MAX_PROJECT_INPUT_BYTES = 536_870_912
-MAX_PROJECT_OUTPUT_BYTES = 1_073_741_824
-MAX_PROJECT_WORKSPACE_BYTES = MAX_PROJECT_INPUT_BYTES + MAX_PROJECT_OUTPUT_BYTES
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,9 +141,9 @@ class ProjectFileBoundaryService:
                 "Project input authorization snapshot failed integrity validation",
                 {},
             )
-        if snapshot.get("workspace_id") != str(run.workspace_id) or snapshot.get(
-            "task_id"
-        ) != str(task.id):
+        if snapshot.get("workspace_id") != str(run.workspace_id) or snapshot.get("task_id") != str(
+            task.id
+        ):
             raise ProjectBoundaryViolation(
                 "project_input_scope_denied",
                 "Project input authorization scope does not match the run",
@@ -187,33 +182,44 @@ class ProjectFileBoundaryService:
                 {"denied_file_count": len(missing_ids)},
             )
 
-    @staticmethod
-    def _validate_manifest_capacity(manifest: RunProjectManifest) -> None:
+    def _validate_manifest_capacity(self, manifest: RunProjectManifest) -> None:
         input_bytes = sum(item.size_bytes for item in manifest.files)
         output_bytes = sum(item.max_bytes for item in manifest.outputs)
-        if len(manifest.files) > MAX_PROJECT_INPUT_FILES:
+        if len(manifest.files) > operational_configuration(self._session).files.input_files:
             raise ProjectBoundaryViolation(
                 "project_input_file_limit_exceeded",
                 "Project input count exceeds the runtime staging limit",
-                {"file_count": len(manifest.files), "limit": MAX_PROJECT_INPUT_FILES},
+                {
+                    "file_count": len(manifest.files),
+                    "limit": operational_configuration(self._session).files.input_files,
+                },
             )
-        if input_bytes > MAX_PROJECT_INPUT_BYTES:
+        if input_bytes > operational_configuration(self._session).files.input_bytes:
             raise ProjectBoundaryViolation(
                 "project_input_byte_limit_exceeded",
                 "Project inputs exceed the runtime staging byte limit",
-                {"input_bytes": input_bytes, "limit": MAX_PROJECT_INPUT_BYTES},
+                {
+                    "input_bytes": input_bytes,
+                    "limit": operational_configuration(self._session).files.input_bytes,
+                },
             )
-        if len(manifest.outputs) > MAX_PROJECT_OUTPUTS:
+        if len(manifest.outputs) > operational_configuration(self._session).files.output_files:
             raise ProjectBoundaryViolation(
                 "project_output_count_limit_exceeded",
                 "Project output count exceeds the runtime collection limit",
-                {"output_count": len(manifest.outputs), "limit": MAX_PROJECT_OUTPUTS},
+                {
+                    "output_count": len(manifest.outputs),
+                    "limit": operational_configuration(self._session).files.output_files,
+                },
             )
-        if output_bytes > MAX_PROJECT_OUTPUT_BYTES:
+        if output_bytes > operational_configuration(self._session).files.output_bytes:
             raise ProjectBoundaryViolation(
                 "project_output_byte_limit_exceeded",
                 "Declared project outputs exceed the runtime collection byte limit",
-                {"output_bytes": output_bytes, "limit": MAX_PROJECT_OUTPUT_BYTES},
+                {
+                    "output_bytes": output_bytes,
+                    "limit": operational_configuration(self._session).files.output_bytes,
+                },
             )
 
     def _validate_current_files(
@@ -261,15 +267,18 @@ class ProjectFileBoundaryService:
                     {"project_file_id": str(item.project_file_id)},
                 )
 
-    @staticmethod
     def _validate_runtime_capacity(
+        self,
         runtime: WorkspaceRuntime,
         manifest: RunProjectManifest,
     ) -> None:
         required_bytes = sum(item.size_bytes for item in manifest.files) + sum(
             item.max_bytes for item in manifest.outputs
         )
-        capacity_bytes = MAX_PROJECT_WORKSPACE_BYTES
+        capacity_bytes = (
+            operational_configuration(self._session).files.input_bytes
+            + operational_configuration(self._session).files.output_bytes
+        )
         if runtime.runtime_provider == "cloud_docker":
             disk_mb = runtime.limits.get("disk_mb")
             if isinstance(disk_mb, bool) or not isinstance(disk_mb, int) or disk_mb <= 0:

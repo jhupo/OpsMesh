@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, computed_field, field_serializer
 
-from backend.app.agents.providers.capabilities import resolve_model_capability
+from backend.app.agents.providers.capabilities import ModelCapability, resolve_model_capability
 from backend.app.agents.providers.metadata import sanitize_budget_metadata
 from backend.app.agents.providers.model_api import model_api_for_provider
 from backend.app.agents.providers.policy import model_provider_base_url_host
@@ -15,10 +15,11 @@ class ModelProviderCredentialCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     provider: str = Field(default="openai", min_length=1, max_length=80)
     api_key: str = Field(min_length=1, max_length=4096)
-    default_model: str = Field(default="gpt-4.1", min_length=1, max_length=120)
+    default_model: str = Field(min_length=1, max_length=120)
     base_url: HttpUrl | None = None
     model_api: str | None = Field(default=None, min_length=1, max_length=80)
     is_default: bool = False
+    model_capabilities: list[ModelCapability] = Field(default_factory=list)
     budget_metadata: dict[str, object] = Field(default_factory=dict)
 
 
@@ -29,6 +30,7 @@ class ModelProviderCredentialUpdateRequest(BaseModel):
     base_url: HttpUrl | None = None
     model_api: str | None = Field(default=None, min_length=1, max_length=80)
     is_default: bool | None = None
+    model_capabilities: list[ModelCapability] | None = None
     budget_metadata: dict[str, object] | None = None
 
 
@@ -59,6 +61,7 @@ class ModelProviderCredentialResponse(ORMModel):
     last_failure_at: datetime | None
     last_failure_code: str | None
     last_failure_message: str | None
+    model_capabilities: list[ModelCapability] = Field(default_factory=list)
     budget_metadata: dict[str, object] = Field(default_factory=dict)
     scheduled_health_check: dict[str, object] = Field(default_factory=dict)
     created_at: datetime
@@ -86,7 +89,9 @@ class ModelProviderCredentialResponse(ORMModel):
     @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.
     @property
     def model_capability(self) -> dict[str, object] | None:
-        capability = resolve_model_capability(self.provider, self.default_model)
+        capability = resolve_model_capability(
+            self.provider, self.default_model, self.model_capabilities
+        )
         return capability.as_dict() if capability is not None else None
 
     @computed_field  # type: ignore[prop-decorator]  # Pydantic documented mypy limitation.

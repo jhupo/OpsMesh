@@ -353,3 +353,31 @@ def test_claude_model_settings_use_sdk_shapes_without_silent_fallback() -> None:
         _effort_setting({"effort": ["high"]})
     with pytest.raises(ValueError, match="Invalid Claude SDK thinking"):
         _thinking_setting({"thinking": {"type": "enabled"}})
+
+
+@pytest.mark.parametrize("decision", ["allow", "deny", "require_approval"])
+def test_native_auto_approval_cannot_bypass_platform_review(decision: str) -> None:
+    class Executor(RecordingExecutor):
+        def review_tool_call(self, **_: object) -> dict[str, object]:
+            return {"decision": decision}
+
+    request = _request(tool_executor=Executor())
+    request.agent_profile.model_settings = {"claude_permission_mode": "auto"}
+    state = _ApprovalState(reviews={}, deferred={}, active_calls={}, decisions={})
+    hook_input: PreToolUseHookInput = {
+        "hook_event_name": "PreToolUse",
+        "session_id": _session_id(request),
+        "transcript_path": "unused.jsonl",
+        "cwd": ".",
+        "tool_name": "mcp__opsmesh__search_docs",
+        "tool_input": {"query": "sdk"},
+        "tool_use_id": "call-native",
+    }
+    result = asyncio.run(_approval_hook(request, state)(hook_input, "call-native", {}))
+    if decision == "allow":
+        assert result == {}  # The SDK still has to classify this action.
+    else:
+        assert result["hookSpecificOutput"]["permissionDecision"] == (
+            "deny" if decision == "deny" else "defer"
+        )
+    assert request.tool_executor.calls == []

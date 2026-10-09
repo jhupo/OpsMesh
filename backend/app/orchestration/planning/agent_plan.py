@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.contracts import AgentRuntimeOutputSchema
 from backend.app.orchestration.definitions.contracts import WorkflowNode
@@ -41,13 +42,13 @@ def is_agent_planning_step(step: TaskStep | None) -> bool:
 
 
 def planning_mode(task: Task) -> str:
-    mode = (task.input or {}).get("planning_mode", "agent")
-    if mode not in {"agent", "deterministic"}:
+    mode = (task.input or {}).get("planning_mode", "direct")
+    if mode not in {"agent", "explicit", "direct"}:
         raise ProjectPlanValidationError("Unsupported planning mode", code="planning_mode_invalid")
     return str(mode)
 
 
-def bootstrap_plan(task: Task, attempt_id: UUID) -> dict[str, object]:
+def bootstrap_plan(session: Session, task: Task, attempt_id: UUID) -> dict[str, object]:
     context = PlanningContext.from_task(task)
     planner_id = context.planner_agent_profile_id if context is not None else None
     if planner_id is None:
@@ -62,17 +63,13 @@ def bootstrap_plan(task: Task, attempt_id: UUID) -> dict[str, object]:
             WorkflowNode(
                 package_id="manager-planning",
                 title="Manager planning",
-                description=(
-                    "Generate a task-specific executable DAG using only the supplied team roster. "
-                    "Propose work; do not execute it. The platform validates and schedules output. "
-                    "Do not emit manager-planning or manager-summary: these are platform-owned."
-                ),
-                required_role="project_manager",
+                description=task.description or task.title,
+                required_role=None,
                 required_skills=(),
                 assigned_agent_profile_id=planner_id,
                 depends_on=(),
                 expected_artifacts=(),
-                acceptance_criteria=("Produce a valid authorized task plan.",),
+                acceptance_criteria=(),
                 review_policy={"mode": "agent_planning", "attempt_id": str(attempt_id)},
             ),
         ),

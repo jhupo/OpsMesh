@@ -103,8 +103,8 @@ class MemoryLifecyclePolicyRequest(BaseModel):
 class WorkspaceMemoryConfigurationUpdateRequest(BaseModel):
     embedding_enabled: bool = False
     embedding_credential_id: UUID | None = None
-    embedding_model: str = Field(default="text-embedding-3-small", min_length=1, max_length=160)
-    embedding_dimensions: int = Field(default=1_536, ge=1, le=16_000)
+    embedding_model: str = Field(min_length=1, max_length=160)
+    embedding_dimensions: int = Field(ge=1, le=16_000)
     retrieval_policy: HybridMemoryRetrievalPolicyRequest = Field(
         default_factory=HybridMemoryRetrievalPolicyRequest
     )

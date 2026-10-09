@@ -260,22 +260,10 @@ class OrchestrationDefinitionApplicationService:
         matcher: MemberMatchingService,
         node: WorkflowNode,
     ) -> UUID | None:
-        if (
-            node.required_role.strip().lower().replace("-", "_")
-            in {
-                "project_manager",
-                "product_manager",
-                "program_manager",
-                "manager",
-                "pm",
-            }
-            and team.manager_agent_profile_id is not None
-        ):
-            return team.manager_agent_profile_id
         assert isinstance(task.team_snapshot, dict)
         match = matcher.match(
             team_snapshot=task.team_snapshot,
-            required_role=node.required_role,
+            required_role=node.required_role or "",
             required_skills=list(node.required_skills),
             workspace_id=task.workspace_id,
         )

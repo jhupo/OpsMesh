@@ -70,7 +70,7 @@ def planning() -> Iterator[tuple[Session, Task, AgentProfile, AgentRun]]:
             agent_team_id=team.id,
             created_by_user_id=user.id,
             title="Produce a report",
-            input={},
+            input={"planning_mode": "agent"},
         )
         session.add(task)
         session.flush()
@@ -338,16 +338,16 @@ def test_default_planning_is_a_tool_free_worker_run(planning) -> None:
     assert run.agent_profile_id == agent.id
 
 
-def test_structured_plan_creates_work_and_platform_acceptance_once(planning) -> None:
+def test_structured_plan_creates_only_proposed_work_once(planning) -> None:
     session, task, agent, run = planning
     completion = PlannerCompletionService(session)
     assert completion.apply(run, result_for(agent))
     session.commit()
     assert completion.apply(run, result_for(agent))
-    assert session.scalar(select(func.count(TaskStep.id))) == 3
+    assert session.scalar(select(func.count(TaskStep.id))) == 2
     steps = {step.work_package_id: step for step in session.scalars(select(TaskStep))}
     assert steps["report"].assigned_agent_profile_id == agent.id
-    assert steps["manager-summary"].dependencies["after_step_ids"] == [str(steps["report"].id)]
+    assert "manager-summary" not in steps
     assert task.project_plan["strategy"] == "agent_sdk"
     assert session.scalar(select(TaskPlanningAttempt)).status == "completed"
 
@@ -465,7 +465,9 @@ def test_future_plan_mutation_reconciles_steps_and_preserves_history(planning) -
     added = session.scalar(select(TaskStep).where(TaskStep.work_package_id == "research"))
     assert added is not None
     assert added.status == "queued"
-    assert "research" in _plan_package(task, "manager-summary")["depends_on"]
+    assert not any(
+        item.get("package_id") == "manager-summary" for item in task.project_plan["work_packages"]
+    )
 
     service.apply(
         task.workspace_id,
@@ -544,7 +546,9 @@ def test_future_plan_mutation_reconciles_steps_and_preserves_history(planning) -
     )
     session.refresh(merged)
     assert merged.status == "cancelled"
-    assert _plan_package(task, "manager-summary")["depends_on"] == ["report"]
+    assert not any(
+        item.get("package_id") == "manager-summary" for item in task.project_plan["work_packages"]
+    )
     assert task.project_plan["plan_revision"] == 5
     assert len(task.project_plan["mutation_history"]) == 5
 
@@ -665,4 +669,4 @@ def test_worker_consumes_plan_then_enqueues_work_once(planning) -> None:
         )
     )
     assert runner.calls == 1
-    assert session.scalar(select(func.count(TaskStep.id))) == 3
+    assert session.scalar(select(func.count(TaskStep.id))) == 2

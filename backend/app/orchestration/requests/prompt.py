@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from backend.app.agents.execution.tools.executor import PRODUCT_TOOL_NAMES
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.orchestration.definitions.data import resolve_workflow_inputs
-from backend.app.orchestration.definitions.graph import is_pm_summary_step
 from backend.app.orchestration.planning.agent_plan import is_agent_planning_step
 from backend.app.orchestration.requests.context_budget import ContextFragment, ContextPriority
 from backend.app.orchestration.runs.models import AgentRun
@@ -181,24 +180,8 @@ class RunRequestPromptRenderer:
             )
         return fragments
 
-    @staticmethod
-    def _special_step_fragments(task: Task, step: TaskStep) -> list[ContextFragment]:
+    def _special_step_fragments(self, task: Task, step: TaskStep) -> list[ContextFragment]:
         fragments: list[ContextFragment] = []
-        if is_pm_summary_step(step):
-            fragments.append(
-                ContextFragment(
-                    key="step.output_contract",
-                    text=(
-                        "PM acceptance output: return JSON with decision "
-                        "`approved`, `request_revision`, or `add_missing_work`; include "
-                        "`summary`, optional `reasons`, `revision_requests`, and "
-                        "`missing_work_packages`."
-                    ),
-                    priority=ContextPriority.CRITICAL,
-                    required=True,
-                    allow_truncation=False,
-                )
-            )
         if is_agent_planning_step(step):
             fragments.append(
                 ContextFragment(
@@ -278,10 +261,7 @@ class RunRequestPromptRenderer:
                 lines.append("- Responsibilities: " + "; ".join(responsibilities))
         mailbox_tools = mailbox_tool_names(allowed_tools)
         if mailbox_tools:
-            lines.append(
-                "- Use mailbox tools to read handoffs and coordinate with teammates: "
-                + ", ".join(mailbox_tools)
-            )
+            lines.append("- Mailbox tools: " + ", ".join(mailbox_tools))
         else:
             lines.append("- Mailbox tools are not attached for this run.")
         return "\n".join(lines)
@@ -362,18 +342,9 @@ def runtime_context_text(
         elif mailbox_tool_names(allowed_tools):
             lines.append("- No unread mailbox messages were found in this run scope.")
 
-    if mailbox_tool_names(allowed_tools):
-        lines.append(
-            "- For complete handoff threads, call get_agent_inbox or "
-            "list_agent_thread_messages before claiming missing team context."
-        )
     project_workspace = metadata.get("project_workspace")
     if isinstance(project_workspace, dict):
         lines.extend(project_workspace_lines(project_workspace))
-    lines.append(
-        "- Treat this section as platform evidence. Do not claim missing platform "
-        "context unless it is absent here and unavailable through listed tools."
-    )
     return "\n".join(lines)
 
 
@@ -416,7 +387,6 @@ def project_workspace_lines(value: dict[str, object]) -> list[str]:
         lines.append(
             "  - Declared outputs: " + (", ".join(declarations) if declarations else "none")
         )
-    lines.append("  - Write only declared outputs; undeclared runtime files are not collected.")
     return lines
 
 

@@ -9,23 +9,6 @@ from backend.app.resources.files.runtime_policy import runtime_file_denial_code
 from backend.app.resources.files.security import validate_storage_key
 from backend.app.resources.storage.storage import ObjectStorage, StorageObjectTooLargeError
 
-DEFAULT_AGENT_FILE_READ_MAX_BYTES = 1024 * 1024
-DEFAULT_AGENT_READABLE_CONTENT_TYPES = frozenset(
-    {
-        "application/json",
-        "application/toml",
-        "application/x-yaml",
-        "application/xml",
-        "text/csv",
-        "text/markdown",
-        "text/plain",
-        "text/tab-separated-values",
-        "text/x-python",
-        "text/xml",
-        "text/yaml",
-    }
-)
-
 
 class WorkspaceFileReadError(ValueError):
     def __init__(self, code: str, message: str) -> None:
@@ -46,8 +29,8 @@ class WorkspaceFileContentReader:
         self,
         storage: ObjectStorage,
         *,
-        max_bytes: int = DEFAULT_AGENT_FILE_READ_MAX_BYTES,
-        allowed_content_types: frozenset[str] = DEFAULT_AGENT_READABLE_CONTENT_TYPES,
+        max_bytes: int,
+        allowed_content_types: frozenset[str],
     ) -> None:
         if max_bytes < 1:
             raise ValueError("Agent file read limit must be positive")

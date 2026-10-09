@@ -42,6 +42,7 @@ class ModelProviderCredentialCommandService:
         base_url: str | None,
         is_default: bool,
         model_api: str | None = None,
+        model_capabilities: list[dict[str, object]] | None = None,
         budget_metadata: dict[str, object] | None = None,
     ) -> ModelProviderCredential:
         provider = canonical_model_provider(provider)
@@ -60,6 +61,7 @@ class ModelProviderCredentialCommandService:
             provider=provider,
             base_url=base_url,
             default_model=default_model,
+            model_capabilities=model_capabilities or [],
             encrypted_api_key=encrypted.ciphertext,
             api_key_fingerprint=encrypted.fingerprint,
             encryption_key_id=encrypted.key_id,
@@ -96,6 +98,7 @@ class ModelProviderCredentialCommandService:
         model_api: str | None = None,
         model_api_provided: bool = False,
         is_default: bool | None = None,
+        model_capabilities: list[dict[str, object]] | None = None,
         budget_metadata: dict[str, object] | None = None,
     ) -> ModelProviderCredential:
         credential = self._require(workspace_id=workspace_id, credential_id=credential_id)
@@ -104,6 +107,8 @@ class ModelProviderCredentialCommandService:
         next_provider = credential.provider
         if provider is not None:
             next_provider = canonical_model_provider(provider)
+        if model_capabilities is not None:
+            credential.model_capabilities = model_capabilities
         if default_model is not None:
             credential.default_model = default_model
         if provider is not None or base_url is not None:

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.providers.policy import is_openai_compatible_provider
 from backend.app.governance.audit.service import AuditService
+from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.memory.models import WorkspaceMemoryConfiguration, WorkspaceMemoryEntry
 from backend.app.resources.memory.policy import (
     HybridMemoryRetrievalPolicy,
@@ -18,8 +19,6 @@ from backend.app.resources.memory.policy import (
     hybrid_retrieval_policy,
     memory_lifecycle_policy,
 )
-
-EMBEDDING_DIMENSIONS = 1_536
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,12 +48,13 @@ class WorkspaceMemoryConfigurationService:
         )
 
     def create_default(self, workspace_id: UUID) -> WorkspaceMemoryConfiguration:
+        defaults = operational_configuration(self._session)
         configuration = WorkspaceMemoryConfiguration(
             workspace_id=workspace_id,
             embedding_enabled=False,
             embedding_credential_id=None,
-            embedding_model="text-embedding-3-small",
-            embedding_dimensions=EMBEDDING_DIMENSIONS,
+            embedding_model=defaults.default_embedding_model,
+            embedding_dimensions=defaults.default_embedding_dimensions,
             retrieval_policy=default_retrieval_policy(),
             lifecycle_policy=default_lifecycle_policy(),
             version=1,
@@ -91,10 +91,8 @@ class WorkspaceMemoryConfigurationService:
         model = command.embedding_model.strip()
         if not model or len(model) > 160:
             raise ValueError("Embedding model must be a non-empty string up to 160 characters")
-        if command.embedding_dimensions != EMBEDDING_DIMENSIONS:
-            raise ValueError(
-                f"Embedding dimensions must be {EMBEDDING_DIMENSIONS} for the current index"
-            )
+        if not 1 <= command.embedding_dimensions <= 16000:
+            raise ValueError("Embedding dimensions must be between 1 and 16000")
         credential = self._validate_credential(
             workspace_id=workspace_id,
             credential_id=command.embedding_credential_id,

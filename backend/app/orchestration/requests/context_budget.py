@@ -13,10 +13,8 @@ from backend.app.agents.execution.contracts import (
 )
 from backend.app.agents.execution.errors import AgentRuntimePolicyError
 from backend.app.agents.execution.tokens import estimate_token_upper_bound, truncate_to_token_bound
-from backend.app.agents.providers.capabilities import resolve_model_capability
 from backend.app.resources.memory.policy import ContextBudgetPolicy
 
-DEFAULT_CONTEXT_WINDOW_TOKENS = 32_768
 MINIMUM_DYNAMIC_CONTEXT_TOKENS = 512
 SERIALIZATION_OVERHEAD_TOKENS = 256
 
@@ -225,12 +223,9 @@ def context_window_tokens(
     model: str | None,
     policy: ContextBudgetPolicy,
 ) -> int:
-    capability = resolve_model_capability(provider, model)
-    catalog_limit = capability.context_window_tokens if capability is not None else None
-    configured = policy.context_window_tokens
-    if catalog_limit is not None and configured is not None:
-        return min(catalog_limit, configured)
-    return catalog_limit or configured or DEFAULT_CONTEXT_WINDOW_TOKENS
+    if policy.context_window_tokens is None:
+        raise ValueError("Context window must be resolved from database configuration")
+    return policy.context_window_tokens
 
 
 def fixed_context_tokens(

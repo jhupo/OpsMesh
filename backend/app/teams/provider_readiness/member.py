@@ -191,6 +191,7 @@ def _model_readiness_payload(
         "model_capability": _model_capability_payload(
             _capability_provider(agent, credential),
             selected_model,
+            credential.model_capabilities if credential else [],
         ),
     }
 

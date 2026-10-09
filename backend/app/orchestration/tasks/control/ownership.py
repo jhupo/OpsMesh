@@ -4,19 +4,9 @@ from backend.app.orchestration.tasks.models import Task, TaskStep
 
 
 def is_platform_owned_step(step: TaskStep) -> bool:
-    """Return whether the platform assigns this step to the task owner.
-
-    Specialist work remains assigned by the admitted plan. Planning, integration,
-    and final-acceptance steps are control-plane work and must follow ownership.
-    """
-
-    work_package_id = step.work_package_id or ""
-    if work_package_id in {"manager-planning", "manager-summary"}:
-        return True
-    if work_package_id.startswith("manager-summary-revision-"):
-        return True
+    """Only an explicitly requested planning run follows the task entry agent."""
     review_policy = step.review_policy if isinstance(step.review_policy, dict) else {}
-    return review_policy.get("mode") in {"final_acceptance", "executive_review"}
+    return review_policy.get("mode") == "agent_planning"
 
 
 def task_owner_can_execute_step(task: Task, step: TaskStep) -> bool:

@@ -19,9 +19,6 @@ from backend.app.runtime.operations.queues.metrics import QueueMetricsService
 from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.shared.telemetry.metrics import GaugeMetric
 
-PROMETHEUS_WORKER_STALE_AFTER_SECONDS = 300
-PROMETHEUS_QUEUE_SCAN_LIMIT = 1_000
-
 
 class OperationsPrometheusMetricsService:
     def __init__(
@@ -37,8 +34,8 @@ class OperationsPrometheusMetricsService:
         self,
         queue_name: str,
         *,
-        worker_stale_after_seconds: int = PROMETHEUS_WORKER_STALE_AFTER_SECONDS,
-        queue_scan_limit: int = PROMETHEUS_QUEUE_SCAN_LIMIT,
+        worker_stale_after_seconds: int,
+        queue_scan_limit: int,
         audit_integrity_stale_after_seconds: int = 7_200,
     ) -> list[GaugeMetric]:
         now = datetime.now(UTC)

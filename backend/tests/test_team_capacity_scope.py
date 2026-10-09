@@ -26,4 +26,4 @@ def test_team_capacity_rejects_mixed_workspace_batch_before_querying() -> None:
 def test_unassigned_manager_step_does_not_create_null_agent_capacity() -> None:
     team = AgentTeam(manager_agent_profile_id=None)
     step = TaskStep(assigned_agent_profile_id=None, work_package_id="manager-planning")
-    assert manager_capacity_context(team, step, {}) is None
+    assert manager_capacity_context(team, step, {}, max_concurrent_tasks=1) is None

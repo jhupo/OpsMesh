@@ -22,8 +22,9 @@ def _selected_model(
 def _model_capability_payload(
     provider: str | None,
     model: str | None,
+    catalog: object,
 ) -> dict[str, object] | None:
-    capability = resolve_model_capability(provider, model)
+    capability = resolve_model_capability(provider, model, catalog)
     return capability.as_dict() if capability is not None else None
 
 

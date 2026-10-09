@@ -11,7 +11,6 @@ from backend.app.orchestration.tasks.collaboration.recovery_plan import (
     dry_run_recovery_result,
     filter_recovery_plan,
     recovery_apply_status,
-    recovery_instruction,
     recovery_plan_status,
     recovery_plan_summary,
     skipped_recovery_plan_items,
@@ -188,7 +187,7 @@ class TaskCollaborationRecoveryService:
                     action=action,
                     task_step_ids=uuid_list(item.get("task_step_ids")),
                     agent_profile_id=None,
-                    instruction=recovery_instruction(item),
+                    instruction=None,
                     reason=reason or str(item.get("reason") or "task_collaboration_recovery"),
                     metadata={
                         **metadata,
@@ -221,4 +220,3 @@ class TaskCollaborationRecoveryService:
                 }
             )
         return results
-
