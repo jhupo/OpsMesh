@@ -9,9 +9,9 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-MCP_SDK_PACKAGE = "mcp"
-MCP_SDK_STDIO_ENTRYPOINT = "mcp.client.stdio.stdio_client"
-MCP_CONTRACT_VERSION = 1
+MCP_SDK_PACKAGE = "openai-agents"
+MCP_SDK_STDIO_ENTRYPOINT = "agents.mcp.MCPServerStdio"
+MCP_CONTRACT_VERSION = 2
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -63,6 +63,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("runtime capability report is not ready")
     if report.get("sdk_package") != MCP_SDK_PACKAGE:
         raise SystemExit("runtime capability report has an unexpected SDK package")
+    if report.get("contract_version") != MCP_CONTRACT_VERSION:
+        raise SystemExit("runtime capability report has an unexpected contract version")
+    if report.get("stdio_server") != "available":
+        raise SystemExit("runtime capability report has no native stdio server")
 
     with tempfile.TemporaryDirectory(prefix="opsmesh-runtime-probe-") as temporary:
         request_path = Path(temporary) / "request.json"
