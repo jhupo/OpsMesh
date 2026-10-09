@@ -182,6 +182,7 @@ async def cancel_task(
 
 def _task_create_command(request: TaskCreateRequest) -> TaskCreateCommand:
     return TaskCreateCommand(
+        agent_profile_id=request.agent_profile_id,
         agent_team_id=request.agent_team_id,
         runtime_space_id=request.runtime_space_id,
         workspace_project_id=request.workspace_project_id,
