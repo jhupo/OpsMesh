@@ -29,17 +29,8 @@ def model_request_review_input(
     task: Task | None,
     request: AgentRunRequest,
 ) -> str:
-    parts: list[str] = []
-    if task is not None:
-        parts.append(f"Task title: {task.title}")
-        if task.description:
-            parts.append(f"Task description: {task.description}")
-        if task.input:
-            parts.append(f"Task input: {task.input}")
-    if run.input:
-        parts.append(f"Run input: {run.input}")
-    if parts:
-        return "\n\n".join(parts)
+    # Review the assembled model input, not persistence/authorization metadata. It includes
+    # the business context selected by the request builder; raw Run.input is not model input.
     return request.input_text
 
 

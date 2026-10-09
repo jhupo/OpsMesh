@@ -26,6 +26,11 @@ _HIGH_RISK_TERMS = {
     "sudo",
     "token",
     "write",
+    "删除",
+    "转账",
+    "发布",
+    "权限",
+    "密码",
 }
 _SENSITIVE_ARGUMENT_KEYS = {
     "api_key",
@@ -83,6 +88,10 @@ class ToolExecutionReviewService:
             requires_approval=requires_approval,
             context=context,
         )
+        # Only an explicitly configured low-risk allowlist can avoid semantic review.
+        # Discovery defaults remain medium/approval-required, including self-reported hints.
+        if static.risk_level == "low" and not static.required:
+            return _merge_reviews(static, static, arguments)
         semantic = self._resource_reviews.review_tool_execution(
             workspace_id=workspace_id,
             tool_kind="mcp",
@@ -191,7 +200,7 @@ def _static_tool_review(
         risk_level = _max_risk(risk_level, "medium")
     if risk_level in {"high", "critical"}:
         reasons.append(f"tool.policy.risk_level.{risk_level}")
-    matched_terms = _matched_terms(arguments)
+    matched_terms = _matched_terms({"tool_name": tool_name, "arguments": arguments})
     if matched_terms:
         reasons.append("tool.arguments.contains_sensitive_or_dangerous_terms")
         risk_level = _max_risk(risk_level, "high")

@@ -10,6 +10,7 @@ from backend.app.governance.reviews.policy import (
     RESOURCE_REVIEW_SETTINGS_KEY,
     _max_risk,
 )
+from backend.app.governance.reviews.scanner import ReviewScanner
 from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.shared.config import Settings
 from backend.app.shared.security.redaction import redact_sensitive_payload
@@ -22,6 +23,11 @@ _SENSITIVE_TERMS = {
     "password",
     "secret",
     "token",
+    "删除",
+    "转账",
+    "发布",
+    "权限",
+    "密码",
 }
 _SEMANTIC_MODE_ALWAYS = "always"
 
@@ -59,7 +65,9 @@ class ModelRequestReviewService:
         context: dict[str, object],
     ) -> ModelRequestReview:
         static = _static_model_request_review(input_text=input_text, context=context)
-        self._require_semantic_review_enabled(workspace_id)
+        mode = self._semantic_mode(workspace_id)
+        if mode == "risk_based" and static.risk_level == "low":
+            return static
         semantic = self._resource_reviews.review_tool_execution(
             workspace_id=workspace_id,
             tool_kind="model_request",
@@ -85,21 +93,22 @@ class ModelRequestReviewService:
             signals=signals,
         )
 
-    def _require_semantic_review_enabled(self, workspace_id: UUID) -> None:
+    def _semantic_mode(self, workspace_id: UUID) -> str:
         workspace = self._session.get(Workspace, workspace_id)
         settings = workspace.settings if workspace is not None else {}
         if not isinstance(settings, dict):
-            return
+            return "risk_based"
         raw_resource_review = settings.get(RESOURCE_REVIEW_SETTINGS_KEY)
         if not isinstance(raw_resource_review, dict):
-            return
+            return "risk_based"
         raw_model_request = raw_resource_review.get(MODEL_REQUEST_REVIEW_SETTINGS_KEY)
         if not isinstance(raw_model_request, dict):
-            return
-        mode = str(raw_model_request.get("semantic_mode") or _SEMANTIC_MODE_ALWAYS)
+            return "risk_based"
+        mode = str(raw_model_request.get("semantic_mode") or "risk_based")
         normalized = mode.strip().lower()
-        if normalized != _SEMANTIC_MODE_ALWAYS:
-            raise ValueError("Model request semantic review must remain enabled")
+        if normalized not in {_SEMANTIC_MODE_ALWAYS, "risk_based"}:
+            raise ValueError("Model request semantic mode must be always or risk_based")
+        return normalized
 
 
 def _static_model_request_review(
@@ -108,15 +117,18 @@ def _static_model_request_review(
     context: dict[str, object],
 ) -> ModelRequestReview:
     matches = _matched_terms(input_text)
+    scanner = ReviewScanner()
+    scanner.scan_text("input", input_text)
+    scanned = scanner.result(reviewer="model_input_policy")
     reasons = ["model_request.low_risk"]
-    risk_level = "low"
+    risk_level = scanned.risk_level
     if matches:
         reasons = ["model_request.input_contains_sensitive_terms"]
         risk_level = "high"
     return ModelRequestReview(
         required=bool(matches),
         risk_level=risk_level,
-        reasons=reasons,
+        reasons=list(dict.fromkeys([*reasons, *scanned.reasons])),
         signals={
             "signal_source": "model_request_policy_signals",
             "matched_terms": matches,
