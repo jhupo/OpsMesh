@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 from agents import ModelSettings
+from openai.types.shared import Reasoning
 
 
 class OpenAIModelSettingsMapper:
@@ -25,6 +26,7 @@ class OpenAIModelSettingsMapper:
             safe_metadata = {str(key): str(value) for key, value in metadata.items()}
 
         return ModelSettings(
+            reasoning=reasoning_setting(settings),
             temperature=float_setting(settings, "temperature"),
             top_p=float_setting(settings, "top_p"),
             frequency_penalty=float_setting(settings, "frequency_penalty"),
@@ -38,6 +40,23 @@ class OpenAIModelSettingsMapper:
             store=bool_setting(settings, "store"),
             include_usage=bool_setting(settings, "include_usage"),
         )
+
+
+def reasoning_setting(settings: dict[str, object]) -> Reasoning | None:
+    value = settings.get("reasoning")
+    if not isinstance(value, dict):
+        return None
+    effort = value.get("effort")
+    if not isinstance(effort, str) or effort not in {
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+    }:
+        return None
+    return Reasoning.model_validate({"effort": effort})
 
 
 def float_setting(settings: dict[str, object], key: str) -> float | None:

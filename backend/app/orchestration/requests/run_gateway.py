@@ -3,6 +3,7 @@ from dataclasses import dataclass, replace
 
 from opentelemetry.trace import SpanKind
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.contracts import (
@@ -70,6 +71,8 @@ class ModelRunGateway:
             self.session.commit()
             return None
         except Exception as exc:
+            if isinstance(exc, SQLAlchemyError):
+                self.session.rollback()
             if not isinstance(exc, AgentRuntimeProviderError):
                 self.mark_run_failed(run, exc)
                 self.session.commit()
@@ -105,6 +108,8 @@ class ModelRunGateway:
             self.session.commit()
             return None
         except Exception as fallback_exc:
+            if isinstance(fallback_exc, SQLAlchemyError):
+                self.session.rollback()
             self.mark_run_failed(run, fallback_exc)
             self.session.commit()
             raise
@@ -227,6 +232,10 @@ class ModelRunGateway:
                 self.session.commit()
                 raise
             except Exception as exc:
+                # A database failure in a tool invalidates the transaction. End
+                # it before metering/auditing the failure, preserving the cause.
+                if isinstance(exc, SQLAlchemyError):
+                    self.session.rollback()
                 costs.record_attempt(
                     run=run,
                     request=request,

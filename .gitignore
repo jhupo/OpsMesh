@@ -152,6 +152,8 @@ activemq-data/
 .envrc
 .opsmesh-storage/
 .tmp/
+.tmp-release/
+output/
 .venv
 env/
 venv/
