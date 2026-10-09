@@ -181,7 +181,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                 return await Runner.run(
                     agent,
                     runner_input,
-                    context=request.context,
+                    context=None if request.resume_state is not None else request.context,
                     max_turns=request.max_turns,
                     hooks=hooks,
                     run_config=self._run_config(request),

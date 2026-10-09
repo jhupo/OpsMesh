@@ -91,6 +91,9 @@ class WorkspaceCapabilityCatalogService:
                     mcp_tool_allowlist_id=allow.id,
                     mcp_server_name=server.name,
                     mcp_server_type=server.server_type,
+                    mcp_runtime=(
+                        "managed" if server.connection.get("runtime") == "managed" else "run"
+                    ) if server.server_type == "stdio" else None,
                     mcp_server_configuration_version=server.configuration_version,
                     mcp_tool_configuration_version=allow.configuration_version,
                     mcp_requires_credentials=credentials_required,

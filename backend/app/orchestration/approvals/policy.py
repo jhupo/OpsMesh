@@ -133,7 +133,11 @@ class ApprovalPolicyEngine:
                 arguments=arguments,
                 allowlist_policy=allowlist_policy,
                 allowlist_risk_level=allowlist_risk_level,
-                requires_approval=requires_approval,
+                requires_approval=requires_approval
+                or (
+                    allowlist_risk_level in {"high", "critical"}
+                    and policy.high_risk_tool_mode == "require_workspace_approval"
+                ),
                 context=context,
             )
         except Exception as exc:
@@ -142,7 +146,7 @@ class ApprovalPolicyEngine:
             ApprovalPolicyInput(
                 action_kind="mcp_tool",
                 risk_level=review.risk_level,
-                review_required=review.required or requires_approval,
+                review_required=review.required,
                 blocked=review.blocked,
                 high_risk_mode=policy.high_risk_tool_mode,
                 reasons=tuple(review.reasons),
@@ -173,6 +177,7 @@ class ApprovalPolicyEngine:
                 action_kind="model_request",
                 risk_level=review.risk_level,
                 review_required=review.required,
+                blocked=review.blocked,
                 reasons=tuple(review.reasons),
                 signals=review.signals,
             )
@@ -251,7 +256,7 @@ class ApprovalPolicyEngine:
         elif risk_level in {"high", "critical"} and policy_input.high_risk_mode == "block":
             reasons.append("policy.high_risk_action.blocked")
             outcome = ApprovalPolicyOutcome.DENY
-        elif policy_input.review_required or risk_level in {"high", "critical"}:
+        elif policy_input.review_required:
             reasons.append("policy.human_approval.required")
             outcome = ApprovalPolicyOutcome.REQUIRE_APPROVAL
 

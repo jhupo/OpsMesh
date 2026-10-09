@@ -211,6 +211,7 @@ class CapabilityToolDescriptor(BaseModel):
     mcp_tool_allowlist_id: UUID | None = None
     mcp_server_name: str | None = None
     mcp_server_type: str | None = None
+    mcp_runtime: Literal["managed", "run"] | None = None
     mcp_server_configuration_version: int | None = Field(default=None, ge=1)
     mcp_tool_configuration_version: int | None = Field(default=None, ge=1)
     mcp_requires_credentials: bool = False

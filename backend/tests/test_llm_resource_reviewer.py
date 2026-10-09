@@ -71,7 +71,7 @@ def test_openai_compatible_default_reviewer_uses_chat_completions_sdk() -> None:
     call = client.chat.completions.calls[0]
     assert call["response_format"] is StructuredResourceReview
     assert call["model"] == "review-model"
-    assert result.required is True
+    assert result.required is False
     assert result.risk_level == "high"
 
 

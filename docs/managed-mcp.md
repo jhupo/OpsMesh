@@ -53,6 +53,13 @@ Dockerfile 提供 Python、Node/npm 和 uv/uvx。
 创建配置后会执行 MCP initialize 和 tools/list，发现的工具保持 `discovered`，
 经现有工具启用/审批和 Agent 能力授权流程后才可调用。
 
+## 调用审批
+
+调用审批由工作空间 `settings.approvals` 和工具显式 `requires_approval` 配置决定。
+普通对话、已启用工具默认免审批；新发现工具仍须启用，定义变化会重新进入 discovered。
+需要审核的操作可选择人工或独立模型审核，批准后继续；无内置危险词表或固定审核模型。
+完整配置、命令规则和迁移说明见 [配置驱动审批](approval-configuration.md)。
+
 ## 生命周期
 
 查询：`GET /api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{id}/deployment`

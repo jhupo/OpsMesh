@@ -245,7 +245,7 @@ def test_llm_resource_review_can_require_admin_approval(monkeypatch) -> None:
         health_status="healthy",
     )
     session.add(credential)
-    workspace.settings = {"resource_review": {"private_resources": {"mcp_server": True}}}
+    workspace.settings = _review_config(session, workspace, "mcp_server")
     session.commit()
 
     def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
@@ -309,7 +309,7 @@ def test_llm_resource_review_schema_rejects_unknown_verdict() -> None:
 def test_operator_cannot_approve_resource_review(monkeypatch) -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
-    workspace.settings = {"resource_review": {"private_resources": {"mcp_server": True}}}
+    workspace.settings = _review_config(session, workspace, "mcp_server")
     operator = User(email="operator@example.com", display_name="Operator")
     session.add_all(
         [
@@ -404,15 +404,17 @@ def test_resource_review_uses_admin_configured_review_model(monkeypatch) -> None
     session.add_all([default_credential, review_credential])
     session.flush()
     workspace.settings = {
-        "resource_review": {
-            "private_resources": {"mcp_server": True},
-            "semantic_review": {
-                "enabled": True,
+        "approvals": {
+            "reviewer": "model",
+            "model": {
                 "model_provider_credential_id": str(review_credential.id),
                 "model": "workspace-review-large",
+                "instructions": "Check authorized scope.",
                 "timeout_seconds": 7,
-                "fail_closed": True,
             },
+            "rules": [
+                {"id": "mcp", "action": "resource", "name": "mcp_server", "decision": "review"}
+            ],
         }
     }
     session.commit()
@@ -456,60 +458,11 @@ def test_resource_review_uses_admin_configured_review_model(monkeypatch) -> None
     }
 
 
-def test_resource_review_defaults_to_codex_auto_review_model(monkeypatch) -> None:
-    client, session = _client()
-    owner, workspace = _seed_workspace(session, with_review_provider=False)
-    encrypted = SecretEncryptionService(
-        secret="test-credential-secret",
-        key_id="test",
-    ).encrypt_payload({"api_key": "sk-default"})
-    credential = ModelProviderCredential(
-        workspace_id=workspace.id,
-        name="default",
-        provider="openai",
-        base_url="https://default.example.test/v1",
-        default_model="gpt-5.5",
-        encrypted_api_key=encrypted.ciphertext,
-        api_key_fingerprint=encrypted.fingerprint,
-        encryption_key_id=encrypted.key_id,
-        is_default=True,
-        status="active",
-        health_status="healthy",
-    )
-    session.add(credential)
-    session.flush()
-    workspace.settings = {"resource_review": {"private_resources": {"mcp_server": True}}}
-    session.commit()
-    captured: dict[str, object] = {}
+def test_model_review_requires_explicit_model_configuration() -> None:
+    from backend.app.workspaces.management.schemas import WorkspaceUpdateRequest
 
-    def fake_review(self, **kwargs):  # noqa: ANN001, ANN202
-        provider = kwargs["provider"]
-        captured["model"] = provider.model
-        captured["timeout_seconds"] = kwargs["timeout_seconds"]
-        return LlmReviewResult(
-            required=False,
-            risk_level="low",
-            reasons=["llm_review.approved"],
-            signals={"reviewer": "llm", "verdict": "approve"},
-        )
-
-    monkeypatch.setattr(
-        "backend.app.governance.reviews.llm.LlmResourceReviewer.review",
-        fake_review,
-    )
-
-    server = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
-        headers=_headers(owner.id),
-        json={
-            "name": "normal-remote-tools",
-            "server_type": "streamable_http",
-            "connection": {"url": "https://mcp.example.test/rpc"},
-        },
-    )
-
-    assert server.status_code == 201
-    assert captured == {"model": "codex-auto-review", "timeout_seconds": 20.0}
+    with pytest.raises(ValidationError):
+        WorkspaceUpdateRequest(settings={"approvals": {"reviewer": "model"}})
 
 
 def test_private_skill_creation_skips_resource_review_by_default(monkeypatch) -> None:
@@ -524,7 +477,7 @@ def test_private_skill_creation_skips_resource_review_by_default(monkeypatch) ->
             required=True,
             risk_level="high",
             reasons=["llm_review.requires_admin"],
-            signals={"reviewer": "llm", "verdict": "review"},
+            signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
     monkeypatch.setattr(
@@ -556,7 +509,7 @@ def test_private_skill_creation_skips_resource_review_by_default(monkeypatch) ->
 def test_private_resource_review_can_be_enabled_per_workspace(monkeypatch) -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
-    workspace.settings = {"resource_review": {"private_resources": {"skill": True}}}
+    workspace.settings = _review_config(session, workspace, "skill")
     session.commit()
 
     def require_review(self, **kwargs):  # noqa: ANN001, ANN202
@@ -564,7 +517,7 @@ def test_private_resource_review_can_be_enabled_per_workspace(monkeypatch) -> No
             required=True,
             risk_level="high",
             reasons=["llm_review.requires_admin"],
-            signals={"reviewer": "llm", "verdict": "review"},
+            signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
     monkeypatch.setattr(
@@ -604,7 +557,7 @@ def test_private_agent_creation_skips_resource_review_by_default(monkeypatch) ->
             required=True,
             risk_level="high",
             reasons=["llm_review.requires_admin"],
-            signals={"reviewer": "llm", "verdict": "review"},
+            signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
     monkeypatch.setattr(
@@ -629,7 +582,7 @@ def test_private_agent_creation_skips_resource_review_by_default(monkeypatch) ->
 def test_private_agent_review_can_be_enabled_per_workspace(monkeypatch) -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
-    workspace.settings = {"resource_review": {"private_resources": {"agent_profile": True}}}
+    workspace.settings = _review_config(session, workspace, "agent_profile")
     session.commit()
 
     def require_review(self, **kwargs):  # noqa: ANN001, ANN202
@@ -637,7 +590,7 @@ def test_private_agent_review_can_be_enabled_per_workspace(monkeypatch) -> None:
             required=True,
             risk_level="high",
             reasons=["llm_review.requires_admin"],
-            signals={"reviewer": "llm", "verdict": "review"},
+            signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
     monkeypatch.setattr(
@@ -669,7 +622,7 @@ def test_private_mcp_resources_skip_resource_review_by_default(monkeypatch) -> N
             required=True,
             risk_level="high",
             reasons=["llm_review.requires_admin"],
-            signals={"reviewer": "llm", "verdict": "review"},
+            signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
     monkeypatch.setattr(
@@ -714,7 +667,7 @@ def test_private_mcp_resources_skip_resource_review_by_default(monkeypatch) -> N
 def test_private_mcp_server_review_can_be_enabled_per_workspace(monkeypatch) -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)
-    workspace.settings = {"resource_review": {"private_resources": {"mcp_server": True}}}
+    workspace.settings = _review_config(session, workspace, "mcp_server")
     session.commit()
 
     def require_review(self, **kwargs):  # noqa: ANN001, ANN202
@@ -722,7 +675,7 @@ def test_private_mcp_server_review_can_be_enabled_per_workspace(monkeypatch) -> 
             required=True,
             risk_level="high",
             reasons=["llm_review.requires_admin"],
-            signals={"reviewer": "llm", "verdict": "review"},
+            signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
     monkeypatch.setattr(
@@ -1266,7 +1219,7 @@ def test_remote_mcp_discovery_requires_enablement_and_revokes_changed_tools(monk
     tools = client.get(f"{base}/discovered-tools", headers=_headers(owner.id))
     assert tools.status_code == 200
     assert tools.json()[0]["status"] == "discovered"
-    assert tools.json()[0]["requires_approval"] is True
+    assert tools.json()[0]["requires_approval"] is False
     assert tools.json()[0]["risk_level"] == "medium"
     tool_id = tools.json()[0]["id"]
     assert tools.json()[0]["output_schema"]["properties"]["records"]["type"] == "array"
@@ -3418,3 +3371,20 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
+
+
+def _review_config(session, workspace, name):
+    credential = session.query(ModelProviderCredential).filter_by(workspace_id=workspace.id).first()
+    return {
+        "approvals": {
+            "reviewer": "model",
+            "model": {
+                "model_provider_credential_id": str(credential.id),
+                "model": "test-review",
+                "instructions": "Check the configured action scope.",
+            },
+            "rules": [
+                {"id": "resource-review", "action": "resource", "name": name, "decision": "review"}
+            ],
+        }
+    }

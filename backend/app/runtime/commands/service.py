@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.governance.audit.service import AuditService
 from backend.app.orchestration.approvals.policy import ApprovalPolicyDecision, ApprovalPolicyEngine
+from backend.app.runtime.commands.approvals import command_approved, request_command_approval
 from backend.app.runtime.instances.contracts import RuntimeManagerProvider
 from backend.app.runtime.instances.events import new_runtime_event
 from backend.app.runtime.instances.models import RuntimeCommand, WorkspaceRuntime
@@ -58,8 +59,10 @@ class RuntimeCommandService:
             workspace_runtime_id=runtime.id,
             runtime_space_id=runtime.runtime_space_id,
             command=command,
-            status="queued" if allowed else "blocked",
-            error=None if allowed else "runtime command denied by approval policy",
+            status="queued" if allowed else "waiting_approval" if decision.required else "blocked",
+            error=None
+            if allowed or decision.required
+            else "runtime command denied by approval policy",
         )
         self._session.add(record)
         self._session.flush()
@@ -68,11 +71,15 @@ class RuntimeCommandService:
                 workspace_id=workspace_id,
                 workspace_runtime_id=runtime.id,
                 runtime_space_id=runtime.runtime_space_id,
-                event_type="runtime.command.queued" if allowed else "runtime.command.blocked",
-                message=(
-                    "Runtime command queued"
+                event_type=(
+                    "runtime.command.queued"
                     if allowed
-                    else "Runtime command blocked by policy"
+                    else "runtime.command.waiting_approval"
+                    if decision.required
+                    else "runtime.command.blocked"
+                ),
+                message=(
+                    "Runtime command queued" if allowed else "Runtime command blocked by policy"
                 ),
                 metadata={
                     "runtime_id": str(runtime.id),
@@ -82,7 +89,9 @@ class RuntimeCommandService:
                 created_at=datetime.now(UTC),
             )
         )
-        if not allowed:
+        if decision.required:
+            request_command_approval(self._session, record)
+        elif not allowed:
             self._record_blocked(runtime, command, decision)
         self._session.commit()
         self._session.refresh(record)
@@ -115,7 +124,12 @@ class RuntimeCommandService:
             )
             return record
         decision = self._evaluate(workspace_id, runtime, command, source="runtime_control_queue")
-        if decision.decision.value != "allow":
+        if decision.required and not command_approved(self._session, record):
+            record.status = "waiting_approval"
+            request_command_approval(self._session, record)
+            self._session.commit()
+            return record
+        if decision.blocked:
             self._block_record(
                 runtime,
                 record,
@@ -192,6 +206,7 @@ class RuntimeCommandService:
         )
         self._record_blocked(runtime, command, decision)
         self._session.commit()
+
 
 def _validate_command(command: list[str]) -> None:
     if not command or len(command) > 32:

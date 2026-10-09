@@ -21,6 +21,7 @@ from backend.app.orchestration.approvals.pending_tools import PendingToolInvocat
 from backend.app.orchestration.approvals.run_gate import ApprovalRunGateService
 from backend.app.orchestration.runs.models import AgentRunStateSnapshot
 from backend.app.resources.memory.episodic import AgentEpisodicMemoryService
+from backend.app.runtime.commands.approvals import apply_command_decision
 from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.shared.config import get_settings
@@ -55,6 +56,13 @@ class ApprovalDecisionService:
             action=WorkspaceAction.APPROVE,
             authenticated_user=actor,
         )
+        if approval.approval_type == "runtime.command.control":
+            AuthorizationService(self._session).require_workspace(
+                user_id=actor.user_id,
+                workspace_id=approval.workspace_id,
+                action=WorkspaceAction.MANAGE_RUNTIME,
+                authenticated_user=actor,
+            )
         if approval.payload.get("kind") == "resource_review" and context.role not in {
             WorkspaceRole.OWNER,
             WorkspaceRole.ADMIN,
@@ -88,6 +96,7 @@ class ApprovalDecisionService:
             return approval
         if approval.status != "pending":
             raise ValueError("Approval is not pending")
+        apply_command_decision(self._session, approval, user_id, status, self._queue)
         approval.status = status
         approval.decided_by_user_id = user_id
         approval.decision_reason = reason
@@ -122,8 +131,10 @@ class ApprovalDecisionService:
         if status == "rejected" and invocation is None:
             ApprovalRunGateService(self._session).fail_rejected_run(approval)
         if (
-            status == "approved" or invocation is not None
-        ) and approval.agent_run_id is not None and self._queue is not None:
+            (status == "approved" or invocation is not None)
+            and approval.agent_run_id is not None
+            and self._queue is not None
+        ):
             self._enqueue_resume(approval, user_id, status)
         self._session.commit()
         self._session.refresh(approval)
@@ -138,9 +149,7 @@ class ApprovalDecisionService:
                 job_type=JobType.AGENT_RUN,
                 resource_id=approval.agent_run_id,
                 requested_by_user_id=user_id,
-                idempotency_key=(
-                    f"approval.resume:{status}:{approval.workspace_id}:{approval.id}"
-                ),
+                idempotency_key=(f"approval.resume:{status}:{approval.workspace_id}:{approval.id}"),
             )
         )
 

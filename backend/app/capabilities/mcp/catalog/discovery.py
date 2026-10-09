@@ -242,8 +242,6 @@ class McpToolDiscoveryService:
                 row.status = "discovered"
                 row.discovery_status = "changed"
                 row.configuration_version += 1
-                row.requires_approval = True
-                row.risk_level = "medium"
                 input_schema = item["input_schema"]
                 output_schema = item["output_schema"]
                 policy = item["policy"]
@@ -394,7 +392,7 @@ class McpToolDiscoveryService:
             "input_schema": normalize_object_schema(input_schema),
             "output_schema": normalized_output_schema,
             "capability_key": None,
-            "requires_approval": True,
+            "requires_approval": False,
             "risk_level": "medium",
             "policy": {
                 "discovered_annotations": redact_sensitive_payload(annotations)

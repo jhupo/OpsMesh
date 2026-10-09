@@ -11798,14 +11798,15 @@ def test_workspace_update_configures_resource_review_model_and_records_audit() -
         headers=_headers(owner.id),
         json={
             "settings": {
-                "resource_review": {
-                    "semantic_review": {
-                        "enabled": True,
+                "approvals": {
+                    "reviewer": "model",
+                    "model": {
+                        "instructions": "Check authorized scope.",
                         "model_provider_credential_id": str(credential.id),
-                        "model": "codex-auto-review",
+                        "model": "configured-review-model",
                         "timeout_seconds": 12,
-                        "fail_closed": True,
-                    }
+                        "on_error": "human",
+                    },
                 }
             },
         },
@@ -11818,13 +11819,15 @@ def test_workspace_update_configures_resource_review_model_and_records_audit() -
     ).all()
 
     assert response.status_code == 200
-    semantic = response.json()["settings"]["resource_review"]["semantic_review"]
+    semantic = response.json()["settings"]["approvals"]["model"]
     assert semantic["model_provider_credential_id"] == str(credential.id)
-    assert semantic["model"] == "codex-auto-review"
+    assert semantic["model"] == "configured-review-model"
     assert semantic["timeout_seconds"] == 12
     assert [event.action for event in events] == ["workspace.resource_review_policy_updated"]
-    assert events[0].audit_metadata["after"]["model"] == "codex-auto-review"
-    assert events[0].audit_metadata["after"]["model_provider_credential_id"] == str(credential.id)
+    assert events[0].audit_metadata["after"]["model"]["model"] == "configured-review-model"
+    assert events[0].audit_metadata["after"]["model"]["model_provider_credential_id"] == str(
+        credential.id
+    )
 
 
 def test_workspace_update_rejects_invalid_resource_review_model_provider() -> None:
@@ -11859,10 +11862,13 @@ def test_workspace_update_rejects_invalid_resource_review_model_provider() -> No
         headers=_headers(owner.id),
         json={
             "settings": {
-                "resource_review": {
-                    "semantic_review": {
+                "approvals": {
+                    "reviewer": "model",
+                    "model": {
                         "model_provider_credential_id": str(foreign_credential.id),
-                    }
+                        "model": "review",
+                        "instructions": "Check scope.",
+                    },
                 }
             },
         },
@@ -11872,10 +11878,11 @@ def test_workspace_update_rejects_invalid_resource_review_model_provider() -> No
         headers=_headers(owner.id),
         json={
             "settings": {
-                "resource_review": {
-                    "semantic_review": {
+                "approvals": {
+                    "reviewer": "model",
+                    "model": {
                         "fail_closed": False,
-                    }
+                    },
                 }
             },
         },
@@ -11885,7 +11892,7 @@ def test_workspace_update_rejects_invalid_resource_review_model_provider() -> No
     assert fail_open.status_code == 422
 
 
-def test_workspace_update_rejects_disabling_public_resource_review() -> None:
+def test_workspace_update_rejects_retired_review_configuration() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
 
@@ -11907,9 +11914,7 @@ def test_workspace_update_rejects_disabling_public_resource_review() -> None:
     )
 
     assert response.status_code == 422
-    assert "resource_review.public_resources.agent_profile cannot be disabled" in str(
-        response.json()
-    )
+    assert "resource_review was replaced by approvals" in str(response.json())
 
 
 def test_workspace_update_rejects_invalid_scheduler_pause_config() -> None:

@@ -157,7 +157,8 @@ def test_ambiguous_runtime_resource_placement_is_rejected() -> None:
     assert exc_info.value.code == "runtime_grant_ambiguous"
 
 
-def test_stdio_tool_requires_concrete_authorized_runtime() -> None:
+@pytest.mark.parametrize("managed", [False, True])
+def test_stdio_tool_runtime_admission_distinguishes_managed_process(managed: bool) -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     profile = AgentProfile(
@@ -170,7 +171,7 @@ def test_stdio_tool_requires_concrete_authorized_runtime() -> None:
         workspace_id=workspace.id,
         name="Local MCP",
         server_type="stdio",
-        connection={"command": ["local-mcp"]},
+        connection={"command": ["local-mcp"], **({"runtime": "managed"} if managed else {})},
         health_status="healthy",
         last_health_check_at=datetime.now(UTC),
     )
@@ -205,6 +206,24 @@ def test_stdio_tool_requires_concrete_authorized_runtime() -> None:
     )
 
     assert catalog["tools"][0]["descriptor"]["mcp_server_type"] == "stdio"
+    assert catalog["tools"][0]["descriptor"]["mcp_runtime"] == (
+        "managed" if managed else "run"
+    )
+
+    if managed:
+        binding = RunRuntimeAuthorizationService(session).resolve_for_snapshot(
+            task=task, step=step, capability_catalog=catalog, runtime_policy={},
+        )
+        assert binding.mode == "none"
+        assert binding.workspace_runtime_id is None
+        run = AgentRun(workspace_id=workspace.id, task_id=task.id)
+        validated = RunRuntimeAuthorizationService(session).validate_for_run(
+            run=run, task=task,
+            snapshot={"capability_catalog": catalog, "runtime_binding": binding.as_snapshot(),
+                      "file_scope": {"allowed_file_ids": []}},
+        )
+        assert validated.mode == "none"
+        return
 
     with pytest.raises(RunRuntimeAuthorizationError) as exc_info:
         RunRuntimeAuthorizationService(session).resolve_for_snapshot(

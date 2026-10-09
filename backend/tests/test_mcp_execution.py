@@ -658,10 +658,12 @@ def test_mcp_execution_raises_unknown_adapter_errors_after_logging() -> None:
     assert "sk-secret" not in str(event.event_metadata)
 
 
-def test_mcp_execution_sends_high_risk_tool_to_approval_by_default() -> None:
+def test_mcp_execution_sends_high_risk_tool_to_approval_when_configured() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
-    run, server = _seed_run_with_mcp_tool(session, workspace, risk_level="high")
+    run, server = _seed_run_with_mcp_tool(
+        session, workspace, risk_level="high", requires_approval=True
+    )
     adapter = RecordingAdapter({"deleted": True})
 
     result = asyncio.run(
@@ -684,7 +686,7 @@ def test_mcp_execution_sends_high_risk_tool_to_approval_by_default() -> None:
     assert adapter.calls == []
     assert approval is not None
     assert approval.approval_type == "mcp.tool"
-    assert approval.risk_level == "high"
+    assert approval.risk_level == "low"
     assert log is not None
     assert log.status == "waiting_approval"
     assert run.status == "waiting_approval"
@@ -722,9 +724,82 @@ def test_mcp_execution_sends_explicit_approval_tool_to_approval() -> None:
     assert log.approval_id == approval.id
 
 
-def test_mcp_execution_review_sends_sensitive_arguments_to_admin_approval() -> None:
+@pytest.mark.parametrize("verdict", ["approve", "reject", "needs_human"])
+def test_configured_model_controls_real_mcp_execution_and_history(monkeypatch, verdict):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from backend.app.agents.providers.resolution import ModelProviderResolutionService
+    from backend.app.governance.reviews.llm import LlmResourceReviewer, LlmReviewResult
+
     session = _session()
     _, workspace = _seed_workspace(session)
+    workspace.settings = {
+        "approvals": {
+            "reviewer": "model",
+            "model": {
+                "model_provider_credential_id": str(uuid4()),
+                "model": "test-review-model",
+                "instructions": "Check the user's scope.",
+            },
+        }
+    }
+    run, server = _seed_run_with_mcp_tool(session, workspace, requires_approval=True)
+    monkeypatch.setattr(
+        ModelProviderResolutionService, "resolve_for_review", Mock(return_value=SimpleNamespace())
+    )
+    monkeypatch.setattr(
+        LlmResourceReviewer,
+        "review",
+        Mock(
+            return_value=LlmReviewResult(
+                required=verdict != "approve",
+                risk_level="high",
+                reasons=["scope.checked"],
+                signals={"verdict": verdict},
+            )
+        ),
+    )
+    adapter = RecordingAdapter({"ok": True})
+    service = McpToolExecutionService(session, adapter, settings=Settings(environment="test"))
+    request = McpExecutionRequest(
+        workspace_id=workspace.id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        arguments={"prompt": "mountain"},
+    )
+    if verdict == "reject":
+        with pytest.raises(ToolPermissionError):
+            asyncio.run(service.execute(request))
+    else:
+        result = asyncio.run(service.execute(request))
+        assert result.status == ("completed" if verdict == "approve" else "waiting_approval")
+    assert len(adapter.calls) == (1 if verdict == "approve" else 0)
+    approvals = session.scalars(select(Approval)).all()
+    assert len(approvals) == 1
+    expected = {"approve": "approved", "reject": "rejected", "needs_human": "pending"}
+    assert approvals[0].status == expected[verdict]
+    if verdict != "needs_human":
+        assert approvals[0].payload["reviewer"] == "model"
+        assert approvals[0].payload["action_fingerprint"]
+
+
+def test_mcp_execution_review_configured_approval_preserves_argument_redaction() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    workspace.settings = {
+        "approvals": {
+            "rules": [
+                {
+                    "id": "review-image",
+                    "action": "mcp_tool",
+                    "name": "generate_image",
+                    "decision": "review",
+                }
+            ]
+        }
+    }
     run, server = _seed_run_with_mcp_tool(session, workspace, risk_level="low")
     adapter = RecordingAdapter({"ok": True})
 
@@ -750,20 +825,17 @@ def test_mcp_execution_review_sends_sensitive_arguments_to_admin_approval() -> N
     assert adapter.calls == []
     assert approval is not None
     assert approval.approval_type == "mcp.tool"
-    assert approval.risk_level == "high"
+    assert approval.risk_level == "low"
     assert approval.payload["reason"] == "mcp_tool_execution_review_requires_approval"
     assert approval.payload["arguments_preview"]["api_key"] == "[redacted]"
-    assert approval.payload["execution_review"]["risk_level"] == "high"
-    assert (
-        "tool.arguments.contains_sensitive_keys" in approval.payload["execution_review"]["reasons"]
-    )
+    assert approval.payload["execution_review"]["risk_level"] == "low"
     assert log is not None
     assert log.status == "waiting_approval"
     assert log.approval_id == approval.id
     assert "sk-secret" not in str(approval.payload)
 
 
-def test_mcp_execution_review_still_requires_approval_for_high_risk_tool() -> None:
+def test_mcp_risk_annotation_does_not_override_explicit_allow() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
     _seed_risky_policy(session, high_risk_tool_mode="allow")
@@ -784,10 +856,9 @@ def test_mcp_execution_review_still_requires_approval_for_high_risk_tool() -> No
 
     approval = session.scalar(select(Approval))
 
-    assert result.status == "waiting_approval"
-    assert adapter.calls == []
-    assert approval is not None
-    assert approval.payload["reason"] == "mcp_tool_execution_review_requires_approval"
+    assert result.status == "completed"
+    assert len(adapter.calls) == 1
+    assert approval is None
 
 
 def test_mcp_execution_blocks_high_risk_tool_when_platform_policy_blocks_it() -> None:

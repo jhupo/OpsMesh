@@ -10,7 +10,7 @@ from backend.app.agents.execution.contracts import AgentRuntimeExecutionBinding
 from backend.app.orchestration.runs.authorization.policy import (
     RunRuntimeAuthorizationError,
     catalog_for_snapshot,
-    catalog_has_stdio_tool,
+    catalog_requires_stdio_runtime,
     file_resource_ids,
     parse_required_uuid,
     parse_uuid_set,
@@ -148,7 +148,7 @@ class RunRuntimeAuthorizationService:
         if runtime_space is not None:
             self._require_space_available_for_task(runtime_space, task)
 
-        if catalog_has_stdio_tool(capability_catalog) and runtime is None:
+        if catalog_requires_stdio_runtime(capability_catalog) and runtime is None:
             raise RunRuntimeAuthorizationError(
                 "stdio_runtime_required",
                 "An active concrete runtime is required for MCP stdio tools",
@@ -219,7 +219,7 @@ class RunRuntimeAuthorizationService:
                 or run.runtime_space_id is not None
                 or runtime_resource_ids
                 or granted_file_ids
-                or catalog_has_stdio_tool(catalog_for_snapshot(snapshot))
+                or catalog_requires_stdio_runtime(catalog_for_snapshot(snapshot))
             ):
                 raise RunRuntimeAuthorizationError(
                     "runtime_binding_missing",
@@ -277,7 +277,7 @@ class RunRuntimeAuthorizationService:
             runtime = self._runtime(run.workspace_id, binding.workspace_runtime_id)
             self._require_runtime_ready(runtime)
             if runtime.execution_mode == "none":
-                if catalog_has_stdio_tool(catalog_for_snapshot(snapshot)):
+                if catalog_requires_stdio_runtime(catalog_for_snapshot(snapshot)):
                     raise RunRuntimeAuthorizationError(
                         "sandbox_required",
                         "stdio MCP tools require a sandbox execution mode",

@@ -36,6 +36,9 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
     settings: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
 
+    # Private migration rollback data; excluded from all API schemas.
+    legacy_approval_settings: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+
     owner: Mapped[User] = relationship()
     members: Mapped[list[WorkspaceMember]] = relationship(
         back_populates="workspace",

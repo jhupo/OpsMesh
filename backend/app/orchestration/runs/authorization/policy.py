@@ -59,7 +59,8 @@ def file_resource_ids(catalog: dict[str, object] | None) -> set[UUID]:
     return result
 
 
-def catalog_has_stdio_tool(catalog: dict[str, object] | None) -> bool:
+def catalog_requires_stdio_runtime(catalog: dict[str, object] | None) -> bool:
+    """Managed MCP has its own isolated runtime; legacy stdio uses the run's runtime."""
     raw_tools = catalog.get("tools") if catalog is not None else None
     if not isinstance(raw_tools, list):
         return False
@@ -68,6 +69,7 @@ def catalog_has_stdio_tool(catalog: dict[str, object] | None) -> bool:
         and isinstance(item.get("descriptor"), dict)
         and item["descriptor"].get("source") == "mcp"
         and item["descriptor"].get("mcp_server_type") == "stdio"
+        and item["descriptor"].get("mcp_runtime") != "managed"
         for item in raw_tools
     )
 
