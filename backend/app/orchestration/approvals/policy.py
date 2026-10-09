@@ -133,7 +133,11 @@ class ApprovalPolicyEngine:
                 arguments=arguments,
                 allowlist_policy=allowlist_policy,
                 allowlist_risk_level=allowlist_risk_level,
-                requires_approval=requires_approval,
+                requires_approval=requires_approval
+                or (
+                    allowlist_risk_level in {"high", "critical"}
+                    and policy.high_risk_tool_mode == "require_workspace_approval"
+                ),
                 context=context,
             )
         except Exception as exc:

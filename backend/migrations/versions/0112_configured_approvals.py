@@ -4,6 +4,7 @@ import json
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "0112_configured_approvals"
 down_revision = "0111_managed_mcp"
@@ -13,16 +14,7 @@ depends_on = None
 
 def upgrade() -> None:
     # Preserve exact settings for rollback; do not infer a working review model or prompt.
-    op.create_table(
-        "approval_settings_migration_backup",
-        sa.Column(
-            "workspace_id",
-            sa.Uuid(),
-            sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-        sa.Column("settings", sa.JSON(), nullable=False),
-    )
+    op.add_column("workspaces", sa.Column("legacy_approval_settings", JSONB(), nullable=True))
     connection = op.get_bind()
     for row in connection.execute(sa.text("SELECT id, settings FROM workspaces")).mappings():
         settings = dict(row["settings"] or {})
@@ -31,8 +23,8 @@ def upgrade() -> None:
             continue
         connection.execute(
             sa.text(
-                "INSERT INTO approval_settings_migration_backup (workspace_id, settings) "
-                "VALUES (:id, CAST(:settings AS json))"
+                "UPDATE workspaces SET legacy_approval_settings=CAST(:settings AS jsonb) "
+                "WHERE id=:id"
             ),
             {"id": row["id"], "settings": json.dumps(row["settings"])},
         )
@@ -77,8 +69,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute(
         sa.text(
-            "UPDATE workspaces w SET settings=CAST(b.settings AS jsonb) "
-            "FROM approval_settings_migration_backup b WHERE w.id=b.workspace_id"
+            "UPDATE workspaces SET settings=legacy_approval_settings "
+            "WHERE legacy_approval_settings IS NOT NULL"
         )
     )
-    op.drop_table("approval_settings_migration_backup")
+    op.drop_column("workspaces", "legacy_approval_settings")

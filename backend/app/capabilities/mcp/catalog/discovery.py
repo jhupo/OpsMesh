@@ -242,7 +242,6 @@ class McpToolDiscoveryService:
                 row.status = "discovered"
                 row.discovery_status = "changed"
                 row.configuration_version += 1
-                row.risk_level = "medium"
                 input_schema = item["input_schema"]
                 output_schema = item["output_schema"]
                 policy = item["policy"]

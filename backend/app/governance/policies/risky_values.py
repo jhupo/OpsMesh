@@ -49,6 +49,7 @@ def normalize_risky_execution_policy_value(
             raw_value = current_value.get(key)
             if isinstance(raw_value, bool):
                 merged[key] = raw_value
+        merged["high_risk_tool_mode"] = _high_risk_tool_mode(current_value)
     for key in merged:
         raw_value = update.get(key)
         if isinstance(raw_value, bool):

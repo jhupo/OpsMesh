@@ -5,6 +5,7 @@ import pytest
 
 from backend.app.agents.execution.contracts import AgentRunRequest, AgentRuntimeContext
 from backend.app.agents.profiles.models import AgentProfile
+from backend.app.governance.policies.risky_values import normalize_risky_execution_policy_value
 from backend.app.governance.reviews.model_request import ModelRequestReviewService
 from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.approvals.policy import (
@@ -16,6 +17,15 @@ from backend.app.orchestration.approvals.policy import (
 from backend.app.orchestration.requests.request_approval import ModelRequestApprovalService
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.state import RunStatus
+
+
+def test_unrelated_platform_update_preserves_configured_block_mode():
+    value = normalize_risky_execution_policy_value(
+        {"high_risk_tool_mode": "block", "allow_runtime_commands": True},
+        {"allow_runtime_commands": False},
+    )
+    assert value["high_risk_tool_mode"] == "block"
+    assert value["allow_runtime_commands"] is False
 
 
 def test_identical_policy_inputs_produce_the_same_decision_for_every_action_kind() -> None:

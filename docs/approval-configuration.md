@@ -37,7 +37,7 @@
 - 命中规则按 deny > review > allow 合并；没有命中时使用 default。
 - 多条 review 规则中任何一条指定 human，必须人工审批。
 - 工具已有 requires_approval=true 是显式审核要求，仍有效；审核者使用配置。新发现 MCP 默认不强制审批，但仍处于 discovered 状态，必须启用后才能调用。定义变化重新进入 discovered，保留原有显式审批开关。
-- 风险等级是注释，不再强制把模型 approve 改为人工审批。平台明确禁用命令或明确阻断标记为高风险的 MCP 仍有效。
+- 模型输出的风险等级不再强制把 approve 改为人工审批。工具由管理员标记为 high/critical 时，平台 high_risk_tool_mode 配置仍可要求审核或阻断；要求审核时也使用配置的人工／模型审批者。平台明确禁用命令仍有效。
 - model_request 的 name 为 model.run；默认不审核普通对话、推理或路由。
 - 资源创建与市场发布使用 resource 规则；不再仅因 public、stdio、凭据存在等硬编码条件强制审核。
 
@@ -61,7 +61,7 @@ command_prefix 匹配真实 argv，不是文本包含匹配。支持 sh/bash/zsh
 
 Alembic 0112 将旧 resource_review 中显式启用的资源审核与 always 模型请求审核转换成人工规则。
 不从旧默认名猜测可用模型，不自动填写管理员审核指令。迁移后需要显式配置模型审批。
-原始设置保存在迁移备份表；降级恢复旧工作空间设置，会覆盖升级后对此设置的修改。
+原始设置保存在工作空间的私有迁移备份字段；降级恢复旧工作空间设置，会覆盖升级后对此设置的修改。
 已有工具 requires_approval 和待审批单不被批量取消。新 API 拒绝旧 resource_review 设置，避免出现保存成功但不生效的配置。
 
 ## 本次硬编码排查
