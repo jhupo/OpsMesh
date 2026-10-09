@@ -44,6 +44,8 @@ class McpCredentialService:
         workspace_id: UUID,
         data: McpCredentialReferenceCreateRequest,
         actor_user_id: UUID | None = None,
+        *,
+        commit: bool = True,
     ) -> McpCredentialReference:
         if data.secret_payload is None and data.provider in {"hosted", "static_header"}:
             raise ValueError("Remote MCP headers must use encrypted secret_payload")
@@ -127,8 +129,9 @@ class McpCredentialService:
                     "configuration_version": credential.configuration_version,
                 },
             )
-        commit_or_raise_conflict(self._session, "MCP credential name already exists")
-        self._session.refresh(credential)
+        if commit:
+            commit_or_raise_conflict(self._session, "MCP credential name already exists")
+            self._session.refresh(credential)
         return credential
 
     def update_credential_reference(

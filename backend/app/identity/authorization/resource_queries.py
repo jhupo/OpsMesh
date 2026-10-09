@@ -31,6 +31,7 @@ _ROOTS = {table: kind for kind, table in RESOURCE_TABLES.items()}
 # A dependent row inherits data access from its owning aggregate, never from an unrelated
 # agent/tool reference. A team grant deliberately does not grant access to its users' tasks.
 _PARENTS: dict[str, tuple[str, str]] = {
+    "mcp_deployments": ("mcp_server_id", "mcp_servers"),
     "conversation_turns": ("conversation_id", "conversations"),
     "conversation_executions": ("turn_id", "conversation_turns"),
     "conversation_events": ("conversation_id", "conversations"),

@@ -37,7 +37,12 @@ class McpToolExecutionJobHandler:
         asyncio.run(
             McpToolExecutionService(
                 self._context.session,
-                self._context.mcp_adapter or McpAdapterResolver(),
+                self._context.mcp_adapter
+                or McpAdapterResolver(
+                    secret_service=self._context.secret_service(context="MCP execution"),
+                    session=self._context.session,
+                    docker_client=self._context.runtime_docker_client,
+                ),
                 settings=self._context.settings,
             ).execute(
                 McpExecutionRequest(

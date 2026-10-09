@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.contracts import AgentRuntimeExecutor
 from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.capabilities.mcp.managed_maintenance import reconcile_managed_mcp
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.orchestration.conversations.maintenance import ConversationMaintenanceService
 from backend.app.orchestration.scheduling.maintenance import WorkerMaintenanceService
@@ -52,6 +53,12 @@ def build_worker_runner(
             session.close()
 
     def maintenance() -> WorkerMaintenanceSummary:
+        try:
+            with failure_session_scope() as session:
+                if not maintenance_enabled(session):
+                    reconcile_managed_mcp(session, queue)
+        except Exception:
+            logging.getLogger(__name__).error("Managed MCP maintenance failed")
         for _ in range(5):
             with failure_session_scope() as session:
                 if maintenance_enabled(session):

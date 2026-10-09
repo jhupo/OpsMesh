@@ -41,6 +41,30 @@ class McpDiscoveryConflict(McpDiscoveryError):
 
 
 class McpToolDiscoveryService:
+    def persist_runtime_tools(
+        self,
+        workspace_id: UUID,
+        server: McpServer,
+        tools: list[dict[str, object]],
+        *,
+        credential_id: UUID | None,
+        credential_version: int | None,
+        actor_user_id: UUID | None,
+        configuration_version: int,
+    ) -> dict[str, object]:
+        """Publish Worker-discovered tools through the same review/freshness gate as remote MCP."""
+        if server.workspace_id != workspace_id:
+            raise McpDiscoveryError("MCP workspace mismatch")
+        return self._persist(
+            workspace_id,
+            server,
+            tools,
+            credential_id=credential_id,
+            credential_version=credential_version,
+            actor_user_id=actor_user_id,
+            configuration_version=configuration_version,
+        )
+
     def __init__(
         self,
         session: Session,
@@ -143,7 +167,11 @@ class McpToolDiscoveryService:
         configuration_version: int,
     ) -> dict[str, object]:
         self._session.refresh(server, with_for_update=True)
-        if server.status != "active" or server.configuration_version != configuration_version:
+        if (
+            server.status != "active"
+            or server.platform_blocked
+            or server.configuration_version != configuration_version
+        ):
             raise McpDiscoveryConflict(
                 "MCP server changed during discovery; retry with current configuration"
             )

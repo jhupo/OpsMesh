@@ -226,7 +226,10 @@ class McpCatalogService:
         credentials: list[McpCredentialReference],
         usage: McpCatalogUsage,
     ) -> McpCatalogServer:
-        if server.server_type in {"streamable_http", "sse", "hosted"}:
+        if (
+            server.server_type in {"streamable_http", "sse", "hosted"}
+            or server.connection.get("runtime") == "managed"
+        ):
             selected = selected_remote_credentials(server, credentials)
             if requires_credentials(server):
                 credential_count = sum(item.mcp_server_id == server.id for item in selected)

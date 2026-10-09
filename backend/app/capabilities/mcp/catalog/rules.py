@@ -28,20 +28,28 @@ def normalize_connection(server_type: str, value: dict[str, object]) -> dict[str
         if not isinstance(url, str) or not url.lower().startswith(("http://", "https://")):
             raise ValueError("Remote MCP server requires an http(s) url")
         validate_url_shape(url, allowed_schemes=frozenset({"http", "https"}))
-        transport = str(
-            connection.get("transport")
-            or ("streamable_http" if normalized_type == "hosted" else normalized_type)
-        ).lower().strip()
+        transport = (
+            str(
+                connection.get("transport")
+                or ("streamable_http" if normalized_type == "hosted" else normalized_type)
+            )
+            .lower()
+            .strip()
+        )
         if transport not in REMOTE_SERVER_TYPES:
             raise ValueError("Remote MCP server transport must be streamable_http or sse")
-        auth_method = str(
-            connection.get("auth_method")
-            or (
-                "credential_ref"
-                if normalized_type == "hosted" or connection.get("requires_credentials") is True
-                else "none"
+        auth_method = (
+            str(
+                connection.get("auth_method")
+                or (
+                    "credential_ref"
+                    if normalized_type == "hosted" or connection.get("requires_credentials") is True
+                    else "none"
+                )
             )
-        ).lower().strip()
+            .lower()
+            .strip()
+        )
         if auth_method not in MCP_AUTH_METHODS:
             raise ValueError("MCP auth_method is unsupported")
         configured_requirement = connection.get("requires_credentials")
@@ -104,6 +112,8 @@ def execution_mode(server: McpServer) -> str:
     server_type = normalized_server_type(server)
     if server_type == "stdio":
         runtime = server.connection.get("runtime")
+        if runtime == "managed":
+            return "managed_stdio"
         if runtime == "self_hosted":
             return "self_hosted_stdio"
         return "isolated_runtime_stdio"

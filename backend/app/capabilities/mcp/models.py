@@ -8,6 +8,25 @@ from sqlalchemy.orm import Mapped, mapped_column
 from backend.app.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
+class McpDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "mcp_deployments"
+    __table_args__ = (UniqueConstraint("mcp_server_id"),)
+
+    workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    mcp_server_id: Mapped[UUID] = mapped_column(ForeignKey("mcp_servers.id", ondelete="CASCADE"))
+    runtime_id: Mapped[UUID | None] = mapped_column(ForeignKey("workspace_runtimes.id"))
+    template_id: Mapped[UUID] = mapped_column(ForeignKey("runtime_templates.id"))
+    network_disabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(32), default="stopped")
+    action: Mapped[str] = mapped_column(String(32), default="stop")
+    generation: Mapped[int] = mapped_column(Integer, default=0)
+    execution_identity: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    last_error: Mapped[str | None] = mapped_column(String(120))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    server_version: Mapped[int | None] = mapped_column(Integer)
+    credential_version: Mapped[int | None] = mapped_column(Integer)
+
+
 class McpServer(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "mcp_servers"
     __table_args__ = (
