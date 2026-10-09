@@ -60,6 +60,7 @@ from backend.app.runtime.contracts import RuntimeEnvironmentError
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
 from backend.app.runtime.instances.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtime.queues.contracts import JobPayload
+from backend.app.runtime.queues.execution_control import current_execution_control
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.shared.config import Settings, get_settings
 from backend.app.shared.utils import payload_hash
@@ -120,7 +121,8 @@ class RunExecutionService:
             user = ExecutionIdentityService(self.session).for_run(run.workspace_id, run.id)
             with execution_resource_queries(self.session, run.workspace_id, user):
                 return await self._run_authorized_agent(
-                    run, job.model_copy(update={"requested_by_user_id": user.user_id}),
+                    run,
+                    job.model_copy(update={"requested_by_user_id": user.user_id}),
                 )
         except ResourceAccessDenied as exc:
             return self._reject_authorization(run, exc)
@@ -134,7 +136,10 @@ class RunExecutionService:
         if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
             return run
         self._events().append_event(
-            run, "authorization.revoked", "Execution principal no longer authorized", {},
+            run,
+            "authorization.revoked",
+            "Execution principal no longer authorized",
+            {},
         )
         self._lifecycle().mark_run_failed(run, exc)
         self._commit_and_refresh(run)
@@ -292,6 +297,9 @@ class RunExecutionService:
         return run
 
     def _complete_cancellation(self, run: AgentRun, request: AgentRunRequest) -> AgentRun:
+        control = current_execution_control()
+        if control is not None:
+            control.check_ownership()
         unbind_resource_queries(self.session)
         self.session.refresh(run)
         if RunStatus(run.status) not in TERMINAL_RUN_STATUSES:
@@ -762,6 +770,9 @@ class RunExecutionService:
         return _NoopLock()
 
     def _commit_and_refresh(self, run: AgentRun) -> None:
+        control = current_execution_control()
+        if control is not None:
+            control.check_ownership()
         if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
             self._project_io().cleanup_runtime_workspace(run, reason="run_terminal")
             self._runtime_environment().cleanup_for_run(run)

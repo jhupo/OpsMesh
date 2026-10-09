@@ -25,6 +25,7 @@ from backend.app.resources.memory.policy import working_memory_policy
 from backend.app.resources.memory.working import AgentWorkingMemoryService
 from backend.app.resources.storage.storage import ObjectStorage
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
+from backend.app.runtime.queues.execution_control import current_execution_control
 from backend.app.shared.config import Settings
 from backend.app.shared.security.secrets import SecretEncryptionService
 
@@ -56,6 +57,35 @@ class BackendToolExecutor:
         tool_call_id: str | None = None,
         approval_granted: bool = False,
     ) -> AgentRuntimeToolResult:
+        try:
+            result = await self._execute_tool(
+                context=context,
+                tool_name=tool_name,
+                arguments=arguments,
+                tool_call_id=tool_call_id,
+                approval_granted=approval_granted,
+            )
+            control = current_execution_control()
+            if control is not None:
+                control.check_ownership()
+            self._session.commit()
+            return result
+        except BaseException:
+            self._session.rollback()
+            raise
+
+    async def _execute_tool(
+        self,
+        *,
+        context: AgentRuntimeContext,
+        tool_name: str,
+        arguments: dict[str, object],
+        tool_call_id: str | None = None,
+        approval_granted: bool = False,
+    ) -> AgentRuntimeToolResult:
+        control = current_execution_control()
+        if control is not None:
+            control.check_ownership()
         gateway = AgentToolGateway(self._session)
         try:
             prepared = gateway.prepare(
@@ -129,6 +159,9 @@ class BackendToolExecutor:
                 error=normalize_agent_error(exc).as_dict(),
                 metadata={"idempotency_key": invocation.idempotency_key},
             )
+        control = current_execution_control()
+        if control is not None:
+            control.check_ownership()
         pending.complete_execution(invocation, _tool_result_payload(result))
         return result
 
@@ -139,6 +172,9 @@ class BackendToolExecutor:
         tool_name: str,
         arguments: dict[str, object],
     ) -> dict[str, object]:
+        control = current_execution_control()
+        if control is not None:
+            control.check_ownership()
         gateway = AgentToolGateway(self._session)
         try:
             prepared = gateway.prepare(
@@ -278,17 +314,19 @@ class BackendToolExecutor:
             policy=policy,
         )
 
-    def _mcp_allowlist(
-        self, prepared: PreparedToolCall, *, workspace_id: UUID
-    ) -> McpToolAllowlist:
+    def _mcp_allowlist(self, prepared: PreparedToolCall, *, workspace_id: UUID) -> McpToolAllowlist:
         allowlist_id = prepared.definition.mcp_tool_allowlist_id
-        allow = self._session.scalar(
-            select(McpToolAllowlist).where(
-                McpToolAllowlist.workspace_id == workspace_id,
-                McpToolAllowlist.id == allowlist_id,
-                McpToolAllowlist.mcp_server_id == prepared.definition.mcp_server_id,
+        allow = (
+            self._session.scalar(
+                select(McpToolAllowlist).where(
+                    McpToolAllowlist.workspace_id == workspace_id,
+                    McpToolAllowlist.id == allowlist_id,
+                    McpToolAllowlist.mcp_server_id == prepared.definition.mcp_server_id,
+                )
             )
-        ) if allowlist_id is not None else None
+            if allowlist_id is not None
+            else None
+        )
         if allow is None:
             raise ToolGatewayDenied(
                 "mcp_tool_allowlist_missing",

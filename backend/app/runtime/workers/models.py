@@ -16,7 +16,7 @@ class WorkerRunnerConfig:
     worker_id: str
     worker_type: str = "cloud"
     queue_name: str = "agent_runs"
-    max_jobs: int = 1
+    concurrency: int = 4
     heartbeat_interval_seconds: float = 30.0
     idle_sleep_seconds: float = 1.0
     maintenance_interval_seconds: float = 60.0
@@ -25,6 +25,10 @@ class WorkerRunnerConfig:
     job_scan_limit: int = 50
     retry_base_delay_seconds: float = 5.0
     retry_max_delay_seconds: float = 300.0
+
+    def __post_init__(self) -> None:
+        if self.concurrency < 1:
+            raise ValueError("Worker concurrency must be positive")
 
 
 @dataclass(frozen=True)

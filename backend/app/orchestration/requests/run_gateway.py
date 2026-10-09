@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.cancellation import raise_if_cancelled
 from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
@@ -27,6 +28,10 @@ from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.events import TaskEventBus
 from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.runtime.queues.contracts import JobPayload
+from backend.app.runtime.queues.execution_control import (
+    ExecutionOwnershipLostError,
+    current_execution_control,
+)
 from backend.app.shared.config import Settings
 from backend.app.shared.telemetry.trace_context import current_trace_context, telemetry_span
 
@@ -64,6 +69,9 @@ class ModelRunGateway:
             self.mark_run_failed(run, exc)
             self.session.commit()
             return None
+        except ExecutionOwnershipLostError:
+            self.session.rollback()
+            raise
         except AgentRuntimeCancelledError:
             raise
         except AgentRuntimePolicyError as exc:
@@ -101,6 +109,9 @@ class ModelRunGateway:
             self.mark_run_failed(run, exc)
             self.session.commit()
             return None
+        except ExecutionOwnershipLostError:
+            self.session.rollback()
+            raise
         except AgentRuntimeCancelledError:
             raise
         except AgentRuntimePolicyError as exc:
@@ -208,7 +219,17 @@ class ModelRunGateway:
         ):
             try:
                 result = await self.agent_runner.run(request)
+                control = current_execution_control()
+                if control is not None:
+                    control.check_ownership()
+                await raise_if_cancelled(request.cancellation)
+            except ExecutionOwnershipLostError:
+                self.session.rollback()
+                raise
             except AgentRuntimeCancelledError as exc:
+                control = current_execution_control()
+                if control is not None:
+                    control.check_ownership()
                 costs.record_attempt(
                     run=run,
                     request=request,

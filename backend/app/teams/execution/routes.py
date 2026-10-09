@@ -152,7 +152,6 @@ async def enqueue_team_execution_loop(
         workspace_id=context.workspace.id,
         team_id=team_id,
         requested_by_user_id=context.user.user_id,
-        idempotency_suffix=request.idempotency_suffix,
         priority=request.priority,
         routing={
             "source": "workspace_api",

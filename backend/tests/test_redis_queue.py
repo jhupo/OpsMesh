@@ -436,3 +436,27 @@ def _queue(
         tracing_enabled=False,
         **kwargs,
     )
+
+
+def test_run_lock_renews_while_long_execution_is_active() -> None:
+    import time
+
+    queue = _queue(fakeredis.FakeRedis(decode_responses=True))
+    with queue.run_lock("long-workspace", "long-run", ttl_seconds=1) as acquired:
+        assert acquired
+        time.sleep(1.3)
+        with queue.run_lock("long-workspace", "long-run", ttl_seconds=1) as duplicate:
+            assert not duplicate
+    with queue.run_lock("long-workspace", "long-run", ttl_seconds=1) as next_owner:
+        assert next_owner
+
+
+def test_lost_run_lock_rejects_result_and_preserves_replacement_token() -> None:
+    from backend.app.runtime.queues.execution_control import ExecutionOwnershipLostError
+
+    queue = _queue(fakeredis.FakeRedis(decode_responses=True))
+    key = queue.keys.run_lock("workspace", "run")
+    with pytest.raises(ExecutionOwnershipLostError), queue.run_lock("workspace", "run") as acquired:
+        assert acquired
+        queue.redis.set(key, "replacement-owner", ex=600)
+    assert queue.redis.get(key) == "replacement-owner"

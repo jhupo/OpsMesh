@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from threading import Event
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from threading import Event, Lock, Thread
 from uuid import UUID, uuid4
+from weakref import finalize
 
 import fakeredis
 import pytest
@@ -22,6 +27,7 @@ from backend.app.agents.execution.contracts import (
 from backend.app.agents.messages.models import AgentMessage
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
+from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.sessions.models import PersistentAgentSession
 from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.bootstrap.worker import build_worker_runner
@@ -128,7 +134,14 @@ class ApprovingTeamAgentRunner:
                         "required_role": "developer",
                         "assigned_agent_profile_id": str(self._specialist_agent_profile_id),
                         "acceptance_criteria": ["The delivery survives a worker restart."],
-                    }
+                    },
+                    {
+                        "package_id": "accept-delivery",
+                        "title": "Accept specialist delivery",
+                        "assigned_agent_profile_id": str(request.agent_profile.id),
+                        "depends_on": ["implementation"],
+                        "review_policy": {"mode": "final_acceptance"},
+                    },
                 ],
             }
             return AgentRunResult(
@@ -617,7 +630,7 @@ def test_worker_heartbeat_preserves_existing_capacity_routing_fields() -> None:
             worker_id="worker-capacity",
             worker_type="self_hosted",
             queue_name="agent_runs",
-            max_jobs=2,
+            concurrency=2,
         ),
     )
 
@@ -1196,13 +1209,12 @@ def test_team_runtime_maintenance_consume_then_reschedules_on_next_cadence() -> 
         runtime_docker_client=docker,
     )
 
-    first_job = queue.dequeue()
+    first_job = queue.peek(limit=1)[0]
     assert first_summary.enqueued == 1
     assert first_job is not None
     assert first_job.priority == 9
     assert first_job.requested_by_user_id == user_id
     assert first_job.routing["trigger"] == "scheduled_team_runtime"
-    queue.enqueue(first_job, force=True)
     assert runner.run_once() is True
 
     with session_factory() as session:
@@ -3074,9 +3086,17 @@ class RecordingMcpAdapter:
 
 def _session_factory() -> sessionmaker[Session]:
     _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    directory = TemporaryDirectory(prefix="opsmesh-worker-test-")
+    engine = create_engine(f"sqlite+pysqlite:///{Path(directory.name) / 'worker.db'}", future=True)
     Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    finalize(factory, _dispose_test_database, engine, directory)
+    return factory
+
+
+def _dispose_test_database(engine: object, directory: TemporaryDirectory[str]) -> None:
+    engine.dispose()
+    directory.cleanup()
 
 
 def _seed_multi_agent_task(
@@ -3150,6 +3170,7 @@ def _seed_multi_agent_task(
             created_by_user_id=user.id,
             agent_team_id=team.id,
             title="Build restart-safe delivery",
+            input={"planning_mode": "agent"},
             execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
             description="Complete specialist work and obtain manager approval.",
             status=TaskStatus.QUEUED.value,
@@ -3208,15 +3229,22 @@ def _seed_run(
     task_status: TaskStatus = TaskStatus.QUEUED,
     started_at: datetime | None = None,
     slug: str = "workspace",
+    existing_workspace_id: UUID | None = None,
 ) -> tuple[object, object, object]:
     with session_factory() as session:
-        user = User(email=f"{slug}@example.com", display_name="Owner")
-        session.add(user)
-        session.flush()
-        workspace = Workspace(name=slug.title(), slug=slug, owner_user_id=user.id)
-        session.add(workspace)
-        session.flush()
-        member = WorkspaceMember(user_id=user.id, workspace_id=workspace.id, role="owner")
+        if existing_workspace_id is None:
+            user = User(email=f"{slug}@example.com", display_name="Owner")
+            session.add(user)
+            session.flush()
+            workspace = Workspace(name=slug.title(), slug=slug, owner_user_id=user.id)
+            session.add(workspace)
+            session.flush()
+            session.add(WorkspaceMember(user_id=user.id, workspace_id=workspace.id, role="owner"))
+        else:
+            workspace = session.get(Workspace, existing_workspace_id)
+            assert workspace is not None
+            user = session.get(User, workspace.owner_user_id)
+            assert user is not None
         task = Task(
             workspace_id=workspace.id,
             title="Do work",
@@ -3231,10 +3259,16 @@ def _seed_run(
             instructions="Finish tasks.",
             model="gpt-4.1",
         )
-        session.add_all([member, task, agent])
+        session.add_all([task, agent])
         session.flush()
         task.execution_identity = ExecutionIdentityService(session).capture(workspace.id, user.id)
-        credential = ModelProviderCredentialCommandService(
+        credential = session.scalar(
+            select(ModelProviderCredential).where(
+                ModelProviderCredential.workspace_id == workspace.id,
+                ModelProviderCredential.is_default.is_(True),
+            )
+        )
+        credential = credential or ModelProviderCredentialCommandService(
             session,
             SecretEncryptionService(
                 secret="change-me-credential-encryption-secret",
@@ -3288,6 +3322,22 @@ def _seed_team_loop_task(
         session.add(workspace)
         session.flush()
         session.add(WorkspaceMember(user_id=user.id, workspace_id=workspace.id, role="owner"))
+        ModelProviderCredentialCommandService(
+            session,
+            SecretEncryptionService(
+                secret="change-me-credential-encryption-secret",
+                key_id="local",
+            ),
+        ).create(
+            workspace_id=workspace.id,
+            created_by_user_id=user.id,
+            name="Fixture provider",
+            provider="openai",
+            api_key="sk-test-runtime-fixture",
+            default_model="gpt-4.1",
+            base_url=None,
+            is_default=True,
+        )
         manager = AgentProfile(
             workspace_id=workspace.id,
             name="PM",
@@ -3438,6 +3488,22 @@ def _seed_runtime_team(
         session.add(workspace)
         session.flush()
         session.add(WorkspaceMember(user_id=user.id, workspace_id=workspace.id, role="owner"))
+        ModelProviderCredentialCommandService(
+            session,
+            SecretEncryptionService(
+                secret="change-me-credential-encryption-secret",
+                key_id="local",
+            ),
+        ).create(
+            workspace_id=workspace.id,
+            created_by_user_id=user.id,
+            name="Fixture provider",
+            provider="openai",
+            api_key="sk-test-runtime-fixture",
+            default_model="gpt-4.1",
+            base_url=None,
+            is_default=True,
+        )
         manager = AgentProfile(
             workspace_id=workspace.id,
             name="PM",
@@ -3478,3 +3544,128 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
+
+
+@pytest.fixture(params=["sqlite", "postgres"])
+def pool_database(request: pytest.FixtureRequest):
+    if request.param == "sqlite":
+        yield _session_factory()
+        return
+    if not os.getenv("OPSMESH_TEST_POSTGRES_URL"):
+        pytest.skip("Set OPSMESH_TEST_POSTGRES_URL; run postgres variants in a separate process")
+    from backend.tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema
+
+    with _temporary_postgres_schema() as engine:
+        # public holds the vector extension; its platform tables must not satisfy checkfirst.
+        Base.metadata.create_all(engine, checkfirst=False)
+        yield sessionmaker(engine, autoflush=False, expire_on_commit=False)
+
+
+@pytest.mark.parametrize("mode", ["complete", "cancel", "lost"])
+@pytest.mark.parametrize("shared_workspace", [False, True])
+def test_worker_pool_bounds_claims_and_stops_active_sdk_runs(
+    mode: str,
+    shared_workspace: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    pool_database: sessionmaker[Session],
+) -> None:
+    """Exercise persisted AgentRuns through one real consumer pool, without a model request."""
+    cancel = mode == "cancel"
+    lost = mode == "lost"
+    factory = pool_database
+    queue = _queue()
+    run_ids = []
+    first_workspace_id = None
+    for index in range(3):
+        workspace_id, run_id, user_id = _seed_run(
+            factory,
+            slug=f"pool-{index}",
+            existing_workspace_id=first_workspace_id if shared_workspace else None,
+        )
+        first_workspace_id = workspace_id
+        run_ids.append(run_id)
+        queue.enqueue(
+            JobPayload(
+                workspace_id=workspace_id,
+                resource_id=run_id,
+                job_type=JobType.AGENT_RUN,
+                requested_by_user_id=user_id,
+                idempotency_key=f"pool-{index}",
+                priority=100,
+            )
+        )
+    entered = Event()
+    release = Event()
+    stop = Event()
+    lock = Lock()
+    started: list[UUID] = []
+    threads: dict[UUID, int] = {}
+
+    class WaitingSDK:
+        async def run(self, request: AgentRunRequest) -> AgentRunResult:
+            from threading import get_ident
+
+            from backend.app.agents.execution.errors import AgentRuntimeCancelledError
+
+            with lock:
+                started.append(request.context.run_id)
+                threads[request.context.run_id] = get_ident()
+                if len(started) == 2:
+                    entered.set()
+            while not release.is_set():
+                if request.cancellation and await request.cancellation.is_cancelled():
+                    raise AgentRuntimeCancelledError
+                await asyncio.sleep(0.01)
+            assert threads[request.context.run_id] == get_ident()
+            return AgentRunResult(final_output="pool-completed")
+
+    runner = build_worker_runner(
+        queue=queue,
+        session_factory=factory,
+        config=WorkerRunnerConfig(
+            worker_id="pool",
+            concurrency=2,
+            heartbeat_interval_seconds=0.1,
+            maintenance_interval_seconds=0.1,
+            idle_sleep_seconds=0.01,
+        ),
+        agent_runner=WaitingSDK(),
+    )
+    maintained = Event()
+    runner.run_maintenance = lambda: (
+        maintained.set() or WorkerMaintenanceSummary(recovered_runs=0, expired_leases=0)
+    )
+    result = []
+    consumer = Thread(
+        target=lambda: result.append(runner.run(max_jobs=2 if lost else 3, stop_event=stop))
+    )
+    consumer.start()
+    try:
+        assert entered.wait(15), "SDK executions did not overlap"
+        assert len(started) == 2
+        assert len(set(threads.values())) == 2
+        assert queue.count_queued() == 1
+        assert queue.count_processing() == 2
+        assert maintained.is_set()
+        with factory() as session:
+            assert sum(session.get(AgentRun, run_id).status == "running" for run_id in run_ids) == 2
+        if lost:
+            monkeypatch.setattr(RedisQueue, "heartbeat", lambda *args, **kwargs: False)
+        elif cancel:
+            stop.set()
+        else:
+            release.set()
+        consumer.join(15)
+        assert not consumer.is_alive()
+        assert result[0].failed == (2 if lost else 0)
+        assert result[0].processed == (0 if lost else 2 if cancel else 3)
+        assert queue.count_queued() == (1 if cancel or lost else 0)
+        with factory() as session:
+            statuses = [session.get(AgentRun, run_id).status for run_id in run_ids]
+            assert statuses.count(
+                "running" if lost else "cancelled" if cancel else "completed"
+            ) == (2 if cancel or lost else 3)
+    finally:
+        release.set()
+        stop.set()
+        consumer.join(15)

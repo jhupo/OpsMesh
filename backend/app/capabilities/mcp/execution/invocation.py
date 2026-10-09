@@ -21,6 +21,10 @@ from backend.app.capabilities.mcp.models import McpCredentialReference, McpServe
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.capabilities.tools.contracts import ToolPermissionError
 from backend.app.orchestration.runs.models import AgentRun
+from backend.app.runtime.queues.execution_control import (
+    ExecutionOwnershipLostError,
+    current_execution_control,
+)
 from backend.app.shared.security.redaction import redact_sensitive_text
 from backend.app.shared.utils import canonical_payload, payload_hash
 
@@ -44,14 +48,22 @@ class McpToolInvoker:
         started = monotonic()
         try:
             self._enforce_payload_size(request.arguments, policy.max_input_bytes)
-            response = await self._adapter_for(server).call(
+            adapter = self._adapter_for(server)
+            self.session.commit()  # persist call intent and release locks before remote I/O
+            response = await adapter.call(
                 server=server,
                 tool_name=request.tool_name,
                 arguments=request.arguments,
                 credential_refs=list(credentials),
                 timeout_seconds=policy.timeout_seconds,
             )
+            control = current_execution_control()
+            if control is not None:
+                control.check_ownership()
             self._enforce_payload_size(response, policy.max_output_bytes)
+        except ExecutionOwnershipLostError:
+            self.session.rollback()
+            raise
         except McpExecutionPending as exc:
             return self._record_pending(
                 request=request,

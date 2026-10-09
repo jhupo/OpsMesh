@@ -84,7 +84,7 @@ def worker_heartbeat_details(
         "queue_rehydrated_runs": queue_rehydrated_runs,
         "queue_recovery_failures": queue_recovery_failures,
         "capacity": {
-            "max_jobs": config.max_jobs,
+            "max_jobs": config.concurrency,
         },
     }
     if last_error is not None:

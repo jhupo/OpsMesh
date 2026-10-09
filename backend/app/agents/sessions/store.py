@@ -14,6 +14,7 @@ from backend.app.agents.sessions.models import (
     PersistentAgentSessionItem,
     PersistentAgentSessionRef,
 )
+from backend.app.runtime.queues.execution_control import current_execution_control
 
 SESSION_WRITE_MAX_RETRIES = 3
 
@@ -42,18 +43,30 @@ class SQLAlchemyAgentSession:
         self.session_id = ref.session_key
 
     async def get_items(self, limit: int | None = None) -> list[AgentRuntimeSessionItem]:
-        return self._get_items_sync(limit)
+        items = self._get_items_sync(limit)
+        self._commit()
+        return items
 
     async def add_items(self, items: list[AgentRuntimeSessionItem]) -> None:
         if not items:
             return
         self._add_items_sync([_dict_item(item) for item in items])
+        self._commit()
 
     async def pop_item(self) -> AgentRuntimeSessionItem | None:
-        return self._pop_item_sync()
+        item = self._pop_item_sync()
+        self._commit()
+        return item
 
     async def clear_session(self) -> None:
         self._clear_session_sync()
+        self._commit()
+
+    def _commit(self) -> None:
+        control = current_execution_control()
+        if control is not None:
+            control.check_ownership()
+        self._db_session.commit()
 
     def _get_or_create_session(self) -> PersistentAgentSession:
         existing = self._db_session.scalar(
