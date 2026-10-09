@@ -35,6 +35,49 @@ def test_enqueue_is_idempotent_and_dequeue_round_trips_payload() -> None:
     assert queue.dequeue() is None
 
 
+def test_runtime_transition_deduplicates_until_completion_and_survives_old_key() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = _queue(redis)
+    job = _job().model_copy(
+        update={
+            "job_type": JobType.RUNTIME_CONTROL,
+            "routing": {"action": "start"},
+        }
+    )
+    redis.set(queue.keys.idempotency_key(str(job.workspace_id), job.idempotency_key), "old")
+    assert queue.enqueue_runtime_transition(job)
+    assert not queue.enqueue_runtime_transition(job.model_copy(update={"job_id": uuid4()}))
+    lease = queue.dequeue_with_lease()
+    assert lease is not None
+    assert not queue.enqueue_runtime_transition(job)
+    assert queue.retry_or_dead_letter(lease.job, lease_token=lease.lease_token, delay_seconds=60)
+    assert not queue.enqueue_runtime_transition(job)
+    queue.reclaim_due_retries(now=9_999_999_999)
+    retry = queue.dequeue_with_lease()
+    assert retry is not None
+    assert queue.ack(retry.job, lease_token=retry.lease_token)
+    assert queue.enqueue_runtime_transition(job.model_copy(update={"job_id": uuid4()}))
+
+
+def test_runtime_transition_deduplication_is_workspace_scoped() -> None:
+    queue = _queue(fakeredis.FakeRedis(decode_responses=True))
+    job = _job().model_copy(
+        update={
+            "job_type": JobType.RUNTIME_CONTROL,
+            "routing": {"action": "start"},
+        }
+    )
+    assert queue.enqueue_runtime_transition(job)
+    assert queue.enqueue_runtime_transition(
+        job.model_copy(
+            update={
+                "workspace_id": uuid4(),
+                "job_id": uuid4(),
+            }
+        )
+    )
+
+
 def test_enqueue_propagates_current_trace_context_to_job_payload() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(redis=redis, keys=RedisKeyBuilder("opsmesh"), queue_name="agent_runs")

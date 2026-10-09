@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.runs.models import AgentRun
@@ -17,8 +17,9 @@ from backend.app.workspaces.projects.models import AgentRunProjectIOState
 
 
 class RuntimeCleanupService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, docker_client: DockerRuntimeClient | None = None) -> None:
         self._session = session
+        self._docker_client = docker_client
 
     def cleanup_stale_runtimes(
         self,
@@ -189,14 +190,40 @@ class RuntimeCleanupService:
     ) -> list[WorkspaceRuntime]:
         cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
         statement = select(WorkspaceRuntime).where(
-            WorkspaceRuntime.connection_status == "online",
+            or_(
+                WorkspaceRuntime.connection_status == "online",
+                (WorkspaceRuntime.runtime_provider == "cloud_docker")
+                & (WorkspaceRuntime.status == "running")
+                & (WorkspaceRuntime.connection_status == "offline"),
+            ),
             WorkspaceRuntime.last_heartbeat_at.is_not(None),
             WorkspaceRuntime.last_heartbeat_at < cutoff,
             WorkspaceRuntime.execution_run_id.is_(None),
         )
         if workspace_id is not None:
             statement = statement.where(WorkspaceRuntime.workspace_id == workspace_id)
-        return list(self._session.scalars(statement).all())
+        stale: list[WorkspaceRuntime] = []
+        for runtime in self._session.scalars(statement).all():
+            if runtime.runtime_provider == "cloud_docker" and runtime.docker_container_id:
+                if self._docker_client is None:
+                    continue
+                # Managed containers do not emit worker heartbeat leases. Inspect them instead.
+                if self._docker_client.container_running(runtime.docker_container_id):
+                    if runtime.connection_status == "offline":
+                        self._append_runtime_space_event(
+                            runtime,
+                            "runtime.connection_restored",
+                            "Managed container is running",
+                            {"source": "container_probe"},
+                            created_at=datetime.now(UTC),
+                        )
+                    runtime.connection_status = "online"
+                    runtime.last_heartbeat_at = datetime.now(UTC)
+                    continue
+                if runtime.connection_status == "offline":
+                    continue
+            stale.append(runtime)
+        return stale
 
     def _mark_runtimes_offline(
         self,
@@ -222,7 +249,8 @@ class RuntimeCleanupService:
         source: str = "operations.cleanup",
     ) -> int:
         statement = select(WorkspaceRuntime).where(
-            WorkspaceRuntime.status.in_(["stopped", "failed"])
+            WorkspaceRuntime.status.in_(["stopped", "failed"]),
+            WorkspaceRuntime.docker_container_id.is_(None),
         )
         if workspace_id is not None:
             statement = statement.where(WorkspaceRuntime.workspace_id == workspace_id)

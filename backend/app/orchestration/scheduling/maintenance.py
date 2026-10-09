@@ -110,6 +110,7 @@ class WorkerMaintenanceService:
         )
         stale_runtimes, deleted_runtime_records = RuntimeCleanupService(
             session,
+            self._runtime_docker_client,
         ).cleanup_stale_runtimes_across_workspaces(
             stale_after_seconds=self._config.run_lease_seconds,
         )

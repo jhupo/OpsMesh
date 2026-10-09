@@ -1776,7 +1776,7 @@ def test_worker_runner_continues_after_job_failure() -> None:
         assert run is not None
         assert run.status == RunStatus.COMPLETED.value
         assert heartbeat is not None
-        assert heartbeat.status == "degraded"
+        assert heartbeat.status == "online"
         assert heartbeat.details["failed"] == 1
         assert "Agent run not found" in str(heartbeat.details["last_error"])
         assert {lease.status for lease in leases} == {"failed", "completed"}

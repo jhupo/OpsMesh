@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import asdict
 from typing import Any
 
@@ -11,6 +12,7 @@ from agents import (
     OutputGuardrail,
 )
 from agents.exceptions import ModelBehaviorError
+from agents.strict_schema import ensure_strict_json_schema
 
 from backend.app.agents.execution.contracts import (
     AgentRuntimeGuardrail,
@@ -38,7 +40,8 @@ class OpenAIRuntimeOutputSchema(AgentOutputSchemaBase):
         return self.definition.name
 
     def json_schema(self) -> dict[str, Any]:
-        return dict(self.definition.schema)
+        schema = deepcopy(self.definition.schema)
+        return ensure_strict_json_schema(schema) if self.definition.strict else schema
 
     def is_strict_json_schema(self) -> bool:
         return self.definition.strict

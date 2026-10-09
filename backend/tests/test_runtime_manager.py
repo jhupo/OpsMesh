@@ -186,9 +186,7 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     ]
     assert events[0].event_metadata["isolation"]["workspace_mount"]["target"] == "/workspace"
     assert events[0].event_metadata["hardening"]["cap_drop"] == ["ALL"]
-    assert events[0].event_metadata["hardening"]["security_opt"] == [
-        "no-new-privileges:true"
-    ]
+    assert events[0].event_metadata["hardening"]["security_opt"] == ["no-new-privileges:true"]
     assert events[0].event_metadata["hardening"]["read_only_rootfs"] is True
     assert events[0].event_metadata["hardening"]["user"] == {
         "value": "65532:65532",
@@ -1133,9 +1131,42 @@ def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
     from backend.app.runtime.backends.docker import DockerSdkRuntimeClient
 
     calls: list[tuple[list[str], str | None]] = []
-    archives: list[bytes] = []
+    transferred: list[bytes] = []
+    input_commands: list[list[str]] = []
+
+    class Connection:
+        def settimeout(self, timeout: int) -> None:
+            assert timeout == 10
+
+        def sendall(self, content: bytes) -> None:
+            transferred.append(content)
+
+        def shutdown(self, how: int) -> None:
+            pass
+
+        def recv(self, size: int) -> bytes:
+            return b""
+
+        def close(self) -> None:
+            pass
+
+    class API:
+        def exec_create(self, container_id: str, command: list[str], **kwargs: object) -> dict:
+            assert kwargs == {"stdin": True, "stdout": True, "stderr": True}
+            input_commands.append(command)
+            return {"Id": "write-input"}
+
+        def exec_start(self, execution_id: str, *, socket: bool) -> Connection:
+            assert socket is True
+            return Connection()
+
+        def exec_inspect(self, execution_id: str) -> dict:
+            return {"ExitCode": 0}
 
     class Container:
+        id = "container-123"
+        client = SimpleNamespace(api=API())
+
         def exec_run(
             self,
             command: list[str],
@@ -1152,9 +1183,7 @@ def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
             return SimpleNamespace(exit_code=0, output=(b"ok", b""))
 
         def put_archive(self, path: str, archive: bytes) -> bool:
-            assert path == "/tmp"
-            archives.append(archive)
-            return True
+            raise AssertionError("Read-only rootfs rejects archive transfers")
 
     container = Container()
 
@@ -1180,21 +1209,16 @@ def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
     )
 
     assert result.exit_code == 0
-    executed_command = calls[2][0]
+    executed_command = calls[0][0]
     assert executed_command[:3] == ["python", "-m", "worker"]
     assert executed_command[3] == "--request-file"
     assert executed_command[4].startswith("/tmp/opsmesh-command-input-")
     assert "runtime-secret" not in str(executed_command)
     assert calls[-2][0] == ["rm", "-f", executed_command[4]]
     assert calls[-1][0] == ["rmdir", executed_command[4].removesuffix("/request.json")]
-    with tarfile.open(fileobj=io.BytesIO(archives[0]), mode="r:") as archive:
-        member = next(item for item in archive.getmembers() if item.isfile())
-        stream = archive.extractfile(member)
-        assert stream is not None
-        assert stream.read() == b"runtime-secret"
-        assert member.mode == 0o400
-        assert member.uid == 1000
-        assert member.gid == 1000
+    assert transferred == [b"runtime-secret"]
+    assert "runtime-secret" not in str(input_commands)
+    assert "os.O_EXCL,0o400" in input_commands[0][2]
 
 
 def test_docker_sdk_archive_transfer_uses_runtime_identity() -> None:
@@ -1251,6 +1275,59 @@ def test_docker_sdk_archive_transfer_uses_runtime_identity() -> None:
         assert member.uid == 1001
         assert member.gid == 1002
         assert member.mode == 0o644
+
+
+def test_managed_runtime_cleanup_probes_live_container_instead_of_heartbeat() -> None:
+    from datetime import timedelta
+
+    from backend.app.runtime.instances.cleanup_jobs import RuntimeCleanupService
+
+    session = _session()
+    workspace = Workspace(owner_user_id=uuid4(), name="Probe", slug="probe", settings={})
+    session.add(workspace)
+    session.flush()
+    old = datetime.now(UTC) - timedelta(hours=1)
+    managed = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="managed",
+        status="running",
+        connection_status="online",
+        runtime_provider="cloud_docker",
+        docker_container_id="live-container",
+        last_heartbeat_at=old,
+    )
+    hosted = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="hosted",
+        status="running",
+        connection_status="online",
+        runtime_provider="self_hosted",
+        last_heartbeat_at=old,
+    )
+    stopped = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="stopped",
+        status="stopped",
+        connection_status="offline",
+        runtime_provider="cloud_docker",
+        docker_container_id="stopped-container",
+        last_heartbeat_at=old,
+    )
+    session.add_all([managed, hosted, stopped])
+    session.commit()
+
+    class Docker(FakeDockerClient):
+        def container_running(self, container_id: str) -> bool:
+            assert container_id == "live-container"
+            return True
+
+    stale, _ = RuntimeCleanupService(session, Docker()).cleanup_stale_runtimes(workspace.id)
+    assert stale == 1
+    assert managed.connection_status == "online"
+    assert managed.last_heartbeat_at is not None
+    assert managed.last_heartbeat_at.replace(tzinfo=UTC) > old
+    assert hosted.connection_status == "offline"
+    assert stopped.status == "stopped"
 
 
 def test_docker_sdk_archive_rejects_non_normalized_paths() -> None:
@@ -1367,8 +1444,7 @@ def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
     assert policy_resolution["team"]["id"] == str(team.id)
     assert policy_resolution["effective"]["network_disabled"] is True
     reduced_limits = {
-        item["limit"]: item["effective"]
-        for item in policy_resolution["limit_reductions"]
+        item["limit"]: item["effective"] for item in policy_resolution["limit_reductions"]
     }
     assert reduced_limits == {
         "cpu_count": 1,

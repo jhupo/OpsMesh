@@ -88,7 +88,9 @@ def test_openai_sdk_applies_structured_output_and_guardrails(
 
     assert isinstance(agent.output_type, OpenAIRuntimeOutputSchema)
     assert agent.output_type.name() == "answer"
-    assert agent.output_type.json_schema() == request.output_schema.schema
+    schema = agent.output_type.json_schema()
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == set(schema["properties"])
     assert json.loads(result.final_output) == {"answer": "done"}
     assert result.structured_output is not None
     assert result.structured_output.schema_version == "v1"

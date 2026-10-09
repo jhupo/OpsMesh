@@ -13,7 +13,6 @@ from backend.app.runtime.queues.contracts import JobPayload
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.runtime.workers.capacity import WorkerCapacitySnapshotService, worker_can_run_job
 from backend.app.runtime.workers.contracts import WorkerFailureHandler, WorkerJobTypeHandler
-from backend.app.runtime.workers.heartbeat import worker_status_for_failures
 from backend.app.runtime.workers.maintenance_contracts import (
     WorkerMaintenanceSummary,
 )
@@ -60,6 +59,7 @@ class WorkerRunner:
         self._settings = settings
         self._monotonic = monotonic
         self._sleep = sleep
+        self._job_failure_handled = False
         self._lease_reporter = WorkerLeaseReporter(
             config=config,
             session_scope=self._session_scope,
@@ -76,6 +76,7 @@ class WorkerRunner:
         )
 
     def run_once(self) -> bool:
+        self._job_failure_handled = False
         with self._session_scope() as session:
             # Hold the shared installation lock until the lease exists. The updater's exclusive
             # maintenance transition must not race a dequeued-but-not-yet-leased job.
@@ -139,6 +140,7 @@ class WorkerRunner:
                             delay_seconds=self._retry_delay(job),
                             lease_token=claim_token,
                         )
+                        self._job_failure_handled = True
                         raise
                     if not self._lease_reporter.finish_lease(
                         job,
@@ -254,12 +256,13 @@ class WorkerRunner:
     ) -> WorkerRunSummary:
         state = WorkerRunState()
         next_heartbeat_at = 0.0
+        health_status = "online"
 
         while not self._is_stopped(stop_event):
             now = self._monotonic()
             if now >= next_heartbeat_at:
                 self.record_heartbeat(
-                    worker_status_for_failures(state.failed),
+                    health_status,
                     state.heartbeat_details(self._config),
                 )
                 next_heartbeat_at = now + self._config.heartbeat_interval_seconds
@@ -271,12 +274,14 @@ class WorkerRunner:
 
             try:
                 handled = self.run_once()
+                health_status = "online"
             except Exception as exc:
                 state.failed += 1
                 state.last_error = str(exc)
                 logger.exception("Worker job failed")
+                health_status = "online" if self._job_failure_handled else "degraded"
                 self.record_heartbeat(
-                    "degraded",
+                    health_status,
                     state.heartbeat_details(self._config),
                 )
                 if max_jobs is not None and state.attempts >= max_jobs:
@@ -292,7 +297,7 @@ class WorkerRunner:
             self._sleep(self._config.idle_sleep_seconds)
 
         stopped = self._is_stopped(stop_event)
-        status = "stopping" if stopped else worker_status_for_failures(state.failed)
+        status = "stopping" if stopped else health_status
         self.record_heartbeat(
             status,
             state.heartbeat_details(self._config),

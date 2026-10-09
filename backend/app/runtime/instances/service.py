@@ -140,16 +140,28 @@ class RuntimeControlService:
         return RuntimeControlQueryService(self._session).get_runtime(workspace_id, runtime_id)
 
     def start_runtime(self, workspace_id: UUID, runtime_id: UUID) -> WorkspaceRuntime | None:
-        runtime = self.get_runtime(workspace_id, runtime_id)
+        runtime = self._lock_runtime(workspace_id, runtime_id)
         if runtime is None:
             return None
         return self._manager_factory.require().start_runtime(runtime)
 
     def stop_runtime(self, workspace_id: UUID, runtime_id: UUID) -> WorkspaceRuntime | None:
-        runtime = self.get_runtime(workspace_id, runtime_id)
+        runtime = self._lock_runtime(workspace_id, runtime_id)
         if runtime is None:
             return None
         return self._manager_factory.require().stop_runtime(runtime)
+
+    def _lock_runtime(self, workspace_id: UUID, runtime_id: UUID) -> WorkspaceRuntime | None:
+        return self._session.scalar(
+            select(WorkspaceRuntime)
+            .where(
+                WorkspaceRuntime.workspace_id == workspace_id,
+                WorkspaceRuntime.id == runtime_id,
+                WorkspaceRuntime.status != "deleted",
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
 
     def delete_runtime(self, workspace_id: UUID, runtime_id: UUID) -> bool:
         runtime = self.get_runtime(workspace_id, runtime_id)
