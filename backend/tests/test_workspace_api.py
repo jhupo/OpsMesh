@@ -12304,11 +12304,6 @@ def test_task_control_and_delivery_routes_close_manual_intervention_loop() -> No
     session.add(step)
     session.commit()
 
-    instruction = client.post(
-        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control",
-        headers=_headers(owner.id),
-        json={"action": "add_instruction", "instruction": "Keep the final delivery concise."},
-    )
     diagnostics = client.get(
         f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control-diagnostics",
         headers=_headers(owner.id),
@@ -12333,12 +12328,8 @@ def test_task_control_and_delivery_routes_close_manual_intervention_loop() -> No
         },
     )
 
-    assert instruction.status_code == 200
-    assert instruction.json()["action"] == "add_instruction"
-    assert instruction.json()["status"] == "accepted"
-    assert instruction.json()["details"]["delivery_mode"] == "next_run"
     assert diagnostics.status_code == 200
-    assert diagnostics.json()["control"]["instruction_count"] == 1
+    assert diagnostics.json()["control"] == {}
     assert review.status_code == 200
     assert review.json()["status"] == "incomplete"
     assert deferred.status_code == 200

@@ -118,7 +118,6 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
         ),
         limits={"builtin_tools": "disabled", "mcp_server": "opsmesh"},
         unsupported_reasons={
-            "live_steer": "This adapter accepts additional instructions at the next Run boundary",
             AgentRuntimeCapability.HANDOFFS.value: (
                 "Claude SDK agents are exposed as tools; OpenAI-style handoff "
                 "descriptors are not equivalent."

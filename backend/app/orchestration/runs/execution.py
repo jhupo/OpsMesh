@@ -46,7 +46,6 @@ from backend.app.orchestration.requests.run_gateway import ModelRunGateway
 from backend.app.orchestration.runs.authorization.policy import RunRuntimeAuthorizationError
 from backend.app.orchestration.runs.authorization.validation import RunAuthorizationService
 from backend.app.orchestration.runs.events import RunEventRecorder
-from backend.app.orchestration.runs.instructions import RunInstructionService
 from backend.app.orchestration.runs.lifecycle import RunLifecycleService
 from backend.app.orchestration.runs.live_events import LiveToolExecutor, RunLivePublisher
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
@@ -225,10 +224,6 @@ class RunExecutionService:
 
         if request is not None:
             self._events().append_context_built_event(run, request)
-            raw_ids = request.context.metadata.get("task_instruction_ids", [])
-            RunInstructionService(self.session).delivered(
-                run, [str(item) for item in raw_ids] if isinstance(raw_ids, list) else []
-            )
         return request
 
     def _complete_direct_result(

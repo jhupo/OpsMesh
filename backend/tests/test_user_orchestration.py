@@ -1098,7 +1098,6 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     from opsmesh_plugin_sdk.messaging.webhooks import parse_automation_delivery
 
     from backend.app.orchestration.automations.service import AutomationService
-    from backend.app.orchestration.tasks.models import TaskMessage
     from backend.app.orchestration.webhooks.delivery import WebhookDeliveryService
     from backend.app.orchestration.webhooks.http_client import WebhookHttpResponse
     from backend.app.orchestration.webhooks.models import WebhookDeliveryAttempt
@@ -1175,7 +1174,6 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
         "allowed_message_actions": [
             "start",
             "follow_up",
-            "add_instruction",
             "pause",
             "resume",
             "cancel",
@@ -1256,16 +1254,20 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
         },
     )
     assert denied.status_code == 400
-    control("add_instruction", "facts")
-    assert (
-        session.scalar(
-            select(TaskMessage).where(
-                TaskMessage.task_id == task_id,
-                TaskMessage.message_type == "task.control.add_instruction",
-            )
+    followup = sdk.submit(
+        IncomingMessage(
+            event_id="next",
+            conversation_id="thread-1",
+            sender_id="member-1",
+            occurred_at=datetime.now(UTC),
+            text="Please reconsider using these facts",
+            action="follow_up",
+            reply_to_event_id=accepted.id,
         )
-        is not None
     )
+    service.maintain()
+    assert sdk.state(followup.id).event.status == "pending"
+    assert sdk.state(followup.id).event.task_id is None
     control("pause", "takeover")
     session.expire_all()
     assert session.get(Approval, approval_id).status == "cancelled"
@@ -1282,25 +1284,63 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     )
     control("cancel", "cancel")
     assert sdk.state(accepted.id).task_status == "cancelled"
-    assert session.query(Task).count() == 1
+    assert session.query(Task).count() == 2
 
-    followup = sdk.submit(
-        IncomingMessage(
-            event_id="next",
-            conversation_id="thread-1",
-            sender_id="member-1",
-            occurred_at=datetime.now(UTC),
-            text="Please reconsider using these facts",
-            action="follow_up",
-            reply_to_event_id=accepted.id,
-        )
-    )
     service.maintain()
     next_state = sdk.state(followup.id)
     assert next_state.event.task_id != task_id
     next_task = session.get(Task, next_state.event.task_id)
-    assert next_task.input["previous_context"]["task_id"] == str(task_id)
+    assert "previous_context" not in next_task.input
+    from backend.app.orchestration.requests.sessions import RunRequestSessionService
+
+    profile = session.get(AgentProfile, UUID(agent.json()["id"]))
+    next_run = session.scalar(select(AgentRun).where(AgentRun.task_id == next_task.id))
+    refs = RunRequestSessionService(session)
+    first_ref = refs.persistent_session_ref_for_run(run, session.get(Task, task_id), profile)
+    next_ref = refs.persistent_session_ref_for_run(next_run, next_task, profile)
+    assert first_ref == next_ref
+    assert first_ref.scope_type == "automation_agent"
     assert session.query(Task).count() == 2
+
+    # Both sender and external conversation isolate SDK history, even when the
+    # external identities resolve to the same workspace user and Agent.
+    from uuid import uuid4
+
+    from backend.app.orchestration.tasks.contracts import TaskControlActionRequest
+    from backend.app.orchestration.tasks.control.service import TaskControlService
+
+    isolated_refs = []
+    for sender in ("member-1", "member-2"):
+        independent = sdk.submit(
+            IncomingMessage(
+                event_id=f"independent-{sender}",
+                conversation_id="thread-2",
+                sender_id=sender,
+                occurred_at=datetime.now(UTC),
+                text="Independent work",
+            )
+        )
+        service.maintain()
+        independent_task = session.get(Task, sdk.state(independent.id).event.task_id)
+        assert independent_task is not None
+        # This approval workflow may not launch a Run before the human gate;
+        # Session scope is derived from its admitted task and durable event.
+        independent_run = AgentRun(
+            id=uuid4(),
+            workspace_id=workspace.id,
+            task_id=independent_task.id,
+            agent_profile_id=profile.id,
+        )
+        ref = refs.persistent_session_ref_for_run(independent_run, independent_task, profile)
+        assert ref.session_key != first_ref.session_key
+        isolated_refs.append(ref)
+        TaskControlService(session).apply_action(
+            workspace_id=workspace.id,
+            task_id=independent_task.id,
+            actor_user_id=owner.id,
+            request=TaskControlActionRequest(action="cancel"),
+        )
+    assert isolated_refs[0].session_key != isolated_refs[1].session_key
 
     transport = _RecordingHttpClient(WebhookHttpResponse(status_code=200, body="ok", headers={}))
     delivery_service = WebhookDeliveryService(

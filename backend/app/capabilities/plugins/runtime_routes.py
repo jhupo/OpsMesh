@@ -23,7 +23,6 @@ from opsmesh_plugin_sdk.messaging.contracts import (
     ApprovalReceipt,
     AttachmentUpload,
     EventState,
-    IncomingMessage,
     MessageAttachment,
 )
 from opsmesh_plugin_sdk.services.identity import PermissionQuery, PermissionResult
@@ -44,6 +43,7 @@ from backend.app.capabilities.plugins.services import PluginPrincipal, PluginSer
 from backend.app.capabilities.plugins.user_services import PluginUserServices
 from backend.app.governance.security_events.service import SecurityAuditService
 from backend.app.identity.authorization.resources import ResourceAccessDenied
+from backend.app.orchestration.automations.contracts import AutomationMessage
 from backend.app.orchestration.automations.plugin_attachments import PluginAttachmentService
 from backend.app.orchestration.automations.plugin_messages import PluginMessageService
 from backend.app.orchestration.automations.service import AutomationService
@@ -234,7 +234,7 @@ def log_event(
 @router.post("/automations/{automation_id}/events", response_model=AcceptedEvent, status_code=202)
 def receive(
     automation_id: UUID,
-    request: IncomingMessage,
+    request: AutomationMessage,
     principal: PluginPrincipal = Depends(plugin_principal),
     session: Session = Depends(get_db_session),
 ) -> object:

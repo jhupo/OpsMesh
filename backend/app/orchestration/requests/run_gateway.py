@@ -27,7 +27,6 @@ from backend.app.orchestration.requests.provider_audit import ModelProviderAudit
 from backend.app.orchestration.requests.provider_routing import ModelProviderRoutingService
 from backend.app.orchestration.requests.request_approval import ModelRequestApprovalService
 from backend.app.orchestration.runs.events import RunEventRecorder
-from backend.app.orchestration.runs.instructions import RunInstructionService
 from backend.app.orchestration.runs.live_events import LiveToolExecutor, RunLivePublisher
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.events import TaskEventBus
@@ -331,7 +330,6 @@ class ModelRunGateway:
         fallback_selected: bool,
         budget_decision: CostBudgetDecision,
     ) -> None:
-        RunInstructionService(self.session).consumed(run)
         costs = CostAccountingService(self.session)
         routing = self.routing()
         audit = self.audit()

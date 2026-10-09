@@ -2999,7 +2999,7 @@ def test_disabled_skill_install_is_not_in_future_run_snapshot() -> None:
     assert second_snapshot["installed_skills"] == []
 
 
-def test_agent_request_restores_provider_native_continuation_from_persistent_session() -> None:
+def test_agent_request_uses_sdk_session_without_provider_native_history() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     agent = AgentProfile(
@@ -3017,6 +3017,7 @@ def test_agent_request_restores_provider_native_continuation_from_persistent_ses
     )
     session.add_all([agent, task])
     session.flush()
+    task.owner_agent_profile_id = agent.id
     session.add(
         PersistentAgentSession(
             workspace_id=workspace.id,
@@ -3083,10 +3084,11 @@ def test_agent_request_restores_provider_native_continuation_from_persistent_ses
 
     assert len(runner.requests) == 1
     request = runner.requests[0]
-    assert request.previous_response_id == "resp_previous"
-    assert request.conversation_id == "conv_existing"
-    assert request.context.metadata["previous_response_id"] == "resp_previous"
-    assert request.context.metadata["conversation_id"] == "conv_existing"
+    assert request.session is not None
+    assert request.previous_response_id is None
+    assert request.conversation_id is None
+    assert "previous_response_id" not in request.context.metadata
+    assert "conversation_id" not in request.context.metadata
 
 
 def test_model_request_review_allows_low_risk_request_after_semantic_approval() -> None:
