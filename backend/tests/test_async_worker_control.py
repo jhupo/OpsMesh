@@ -2,17 +2,13 @@ import asyncio
 from threading import Event
 from uuid import uuid4
 
-import pytest
 from sqlalchemy import select
 
 from backend.app.agents.execution.contracts import AgentRunRequest, AgentRunResult
 from backend.app.bootstrap.worker import build_worker_runner
-from backend.app.orchestration.runs.instructions import RunInstructionService
 from backend.app.orchestration.runs.live_async import buffered_live_events
 from backend.app.orchestration.runs.live_events import RunLivePublisher
-from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.orchestration.tasks.contracts import TaskControlActionRequest
-from backend.app.orchestration.tasks.control.service import TaskControlService
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.events import TaskEventBus
 from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.workers.models import WorkerRunnerConfig
@@ -20,50 +16,19 @@ from backend.app.shared.concurrency import BlockingIO
 from backend.tests.test_worker_runner import _queue, _seed_run, _session_factory
 
 
-def test_async_worker_history_and_late_instructions_use_independent_transactions() -> None:
-    """The active Run retains its input while a durable instruction is accepted."""
+def test_async_worker_history_uses_independent_transactions() -> None:
     factory, queue = _session_factory(), _queue()
-    workspace_id, run_id, user_id = _seed_run(factory, slug="async-instructions")
-    with factory() as session:
-        run = session.get(AgentRun, run_id)
-        task_id = run.task_id
-        accepted = TaskControlService(session).apply_action(
-            workspace_id=workspace_id,
-            task_id=task_id,
-            actor_user_id=user_id,
-            request=TaskControlActionRequest(action="add_instruction", instruction="Early fact"),
-        )
-        assert accepted["status"] == "accepted"
-        early_id = str(accepted["message_id"])
-
-    late_ids: list[str] = []
-
-    def add_late_instruction() -> None:
-        with factory() as session:
-            result = TaskControlService(session).apply_action(
-                workspace_id=workspace_id,
-                task_id=task_id,
-                actor_user_id=user_id,
-                request=TaskControlActionRequest(action="add_instruction", instruction="Late fact"),
-            )
-            late_ids.append(str(result["message_id"]))
-            fragment, ids = RunInstructionService(session).context(session.get(AgentRun, run_id))
-            assert "Early fact" in fragment.text
-            assert "Late fact" not in fragment.text
-            assert ids == [early_id]
+    workspace_id, run_id, user_id = _seed_run(factory, slug="async-history")
 
     class HistorySDK:
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
-            assert "Early fact" in request.input_text
-            assert "Late fact" not in request.input_text
             assert request.session is not None
             assert await request.session.get_items() == []
             await request.session.add_items([{"role": "user", "content": "saved history"}])
             assert await request.session.get_items() == [
                 {"role": "user", "content": "saved history"}
             ]
-            await asyncio.to_thread(add_late_instruction)
-            return AgentRunResult(final_output="completed with frozen input")
+            return AgentRunResult(final_output="completed")
 
     queue.enqueue(
         JobPayload(
@@ -82,35 +47,7 @@ def test_async_worker_history_and_late_instructions_use_independent_transactions
     )
     assert runner.run_once()
     with factory() as session:
-        run = session.get(AgentRun, run_id)
-        assert run.status == "completed"
-        consumed = session.scalar(
-            select(RunEvent).where(
-                RunEvent.agent_run_id == run_id, RunEvent.event_type == "task.instructions.consumed"
-            )
-        )
-        assert consumed.event_metadata["message_ids"] == [early_id]
-        assert late_ids[0] not in consumed.event_metadata["message_ids"]
-
-
-def test_live_instruction_rejection_does_not_persist_or_modify_task() -> None:
-    factory = _session_factory()
-    workspace_id, run_id, user_id = _seed_run(factory, slug="live-instruction")
-    with factory() as session:
-        run = session.get(AgentRun, run_id)
-        with pytest.raises(ValueError, match="does not support live"):
-            TaskControlService(session).apply_action(
-                workspace_id=workspace_id,
-                task_id=run.task_id,
-                actor_user_id=user_id,
-                request=TaskControlActionRequest(
-                    action="add_instruction",
-                    instruction="Do this now",
-                    delivery_mode="live",
-                ),
-            )
-        fragment, ids = RunInstructionService(session).context(run)
-        assert fragment is None and ids == []
+        assert session.get(AgentRun, run_id).status == "completed"
 
 
 def test_slow_live_publication_keeps_event_loop_and_control_io_available() -> None:
@@ -218,7 +155,6 @@ def test_async_worker_approval_resume_keeps_run_and_consumes_encrypted_state() -
             assert request.resume_state is not None
             assert "private-state" in request.resume_state.serialized_state
             assert request.approval_decisions[0].status == "approved"
-            assert "Late approval instruction" not in request.input_text
             return AgentRunResult(final_output="resumed")
 
     def worker(sdk: object):
@@ -245,15 +181,6 @@ def test_async_worker_approval_resume_keeps_run_and_consumes_encrypted_state() -
         assert run.status == "waiting_approval"
         snapshot = session.scalar(select(AgentRunStateSnapshot))
         assert "private-state" not in snapshot.encrypted_state
-        TaskControlService(session).apply_action(
-            workspace_id=workspace_id,
-            task_id=run.task_id,
-            actor_user_id=user_id,
-            request=TaskControlActionRequest(
-                action="add_instruction",
-                instruction="Late approval instruction",
-            ),
-        )
         approval = session.scalar(select(Approval).where(Approval.agent_run_id == run_id))
         ApprovalDecisionService(
             session,

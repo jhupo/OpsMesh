@@ -255,7 +255,7 @@ def test_llm_resource_review_can_require_admin_approval(monkeypatch) -> None:
             reasons=["llm_review.detected_broad_authority"],
             signals={
                 "reviewer": "llm",
-                "verdict": "needs_admin_review",
+                "verdict": "needs_human",
                 "findings": [
                     {
                         "severity": "high",
@@ -290,7 +290,7 @@ def test_llm_resource_review_can_require_admin_approval(monkeypatch) -> None:
     approval = approvals.json()["items"][0]
     assert approval["risk_level"] == "high"
     assert approval["payload"]["review"]["signals"]["reviewer"] == "llm"
-    assert approval["payload"]["review"]["signals"]["verdict"] == "needs_admin_review"
+    assert approval["payload"]["review"]["signals"]["verdict"] == "needs_human"
 
 
 def test_llm_resource_review_schema_rejects_unknown_verdict() -> None:
@@ -324,7 +324,7 @@ def test_operator_cannot_approve_resource_review(monkeypatch) -> None:
             required=True,
             risk_level="high",
             reasons=["llm_review.detected_broad_authority"],
-            signals={"reviewer": "llm", "verdict": "needs_admin_review"},
+            signals={"reviewer": "llm", "verdict": "needs_human"},
         )
 
     monkeypatch.setattr(

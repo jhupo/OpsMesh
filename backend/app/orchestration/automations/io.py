@@ -3,23 +3,25 @@
 import json
 from dataclasses import dataclass
 
-from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage
 from sqlalchemy.orm import Session
 
 from backend.app.capabilities.references.schema import validate_json_value
-from backend.app.orchestration.automations.contracts import AutomationConfiguration
+from backend.app.orchestration.automations.contracts import (
+    AutomationConfiguration,
+    AutomationMessage,
+)
 from backend.app.orchestration.automations.models import AutomationEvent
 from backend.app.orchestration.definitions.data import resolve_workflow_bindings
 from backend.app.orchestration.tasks.models import Task
 from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
-def model_message(config: AutomationConfiguration, message: IncomingMessage) -> dict[str, object]:
+def model_message(config: AutomationConfiguration, message: AutomationMessage) -> dict[str, object]:
     if message.contract_version != config.contract_version:
         raise ValueError("Message contract version does not match automation")
     if len(message.model_dump_json().encode()) > 64_000:
         raise ValueError("Message exceeds 64000 bytes")
-    if message.action in {"start", "follow_up", "add_instruction"}:
+    if message.action in {"start", "follow_up"}:
         validate_json_value(message.data, config.input_schema, label="message data")
     return {
         "event_id": message.event_id,
@@ -31,14 +33,12 @@ def model_message(config: AutomationConfiguration, message: IncomingMessage) -> 
     }
 
 
-def message_instruction(config: AutomationConfiguration, message: IncomingMessage) -> str:
+def validate_follow_up(config: AutomationConfiguration, message: AutomationMessage) -> None:
     projected = model_message(config, message)
-    instruction = message.text
-    if projected["data"]:
-        instruction += "\n" + json.dumps(projected["data"], ensure_ascii=False)
-    if not instruction.strip() or len(instruction) > 4000:
+    data = projected["data"]
+    size = len(message.text) + (1 + len(json.dumps(data, ensure_ascii=False)) if data else 0)
+    if not (message.text.strip() or data) or size > 4000:
         raise ValueError("Projected follow-up must contain 1 to 4000 characters")
-    return instruction
 
 
 @dataclass(frozen=True)

@@ -23,7 +23,6 @@ from backend.app.orchestration.tasks.state import (
     TaskStatus,
 )
 from backend.app.runtime.queues.service import RedisQueue
-from backend.app.shared.utils import int_or_zero
 
 
 class TaskControlMessageWriter:
@@ -70,7 +69,7 @@ def with_task_control_state(
 
 
 class TaskControlService:
-    """Unified owner/operator controls for interrupting and steering task execution."""
+    """Owner/operator controls for pausing, resuming, correcting and cancelling tasks."""
 
     def __init__(self, session: Session, queue: RedisQueue | None = None) -> None:
         self._session = session
@@ -97,10 +96,6 @@ class TaskControlService:
             if not commit and request.enqueue and self._queue is not None:
                 raise ValueError("Transactional resume cannot enqueue Redis jobs before commit")
             return self._resume_task(
-                task, actor_user_id=actor_user_id, request=request, commit=commit
-            )
-        if action == "add_instruction":
-            return self._add_instruction(
                 task, actor_user_id=actor_user_id, request=request, commit=commit
             )
         if action == "create_correction":
@@ -253,58 +248,6 @@ class TaskControlService:
                 "was_paused": was_paused,
                 "unblocked_step_count": unblocked_steps,
                 "scheduled_run_count": len(scheduled_runs),
-            },
-        )
-
-    def _add_instruction(
-        self,
-        task: Task,
-        *,
-        actor_user_id: UUID,
-        request: TaskControlActionRequest,
-        commit: bool,
-    ) -> dict[str, object]:
-        if TaskStatus(task.status) in TERMINAL_TASK_STATUSES:
-            raise ValueError("Terminal tasks require a correction or a new conversation turn")
-        if request.delivery_mode == "live":
-            raise ValueError(
-                "The current Agent SDK adapter does not support live instruction delivery"
-            )
-        if not request.instruction or not request.instruction.strip():
-            raise ValueError("instruction is required")
-        control = task_control_state(task)
-        control["instruction_count"] = int_or_zero(control.get("instruction_count")) + 1
-        control["last_instruction_at"] = datetime.now(UTC).isoformat()
-        task.generic_state = with_task_control_state(task.generic_state, control)
-        message = TaskControlMessageWriter(self._session).append_control_message(
-            task,
-            actor_user_id=actor_user_id,
-            action="add_instruction",
-            instruction=request.instruction,
-            reason=request.reason,
-            metadata={
-                **request.metadata,
-                "delivery_mode": "next_run",
-                "delivery_status": "accepted",
-            },
-        )
-        self._audit(
-            task,
-            actor_user_id=actor_user_id,
-            action="task.control.instruction_added",
-            metadata={"message_id": str(message.id), "reason": request.reason},
-        )
-        if commit:
-            self._session.commit()
-        return self._response(
-            task,
-            request=request,
-            status="accepted",
-            message_id=message.id,
-            details={
-                "instruction_count": control["instruction_count"],
-                "delivery_mode": "next_run",
-                "delivery_status": "accepted",
             },
         )
 

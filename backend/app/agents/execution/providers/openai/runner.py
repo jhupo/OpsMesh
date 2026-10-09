@@ -92,7 +92,6 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         ),
         limits={"max_agent_tool_depth": 3, "max_agent_tool_turns": 20},
         unsupported_reasons={
-            "live_steer": "This adapter accepts additional instructions at the next Run boundary",
         },
     )
 

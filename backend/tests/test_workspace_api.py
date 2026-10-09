@@ -91,6 +91,8 @@ from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceInvite, WorkspaceMember
 from backend.app.workspaces.quotas.models import WorkspaceQuota
 from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
+from backend.tests.fixtures.execution import test_agent_id
+from backend.tests.test_worker_run_execution import _seed_default_model_provider
 
 TOKEN = "test-token"
 
@@ -182,12 +184,13 @@ def test_workspace_scoped_list_routes_reject_non_members(path_template: str) -> 
 
 def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
     client, session = _client()
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     viewer, other_workspace = _seed_workspace(
         session,
         role="viewer",
         email="viewer@example.com",
         slug="viewer-space",
+        with_provider=True,
     )
 
     response = client.get("/api/v1/workspaces", headers=_headers(owner.id))
@@ -219,7 +222,11 @@ def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
     created_task = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=_headers(owner.id),
-        json={"title": "Q2 Market Analysis", "domain_type": "research"},
+        json={
+            "agent_profile_id": str(_api_agent_id(session, workspace.id)),
+            "title": "Q2 Market Analysis",
+            "domain_type": "research",
+        },
     )
     assert created_task.status_code == 201
     assert created_task.json()["created_by_user_id"] == str(owner.id)
@@ -227,7 +234,10 @@ def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
     viewer_create = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/tasks",
         headers=_headers(viewer.id),
-        json={"title": "Should fail"},
+        json={
+            "agent_profile_id": str(_api_agent_id(session, other_workspace.id)),
+            "title": "Should fail",
+        },
     )
     assert viewer_create.status_code == 403
 
@@ -283,7 +293,7 @@ def test_workspace_and_resource_api_enforces_scope_and_roles() -> None:
 
 def test_workspace_operator_read_models_are_reachable_through_the_api() -> None:
     client, session = _client()
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     headers = _headers(owner.id)
 
     team = client.post(
@@ -294,7 +304,10 @@ def test_workspace_operator_read_models_are_reachable_through_the_api() -> None:
     task = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=headers,
-        json={"title": "Inspect production readiness"},
+        json={
+            "agent_profile_id": str(_api_agent_id(session, workspace.id)),
+            "title": "Inspect production readiness",
+        },
     )
     assert team.status_code == 201
     assert task.status_code == 201
@@ -355,18 +368,24 @@ def test_workspace_operator_read_models_are_reachable_through_the_api() -> None:
 
 def test_create_task_is_idempotent_within_workspace() -> None:
     client, session = _client()
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     headers = _headers(owner.id) | {"Idempotency-Key": "create-q2-task"}
 
     first = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=headers,
-        json={"title": "Q2 Market Analysis"},
+        json={
+            "agent_profile_id": str(_api_agent_id(session, workspace.id)),
+            "title": "Q2 Market Analysis",
+        },
     )
     second = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=headers,
-        json={"title": "Q2 Market Analysis"},
+        json={
+            "agent_profile_id": str(_api_agent_id(session, workspace.id)),
+            "title": "Q2 Market Analysis",
+        },
     )
 
     tasks = session.scalars(select(Task).where(Task.workspace_id == workspace.id)).all()
@@ -861,6 +880,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
                 task_id=running_task.id,
                 assigned_agent_profile_id=manager_id,
                 work_package_id="manager-planning",
+                review_policy={"mode": "agent_planning"},
                 required_role="project_manager",
                 title="Plan console",
                 status="completed",
@@ -873,6 +893,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
                 task_id=completed_task.id,
                 assigned_agent_profile_id=manager_id,
                 work_package_id="manager-planning",
+                review_policy={"mode": "agent_planning"},
                 required_role="project_manager",
                 title="Plan onboarding",
                 status="completed",
@@ -893,6 +914,7 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
                 task_id=completed_task.id,
                 assigned_agent_profile_id=manager_id,
                 work_package_id="manager-summary",
+                review_policy={"mode": "final_acceptance"},
                 required_role="project_manager",
                 title="Review onboarding",
                 status="completed",
@@ -979,7 +1001,6 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     actions = {item["action"]: item for item in body["summary"]["recommended_actions"]}
     assert actions["add_or_hire_team_member"]["task_ids"] == [str(running_task.id)]
     assert actions["monitor_specialist_execution"]["task_ids"] == [str(running_task.id)]
-    assert actions["request_manager_review"]["task_ids"] == [str(running_task.id)]
     intervention_plan = {item["action"]: item for item in body["summary"]["intervention_plan"]}
     assert intervention_plan["add_or_hire_team_member"] == {
         "action": "add_or_hire_team_member",
@@ -997,20 +1018,9 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
         "payload_template": {"max_candidates_per_role": 3},
         "reason_codes": [
             "staffing_gap",
-            "missing_manager_summary_step",
             "specialist_steps_incomplete",
             "risk:high",
         ],
-    }
-    assert intervention_plan["request_manager_review"]["automation"] == "team_operator_action"
-    assert intervention_plan["request_manager_review"]["api_route"] == (
-        "POST /api/v1/workspaces/{workspace_id}/teams/{team_id}/operator-actions"
-    )
-    assert intervention_plan["request_manager_review"]["payload_template"] == {
-        "action": "request_manager_review",
-        "task_step_ids": [],
-        "reason": "team_execution_overview",
-        "metadata": {"source": "team_execution_overview"},
     }
 
     members = {item["team_role"]: item for item in body["members"]}
@@ -1027,10 +1037,9 @@ def test_team_execution_overview_reports_workload_and_attention_items() -> None:
     assert task["needs_attention"] is True
     assert task["pending_phase"] == "specialist_execution"
     assert task["risk_level"] == "high"
-    assert task["attention_score"] == 170
+    assert task["attention_score"] == 165
     assert set(task["recommended_actions"]) == {
         "monitor_specialist_execution",
-        "request_manager_review",
     }
     assert "specialist_steps_incomplete" in task["blocked_reasons"]
     assert task["active_run_count"] == 1
@@ -1065,7 +1074,7 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     queue_redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session = _client(queue=queue)
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     other_owner, other_workspace = _seed_workspace(
         session,
         role="owner",
@@ -1217,6 +1226,7 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
         task_id=task.id,
         assigned_agent_profile_id=manager.id,
         work_package_id="manager-summary",
+        review_policy={"mode": "final_acceptance"},
         required_role="project_manager",
         title="Review command center",
         status="completed",
@@ -1229,6 +1239,7 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
                 task_id=task.id,
                 assigned_agent_profile_id=manager.id,
                 work_package_id="manager-planning",
+                review_policy={"mode": "agent_planning"},
                 required_role="project_manager",
                 title="Plan command center",
                 status="completed",
@@ -1333,7 +1344,8 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
         "model_provider_unhealthy": 1
     }
     assert body["summary"]["provider_readiness"]["warning_reasons"] == {
-        "model_provider_credential_not_configured": 3
+        "model_provider_unknown": 3,
+        "model_provider_health_check_not_scheduled": 3,
     }
     assert body["runtime"]["status"] == "stopped"
     assert body["runtime"]["ready"] is False
@@ -1357,9 +1369,9 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
         if item["agent_profile_id"] == str(observer.id)
     )
     assert manager_readiness["model"] == "gpt-4.1"
-    assert manager_readiness["model_capability"]["provider"] == "openai"
-    assert manager_readiness["model_capability"]["supports_tools"] is True
-    assert manager_readiness["model_capability"]["supports_json_mode"] is True
+    assert manager_readiness["model_capability"] is None
+    assert manager_readiness["model_capability"] is None
+    assert manager_readiness["model_capability"] is None
     assert developer_readiness["readiness_status"] == "blocked"
     assert developer_readiness["provider"] == "openai-compatible"
     assert developer_readiness["credential_reference"] == (
@@ -1369,27 +1381,19 @@ def test_team_command_center_aggregates_queues_actions_and_preserves_scope() -> 
     assert developer_readiness["model_api"] == "chat_completions"
     assert developer_readiness["model_apis"] == ["responses", "chat_completions"]
     assert developer_readiness["default_model_api"] is None
-    assert developer_readiness["model_capability"] == {
-        "provider": "openai-compatible",
-        "model": "*",
-        "display_name": "OpenAI-compatible model",
-        "capabilities": ["tools", "json_mode", "streaming"],
-        "supports_tools": True,
-        "supports_vision": False,
-        "supports_json_mode": True,
-        "supports_streaming": True,
-        "context_window_tokens": None,
-        "notes": "Actual support depends on the upstream gateway and selected model.",
-    }
+    assert developer_readiness["model_capability"] is None
     assert developer_readiness["credential_health_status"] == "unhealthy"
     assert developer_readiness["budget_exhausted"] is False
     assert developer_readiness["reasons"] == ["model_provider_unhealthy"]
     assert observer_readiness["readiness_status"] == "degraded"
     assert observer_readiness["runtime_participant"] is False
     assert observer_readiness["runtime_degraded"] is False
-    assert observer_readiness["warnings"] == ["model_provider_credential_not_configured"]
-    assert observer_readiness["model_capability"]["provider"] == "openai"
-    assert observer_readiness["model_capability"]["model"] == "gpt-4.1-mini"
+    assert observer_readiness["warnings"] == [
+        "model_provider_unknown",
+        "model_provider_health_check_not_scheduled",
+    ]
+    assert observer_readiness["model_capability"] is None
+    assert observer_readiness["model_capability"] is None
     assert body["queues"]["handoff"]["team_id"] == str(team.id)
     assert body["queues"]["manager"]["team_id"] == str(team.id)
     sources = {item["source"] for item in body["action_plan"]}
@@ -1857,7 +1861,7 @@ def test_workspace_team_command_center_aggregates_active_teams_and_agent_load() 
 
 def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
     client, session = _client()
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     workspace.settings = {"scheduler": {"max_runs_to_start_per_tick": 1}}
     session.add(
         WorkspaceQuota(
@@ -1986,7 +1990,7 @@ def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
 
 def test_team_command_center_apply_reports_blocked_reasons_with_partial_scheduled_runs() -> None:
     client, session = _client()
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     workspace.settings = {"scheduler": {"max_runs_to_start_per_tick": 2}}
     session.add(
         WorkspaceQuota(
@@ -2177,6 +2181,7 @@ def test_team_execution_loop_finalize_closes_approved_tasks_only(system_executio
             task_id=task.id,
             assigned_agent_profile_id=manager.id,
             work_package_id="manager-planning",
+            review_policy={"mode": "agent_planning"},
             required_role="project_manager",
             title=f"Plan {task.title}",
             status="completed",
@@ -2197,6 +2202,7 @@ def test_team_execution_loop_finalize_closes_approved_tasks_only(system_executio
             task_id=task.id,
             assigned_agent_profile_id=manager.id,
             work_package_id="manager-summary",
+            review_policy={"mode": "final_acceptance"},
             required_role="project_manager",
             title=f"Review {task.title}",
             status="completed",
@@ -4183,18 +4189,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert model_provider["provider"] == "openai-compatible"
     assert model_provider["selected_model"] == "claude-opus-4-6"
     assert model_provider["agent_model"] == "workspace-default"
-    assert model_provider["model_capability"] == {
-        "provider": "openai-compatible",
-        "model": "*",
-        "display_name": "OpenAI-compatible model",
-        "capabilities": ["tools", "json_mode", "streaming"],
-        "supports_tools": True,
-        "supports_vision": False,
-        "supports_json_mode": True,
-        "supports_streaming": True,
-        "context_window_tokens": None,
-        "notes": "Actual support depends on the upstream gateway and selected model.",
-    }
+    assert model_provider["model_capability"] is None
     assert model_provider["default_model"] == "claude-opus-4-6"
     assert model_provider["model_api"] == "chat_completions"
     assert model_provider["base_url_configured"] is True
@@ -4247,9 +4242,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
         "chat_completions",
     ]
     assert provider_options[str(default_credential.id)]["default_model_api"] is None
-    assert {
-        item["model"] for item in provider_options[str(default_credential.id)]["model_options"]
-    }.issuperset({"gpt-5", "gpt-4.1-mini"})
+    assert provider_options[str(default_credential.id)]["model_options"] == []
     assert provider_options[str(credential.id)]["provider"] == "openai-compatible"
     assert provider_options[str(credential.id)]["model_api"] == "chat_completions"
     assert provider_options[str(credential.id)]["model_apis"] == [
@@ -4258,9 +4251,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     ]
     assert provider_options[str(credential.id)]["default_model_api"] is None
     assert provider_options[str(credential.id)]["base_url_host"] == "dash.ovload.com"
-    assert provider_options[str(credential.id)]["model_options"] == [
-        provider_options[str(credential.id)]["model_capability"]
-    ]
+    assert provider_options[str(credential.id)]["model_options"] == []
     assert provider_options[str(credential.id)]["scheduled_health_check"]["configured"] is True
     developer_binding = next(
         item
@@ -4281,18 +4272,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert developer_binding["credential_status"] == "active"
     assert developer_binding["credential_health_status"] == "unknown"
     assert developer_binding["budget_exhausted"] is False
-    assert developer_binding["model_capability"] == {
-        "provider": "openai-compatible",
-        "model": "*",
-        "display_name": "OpenAI-compatible model",
-        "capabilities": ["tools", "json_mode", "streaming"],
-        "supports_tools": True,
-        "supports_vision": False,
-        "supports_json_mode": True,
-        "supports_streaming": True,
-        "context_window_tokens": None,
-        "notes": "Actual support depends on the upstream gateway and selected model.",
-    }
+    assert developer_binding["model_capability"] is None
     assert developer_binding["available_credential_ids"] == [
         str(default_credential.id),
         str(credential.id),
@@ -4713,7 +4693,7 @@ def test_team_operations_console_exposes_anthropic_default_model_api() -> None:
     assert option["id"] == str(credential.id)
     assert option["provider"] == "anthropic"
     assert option["model_api"] == "anthropic_messages"
-    assert option["model_capability"]["model"] == "claude-sonnet-4-6"
+    assert option["model_capability"] is None
     assert binding["source"] == "workspace_default"
     assert binding["credential_id"] == str(credential.id)
     assert binding["provider"] == "anthropic"
@@ -4726,7 +4706,7 @@ def test_team_operations_console_exposes_anthropic_default_model_api() -> None:
     assert member_provider["model_api"] is None
     assert member_provider["requested_model_api"] == "responses"
     assert "model_api_override_unsupported" in member_provider["reasons"]
-    assert member_provider["model_capability"]["supports_tools"] is True
+    assert member_provider["model_capability"] is None
     assert readiness_member["provider"] == "anthropic"
     assert readiness_member["model"] == "claude-sonnet-4-6"
     assert readiness_member["model_api"] is None
@@ -5221,12 +5201,13 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
     queue_redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session, docker = _client(queue=queue, include_docker=True)
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     other_owner, _ = _seed_workspace(
         session,
         role="owner",
         email="other-loop-run@example.com",
         slug="other-loop-run",
+        with_provider=True,
     )
     manager = AgentProfile(
         workspace_id=workspace.id,
@@ -6355,7 +6336,11 @@ def test_create_task_with_team_captures_workspace_team_snapshot() -> None:
     created_task = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=_headers(owner.id),
-        json={"title": "Build dashboard", "agent_team_id": team.json()["id"]},
+        json={
+            "input": {"planning_mode": "agent"},
+            "title": "Build dashboard",
+            "agent_team_id": team.json()["id"],
+        },
     )
 
     assert member.status_code == 201
@@ -6432,15 +6417,17 @@ def test_create_task_matches_requested_work_packages_to_team_members() -> None:
             "title": "Build landing page",
             "agent_team_id": team.json()["id"],
             "input": {
-                "planning_mode": "deterministic",
+                "planning_mode": "explicit",
                 "work_packages": [
                     {
+                        "assigned_agent_profile_id": designer.json()["id"],
                         "package_id": "ui-design",
                         "title": "UI Design",
                         "required_role": "ui_designer",
                         "required_skills": ["figma"],
                     },
                     {
+                        "assigned_agent_profile_id": developer.json()["id"],
                         "package_id": "frontend-build",
                         "title": "Frontend Build",
                         "required_role": "frontend_engineer",
@@ -6481,7 +6468,7 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery(
         blocking_timeout_seconds=0,
     )
     client, session = _client(queue=queue)
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(
@@ -6586,20 +6573,35 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery(
             "description": "Produce a concise market analysis.",
             "priority": 7,
             "input": {
-                "planning_mode": "deterministic",
+                "planning_mode": "explicit",
                 "work_packages": [
                     {
+                        "package_id": "manager-planning",
+                        "title": "Prepare work",
+                        "assigned_agent_profile_id": manager.json()["id"],
+                    },
+                    {
+                        "assigned_agent_profile_id": researcher.json()["id"],
                         "package_id": "market-research",
+                        "depends_on": ["manager-planning"],
                         "title": "Market research",
                         "required_role": "researcher",
                         "required_skills": ["market_research"],
                     },
                     {
+                        "assigned_agent_profile_id": analyst.json()["id"],
                         "package_id": "market-analysis",
                         "title": "Market analysis",
                         "required_role": "analyst",
                         "required_skills": ["analysis"],
                         "depends_on": ["market-research"],
+                    },
+                    {
+                        "package_id": "manager-summary",
+                        "title": "Review delivery",
+                        "assigned_agent_profile_id": manager.json()["id"],
+                        "depends_on": ["market-analysis"],
+                        "review_policy": {"mode": "final_acceptance", "reviewer": "user"},
                     },
                 ],
             },
@@ -6682,7 +6684,7 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
         queue_name="agent_runs",
     )
     client, session = _client(queue=queue)
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     manager = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
         headers=_headers(owner.id),
@@ -6718,14 +6720,16 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
             "title": "Build dashboard",
             "agent_team_id": team.json()["id"],
             "input": {
-                "planning_mode": "deterministic",
+                "planning_mode": "explicit",
                 "work_packages": [
                     {
+                        "assigned_agent_profile_id": developer.json()["id"],
                         "package_id": "build-ui",
                         "title": "Build UI",
                         "required_role": "frontend_engineer",
                     },
                     {
+                        "assigned_agent_profile_id": developer.json()["id"],
                         "package_id": "build-ui",
                         "title": "Build UI duplicate",
                         "required_role": "frontend_engineer",
@@ -6741,9 +6745,10 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
         json={
             "enqueue": True,
             "input": {
-                "planning_mode": "deterministic",
+                "planning_mode": "explicit",
                 "work_packages": [
                     {
+                        "assigned_agent_profile_id": developer.json()["id"],
                         "package_id": "build-ui",
                         "title": "Build UI",
                         "required_role": "frontend_engineer",
@@ -6775,7 +6780,7 @@ def test_retry_task_plan_repairs_blocked_planning_failure() -> None:
     assert created_task.json()["project_plan"] is None
     assert retry.status_code == 200
     assert retry.json()["status"] == "queued"
-    assert retry.json()["project_plan"]["work_packages"][1]["package_id"] == "build-ui"
+    assert retry.json()["project_plan"]["work_packages"][0]["package_id"] == "build-ui"
     assert [attempt.status for attempt in attempts] == ["failed", "completed"]
     assert [attempt.retry_count for attempt in attempts] == [0, 1]
     assert listed_attempts.status_code == 200
@@ -6858,7 +6863,7 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
         queue_name="agent_runs",
     )
     client, session = _client(queue=queue)
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     manager = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
         headers=_headers(owner.id),
@@ -6894,9 +6899,10 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
             "title": "Build dashboard",
             "agent_team_id": team.json()["id"],
             "input": {
-                "planning_mode": "deterministic",
+                "planning_mode": "explicit",
                 "work_packages": [
                     {
+                        "assigned_agent_profile_id": developer.json()["id"],
                         "package_id": "frontend-build",
                         "title": "Frontend Build",
                         "required_role": "frontend_engineer",
@@ -6924,9 +6930,10 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
         json={
             "enqueue": True,
             "input": {
-                "planning_mode": "deterministic",
+                "planning_mode": "explicit",
                 "work_packages": [
                     {
+                        "assigned_agent_profile_id": developer.json()["id"],
                         "package_id": "frontend-build-v2",
                         "title": "Frontend Build V2",
                         "required_role": "frontend_engineer",
@@ -6966,7 +6973,7 @@ def test_regenerate_task_plan_preserves_completed_work_packages() -> None:
 
 def test_mutate_task_plan_endpoint_adds_future_work_and_audits() -> None:
     client, session = _client()
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     manager = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
         headers=_headers(owner.id),
@@ -7014,9 +7021,10 @@ def test_mutate_task_plan_endpoint_adds_future_work_and_audits() -> None:
             "title": "Plan follow-up",
             "agent_team_id": team.json()["id"],
             "input": {
-                "planning_mode": "deterministic",
+                "planning_mode": "explicit",
                 "work_packages": [
                     {
+                        "assigned_agent_profile_id": developer.json()["id"],
                         "package_id": "initial-work",
                         "title": "Initial work",
                         "required_role": "developer",
@@ -7155,18 +7163,7 @@ def test_model_provider_credentials_are_created_without_returning_secret() -> No
         "nested": {"label": "monthly"},
     }
     assert body["model_api"] == "chat_completions"
-    assert body["model_capability"] == {
-        "provider": "openai",
-        "model": "gpt-4.1-mini",
-        "display_name": "GPT-4.1 mini",
-        "capabilities": ["tools", "vision", "json_mode", "streaming"],
-        "supports_tools": True,
-        "supports_vision": True,
-        "supports_json_mode": True,
-        "supports_streaming": True,
-        "context_window_tokens": 1_000_000,
-        "notes": None,
-    }
+    assert body["model_capability"] is None
     assert body["last_success_at"] is None
     assert body["last_failure_at"] is None
     assert body["last_health_check_at"] is None
@@ -7274,6 +7271,35 @@ def test_model_provider_health_check_updates_status_without_returning_secret(
 def test_model_provider_capabilities_are_listed_without_secrets() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session, role="owner")
+
+    for provider, model, model_api in (
+        ("openai-compatible", "company-model", "responses"),
+        ("anthropic", "company-claude", "anthropic_messages"),
+    ):
+        declared = client.post(
+            f"/api/v1/workspaces/{workspace.id}/model-provider-credentials",
+            headers=_headers(owner.id),
+            json={
+                "name": provider,
+                "provider": provider,
+                "api_key": "sk-catalog-fixture",
+                "base_url": "https://models.example.test/v1",
+                "default_model": model,
+                "model_api": model_api,
+                "model_capabilities": [
+                    {
+                        "provider": provider,
+                        "model": model,
+                        "display_name": model,
+                        "supports_vision": False,
+                        "supports_tools": True,
+                        "supports_json_mode": True,
+                        "supports_streaming": True,
+                    }
+                ],
+            },
+        )
+        assert declared.status_code == 201
 
     listed = client.get(
         f"/api/v1/workspaces/{workspace.id}/model-provider-capabilities",
@@ -7645,7 +7671,7 @@ def test_team_member_model_provider_can_be_bound_from_operations_context() -> No
             for item in audits
             if item.action == "team.member_model_provider.updated"
             and item.audit_metadata.get("reset_session_count") == 1
-            and item.audit_metadata["before"]["model"] == "gpt-4.1"
+            and item.audit_metadata["before"]["model"] == "workspace-default"
         ),
         None,
     )
@@ -7654,7 +7680,7 @@ def test_team_member_model_provider_can_be_bound_from_operations_context() -> No
     assert team_audit.target_id == str(member.json()["id"])
     assert team_audit.audit_metadata["team_id"] == team.json()["id"]
     assert team_audit.audit_metadata["agent_profile_id"] == agent.json()["id"]
-    assert team_audit.audit_metadata["before"]["model"] == "gpt-4.1"
+    assert team_audit.audit_metadata["before"]["model"] == "workspace-default"
     assert team_audit.audit_metadata["after"]["model"] == "workspace-default"
     assert team_audit.audit_metadata["before"]["model_api"] is None
     assert team_audit.audit_metadata["after"]["model_api"] is None
@@ -7821,18 +7847,7 @@ def test_model_provider_credentials_can_be_updated_rotated_defaulted_and_disable
     assert updated.json()["budget_metadata"]["model_api"] == "responses"
     assert updated.json()["base_url_configured"] is True
     assert updated.json()["base_url_host"] == "llm.example.test"
-    assert updated.json()["model_capability"] == {
-        "provider": "openai-compatible",
-        "model": "*",
-        "display_name": "OpenAI-compatible model",
-        "capabilities": ["tools", "json_mode", "streaming"],
-        "supports_tools": True,
-        "supports_vision": False,
-        "supports_json_mode": True,
-        "supports_streaming": True,
-        "context_window_tokens": None,
-        "notes": "Actual support depends on the upstream gateway and selected model.",
-    }
+    assert updated.json()["model_capability"] is None
     assert rotated.status_code == 200
     assert rotated.json()["api_key_fingerprint"] != second.json()["api_key_fingerprint"]
     assert rotated.json()["secret_metadata"]["rotation_state"] == "current"
@@ -7999,24 +8014,33 @@ def test_model_provider_usage_audit_api_is_scoped_and_redacted() -> None:
 
 def test_task_idempotency_key_is_scoped_by_workspace() -> None:
     client, session = _client()
-    owner, workspace = _seed_workspace(session, role="owner", email="owner@example.com", slug="one")
+    owner, workspace = _seed_workspace(
+        session, role="owner", email="owner@example.com", slug="one", with_provider=True
+    )
     other, other_workspace = _seed_workspace(
         session,
         role="owner",
         email="other@example.com",
         slug="two",
+        with_provider=True,
     )
     key = "same-client-key"
 
     first = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=_headers(owner.id) | {"Idempotency-Key": key},
-        json={"title": "Owner task"},
+        json={
+            "agent_profile_id": str(_api_agent_id(session, workspace.id)),
+            "title": "Owner task",
+        },
     )
     second = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/tasks",
         headers=_headers(other.id) | {"Idempotency-Key": key},
-        json={"title": "Other task"},
+        json={
+            "agent_profile_id": str(_api_agent_id(session, other_workspace.id)),
+            "title": "Other task",
+        },
     )
 
     assert first.status_code == 201
@@ -8057,11 +8081,14 @@ def test_workspace_create_is_idempotent_per_user() -> None:
 
 def test_cancel_task_marks_task_and_active_run_cancelled() -> None:
     client, session = _client()
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     task_response = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=_headers(owner.id),
-        json={"title": "Cancel me"},
+        json={
+            "agent_profile_id": str(_api_agent_id(session, workspace.id)),
+            "title": "Cancel me",
+        },
     )
     task_id = UUID(task_response.json()["id"])
 
@@ -8094,11 +8121,14 @@ def test_cancel_task_marks_task_and_active_run_cancelled() -> None:
 
 def test_cancel_run_marks_linked_task_cancelled() -> None:
     client, session = _client()
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     task_response = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=_headers(owner.id),
-        json={"title": "Cancel run"},
+        json={
+            "agent_profile_id": str(_api_agent_id(session, workspace.id)),
+            "title": "Cancel run",
+        },
     )
     task_id = UUID(task_response.json()["id"])
     run = session.scalar(select(AgentRun).where(AgentRun.task_id == task_id))
@@ -8125,7 +8155,11 @@ def test_task_messages_api_lists_filters_and_enforces_workspace_scope() -> None:
         email="other@example.com",
         slug="other-space",
     )
-    task = Task(workspace_id=workspace.id, created_by_user_id=owner.id, title="Task")
+    task = Task(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        title="Task",
+    )
     session.add(task)
     session.flush()
     session.add_all(
@@ -8991,7 +9025,7 @@ def test_task_plan_diagnostics_explains_assignment_and_dependency_quality() -> N
         team_snapshot=team_snapshot,
         project_plan={
             "plan_id": "plan-1",
-            "strategy": "test",
+            "strategy": "agent_sdk",
             "work_packages": [
                 {
                     "package_id": "manager-planning",
@@ -9163,6 +9197,7 @@ def test_task_manager_diagnostics_explains_acceptance_follow_up_and_redacts() ->
         task_id=task.id,
         assigned_agent_profile_id=manager.id,
         work_package_id="manager-planning",
+        review_policy={"mode": "agent_planning"},
         required_role="project_manager",
         title="Plan work",
         status="completed",
@@ -9188,6 +9223,7 @@ def test_task_manager_diagnostics_explains_acceptance_follow_up_and_redacts() ->
         task_id=task.id,
         assigned_agent_profile_id=manager.id,
         work_package_id="manager-summary",
+        review_policy={"mode": "final_acceptance"},
         required_role="project_manager",
         title="Review delivery",
         status="completed",
@@ -9217,6 +9253,7 @@ def test_task_manager_diagnostics_explains_acceptance_follow_up_and_redacts() ->
         task_id=task.id,
         assigned_agent_profile_id=manager.id,
         work_package_id="manager-summary-revision-1",
+        review_policy={"mode": "revision_review"},
         required_role="project_manager",
         title="Review revision",
         status="queued",
@@ -9404,6 +9441,7 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
             task_id=needs_follow_up.id,
             assigned_agent_profile_id=manager.id,
             work_package_id="manager-planning",
+            review_policy={"mode": "agent_planning"},
             required_role="project_manager",
             title="Plan attention task",
             status="completed",
@@ -9424,6 +9462,7 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
             task_id=needs_follow_up.id,
             assigned_agent_profile_id=manager.id,
             work_package_id="manager-summary",
+            review_policy={"mode": "final_acceptance"},
             required_role="project_manager",
             title="Review attention task",
             status="completed",
@@ -9436,6 +9475,7 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
             task_id=healthy.id,
             assigned_agent_profile_id=manager.id,
             work_package_id="manager-planning",
+            review_policy={"mode": "agent_planning"},
             required_role="project_manager",
             title="Plan healthy task",
             status="completed",
@@ -9456,6 +9496,7 @@ def test_task_manager_queue_lists_attention_items_and_preserves_workspace_scope(
             task_id=healthy.id,
             assigned_agent_profile_id=manager.id,
             work_package_id="manager-summary",
+            review_policy={"mode": "final_acceptance"},
             required_role="project_manager",
             title="Review healthy task",
             status="completed",
@@ -9931,11 +9972,14 @@ def test_retry_failed_run_creates_new_queued_run_and_enqueues_job() -> None:
     queue_redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(queue_redis, RedisKeyBuilder("opsmesh"), "agent_runs", 0)
     client, session = _client(queue=queue)
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     task_response = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=_headers(owner.id),
-        json={"title": "Retry failed"},
+        json={
+            "agent_profile_id": str(_api_agent_id(session, workspace.id)),
+            "title": "Retry failed",
+        },
     )
     task_id = UUID(task_response.json()["id"])
     failed_run = session.scalar(select(AgentRun).where(AgentRun.task_id == task_id))
@@ -10530,15 +10574,18 @@ def test_artifact_correction_creates_replacement_work_without_mutating_artifact(
 
 def test_task_correction_diagnostics_tracks_follow_up_status_and_redacts_metadata() -> None:
     client, session = _client()
-    owner, workspace = _seed_workspace(session, role="owner")
+    owner, workspace = _seed_workspace(session, role="owner", with_provider=True)
     other_owner, other_workspace = _seed_workspace(
         session,
         role="owner",
         email="other-correction-diagnostics@example.com",
         slug="other-correction-diagnostics",
+        with_provider=True,
     )
     task = Task(
+        execution_identity=ExecutionIdentityService(session).capture(workspace.id, owner.id),
         workspace_id=workspace.id,
+        owner_agent_profile_id=test_agent_id(session, workspace.id),
         created_by_user_id=owner.id,
         title="Correction diagnostics",
         status="running",
@@ -10546,6 +10593,7 @@ def test_task_correction_diagnostics_tracks_follow_up_status_and_redacts_metadat
     session.add(task)
     session.flush()
     draft_step = TaskStep(
+        assigned_agent_profile_id=task.owner_agent_profile_id,
         workspace_id=workspace.id,
         task_id=task.id,
         title="Draft",
@@ -12242,13 +12290,22 @@ def _seed_workspace(
     role: str,
     email: str = "owner@example.com",
     slug: str = "owner-space",
+    with_provider: bool = False,
 ) -> tuple[User, Workspace]:
     user = User(email=email, display_name=email.split("@")[0])
     workspace = Workspace(owner=user, name=slug.title(), slug=slug, settings={})
     membership = WorkspaceMember(workspace=workspace, user=user, role=role)
     session.add_all([user, workspace, membership])
     session.commit()
+    if with_provider:
+        _seed_default_model_provider(session, workspace_id=workspace.id, user_id=user.id)
     return user, workspace
+
+
+def _api_agent_id(session: Session, workspace_id: UUID) -> UUID:
+    identifier = test_agent_id(session, workspace_id)
+    session.commit()
+    return identifier
 
 
 def _headers(user_id: object) -> dict[str, str]:
@@ -12304,11 +12361,6 @@ def test_task_control_and_delivery_routes_close_manual_intervention_loop() -> No
     session.add(step)
     session.commit()
 
-    instruction = client.post(
-        f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control",
-        headers=_headers(owner.id),
-        json={"action": "add_instruction", "instruction": "Keep the final delivery concise."},
-    )
     diagnostics = client.get(
         f"/api/v1/workspaces/{workspace.id}/tasks/{task.id}/control-diagnostics",
         headers=_headers(owner.id),
@@ -12333,12 +12385,8 @@ def test_task_control_and_delivery_routes_close_manual_intervention_loop() -> No
         },
     )
 
-    assert instruction.status_code == 200
-    assert instruction.json()["action"] == "add_instruction"
-    assert instruction.json()["status"] == "accepted"
-    assert instruction.json()["details"]["delivery_mode"] == "next_run"
     assert diagnostics.status_code == 200
-    assert diagnostics.json()["control"]["instruction_count"] == 1
+    assert diagnostics.json()["control"] == {}
     assert review.status_code == 200
     assert review.json()["status"] == "incomplete"
     assert deferred.status_code == 200

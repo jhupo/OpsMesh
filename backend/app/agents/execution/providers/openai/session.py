@@ -1,8 +1,10 @@
 from functools import cache
+from typing import cast
 
 from agents.items import TResponseInputItem
 from agents.memory.session_settings import SessionSettings
 from pydantic import TypeAdapter, ValidationError
+from pydantic_core import PydanticSerializationError
 
 from backend.app.agents.execution.contracts import AgentRuntimeSession
 
@@ -37,7 +39,13 @@ def _input_item_adapter() -> TypeAdapter[TResponseInputItem]:
 
 def _input_item(value: dict[str, object]) -> TResponseInputItem:
     try:
-        return _input_item_adapter().validate_python(value, strict=True)
-    except ValidationError:
+        adapter = _input_item_adapter()
+        validated = adapter.validate_python(value, strict=True)
+        # Iterable fields can validate to lazy ValidatorIterator objects. SDK RunState
+        # deep-copies history, so fully materialize validated items at this boundary.
+        return cast(
+            TResponseInputItem, adapter.dump_python(validated, mode="json", warnings="error")
+        )
+    except (ValidationError, PydanticSerializationError):
         # Provider histories may contain sensitive input; never expose schema error input values.
         raise ValueError("Stored session item is not a valid OpenAI input item") from None

@@ -5,7 +5,6 @@ from uuid import UUID
 
 from opsmesh_plugin_sdk.messaging.contracts import (
     AttachmentUpload,
-    IncomingMessage,
     MessageAttachment,
 )
 from sqlalchemy import func, select
@@ -23,7 +22,10 @@ from backend.app.identity.authorization.resources import (
     ResourceKind,
 )
 from backend.app.orchestration.automations.authorization import require_automation_principal
-from backend.app.orchestration.automations.contracts import AutomationConfiguration
+from backend.app.orchestration.automations.contracts import (
+    AutomationConfiguration,
+    AutomationMessage,
+)
 from backend.app.orchestration.automations.identities import ExternalIdentityService
 from backend.app.orchestration.automations.models import Automation
 from backend.app.resources.files.models import WorkspaceFile
@@ -165,7 +167,7 @@ class PluginAttachmentService:
     def require_references(
         self,
         item: Automation,
-        message: IncomingMessage,
+        message: AutomationMessage,
         actor: AuthenticatedUser,
         install_id: UUID | None,
     ) -> None:

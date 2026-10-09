@@ -151,31 +151,11 @@ class ConversationMaintenanceService:
     def _start(
         self, conversation: Conversation, turn: ConversationTurn, results: list[dict[str, object]]
     ) -> None:
-        history = list(
-            self.session.scalars(
-                select(ConversationTurn)
-                .where(
-                    ConversationTurn.workspace_id == turn.workspace_id,
-                    ConversationTurn.conversation_id == conversation.id,
-                    ConversationTurn.sequence < turn.sequence,
-                    ConversationTurn.status.in_(TERMINAL),
-                )
-                .order_by(ConversationTurn.sequence.desc())
-                .limit(12)
-            )
-        )
-        context = [
-            {
-                "user": item.body[:8000],
-                "assistant": (item.reply or "")[:8000],
-                "status": item.status,
-                "error_code": item.error_code,
-            }
-            for item in reversed(history)
-        ]
-        body = json.dumps(
-            {"history": context, "user_message": turn.body, "delegated_results": results},
-            ensure_ascii=False,
+        # Only new input crosses this boundary; the SDK Session owns prior history.
+        body = (
+            json.dumps({"delegated_results": results}, ensure_ascii=False)
+            if results
+            else turn.body
         )
         create_execution(
             self.session,
