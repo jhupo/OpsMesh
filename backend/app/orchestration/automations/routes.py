@@ -9,7 +9,6 @@ from opsmesh_plugin_sdk.messaging.contracts import (
     AutomationReply,
     AutomationStreamEvent,
     EventState,
-    IncomingMessage,
 )
 from opsmesh_plugin_sdk.packaging.distribution import PluginCatalog, SignedPluginRelease
 from opsmesh_plugin_sdk.packaging.manifest import PluginManifest
@@ -22,6 +21,7 @@ from backend.app.identity.authorization.errors import AuthorizationError
 from backend.app.identity.authorization.permissions import WorkspaceAction
 from backend.app.orchestration.automations.contracts import (
     AutomationConfiguration,
+    AutomationMessage,
     AutomationResponse,
     AutomationUpdate,
     ExternalIdentityRequest,
@@ -49,7 +49,7 @@ def configuration_contracts(
 ) -> dict[str, object]:
     return {
         "automation": AutomationConfiguration.model_json_schema(),
-        "message": IncomingMessage.model_json_schema(),
+        "message": AutomationMessage.model_json_schema(),
         "reply": AutomationReply.model_json_schema(),
         "event_state": EventState.model_json_schema(),
         "stream_event": AutomationStreamEvent.model_json_schema(),
@@ -112,7 +112,7 @@ def update_automation(
 @router.post("/{automation_id}/events", response_model=AcceptedEvent, status_code=202)
 def receive_message(
     automation_id: UUID,
-    request: IncomingMessage,
+    request: AutomationMessage,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> object:

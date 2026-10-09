@@ -101,7 +101,6 @@ class _MemoryRequestState:
     working_entries: list[WorkspaceMemoryEntry]
     retrieved_memory: AgentMemoryContext
     persistent_session: SQLAlchemyAgentSession | None
-    provider_continuation: dict[str, str | None]
     continuations: tuple[AgentRuntimeToolContinuation, ...]
 
 
@@ -346,14 +345,6 @@ class RunRequestBuilder:
         if persistent_session is not None:
             metadata["persistent_session_key"] = persistent_session.session_id
             metadata["persistent_session_mode"] = "sdk_session"
-        provider_continuation = self.provider_continuation_for_run(
-            run=run,
-            session_ref=session_ref,
-        )
-        if provider_continuation["previous_response_id"] is not None:
-            metadata["previous_response_id"] = provider_continuation["previous_response_id"]
-        if provider_continuation["conversation_id"] is not None:
-            metadata["conversation_id"] = provider_continuation["conversation_id"]
         continuations = tool_continuations_for_run(run.input)
         if continuations:
             metadata["tool_continuations"] = [
@@ -369,7 +360,6 @@ class RunRequestBuilder:
             working_entries=working_entries,
             retrieved_memory=retrieved_memory,
             persistent_session=persistent_session,
-            provider_continuation=provider_continuation,
             continuations=continuations,
         )
 
@@ -531,8 +521,6 @@ class RunRequestBuilder:
             tool_executor=self.build_tool_executor() if inputs.allowed_tools else None,
             continuations=memory.continuations,
             session=memory.persistent_session,
-            previous_response_id=memory.provider_continuation["previous_response_id"],
-            conversation_id=memory.provider_continuation["conversation_id"],
             tracing=context.tracing,
             sandbox=runtime.sandbox,
             resume_state=AgentRunStateStore(self.session, secret_service).load(
@@ -652,24 +640,6 @@ class RunRequestBuilder:
         ref: PersistentAgentSessionRef | None = None,
     ) -> SQLAlchemyAgentSession | None:
         return self.session_service.persistent_session_for_run(run, task, profile, ref)
-
-    def provider_continuation_for_run(
-        self,
-        *,
-        run: AgentRun,
-        session_ref: PersistentAgentSessionRef,
-    ) -> dict[str, str | None]:
-        return self.session_service.provider_continuation_for_run(
-            run=run,
-            session_ref=session_ref,
-        )
-
-    def latest_completed_run_for_session(
-        self,
-        run: AgentRun,
-        session_ref: PersistentAgentSessionRef,
-    ) -> AgentRun | None:
-        return self.session_service.latest_completed_run_for_session(run, session_ref)
 
     def sync_provider_conversation_id(self, run: AgentRun) -> None:
         self.session_service.sync_provider_conversation_id(run)

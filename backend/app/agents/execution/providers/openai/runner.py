@@ -91,7 +91,8 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             }
         ),
         limits={"max_agent_tool_depth": 3, "max_agent_tool_turns": 20},
-        unsupported_reasons={},
+        unsupported_reasons={
+        },
     )
 
     def __init__(self) -> None:

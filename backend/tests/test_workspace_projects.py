@@ -22,6 +22,8 @@ from backend.app.shared.security.rate_limits import FixedWindowRateLimiter
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 from backend.app.workspaces.projects.policy import validate_project_configuration
+from backend.tests.fixtures.execution import test_agent_id
+from backend.tests.test_worker_run_execution import _seed_default_model_provider
 
 TOKEN = "project-test-token"
 
@@ -32,6 +34,9 @@ def test_project_api_manages_scoped_layout_inputs_and_outputs() -> None:
     _, foreign_workspace = _seed_workspace(session, role="owner", slug="foreign")
     source_file = _file(session, workspace.id, owner.id, "requirements.md")
     foreign_file = _file(session, foreign_workspace.id, None, "foreign.txt")
+    agent_id = test_agent_id(session, workspace.id)
+    _seed_default_model_provider(session, workspace_id=workspace.id, user_id=owner.id)
+    session.commit()
     headers = _headers(owner.id)
 
     created = client.post(
@@ -81,7 +86,11 @@ def test_project_api_manages_scoped_layout_inputs_and_outputs() -> None:
     task = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=headers,
-        json={"title": "Build", "workspace_project_id": project_id},
+        json={
+            "title": "Build",
+            "workspace_project_id": project_id,
+            "agent_profile_id": str(agent_id),
+        },
     )
     removed = client.delete(
         f"/api/v1/workspaces/{workspace.id}/projects/{project_id}/input-files/"
@@ -172,6 +181,9 @@ def test_project_versions_freeze_exact_run_inputs_and_retry_snapshot() -> None:
         "spec-v2.txt",
         checksum="b" * 64,
     )
+    agent_id = test_agent_id(session, workspace.id)
+    _seed_default_model_provider(session, workspace_id=workspace.id, user_id=owner.id)
+    session.commit()
     headers = _headers(owner.id)
 
     created = client.post(
@@ -199,7 +211,11 @@ def test_project_versions_freeze_exact_run_inputs_and_retry_snapshot() -> None:
     first_task = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=headers,
-        json={"title": "First run", "workspace_project_id": project_id},
+        json={
+            "title": "First run",
+            "workspace_project_id": project_id,
+            "agent_profile_id": str(agent_id),
+        },
     )
     assert first_task.status_code == 201
     first_run = session.scalar(
@@ -287,19 +303,21 @@ def test_project_versions_freeze_exact_run_inputs_and_retry_snapshot() -> None:
         headers=headers,
     )
     assert retry_snapshot.status_code == 200
-    assert retry_snapshot.json()["fingerprint_sha256"] == first_snapshot.json()[
-        "fingerprint_sha256"
-    ]
-    assert retry_snapshot.json()["manifest"]["configuration"]["version"] == 1
-    assert retry_snapshot.json()["manifest"]["files"][0]["workspace_file_id"] == str(
-        first_file.id
+    assert (
+        retry_snapshot.json()["fingerprint_sha256"] == first_snapshot.json()["fingerprint_sha256"]
     )
+    assert retry_snapshot.json()["manifest"]["configuration"]["version"] == 1
+    assert retry_snapshot.json()["manifest"]["files"][0]["workspace_file_id"] == str(first_file.id)
     assert retry_snapshot.json()["manifest"]["files"][0]["storage_key"] == "[redacted]"
 
     second_task = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=headers,
-        json={"title": "Second run", "workspace_project_id": project_id},
+        json={
+            "title": "Second run",
+            "workspace_project_id": project_id,
+            "agent_profile_id": str(agent_id),
+        },
     )
     assert second_task.status_code == 201
     second_run = session.scalar(
@@ -311,9 +329,9 @@ def test_project_versions_freeze_exact_run_inputs_and_retry_snapshot() -> None:
         headers=headers,
     )
     assert second_snapshot.status_code == 200
-    assert second_snapshot.json()["fingerprint_sha256"] != first_snapshot.json()[
-        "fingerprint_sha256"
-    ]
+    assert (
+        second_snapshot.json()["fingerprint_sha256"] != first_snapshot.json()["fingerprint_sha256"]
+    )
     assert second_snapshot.json()["manifest"]["configuration"]["version"] == 2
     assert second_snapshot.json()["manifest"]["files"][0]["workspace_file_id"] == str(
         second_file.id

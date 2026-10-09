@@ -7,7 +7,6 @@ from opsmesh_plugin_sdk.messaging.contracts import (
     AcceptedEvent,
     AutomationReply,
     EventState,
-    IncomingMessage,
 )
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,14 +23,15 @@ from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.orchestration.automations.authorization import require_automation_principal
 from backend.app.orchestration.automations.contracts import (
     AutomationConfiguration,
+    AutomationMessage,
     AutomationUpdate,
 )
 from backend.app.orchestration.automations.conversations import AutomationConversationService
 from backend.app.orchestration.automations.identities import ExternalIdentityService
 from backend.app.orchestration.automations.io import (
     external_output,
-    message_instruction,
     model_message,
+    validate_follow_up,
 )
 from backend.app.orchestration.automations.models import Automation, AutomationEvent
 from backend.app.orchestration.automations.plugin_attachments import PluginAttachmentService
@@ -143,7 +143,7 @@ class AutomationService:
         workspace_id: UUID,
         automation_id: UUID,
         user_id: UUID | PluginPrincipal,
-        message: IncomingMessage,
+        message: AutomationMessage,
     ) -> AutomationEvent:
         item = self.require(workspace_id, automation_id)
         config = AutomationConfiguration.model_validate(item.configuration)
@@ -173,8 +173,8 @@ class AutomationService:
             ExecutionIdentityService(self._session).restore(workspace_id, identity),
             source_install_id,
         )
-        if message.action in {"follow_up", "add_instruction"}:
-            message_instruction(config, message)
+        if message.action == "follow_up":
+            validate_follow_up(config, message)
         target = AutomationConversationService(self._session).target(item, message)
         if target is not None and target.source_install_id != source_install_id:
             raise ResourceAccessDenied()
@@ -401,9 +401,8 @@ class AutomationService:
                         event.workspace_id,
                         event.execution_identity,
                     )
-                    previous_context: dict[str, object] = {}
                     if config.trigger_type == "message":
-                        message = IncomingMessage.model_validate(event.input_payload)
+                        message = AutomationMessage.model_validate(event.input_payload)
                         live_identity = ExternalIdentityService(self._session).resolve(
                             item,
                             message.sender_id,
@@ -424,7 +423,6 @@ class AutomationService:
                         )
                         if routed.handled:
                             continue
-                        previous_context = routed.previous_context
                     active_task = self._session.scalar(
                         select(Task.id)
                         .join(AutomationEvent, AutomationEvent.task_id == Task.id)
@@ -438,7 +436,9 @@ class AutomationService:
                         .limit(1)
                     )
                     if active_task is not None:
-                        if config.overlap_policy == "skip":
+                        if config.overlap_policy == "skip" and (
+                            config.trigger_type != "message" or message.action != "follow_up"
+                        ):
                             event.status = "skipped"
                         continue
                     self._validate_targets(event.workspace_id, config)
@@ -457,7 +457,6 @@ class AutomationService:
                                 "event": model_message(config, message)
                                 if config.trigger_type == "message"
                                 else event.input_payload,
-                                "previous_context": previous_context,
                             },
                             generic_state={"automation_event_id": str(event.id)},
                         ),

@@ -454,7 +454,24 @@ def _authorize_changes(session: Session, flush_context: object, instances: objec
                 # Only the authorized resource-review service appends these requests; there
                 # is no client approval-creation endpoint. Deciding still requires admin.
                 continue
-            if table.name in _PARENTS:
+            if (
+                table.name == "approvals"
+                and row.task_id is None
+                and row.approval_type.startswith("automatic.")
+                and row.payload.get("reviewer") == "model"
+                and row.status in {"approved", "rejected"}
+                and row.decided_by_user_id is None
+            ):
+                # Model decisions are immutable control-plane evidence, appended by the
+                # configured reviewer. Orphan evidence creation remains admin-only.
+                members = Base.metadata.tables["workspace_members"]
+                statement = select(members.c.id).where(
+                    members.c.workspace_id == scope.workspace_id,
+                    members.c.user_id == scope.user.user_id,
+                    members.c.status == "active",
+                    members.c.role.in_(["owner", "admin"]),
+                )
+            elif table.name in _PARENTS:
                 foreign_key, parent_name = _PARENTS[table.name]
                 if table.name == "automation_events":
                     foreign_key, parent_name = "automation_id", "automations"

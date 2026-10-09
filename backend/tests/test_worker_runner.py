@@ -3600,6 +3600,7 @@ def test_worker_pool_bounds_claims_and_stops_active_sdk_runs(
     lock = Lock()
     started: list[UUID] = []
     threads: dict[UUID, int] = {}
+    sdk_tasks: dict[UUID, int] = {}
 
     class WaitingSDK:
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
@@ -3610,6 +3611,7 @@ def test_worker_pool_bounds_claims_and_stops_active_sdk_runs(
             with lock:
                 started.append(request.context.run_id)
                 threads[request.context.run_id] = get_ident()
+                sdk_tasks[request.context.run_id] = id(asyncio.current_task())
                 if len(started) == 2:
                     entered.set()
             while not release.is_set():
@@ -3625,6 +3627,7 @@ def test_worker_pool_bounds_claims_and_stops_active_sdk_runs(
         config=WorkerRunnerConfig(
             worker_id="pool",
             concurrency=2,
+            blocking_io_concurrency=1,
             heartbeat_interval_seconds=0.1,
             maintenance_interval_seconds=0.1,
             idle_sleep_seconds=0.01,
@@ -3643,7 +3646,8 @@ def test_worker_pool_bounds_claims_and_stops_active_sdk_runs(
     try:
         assert entered.wait(15), "SDK executions did not overlap"
         assert len(started) == 2
-        assert len(set(threads.values())) == 2
+        assert len(set(threads.values())) == 1
+        assert len(set(sdk_tasks.values())) == 2
         assert queue.count_queued() == 1
         assert queue.count_processing() == 2
         assert maintained.is_set()

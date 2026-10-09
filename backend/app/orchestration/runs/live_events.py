@@ -10,13 +10,13 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeToolExecutor,
     AgentRuntimeToolResult,
 )
-from backend.app.orchestration.tasks.events import TaskEventBus
+from backend.app.orchestration.tasks.events import TaskEventPublisher
 from backend.app.shared.security.redaction import redact_sensitive_text
 
 
 @dataclass
 class RunLivePublisher:
-    bus: TaskEventBus
+    bus: TaskEventPublisher
     workspace_id: UUID
     task_id: UUID
     run_id: UUID
@@ -94,10 +94,10 @@ class LiveToolExecutor:
     executor: AgentRuntimeToolExecutor
     publisher: RunLivePublisher
 
-    def review_tool_call(
+    async def review_tool_call(
         self, *, context: AgentRuntimeContext, tool_name: str, arguments: dict[str, object]
     ) -> dict[str, object]:
-        return self.executor.review_tool_call(
+        return await self.executor.review_tool_call(
             context=context, tool_name=tool_name, arguments=arguments
         )
 

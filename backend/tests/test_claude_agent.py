@@ -72,7 +72,7 @@ class RecordingExecutor:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
 
-    def review_tool_call(self, **_: object) -> dict[str, object]:
+    async def review_tool_call(self, **_: object) -> dict[str, object]:
         return {"decision": "allow", "risk_level": "low", "reasons": []}
 
     async def execute_tool(
@@ -168,7 +168,7 @@ def test_claude_agent_sdk_runner_uses_mcp_tool_bridge_and_policy_review() -> Non
     captured: dict[str, object] = {}
 
     class Executor(RecordingExecutor):
-        def review_tool_call(self, **_: object) -> dict[str, object]:
+        async def review_tool_call(self, **_: object) -> dict[str, object]:
             return {"decision": "allow", "risk_level": "low"}
 
     async def fake_query(*, prompt: str, options: object):
@@ -318,7 +318,7 @@ def test_claude_approval_hook_fails_closed_on_unknown_decision(
     decision: str | None, expected: str
 ) -> None:
     class Executor(RecordingExecutor):
-        def review_tool_call(self, **_: object) -> dict[str, object]:
+        async def review_tool_call(self, **_: object) -> dict[str, object]:
             return {"decision": decision}
 
     executor = Executor()
@@ -358,7 +358,7 @@ def test_claude_model_settings_use_sdk_shapes_without_silent_fallback() -> None:
 @pytest.mark.parametrize("decision", ["allow", "deny", "require_approval"])
 def test_native_auto_approval_cannot_bypass_platform_review(decision: str) -> None:
     class Executor(RecordingExecutor):
-        def review_tool_call(self, **_: object) -> dict[str, object]:
+        async def review_tool_call(self, **_: object) -> dict[str, object]:
             return {"decision": decision}
 
     request = _request(tool_executor=Executor())

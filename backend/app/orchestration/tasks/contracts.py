@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 CORRECTION_TARGET_PATTERN = "^(task|step|agent|artifact|final_output)$"
 CORRECTION_MODE_PATTERN = "^(revise|regenerate|add_missing_work|replace_artifact|stop_work)$"
@@ -15,7 +15,9 @@ class TaskCorrectionRequest(BaseModel):
 
 
 class TaskControlActionRequest(BaseModel):
-    action: str = Field(pattern="^(pause|resume|add_instruction|create_correction|cancel)$")
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(pattern="^(pause|resume|create_correction|cancel)$")
     instruction: str | None = Field(default=None, max_length=4_000)
     reason: str | None = Field(default=None, max_length=1_000)
     enqueue: bool = True

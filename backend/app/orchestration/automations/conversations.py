@@ -1,9 +1,9 @@
 """Scoped message routing; task execution and controls remain owned by orchestration."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from uuid import UUID
 
-from opsmesh_plugin_sdk.messaging.contracts import IncomingMessage, PendingAction
+from opsmesh_plugin_sdk.messaging.contracts import PendingAction
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,8 +14,7 @@ from backend.app.identity.authorization.resources import (
     ResourceKind,
 )
 from backend.app.orchestration.approvals.models import Approval
-from backend.app.orchestration.automations.contracts import AutomationConfiguration
-from backend.app.orchestration.automations.io import external_output, message_instruction
+from backend.app.orchestration.automations.contracts import AutomationMessage
 from backend.app.orchestration.automations.models import Automation, AutomationEvent
 from backend.app.orchestration.tasks.contracts import TaskControlActionRequest
 from backend.app.orchestration.tasks.control.service import TaskControlService
@@ -26,7 +25,6 @@ from backend.app.orchestration.tasks.state import TERMINAL_TASK_STATUSES
 @dataclass(frozen=True)
 class MessageDispatch:
     handled: bool = False
-    previous_context: dict[str, object] = field(default_factory=dict)
 
 
 class AutomationConversationService:
@@ -47,7 +45,7 @@ class AutomationConversationService:
             raise ValueError("Automation event not found")
         return event
 
-    def target(self, item: Automation, message: IncomingMessage) -> AutomationEvent | None:
+    def target(self, item: Automation, message: AutomationMessage) -> AutomationEvent | None:
         if message.reply_to_event_id is None:
             return None
         target = self.require_event(item.workspace_id, item.id, message.reply_to_event_id)
@@ -84,7 +82,7 @@ class AutomationConversationService:
         ]
 
     def dispatch(
-        self, item: Automation, event: AutomationEvent, message: IncomingMessage
+        self, item: Automation, event: AutomationEvent, message: AutomationMessage
     ) -> MessageDispatch:
         target = self.target(item, message)
         if target is None:
@@ -101,18 +99,13 @@ class AutomationConversationService:
         access = ResourceAuthorizationService(self.session, principal)
         access.require(item.workspace_id, ResourceKind.TASK, task.id, ResourceAction.READ)
         terminal = task.status in {status.value for status in TERMINAL_TASK_STATUSES}
-        if terminal and message.action == "follow_up":
-            return MessageDispatch(
-                previous_context={
-                    "event_id": str(target.id),
-                    "task_id": str(task.id),
-                    "status": task.status,
-                    "output": external_output(self.session, target, task).value,
-                }
-            )
+        if message.action == "follow_up":
+            # Leave the event pending while its predecessor is active; it starts
+            # a new task using the same SDK Session after that work finishes.
+            return MessageDispatch(handled=not terminal)
         if terminal:
             raise ValueError("Terminal tasks require a follow_up message to start new work")
-        action = "add_instruction" if message.action == "follow_up" else message.action
+        action = message.action
         access.require(item.workspace_id, ResourceKind.TASK, task.id, ResourceAction.CONTROL)
         result = TaskControlService(self.session).apply_action(
             workspace_id=item.workspace_id,
@@ -120,11 +113,6 @@ class AutomationConversationService:
             actor_user_id=principal.user_id,
             request=TaskControlActionRequest(
                 action=action,
-                instruction=message_instruction(
-                    AutomationConfiguration.model_validate(event.configuration), message
-                )
-                if action == "add_instruction"
-                else None,
                 reason="automation_message",
                 enqueue=action == "resume",
                 metadata={"automation_event_id": str(event.id), "sender_id": message.sender_id},

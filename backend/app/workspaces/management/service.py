@@ -12,7 +12,7 @@ from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.memory.models import WorkspaceMemoryConfiguration
 from backend.app.resources.memory.policy import default_lifecycle_policy, default_retrieval_policy
 from backend.app.shared.config import Settings, get_settings
-from backend.app.shared.db.errors import commit_or_raise_conflict
+from backend.app.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
 from backend.app.shared.db.pagination import page_scalars
 from backend.app.shared.pagination import PageParams
 from backend.app.workspaces.management.contracts import (
@@ -77,7 +77,7 @@ class WorkspaceService:
             lifecycle_policy=default_lifecycle_policy(),
         )
         self._session.add_all([workspace, membership, memory_configuration])
-        self._session.flush()
+        flush_or_raise_conflict(self._session, "Workspace slug already exists")
         validate_resource_review_settings(
             self._session, workspace_id=workspace.id, settings=workspace.settings
         )

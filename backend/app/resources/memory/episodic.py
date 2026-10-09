@@ -391,7 +391,6 @@ def _task_message_episode(message_type: str) -> tuple[str, str] | None:
     if message_type in {
         "human.feedback",
         "task.correction.created",
-        "task.control.add_instruction",
     }:
         return "human_feedback", "recorded"
     if message_type == "pm.acceptance_decision" or message_type.startswith("task.operator."):

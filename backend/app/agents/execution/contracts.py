@@ -328,7 +328,7 @@ class AgentRuntimeToolContinuation:
 
 
 class AgentRuntimeToolExecutor(Protocol):
-    def review_tool_call(
+    async def review_tool_call(
         self,
         *,
         context: AgentRuntimeContext,
