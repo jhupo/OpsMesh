@@ -4,6 +4,7 @@ import io
 import math
 import posixpath
 import re
+import socket
 import tarfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -82,6 +83,7 @@ class DockerRuntimeBackend:
             ),
             persistent=runtime.execution_mode == "persistent",
         )
+
 
 @dataclass(frozen=True, slots=True)
 class DockerSandboxSessionExecutor(SandboxSessionExecutor):
@@ -258,6 +260,7 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                     container,
                     command,
                     input_file,
+                    timeout_seconds=timeout_seconds,
                     working_dir=working_dir,
                 )
         except RequestsTimeout as exc:
@@ -306,25 +309,24 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
         command: list[str],
         input_file: RuntimeCommandInputFile,
         *,
+        timeout_seconds: int,
         working_dir: str | None,
     ) -> RuntimeCommandResult:
         if not _INPUT_ARGUMENT_NAME.fullmatch(input_file.argument_name):
             raise ValueError("Runtime input argument name is invalid")
         if len(input_file.content) > _COMMAND_INPUT_LIMIT_BYTES:
             raise ValueError("Runtime command input exceeds its transfer limit")
-        uid, gid = _container_identity(container)
         directory_name = f"opsmesh-command-input-{uuid4()}"
         container_directory = f"/tmp/{directory_name}"
         container_path = f"{container_directory}/request.json"
-        archive = _input_file_archive(
-            directory_name,
-            input_file.content,
-            uid=uid,
-            gid=gid,
-        )
-        if container.put_archive("/tmp", archive) is not True:
-            raise RuntimeError("Docker rejected the runtime command input")
         try:
+            _write_input_file(
+                container,
+                container_directory,
+                container_path,
+                input_file.content,
+                timeout_seconds=timeout_seconds,
+            )
             return _exec(
                 container,
                 [*command, input_file.argument_name, container_path],
@@ -419,23 +421,50 @@ def _container_identity(container: Container) -> tuple[int, int]:
     return uid, gid
 
 
-def _input_file_archive(directory_name: str, content: bytes, *, uid: int, gid: int) -> bytes:
-    output = io.BytesIO()
-    with tarfile.open(fileobj=output, mode="w", format=tarfile.USTAR_FORMAT) as tar:
-        directory = tarfile.TarInfo(directory_name)
-        directory.type = tarfile.DIRTYPE
-        directory.mode = 0o700
-        directory.uid = uid
-        directory.gid = gid
-        tar.addfile(directory)
-
-        file_info = tarfile.TarInfo(f"{directory_name}/request.json")
-        file_info.size = len(content)
-        file_info.mode = 0o400
-        file_info.uid = uid
-        file_info.gid = gid
-        tar.addfile(file_info, io.BytesIO(content))
-    return output.getvalue()
+def _write_input_file(
+    container: Container,
+    directory: str,
+    path: str,
+    content: bytes,
+    *,
+    timeout_seconds: int,
+) -> None:
+    # Docker's archive endpoint rejects read-only rootfs, including writable tmpfs mounts.
+    # Exec stdin keeps credentials out of argv and writes as the runtime's own user.
+    writer = (
+        "import os,sys; os.mkdir(sys.argv[1],0o700); "
+        "fd=os.open(sys.argv[2],os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o400); "
+        "data=sys.stdin.buffer.read(int(sys.argv[3])+1); "
+        "assert len(data)<=int(sys.argv[3]); "
+        "f=os.fdopen(fd,'wb'); f.write(data); f.close()"
+    )
+    if container.client is None:
+        raise RuntimeError("Runtime container has no Docker client")
+    api = container.client.api
+    execution = api.exec_create(
+        container.id,
+        ["python", "-c", writer, directory, path, str(len(content))],
+        stdin=True,
+        stdout=True,
+        stderr=True,
+    )
+    connection = api.exec_start(execution["Id"], socket=True)
+    try:
+        transport: Any = getattr(connection, "_sock", connection)
+        transport.settimeout(timeout_seconds)
+        transport.sendall(content)
+        transport.shutdown(socket.SHUT_WR)
+        while transport.recv(4096):
+            pass
+    finally:
+        try:
+            response = getattr(connection, "_response", None)
+            if response is not None:
+                response.close()
+        finally:
+            connection.close()
+    if api.exec_inspect(execution["Id"])["ExitCode"] != 0:
+        raise RuntimeError("Runtime command input transfer failed")
 
 
 def _single_file_archive(name: str, content: bytes) -> bytes:

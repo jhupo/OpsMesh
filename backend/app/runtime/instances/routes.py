@@ -350,6 +350,9 @@ def _enqueue_runtime_control(
     *,
     force: bool = False,
 ) -> None:
+    if job.routing.get("action") in {"start", "stop"}:
+        queue.enqueue_runtime_transition(job)
+        return
     if not queue.enqueue(job, force=force):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

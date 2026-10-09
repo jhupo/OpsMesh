@@ -38,6 +38,28 @@ redis.call("RPUSH", KEYS[2], ARGV[2])
 return 1
 """
 
+ENQUEUE_ACTIVE_ONLY_SCRIPT = """
+local candidate = cjson.decode(ARGV[1])
+local function matches(raw, processing)
+    local entry = cjson.decode(raw)
+    local job = entry
+    if processing then job = cjson.decode(entry.payload) end
+    return job.workspace_id == candidate.workspace_id
+        and job.idempotency_key == candidate.idempotency_key
+end
+for _, raw in ipairs(redis.call("LRANGE", KEYS[1], 0, -1)) do
+    if matches(raw, false) then return 0 end
+end
+for _, raw in ipairs(redis.call("ZRANGE", KEYS[2], 0, -1)) do
+    if matches(raw, true) then return 0 end
+end
+for _, raw in ipairs(redis.call("ZRANGE", KEYS[3], 0, -1)) do
+    if matches(raw, false) then return 0 end
+end
+redis.call("RPUSH", KEYS[1], ARGV[1])
+return 1
+"""
+
 LEASE_JOB_SCRIPT = """
 local removed = redis.call("LREM", KEYS[1], 1, ARGV[1])
 if removed == 0 then
@@ -170,6 +192,25 @@ class RedisQueue:
         self.redis.delete(self.keys.idempotency_key(str(job.workspace_id), job.idempotency_key))
         return self.enqueue(job)
 
+    def enqueue_runtime_transition(self, job: JobPayload) -> bool:
+        """Coalesce active start/stop requests atomically; completed requests are reusable."""
+        if job.job_type != JobType.RUNTIME_CONTROL or job.routing.get("action") not in {
+            "start",
+            "stop",
+        }:
+            raise ValueError("Only runtime start/stop jobs support reusable deduplication")
+        job = job.with_trace_context()
+        return bool(
+            self.redis.eval(  # type: ignore[no-untyped-call]
+                ENQUEUE_ACTIVE_ONLY_SCRIPT,
+                3,
+                self.keys.queue(self.queue_name),
+                self._processing_key(),
+                self._retry_key(),
+                self._serialize(job),
+            )
+        )
+
     def _enqueue(self, job: JobPayload, *, force: bool) -> bool:
         idempotency_key = self.keys.idempotency_key(str(job.workspace_id), job.idempotency_key)
         payload = self._serialize(job)
@@ -254,9 +295,7 @@ class RedisQueue:
             if acquired:
                 lock.release()
 
-    def reclaim_expired(
-        self, *, limit: int = 100, now: float | None = None
-    ) -> list[JobPayload]:
+    def reclaim_expired(self, *, limit: int = 100, now: float | None = None) -> list[JobPayload]:
         if limit <= 0:
             return []
         processing_key = self._processing_key()

@@ -38,7 +38,10 @@ class RuntimeCleanupJobHandler:
             key="stale_lease_after_seconds",
             context=RUNTIME_CLEANUP_JOB,
         )
-        RuntimeCleanupService(self._context.session).cleanup_stale_runtimes(
+        RuntimeCleanupService(
+            self._context.session,
+            self._context.runtime_docker_client,
+        ).cleanup_stale_runtimes(
             job.workspace_id,
             stale_after_seconds=stale_after_seconds,
         )

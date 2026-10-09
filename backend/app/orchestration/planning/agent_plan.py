@@ -27,7 +27,12 @@ class AgentPlanProposal(BaseModel):
 
 def planner_output_schema() -> AgentRuntimeOutputSchema:
     return AgentRuntimeOutputSchema(
-        name="task_plan", schema=AgentPlanProposal.model_json_schema(), version="3"
+        # Workflow nodes contain dynamic tool arguments and policy maps. They cannot be
+        # represented by strict schemas; output still passes JSON Schema and domain validation.
+        name="task_plan",
+        schema=AgentPlanProposal.model_json_schema(),
+        version="3",
+        strict=False,
     )
 
 

@@ -3,10 +3,6 @@ from __future__ import annotations
 from backend.app.runtime.workers.models import WorkerRunnerConfig
 
 
-def worker_status_for_failures(failed: int) -> str:
-    return "degraded" if failed > 0 else "online"
-
-
 def worker_heartbeat_details(
     *,
     config: WorkerRunnerConfig,
