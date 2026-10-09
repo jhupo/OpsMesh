@@ -71,7 +71,10 @@ class WorkspaceCapabilityCatalogService:
                 if credential.mcp_server_id in (None, server.id)
             ]
             credentials_required = requires_credentials(server)
-            if server.server_type in {"streamable_http", "sse", "hosted"}:
+            if (
+                server.server_type in {"streamable_http", "sse", "hosted"}
+                or server.connection.get("runtime") == "managed"
+            ):
                 eligible_credentials = selected_remote_credentials(server, eligible_credentials)
             tools.append(
                 CapabilityToolDescriptor(

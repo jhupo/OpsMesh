@@ -1,9 +1,9 @@
-
 from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.contracts import AgentRuntimeExecutor
 from backend.app.agents.providers.jobs import ModelProviderHealthJobHandler
 from backend.app.capabilities.mcp.execution.jobs import McpToolExecutionJobHandler
+from backend.app.capabilities.mcp.managed_jobs import ManagedMcpJobHandler
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.governance.audit.jobs import AuditIntegrityJobHandler
 from backend.app.governance.credentials.jobs import SecretReencryptJobHandler
@@ -60,6 +60,7 @@ def _build_handler_registry(
         JobType.AGENT_RUN: AgentRunJobHandler(context),
         JobType.AUDIT_INTEGRITY_CHECK: AuditIntegrityJobHandler(context),
         JobType.MCP_TOOL_EXECUTION: McpToolExecutionJobHandler(context),
+        JobType.MCP_PROCESS_CONTROL: ManagedMcpJobHandler(context),
         JobType.TASK_PLAN: TaskPlanJobHandler(context),
         JobType.TEAM_EXECUTION_LOOP: TeamExecutionLoopJobHandler(context),
         JobType.RUNTIME_CONTROL: RuntimeControlJobHandler(context),
