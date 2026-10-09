@@ -4189,18 +4189,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert model_provider["provider"] == "openai-compatible"
     assert model_provider["selected_model"] == "claude-opus-4-6"
     assert model_provider["agent_model"] == "workspace-default"
-    assert model_provider["model_capability"] == {
-        "provider": "openai-compatible",
-        "model": "*",
-        "display_name": "OpenAI-compatible model",
-        "capabilities": ["tools", "json_mode", "streaming"],
-        "supports_tools": True,
-        "supports_vision": False,
-        "supports_json_mode": True,
-        "supports_streaming": True,
-        "context_window_tokens": None,
-        "notes": "Actual support depends on the upstream gateway and selected model.",
-    }
+    assert model_provider["model_capability"] is None
     assert model_provider["default_model"] == "claude-opus-4-6"
     assert model_provider["model_api"] == "chat_completions"
     assert model_provider["base_url_configured"] is True
@@ -4253,9 +4242,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
         "chat_completions",
     ]
     assert provider_options[str(default_credential.id)]["default_model_api"] is None
-    assert {
-        item["model"] for item in provider_options[str(default_credential.id)]["model_options"]
-    }.issuperset({"gpt-5", "gpt-4.1-mini"})
+    assert provider_options[str(default_credential.id)]["model_options"] == []
     assert provider_options[str(credential.id)]["provider"] == "openai-compatible"
     assert provider_options[str(credential.id)]["model_api"] == "chat_completions"
     assert provider_options[str(credential.id)]["model_apis"] == [
@@ -4264,9 +4251,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     ]
     assert provider_options[str(credential.id)]["default_model_api"] is None
     assert provider_options[str(credential.id)]["base_url_host"] == "dash.ovload.com"
-    assert provider_options[str(credential.id)]["model_options"] == [
-        provider_options[str(credential.id)]["model_capability"]
-    ]
+    assert provider_options[str(credential.id)]["model_options"] == []
     assert provider_options[str(credential.id)]["scheduled_health_check"]["configured"] is True
     developer_binding = next(
         item
@@ -4287,18 +4272,7 @@ def test_team_operations_console_aggregates_runtime_members_sessions_and_mailbox
     assert developer_binding["credential_status"] == "active"
     assert developer_binding["credential_health_status"] == "unknown"
     assert developer_binding["budget_exhausted"] is False
-    assert developer_binding["model_capability"] == {
-        "provider": "openai-compatible",
-        "model": "*",
-        "display_name": "OpenAI-compatible model",
-        "capabilities": ["tools", "json_mode", "streaming"],
-        "supports_tools": True,
-        "supports_vision": False,
-        "supports_json_mode": True,
-        "supports_streaming": True,
-        "context_window_tokens": None,
-        "notes": "Actual support depends on the upstream gateway and selected model.",
-    }
+    assert developer_binding["model_capability"] is None
     assert developer_binding["available_credential_ids"] == [
         str(default_credential.id),
         str(credential.id),

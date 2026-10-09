@@ -2641,6 +2641,7 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
     session.add(task)
     session.flush()
     run = AgentRun(
+        agent_profile_id=task.owner_agent_profile_id,
         workspace_id=workspace.id,
         task_id=task.id,
         status=RunStatus.QUEUED.value,
@@ -2649,6 +2650,7 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
                 session,
                 workspace_id=str(workspace.id),
                 task_id=str(task.id),
+                agent_profile_id=str(task.owner_agent_profile_id),
             ),
             "pending_tool_results": [
                 {
@@ -2688,7 +2690,8 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
     ]
     assert request.tracing is not None
     assert request.tracing.workflow_name == "opsmesh.agent_run"
-    assert request.tracing.group_id == f"task:{task.id}"
+    assert request.session is not None
+    assert request.tracing.group_id == request.session.session_id
     assert request.tracing.metadata["tool_continuations"] == [
         {
             "tool_name": "generate_image",
