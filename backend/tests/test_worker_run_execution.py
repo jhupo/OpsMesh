@@ -238,7 +238,8 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
             WorkspaceMemoryEntry.scope_id == str(run.id),
         )
     ).all()
-    assert working_entries == []
+    assert working_entries
+    assert {entry.status for entry in working_entries} == {"expired"}
 
     # Permission changes after admission must reject the queued work before any model call.
     revoked_task = WorkspaceTaskService(session).create_task(
@@ -2630,6 +2631,7 @@ def test_resumed_run_carries_completed_self_hosted_tool_continuations() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
     task = Task(
+        owner_agent_profile_id=test_agent_id(session, workspace.id),
         execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
         workspace_id=workspace.id,
         created_by_user_id=user.id,

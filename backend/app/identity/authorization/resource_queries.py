@@ -61,6 +61,7 @@ _PARENTS: dict[str, tuple[str, str]] = {
     "revision_requests": ("task_id", "tasks"),
     "artifacts": ("task_id", "tasks"),
     "agent_messages": ("thread_id", "agent_message_threads"),
+    "persistent_agent_session_items": ("persistent_session_id", "persistent_agent_sessions"),
     "subworkflow_invocations": ("parent_task_id", "tasks"),
     "automation_events": ("task_id", "tasks"),
     "run_events": ("agent_run_id", "agent_runs"),
