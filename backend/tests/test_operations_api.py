@@ -390,6 +390,7 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert cleanup.json()["expired_worker_leases"] == 1
     assert cleanup_again.status_code == 200
     assert cleanup_again.json()["expired_worker_leases"] == 0
+    assert cleanup_again.json()["stale_marked_offline"] == 0
     session.refresh(runtime)
     session.refresh(stale_lease)
     session.refresh(other_workspace_stale_lease)
