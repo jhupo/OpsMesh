@@ -676,8 +676,10 @@ def test_openai_agents_runner_restores_sdk_state(
     assert captured["run_args"][1] is restored_state
 
 
+@pytest.mark.parametrize("stream", [False, True])
 def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
     monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
 ) -> None:
     approved: list[object] = []
     rejected: list[tuple[object, str | None]] = []
@@ -694,7 +696,10 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
 
     rejected_interruption = RejectedInterruption()
 
-    class State:
+    class State(openai_runtime.RunState):
+        def __init__(self) -> None:
+            pass
+
         def get_interruptions(self) -> list[object]:
             return [interruption, rejected_interruption]
 
@@ -709,15 +714,26 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
     async def fake_from_json(**_: object) -> State:
         return state
 
-    async def fake_runner_run(*_: object, **__: object) -> object:
-        class Result:
-            final_output = "resumed"
-            interruptions: list[object] = []
+    class Result:
+        final_output = "resumed"
+        interruptions: list[object] = []
 
+        async def stream_events(self):
+            for item in []:
+                yield item
+
+    def fake_runner_streamed(*_: object, **kwargs: object) -> object:
+        assert kwargs.get("context") is None, "Do not replace the approved SDK context wrapper"
+        assert approved == [interruption]
+        assert rejected == [(rejected_interruption, "operator denied")]
         return Result()
+
+    async def fake_runner_run(*args: object, **kwargs: object) -> object:
+        return fake_runner_streamed(*args, **kwargs)
 
     monkeypatch.setattr(openai_runtime.RunState, "from_json", fake_from_json)
     monkeypatch.setattr(openai_runtime.Runner, "run", fake_runner_run)
+    monkeypatch.setattr(openai_runtime.Runner, "run_streamed", fake_runner_streamed)
     profile = AgentProfile(
         workspace_id=uuid4(),
         name="Resumer",
@@ -729,6 +745,7 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
     request = AgentRunRequest(
         agent_profile=profile,
         input_text="ignored",
+        stream=stream,
         context=AgentRuntimeContext(
             workspace_id=profile.workspace_id,
             task_id=None,

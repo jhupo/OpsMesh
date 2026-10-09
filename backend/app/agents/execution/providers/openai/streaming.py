@@ -31,7 +31,9 @@ async def run_openai_streamed(
     result = Runner.run_streamed(
         agent,
         runner_input,
-        context=request.context,
+        # _runner_input already restored the live context and applied approvals to its wrapper.
+        # Passing the raw context here would replace that wrapper and discard the decisions.
+        context=None if isinstance(runner_input, RunState) else request.context,
         max_turns=request.max_turns,
         hooks=hooks,
         run_config=run_config,
