@@ -81,6 +81,13 @@ def test_agent_profiles_receive_a_complete_default_context_budget() -> None:
     values = normalize_create_payload({"name": "Analyst", "role": "worker"}, {})
 
     assert values["memory_policy"] == {
+        "sdk_memory": {
+            "enabled": False,
+            "read": True,
+            "generate": False,
+            "live_update": False,
+            "max_raw_memories": 32,
+        },
         "context_budget": {
             "max_input_tokens": None,
             "context_window_tokens": None,

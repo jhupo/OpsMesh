@@ -8,9 +8,7 @@ from backend.app.shared.config import Settings
 from backend.app.shared.security.redaction import redact_sensitive_payload_item
 from backend.app.shared.telemetry.request_context import LOG_CONTEXT_FIELDS, current_log_context
 
-_STANDARD_LOG_RECORD_FIELDS = frozenset(
-    logging.LogRecord("", 0, "", 0, "", (), None).__dict__
-)
+_STANDARD_LOG_RECORD_FIELDS = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__)
 
 
 class RequestContextFilter(logging.Filter):
@@ -52,8 +50,8 @@ def configure_logging(settings: Settings) -> None:
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     root_logger.setLevel(settings.log_level.upper())
-    # The SDK emits its own skip/start/complete compaction evidence at DEBUG.
-    # Enable only that logger; HTTP bodies and other SDK internals stay at the configured level.
+    # Observe native SDK compaction evidence without enabling compaction or setting its policy.
+    # HTTP bodies and other SDK internals stay at the configured level.
     logging.getLogger("openai-agents.openai.compaction").setLevel(logging.DEBUG)
 
     handler = logging.StreamHandler(sys.stdout)

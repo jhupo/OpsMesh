@@ -79,9 +79,9 @@ Agent Run 锁在事件循环中按 TTL/3 续期，不再为每个模型 Run 创�
 
 ## SDK 能力核对
 
-核对日期：2026-10-10。当前 SDK 原生存储、MCP、审批续接、Memory、压缩和结构化输出的实现、公共扩展缺口与升级要求见 [SDK 原生执行边界](sdk-native-execution.md)。
+核对日期：2026-10-10。当前 SDK 原生存储、MCP、审批续接、Memory、会话边界和结构化输出的实现、公共扩展缺口与升级要求见 [SDK 原生执行边界](sdk-native-execution.md)。
 
-官方 SQLAlchemySession 是消息存储实现；平台仅在公共 Session 回调上增加授权和租约校验。Agent 使用原生 mcp_servers，实际传输由批准的 Runtime 中的官方 SDK 执行。自托管 RPC 的等待保留同一个工具 call ID，不再写入 pending_tool_results 或伪造用户消息。SDK Memory 默认关闭，启用后要求 persistent Runtime，并按工作空间、用户、Agent 设置文件目录。Responses 压缩是唯一压缩层，结构化输出只在 SDK 校验。
+官方 SQLAlchemySession 是消息存储实现；平台仅在公共 Session 回调上增加授权和租约校验。Agent 使用原生 mcp_servers，实际传输由批准的 Runtime 中的官方 SDK 执行。自托管 RPC 的等待保留同一个工具 call ID，不再写入 pending_tool_results 或伪造用户消息。SDK Memory 默认关闭，启用后要求 persistent Runtime，并按工作空间、用户、Agent 设置文件目录。Session 直接交给 SDK Runner，不增加可选压缩包装层或触发策略；结构化输出只在 SDK 校验。
 
 SIGINT/SIGTERM 停止领取，向活动 SDK 设置协作取消。停止导致的错误不再重试；失租与业务取消区分。同步 handler 和已发出的外部工具只能等待自己的取消能力、超时或返回，不能强杀 Python 线程。drain 保持停止领取、等待当前工作结束。
 
@@ -91,6 +91,4 @@ SIGINT/SIGTERM 停止领取，向活动 SDK 设置协作取消。停止导致的
 
 完整 Worker 流程验证活动槽有界、两个 SDK Run 位于同一 OS 线程不同 asyncio Task、单 I/O 线程不限制 SDK 等待并发、第三个 Job 留队列、取消、失租和维护。自托管 MCP 已验证 SDK await 中断后的重新接回：只有一个远程 Job、一次审批执行和一次 MCP 配额消耗，审计进入终态。
 
-真实模型、第三方 compact、SDK Memory 生成计费、Runtime 镜像部署和生产压力尚未验收。SDK 进程整体迁移到 Runtime host/RPC、原生 redis.asyncio/AsyncSession 全栈迁移、完整控制 Inbox/Outbox、跨租户公平队列、服务等级保留槽、独立 CPU 计算服务及跨地区部署仍未实现。现有 Runtime 工具边界继续生效，不宣称 SDK 宿主隔离迁移已经完成。
-
-本轮未部署服务器；保持现有 Worker 停止状态。
+真实模型、SDK Memory 生成计费、Runtime 镜像部署和生产压力尚未验收。SDK 进程整体迁移到 Runtime host/RPC、原生 redis.asyncio/AsyncSession 全栈迁移、完整控制 Inbox/Outbox、跨租户公平队列、服务等级保留槽、独立 CPU 计算服务及跨地区部署仍未实现。现有 Runtime 工具边界继续生效，不宣称 SDK 宿主隔离迁移已经完成。

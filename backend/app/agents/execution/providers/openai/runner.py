@@ -8,6 +8,8 @@ from agents import (
     RunConfig,
     RunContextWrapper,
     Runner,
+    RunResult,
+    RunResultStreaming,
     RunState,
     Session,
     ToolExecutionConfig,
@@ -49,7 +51,6 @@ from backend.app.agents.execution.errors import (
 )
 from backend.app.agents.execution.guardrails import guardrail_events
 from backend.app.agents.execution.observer import AgentRuntimeExecutionObserver
-from backend.app.agents.execution.providers.openai.compaction import openai_run_session
 from backend.app.agents.execution.providers.openai.guardrails import (
     OpenAIRuntimeOutputSchema,
     OpenAIRuntimeOutputSchemaError,
@@ -188,19 +189,21 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
 
         hooks = OpenAIRuntimeHooks(observer, request.cancellation)
 
-        async def invoke_sdk(session: Session | None) -> Any:
-            try:
-                if request.stream or request.cancellation is not None:
-                    return await run_openai_streamed(
-                        request=request,
-                        agent=agent,
-                        runner_input=runner_input,
-                        hooks=hooks,
-                        run_config=self._run_config(request),
-                        session=session,
-                        observer=observer,
-                    )
-                return await Runner.run(
+        session = cast(Session | None, request.session)
+        result: RunResult | RunResultStreaming
+        try:
+            if request.stream or request.cancellation is not None:
+                result = await run_openai_streamed(
+                    request=request,
+                    agent=agent,
+                    runner_input=runner_input,
+                    hooks=hooks,
+                    run_config=self._run_config(request),
+                    session=session,
+                    observer=observer,
+                )
+            else:
+                result = await Runner.run(
                     agent,
                     runner_input,
                     context=None if request.resume_state is not None else request.context,
@@ -209,16 +212,13 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                     run_config=self._run_config(request),
                     session=session,
                 )
-            except OpenAIRuntimeOutputSchemaError as exc:
-                raise exc.policy_error from exc
-            except (
-                InputGuardrailTripwireTriggered,
-                OutputGuardrailTripwireTriggered,
-            ) as exc:
-                raise _guardrail_blocked_error(exc, guardrail_results) from exc
-
-        async with openai_run_session(request) as run_session:
-            result = await invoke_sdk(run_session)
+        except OpenAIRuntimeOutputSchemaError as exc:
+            raise exc.policy_error from exc
+        except (
+            InputGuardrailTripwireTriggered,
+            OutputGuardrailTripwireTriggered,
+        ) as exc:
+            raise _guardrail_blocked_error(exc, guardrail_results) from exc
         usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
         meter = memory_usage.get()
         if isinstance(usage, Usage) and meter is not None:
@@ -283,9 +283,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         if request.resume_state is None:
             if not request.attachments:
                 return request.input_text
-            content: list[dict[str, object]] = [
-                {"type": "input_text", "text": request.input_text}
-            ]
+            content: list[dict[str, object]] = [{"type": "input_text", "text": request.input_text}]
             for attachment in request.attachments:
                 if attachment.kind == "audio":
                     continue

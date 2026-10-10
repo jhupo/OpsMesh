@@ -4,7 +4,7 @@
 
 ## 职责
 
-SDK 管理模型与工具循环、会话消息、handoff、工具审批中断与 RunState 恢复、结构化输出验证、Responses 压缩及 Sandbox Memory 流水线。OpsMesh 管理租户身份、资源权限、冻结配置、配额、队列、租约、审批记录、审计、Runtime 和知识治理。意图路由由用户配置的 Manager 指令与工具决定，平台没有额外分类模型或外层强制 Agent 循环。
+SDK 管理模型与工具循环、会话消息、handoff、工具审批中断与 RunState 恢复、结构化输出验证及按需启用的 Sandbox Memory 流水线。OpsMesh 管理租户身份、资源权限、冻结配置、配额、队列、租约、审批记录、审计、Runtime 和知识治理。意图路由由用户配置的 Manager 指令与工具决定，平台没有额外分类模型或外层强制 Agent 循环。
 
 Worker 的每个活动 Job 是一个 asyncio Task；模型等待和自托管 MCP RPC 等待释放事件循环。同步数据库和基础设施操作进入有界 I/O 线程池，每次操作拥有独立事务。线程池是同步基础设施适配边界，不保存 Agent 对话状态。
 
@@ -36,7 +36,7 @@ stdio、Streamable HTTP、SSE 的实际连接在批准的 Runtime 执行，使�
 
 ## 压缩、记忆与输出
 
-会话压缩只有一个所有者：OpenAI Responses 路径通过原生 `OpenAIResponsesCompactionSession` 包装同一个 SQLAlchemySession。触发判断完全使用锁定 SDK 的默认策略，平台不配置 token 阈值，不按字节估算触发，也不安装 Sandbox Compaction。使用 SDK 的 `compaction_mode="input"`，由 SDK 提供 Session 历史，不依赖第三方网关持久保存响应 ID。SDK 的 `openai-agents.openai.compaction` 日志经过平台脱敏过滤，记录跳过、开始及完成；Chat Completions 和其他不支持该能力的 Provider 不执行自制压缩或静默降级。第三方网关是否支持 `responses.compact` 的 input 模式需要实际联调验证。
+会话直接以原生 Session 传入 `Runner.run` / `Runner.run_streamed`，平台不安装 `OpenAIResponsesCompactionSession` 或 Sandbox Compaction，不设置压缩触发器、阈值或 `context_management`，也不主动调用独立 compact 接口。SDK 的可选压缩包装层已删除；原生 Session 本身不会因条目数达到某个值而启用该包装层。`openai-agents.openai.compaction` 日志仍经过脱敏过滤，仅观察 SDK 行为，不启用压缩。新增产品输入的预算限制不读取或改写 Session 历史。
 
 知识搜索工具默认返回前 5 条、最多 10 条匹配摘要和引用定位；完整片段通过 `get_knowledge_citations` 按需读取。排名诊断和内部存储元数据留在平台检索审计中，不自动进入模型工具输出。
 
@@ -75,14 +75,26 @@ Agent Profile 的 `memory_policy.sdk_memory` 默认关闭。例如只读取持�
 
 Session 管理 API 的 message ID 现在是 SDK 整数 ID；不再返回 `sequence` 和 `openai_conversation_id`。仓库前端没有依赖这些字段；外部消费者需同时更新。
 
+## 全仓清理复核（2026-10-10）
+
+扫描仓库受版本管理的源码、合同、配置、测试、脚本和当前文档，并复核执行、Session、审批恢复、MCP RPC、工具检索及队列入口的调用链。此复核针对之前替换的实现及其引用，不等同于对所有业务模块逐行审计。
+
+- 删除主动启用压缩的模块、Runner 导入和包装调用，以及要求默认启用压缩的旧测试；普通和流式路径都直接传入原生 Session。
+- 活动源码不再包含旧补充指令入口、Provider 会话同步、历史重新拼接、`resume_input`、`sdk_continuation` 或 `pending_tool_results`。拒绝旧动作与禁止旧字段的边界测试继续保留。
+- Sandbox 只按授权配置 Filesystem、Shell 和可选 Memory，不安装 Compaction。新增输入预算、Provider 上下文窗口目录和知识检索条数限制仍是当前产品合同，不是会话压缩策略。
+- Chat 正常启动和结果回写使用事务 Outbox 与队列；维护仅用于恢复。Worker 活动 Job 使用 asyncio Task，同步基础设施使用有界线程池；没有为 SDK 增加外层模型循环。
+- Alembic 中的旧字段名用于删除旧数据和支持降级；`backend-directory-migration-files.csv` 是目录迁移时的历史符号快照。这些历史记录保留，不作为当前实现，也不在运行时加载。第三方依赖的可选压缩实现不修改。
+
+原生 SDK 多轮回归在普通和流式模式下分别跨越旧十条候选项触发条件，逐轮重新打开 SQLAlchemySession，验证完整历史持久化与续接，并禁止独立 compact 请求。模型 HTTP 使用离线传输，不调用真实模型或业务订单。
+
 ## 验证范围
 
 已运行真实 SDK 配合离线模型、SQLite 产品流程，以及独立本地 PostgreSQL schema 的完整 Alembic 升级/降级测试。覆盖会话隔离、审批恢复、原始 call ID、自托管 RPC 中断续接与配额、原生 stdio/HTTP、持久 Memory 初次与后续读取。没有调用真实业务订单或外部模型。
 
-最终聚焦回归：210 passed / 2 skipped；Ruff、mypy（1082 个源文件）、12 项 import-linter 合同、架构归属检查和依赖锁检查通过。额外执行调度器测试时有两项既有失败：Runtime Space 用例缺少模型 Provider，提前得到 `model_provider_unavailable`；在修改前 `829bf6ab` 的完整源码快照中复现了相同结果，不作为本次 SDK 验证通过项。
+此前 SDK 迁移的验证记录：210 passed / 2 skipped；Ruff、mypy（1082 个源文件）、12 项 import-linter 合同、架构归属检查和依赖锁检查通过。额外执行调度器测试时有两项既有失败：Runtime Space 用例缺少模型 Provider，提前得到 `model_provider_unavailable`；在修改前 `829bf6ab` 的完整源码快照中复现了相同结果，不作为本次 SDK 验证通过项。
 
 Linux 是现有生产 Worker 环境。Windows 下 psycopg 异步连接要求 Selector event loop，PostgreSQL 集成夹具显式设置该 loop；尚未验证同时运行 Claude 子进程等能力的 Windows PostgreSQL Worker。
 
-尚未验证：真实 Provider 的 Memory 生成与费用、第三方 compact 接口、生产 Runtime 镜像切换及负载。SDK 宿主进程整体迁到 Runtime host/RPC、自托管 HTTP/SSE、完整控制 Inbox、跨租户公平队列和独立 CPU 计算服务仍未实现；本次没有部署或重启服务器 Worker。
+尚未验证：真实 Provider 的 Memory 生成与费用、生产 Runtime 镜像切换及负载。SDK 宿主进程整体迁到 Runtime host/RPC、自托管 HTTP/SSE、完整控制 Inbox、跨租户公平队列和独立 CPU 计算服务仍未实现。
 
-官方入口：[SQLAlchemySession](https://openai.github.io/openai-agents-python/sessions/sqlalchemy_session/)、[Session 与压缩](https://openai.github.io/openai-agents-python/sessions/)、[MCP](https://openai.github.io/openai-agents-python/mcp/)、[本地 Context](https://openai.github.io/openai-agents-python/context/)、[锁定 SDK 源码](https://github.com/openai/openai-agents-python/tree/v0.17.2/src/agents)。
+官方入口：[SQLAlchemySession](https://openai.github.io/openai-agents-python/sessions/sqlalchemy_session/)、[Session](https://openai.github.io/openai-agents-python/sessions/)、[MCP](https://openai.github.io/openai-agents-python/mcp/)、[本地 Context](https://openai.github.io/openai-agents-python/context/)、[锁定 SDK 源码](https://github.com/openai/openai-agents-python/tree/v0.17.2/src/agents)。
