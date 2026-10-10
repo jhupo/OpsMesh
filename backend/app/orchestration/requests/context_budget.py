@@ -91,8 +91,8 @@ class ContextBudgetManager:
     """Build a bounded provider input from product-owned context fragments.
 
     UTF-8 byte length is intentionally used as a conservative cross-provider upper bound. Provider
-    session compaction remains delegated to the provider SDK; this manager only bounds the new
-    product context added to the turn.
+    history is never read or rewritten here; this manager only bounds the new product context
+    added to the turn and never triggers model or compaction requests.
     """
 
     def build(

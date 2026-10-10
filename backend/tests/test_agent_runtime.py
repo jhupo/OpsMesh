@@ -6,7 +6,7 @@ from typing import BinaryIO
 from uuid import uuid4
 
 import pytest
-from agents import OpenAIResponsesCompactionSession, RunContextWrapper
+from agents import RunContextWrapper
 from agents.extensions.memory import SQLAlchemySession
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -711,76 +711,116 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
     assert rejected == [(rejected_interruption, "operator denied")]
 
 
-def test_openai_agents_runner_wraps_persistent_session_with_native_compaction(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("stream", [False, True])
+def test_openai_agents_runner_preserves_native_history_across_many_turns(
+    monkeypatch: pytest.MonkeyPatch, stream: bool
 ) -> None:
-    class Result:
-        final_output = "done"
+    import httpx
+    from agents.models.openai_responses import OpenAIResponsesModel
+    from openai import AsyncOpenAI
+    from openai.resources.responses import AsyncResponses
 
-    captured: dict[str, object] = {}
+    seen: list[list[dict[str, object]]] = []
 
-    async def fake_runner_run(*args: object, **kwargs: object) -> Result:
-        captured["args"] = args
-        captured["kwargs"] = kwargs
-        return Result()
+    async def forbid_compaction(*args: object, **kwargs: object) -> None:
+        raise AssertionError("A normal Session must not make a separate compaction request")
 
-    class RecordingSession:
-        session_id = "workspace:team_agent:team-1:agent-1"
-        session_settings = None
+    monkeypatch.setattr(AsyncResponses, "compact", forbid_compaction)
 
-        async def get_items(self, limit: int | None = None) -> list[dict[str, object]]:
-            return []
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/responses"
+        body = json.loads(request.content)
+        assert "context_management" not in body
+        seen.append(body["input"])
+        turn = len(seen) - 1
+        response = {
+            "id": f"resp-{turn}",
+            "created_at": 0,
+            "model": "gpt-4.1",
+            "object": "response",
+            "status": "completed",
+            "parallel_tool_calls": False,
+            "tool_choice": "auto",
+            "tools": [],
+            "output": [
+                {
+                    "id": f"message-{turn}",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {"type": "output_text", "text": f"answer-{turn}", "annotations": []}
+                    ],
+                }
+            ],
+        }
+        if body.get("stream"):
+            event = {"type": "response.completed", "sequence_number": 0, "response": response}
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "text/event-stream"},
+                text="data: " + json.dumps(event) + "\n\n",
+            )
+        return httpx.Response(200, json=response)
 
-        async def add_items(self, items: list[dict[str, object]]) -> None:
-            return None
-
-        async def pop_item(self) -> dict[str, object] | None:
-            return None
-
-        async def clear_session(self) -> None:
-            return None
-
-    monkeypatch.setattr(openai_runtime.Runner, "run", fake_runner_run)
     profile = AgentProfile(
         workspace_id=uuid4(),
-        name="Researcher",
+        name="History",
         role="researcher",
-        instructions="Research carefully.",
+        instructions="Use the conversation history.",
         model="gpt-4.1",
         model_settings={},
     )
-    session = RecordingSession()
-    request = AgentRunRequest(
-        agent_profile=profile,
-        input_text="Continue the company research.",
-        context=AgentRuntimeContext(
-            workspace_id=profile.workspace_id,
-            task_id=None,
-            run_id=uuid4(),
-        ),
-        session=session,
-        api_key="sk-test",
-    )
 
-    result = asyncio.run(OpenAIAgentsRunner().run(request))
+    async def scenario() -> None:
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with AsyncOpenAI(
+            api_key="sk-test",
+            base_url="https://offline.test/v1",
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+        ) as client:
+            model = OpenAIResponsesModel(model="gpt-4.1", openai_client=client)
+            monkeypatch.setattr(
+                openai_runtime.OpenAIProvider, "get_model", lambda self, name: model
+            )
+            try:
+                # Reopen storage every turn to verify persisted history, beyond the former
+                # wrapper's ten-item default trigger, in both SDK execution paths.
+                for turn in range(7):
+                    session = SQLAlchemySession(
+                        "history-regression", engine=engine, create_tables=True
+                    )
+                    result = await OpenAIAgentsRunner().run(
+                        AgentRunRequest(
+                            agent_profile=profile,
+                            input_text=f"question-{turn}",
+                            context=AgentRuntimeContext(
+                                workspace_id=profile.workspace_id,
+                                task_id=None,
+                                run_id=uuid4(),
+                            ),
+                            session=session,
+                            api_key="sk-test",
+                            stream=stream,
+                        )
+                    )
+                    assert result.final_output == f"answer-{turn}"
+                    history = await session.get_items()
+                    assert len(history) == 2 * (turn + 1)
+                    assert history[0] == {"role": "user", "content": "question-0"}
+                assert len(seen) == 7
+                assert [item["content"] for item in seen[-1] if item.get("role") == "user"] == [
+                    f"question-{turn}" for turn in range(7)
+                ]
+                assert [
+                    item["content"][0]["text"]
+                    for item in seen[-1]
+                    if item.get("role") == "assistant"
+                ] == [f"answer-{turn}" for turn in range(6)]
+            finally:
+                await engine.dispose()
 
-    assert result.final_output == "done"
-    hooks = captured["kwargs"].pop("hooks")
-    assert hooks.__class__.__name__ == "OpenAIRuntimeHooks"
-    sdk_session = captured["kwargs"].pop("session")
-    assert isinstance(sdk_session, OpenAIResponsesCompactionSession)
-    assert sdk_session.underlying_session.session_id == session.session_id
-    assert asyncio.run(sdk_session.underlying_session.get_items()) == []
-    assert sdk_session.model == "gpt-4.1"
-    assert sdk_session.compaction_mode == "input"
-    from agents.memory.openai_responses_compaction_session import default_should_trigger_compaction
-
-    assert sdk_session.should_trigger_compaction is default_should_trigger_compaction
-    assert captured["kwargs"] == {
-        "context": request.context,
-        "max_turns": 10,
-        "run_config": captured["kwargs"]["run_config"],
-    }
+    asyncio.run(scenario())
 
 
 def test_openai_agents_runner_passes_tracing_run_config_to_sdk(
