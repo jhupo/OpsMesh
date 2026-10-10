@@ -10,9 +10,6 @@ Host installation deliberately requires neither GitHub CLI nor a GitHub credenti
 script and updater download from the configured repository/tag, validate manifest identity and
 platform/protocol fields, check package SHA-256 values, and retain digest-pinned images.
 
-Accepted in [v0.1.0rc9](https://github.com/jhupo/OpsMesh/releases/tag/v0.1.0rc9):
-[native matrix, public provenance and both managed deployment/recovery modes](https://github.com/jhupo/OpsMesh/actions/runs/34429198774).
-
 ## Decision and scope
 
 The native operator CLI uses PyInstaller onedir builds on each native runner (Linux amd64/arm64,
@@ -28,7 +25,7 @@ The server distribution supports the existing Linux amd64/glibc deployment. It c
 3.12.14 from uv's python-build-standalone distribution, locked production wheels, migrations and
 deployment assets. It does not require system Python, pip or uv to run, install or update. This is
 a self-contained Python application, not a claim of Go-like static machine-code compilation.
-PostgreSQL, Redis, Docker, and systemd remain host services.
+PostgreSQL, Redis and Docker remain infrastructure dependencies. Compose mode owns their declared services; direct systemd mode requires pre-provisioned PostgreSQL and Redis. Neither distribution contains a frontend.
 
 PyInstaller is build-only. Its documented dynamic-import collection limitations make freezing
 the entire plugin/SDK-heavy backend less reliable than shipping its complete Python environment.
@@ -53,3 +50,5 @@ an isolated PATH and exercise both version and an actual loopback administrative
 Server acceptance uses an otherwise Python-free container, real PostgreSQL/Redis, migrations,
 API/worker readiness and updater startup. Only those tested archives enter signing/publication.
 The release manifest and checksums enumerate native archives as well as Python developer packages.
+
+Source code is packaged from `src/opsmesh` under the `opsmesh` import name. Server archives copy Alembic assets into `migrations/`; native launchers import `opsmesh.delivery`. Old `backend.*` packages and path aliases are not shipped.

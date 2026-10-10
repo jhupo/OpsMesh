@@ -20,7 +20,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--fixture",
         type=Path,
-        default=Path("backend/tests/fixtures/mcp_stdio_server.py"),
+        default=Path("tests/fixtures/mcp_stdio_server.py"),
         help="FastMCP stdio fixture mounted into the image for the probe",
     )
     args = parser.parse_args(argv)

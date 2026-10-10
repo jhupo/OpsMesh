@@ -11,7 +11,7 @@ for isolated task runtimes and the separately managed observability stack.
 
 Postgres remains the source of truth. Redis is used for queues, locks, pub/sub, and short-lived cache. User-controlled execution must still happen in Docker runtimes or self-hosted isolated machines, never inside the API or worker process.
 
-## Deployment asset layout (2026-09-20)
+## Deployment asset layout
 
 - `deploy/images/`: backend and isolated runtime Dockerfiles. Build context is the repository root.
 - `deploy/local/`: development Compose and `env.example`; copy the template to the untracked root `.env` for local CLI and Compose use.
@@ -52,11 +52,23 @@ docker run --rm opsmesh-runtime:local \
   python -m opsmesh_runtime.mcp_stdio_client --check
 ```
 
-The runtime image contains the small `opsmesh-runtime` package and the pinned official MCP Python
-SDK, not the API application or database clients. It runs as `opsmesh-runtime`, uses `/workspace`
-as its working directory, and reports SDK readiness before a stdio server is launched. Keep
-`OPSMESH_RUNTIME_ALLOWED_IMAGES` restricted to reviewed runtime images pinned by immutable
-`@sha256:<64-hex>` digests.
+The runtime image installs the `opsmesh-runtime` transport package and the `opsmesh` execution
+package with the locked Agent SDKs. It does not start the API or Worker and is never given database
+or Docker daemon credentials. Agent SDK processes use `python -m opsmesh.bootstrap.agent_host`;
+session persistence and product authorization cross the private RPC boundary. Python, Node/npm
+and uv/uvx remain available for approved MCP commands.
+
+The fixed non-root runtime user is UID/GID 65532. Shared hosts group executions by workspace,
+trust scope and network policy; Agent runs and managed MCP processes occupy durable capacity
+slots, not one container per Agent/MCP. Only explicitly isolated executions get private containers.
+Provision approved hosts before binding Agents or importing MCP projects. See
+[shared Runtime hosts](../../docs/shared-runtime-hosts.md) and [managed MCP](../../docs/managed-mcp.md).
+Keep `OPSMESH_RUNTIME_ALLOWED_IMAGES` restricted to reviewed immutable `@sha256:<64-hex>` digests.
+
+The repository uses `src/opsmesh` for its Python package, `migrations/` for Alembic and `tests/`
+for validation. Build the API/Worker and Runtime images from the same checkout. Changing only the
+control-plane image cannot update code already installed in running Runtime containers. Drain
+active executions before replacing hosts; restart only the corresponding hosted MCP processes.
 
 ## Self-Hosted MCP Connector
 
@@ -232,8 +244,8 @@ The script creates a disposable Docker network, one temporary Postgres container
 Override the targeted checks when needed:
 
 ```bash
-OPSMESH_REMOTE_PYTEST_ARGS="backend/tests/test_operations_api.py -k operations_overview" \
-OPSMESH_REMOTE_RUFF_ARGS="backend/app/runtime/operations/service.py backend/tests/test_operations_api.py" \
+OPSMESH_REMOTE_PYTEST_ARGS="tests/test_operations_api.py -k operations_overview" \
+OPSMESH_REMOTE_RUFF_ARGS="src/opsmesh/runtime/operations/service.py tests/test_operations_api.py" \
 scripts/remote-backend-validation.sh
 ```
 
@@ -341,3 +353,10 @@ python scripts/openai-gateway-smoke.py --allow-external-provider-call
 The smoke script reads the key from the process environment, never stores it in the repo, and normalizes root OpenAI-compatible URLs to `/v1` before running the `openai_smoke` pytest marker. The dry run prints only redacted configuration and does not make an external provider call. Use `OPENAI_SMOKE_MODEL` to override the default smoke model.
 
 The product orchestration layer should continue to talk through the internal agent runtime contract rather than importing provider-specific SDK behavior into API routes.
+
+## Application logs
+
+Compose deployments use `docker compose -f deploy/server/compose.yml --env-file /opt/opsmesh/.env logs --tail=200 api worker` from the matching release directory. Add `-f` to follow new entries.
+Systemd deployments use `journalctl -u opsmesh-api -u opsmesh-worker -n 200 --no-pager` or `journalctl -u opsmesh-worker -f`. The operator CLI provides `opsmesh --root /opt/opsmesh logs --service api|worker|updater`.
+
+Correlate logs using request_id, workspace_id, task_id and run_id; use durable Task/Run events for tool progress and final status. Runtime process stderr is not a substitute for sanitized platform events. Never print encrypted provider/MCP configuration or entire environments during diagnostics.

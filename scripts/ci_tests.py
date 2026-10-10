@@ -38,14 +38,14 @@ def select_tests(changed: list[str]) -> list[str]:
             tests.add("test_release_delivery.py")
         if name in {"pyproject.toml", "uv.lock"}:
             tests.update({"test_health.py", "test_user_orchestration.py"})
-        if name.startswith("backend/tests/test_") and path.is_file():
+        if name.startswith("tests/test_") and path.is_file():
             tests.add(path.name)
-        if name.startswith("backend/app/"):
+        if name.startswith("src/opsmesh/"):
             tests.add("test_health.py")
             for domain, targets in flows.items():
-                if name.startswith(f"backend/app/{domain}/"):
+                if name.startswith(f"src/opsmesh/{domain}/"):
                     tests.update(targets)
-    return sorted(f"backend/tests/{name}" for name in tests)
+    return sorted(f"tests/{name}" for name in tests)
 
 
 def main() -> int:
@@ -55,9 +55,18 @@ def main() -> int:
     if not args.base or set(args.base) == {"0"}:
         parser.error("A real base commit is required")
     changed = subprocess.check_output(
-        ["git", "diff", "--name-only", f"{args.base}...HEAD"], text=True
+        ["git", "diff", "--name-status", "--find-renames", f"{args.base}...HEAD"], text=True
     ).splitlines()
-    tests = select_tests(changed)
+    paths = []
+    for entry in changed:
+        fields = entry.split("\t")
+        status, path = fields[0], fields[-1]
+        # A relocated test tree is validated by affected domain flows; running every
+        # renamed file would turn a source-layout change into the release-only suite.
+        if status.startswith("R") and path.startswith("tests/"):
+            continue
+        paths.append(path)
+    tests = select_tests(paths)
     if not tests:
         print("No affected product flows; static checks cover this change.", flush=True)
         return 0

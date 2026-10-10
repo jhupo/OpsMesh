@@ -1,0 +1,330 @@
+from collections.abc import Generator
+
+import fakeredis
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from opsmesh.agents.profiles.models import AgentProfile
+from opsmesh.bootstrap.job_handlers import WorkerJobHandler
+from opsmesh.identity.users.models import User
+from opsmesh.main import create_app
+from opsmesh.orchestration.tasks.models import TaskMessage, TaskStep
+from opsmesh.runtime.queues.contracts import JobPayload, JobType
+from opsmesh.runtime.queues.dependencies import get_worker_queue
+from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.shared.config import Settings, get_settings
+from opsmesh.shared.db.base import Base
+from opsmesh.shared.db.session import get_db_session
+from opsmesh.shared.redis.keys import RedisKeyBuilder
+from opsmesh.workspaces.domain_items.models import RevisionRequest
+from opsmesh.workspaces.management.models import Workspace
+from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.test_worker_run_execution import _seed_default_model_provider
+
+TOKEN = "test-token"
+
+
+def test_task_view_returns_domain_state_comments_and_revisions() -> None:
+    queue = _queue()
+    client, session = _client(queue)
+    owner, workspace = _seed_workspace(session)
+
+    task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={
+            "title": "Write chapter one",
+            "domain_type": "novel",
+            "generic_state": {"progress": 30},
+            "domain_state": {"chapter": 1, "tone": "suspense"},
+            "agent_profile_id": _agent_id(session, workspace.id),
+        },
+    )
+    assert task.status_code == 201
+    task_id = task.json()["id"]
+
+    project = client.post(
+        f"/api/v1/workspaces/{workspace.id}/domain-projects",
+        headers=_headers(owner.id),
+        json={"domain_type": "novel", "name": "Longform Novel", "state": {"genre": "sci-fi"}},
+    )
+    assert project.status_code == 201
+
+    item = client.post(
+        f"/api/v1/workspaces/{workspace.id}/domain-items",
+        headers=_headers(owner.id),
+        json={
+            "domain_project_id": project.json()["id"],
+            "task_id": task_id,
+            "item_type": "chapter",
+            "title": "Chapter One",
+            "content": {"outline": "The protagonist wakes up."},
+        },
+    )
+    assert item.status_code == 201
+
+    comment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/review-comments",
+        headers=_headers(owner.id),
+        json={"domain_item_id": item.json()["id"], "body": "The opening needs a stronger hook."},
+    )
+    assert comment.status_code == 201
+
+    revision = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/revision-requests",
+        headers=_headers(owner.id),
+        json={
+            "domain_item_id": item.json()["id"],
+            "instruction": "Rewrite the first three paragraphs with stronger conflict.",
+            "payload": {"priority": "high"},
+        },
+    )
+    assert revision.status_code == 201
+
+    view = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/view",
+        headers=_headers(owner.id),
+    )
+
+    assert view.status_code == 200
+    body = view.json()
+    assert body["task"]["domain_type"] == "novel"
+    assert body["domain_project"]["name"] == "Longform Novel"
+    assert body["domain_items"][0]["content"] == {"outline": "The protagonist wakes up."}
+    assert body["review_comments"][0]["body"] == "The opening needs a stronger hook."
+    assert (
+        body["revision_requests"][0]["instruction"]
+        == "Rewrite the first three paragraphs with stronger conflict."
+    )
+    assert session.query(RevisionRequest).count() == 1
+    job = _dequeue_job_type(queue, JobType.TASK_PLAN)
+    assert job is not None
+    assert job.job_type == JobType.TASK_PLAN
+    assert str(job.resource_id) == task_id
+
+    WorkerJobHandler(session=session, queue=queue).handle(job)
+
+    stored_revision = session.query(RevisionRequest).one()
+    step = session.query(TaskStep).one()
+    message = session.query(TaskMessage).filter_by(message_type="revision.planned").one()
+    assert stored_revision.status == "planned"
+    assert step.work_package_id == f"revision-{stored_revision.id.hex[:12]}"
+    assert step.description == stored_revision.instruction
+    assert message.payload["revision_request_id"] == str(stored_revision.id)
+
+
+def test_task_view_redacts_sensitive_domain_metadata() -> None:
+    queue = _queue()
+    client, session = _client(queue)
+    owner, workspace = _seed_workspace(session)
+
+    task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={
+            "title": "Domain metadata",
+            "domain_type": "research",
+            "agent_profile_id": _agent_id(session, workspace.id),
+        },
+    )
+    assert task.status_code == 201
+    task_id = task.json()["id"]
+    project = client.post(
+        f"/api/v1/workspaces/{workspace.id}/domain-projects",
+        headers=_headers(owner.id),
+        json={
+            "domain_type": "research",
+            "name": "Research",
+            "state": {"api_key": "sk-domain", "safe": "visible"},
+        },
+    )
+    assert project.status_code == 201
+    item = client.post(
+        f"/api/v1/workspaces/{workspace.id}/domain-items",
+        headers=_headers(owner.id),
+        json={
+            "domain_project_id": project.json()["id"],
+            "task_id": task_id,
+            "item_type": "note",
+            "title": "Note",
+            "content": {"base_url": "https://domain.example.test/private"},
+            "state": {"headers": {"authorization": "Bearer hidden"}},
+        },
+    )
+    assert item.status_code == 201
+    comment = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/review-comments",
+        headers=_headers(owner.id),
+        json={
+            "domain_item_id": item.json()["id"],
+            "body": "Review",
+            "metadata": {"token": "comment-token"},
+        },
+    )
+    assert comment.status_code == 201
+    revision = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/revision-requests",
+        headers=_headers(owner.id),
+        json={
+            "domain_item_id": item.json()["id"],
+            "instruction": "Revise",
+            "payload": {"password": "hidden-password"},
+        },
+    )
+    assert revision.status_code == 201
+
+    view = client.get(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task_id}/view",
+        headers=_headers(owner.id),
+    )
+
+    assert view.status_code == 200
+    body = view.json()
+    assert body["domain_project"]["state"] == {
+        "api_key": "[redacted]",
+        "safe": "visible",
+    }
+    assert body["domain_items"][0]["content"] == {"base_url": "[redacted]"}
+    assert body["domain_items"][0]["state"] == {"headers": "[redacted]"}
+    assert body["review_comments"][0]["metadata"] == {"token": "[redacted]"}
+    assert body["revision_requests"][0]["payload"] == {"password": "[redacted]"}
+    assert "sk-domain" not in str(body)
+    assert "domain.example.test/private" not in str(body)
+    assert "comment-token" not in str(body)
+    assert "hidden-password" not in str(body)
+
+
+def test_domain_item_cannot_be_used_across_workspaces() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
+    other, other_workspace = _seed_workspace(session, email="other@example.com", slug="other")
+
+    task = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks",
+        headers=_headers(owner.id),
+        json={
+            "title": "Owner task",
+            "agent_profile_id": _agent_id(session, workspace.id),
+        },
+    )
+    assert task.status_code == 201
+
+    other_task = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/tasks",
+        headers=_headers(other.id),
+        json={
+            "title": "Other task",
+            "agent_profile_id": _agent_id(session, other_workspace.id),
+        },
+    )
+    assert other_task.status_code == 201
+
+    other_item = client.post(
+        f"/api/v1/workspaces/{other_workspace.id}/domain-items",
+        headers=_headers(other.id),
+        json={
+            "task_id": other_task.json()["id"],
+            "item_type": "chapter",
+            "title": "Other item",
+        },
+    )
+    assert other_item.status_code == 201
+
+    denied = client.post(
+        f"/api/v1/workspaces/{workspace.id}/tasks/{task.json()['id']}/review-comments",
+        headers=_headers(owner.id),
+        json={"domain_item_id": other_item.json()["id"], "body": "Cross-workspace comment"},
+    )
+
+    assert denied.status_code == 400
+
+
+def _client(queue: RedisQueue | None = None) -> tuple[TestClient, Session]:
+    _patch_portable_types_for_sqlite()
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    session = session_factory()
+    app = create_app(Settings(environment="test", log_format="text", internal_api_token=TOKEN))
+
+    def override_db_session() -> Generator[Session, None, None]:
+        request_session = session_factory()
+        try:
+            yield request_session
+        finally:
+            request_session.close()
+
+    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_settings] = lambda: app.state.settings
+    worker_queue = queue or _queue()
+    app.dependency_overrides[get_worker_queue] = lambda: worker_queue
+    return TestClient(app), session
+
+
+def _seed_workspace(
+    session: Session,
+    *,
+    email: str = "owner@example.com",
+    slug: str = "owner",
+) -> tuple[User, Workspace]:
+    user = User(email=email, display_name=email.split("@")[0])
+    workspace = Workspace(owner=user, name=slug.title(), slug=slug, settings={})
+    membership = WorkspaceMember(workspace=workspace, user=user, role="owner")
+    session.add_all([user, workspace, membership])
+    session.flush()
+    session.add(
+        AgentProfile(
+            workspace_id=workspace.id,
+            name="Domain reviewer",
+            role="reviewer",
+            instructions="Review the domain task.",
+            model="gpt-4.1",
+        )
+    )
+    _seed_default_model_provider(session, workspace_id=workspace.id, user_id=user.id)
+    session.commit()
+    return user, workspace
+
+
+def _headers(user_id: object) -> dict[str, str]:
+    return {"Authorization": f"Bearer {TOKEN}", "X-User-ID": str(user_id)}
+
+
+def _queue() -> RedisQueue:
+    return RedisQueue(
+        redis=fakeredis.FakeRedis(decode_responses=True),
+        keys=RedisKeyBuilder("opsmesh"),
+        queue_name="agent_runs",
+    )
+
+
+def _dequeue_job_type(queue: RedisQueue, job_type: JobType) -> JobPayload | None:
+    while True:
+        job = queue.dequeue()
+        if job is None or job.job_type == job_type:
+            return job
+
+
+def _patch_portable_types_for_sqlite() -> None:
+    for table in Base.metadata.tables.values():
+        for column in table.columns:
+            if isinstance(column.type, PostgresUUID):
+                column.type = column.type.as_generic()
+            if isinstance(column.type, JSONB):
+                column.type = SqliteJSON()
+
+
+def _agent_id(session: Session, workspace_id: object) -> str:
+    return str(
+        session.scalar(select(AgentProfile.id).where(AgentProfile.workspace_id == workspace_id))
+    )

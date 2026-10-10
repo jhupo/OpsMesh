@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import csv
 import hashlib
 import json
 import subprocess
@@ -14,15 +13,26 @@ from pathlib import Path
 import grimp
 
 ROOT = Path(__file__).resolve().parents[1]
-APP = ROOT / "backend/app"
+APP = ROOT / "src/opsmesh"
 OUTPUT = ROOT / ".tmp/app-layout-review"
 BUSINESS_ROOTS = {
-    "identity", "workspaces", "agents", "teams", "capabilities", "resources",
-    "orchestration", "runtime", "platform", "messaging", "governance",
+    "identity",
+    "workspaces",
+    "agents",
+    "teams",
+    "capabilities",
+    "resources",
+    "orchestration",
+    "runtime",
+    "platform",
+    "messaging",
+    "governance",
 }
 ENTRYPOINTS = {
-    "backend.app.main", "backend.app.delivery", "backend.app.runtime.workers.cli",
-    "backend.app.platform.updates.daemon",
+    "opsmesh.main",
+    "opsmesh.delivery",
+    "opsmesh.runtime.workers.cli",
+    "opsmesh.platform.updates.daemon",
 }
 
 
@@ -41,7 +51,9 @@ def check_architecture() -> None:
         module = module_name(path)
         relative = path.relative_to(APP)
         if relative.parts[0] not in BUSINESS_ROOTS | {"shared", "bootstrap"} and path.name not in {
-            "__init__.py", "main.py", "delivery.py",
+            "__init__.py",
+            "main.py",
+            "delivery.py",
         }:
             violations.append(f"Unclassified application file: {relative}")
         tree = ast.parse(path.read_text(encoding="utf-8-sig"))
@@ -62,21 +74,22 @@ def check_architecture() -> None:
                             violations.append(f"Duplicate table {table}: {tables[table]}, {module}")
                         tables[table] = module
                 if node.name.endswith("JobHandler") and node.name not in {
-                    "WorkerJobHandler", "JobHandler",
+                    "WorkerJobHandler",
+                    "JobHandler",
                 }:
                     if node.name in handlers:
                         violations.append(f"Duplicate job handler: {node.name}")
                     handlers[node.name] = module
-                    if module.startswith("backend.app.runtime.workers."):
+                    if module.startswith("opsmesh.runtime.workers."):
                         violations.append(f"Business job handler retained in worker: {module}")
         for dependency in dependencies:
-            if dependency.startswith(tuple(
-                "backend.app." + name for name in ("api", "domains", "core", "observability")
-            )):
+            if dependency.startswith(
+                tuple("opsmesh." + name for name in ("api", "domains", "core", "observability"))
+            ):
                 violations.append(f"Legacy import: {module} -> {dependency}")
-            if not dependency.startswith("backend.app."):
+            if not dependency.startswith("opsmesh."):
                 continue
-            owner = dependency.split(".")[2]
+            owner = dependency.split(".")[1]
             if relative.parts[0] == "shared" and owner != "shared":
                 violations.append(f"Shared imports business: {module} -> {dependency}")
             if (
@@ -105,7 +118,7 @@ def expression(node: ast.AST | None) -> str:
 
 
 def module_name(path: Path) -> str:
-    parts = list(path.relative_to(ROOT).with_suffix("").parts)
+    parts = list(path.relative_to(ROOT / "src").with_suffix("").parts)
     if parts[-1] == "__init__":
         parts.pop()
     return ".".join(parts)
@@ -249,12 +262,12 @@ def review_facts() -> None:
             r["path"]: [
                 d
                 for d in r["dependencies"]
-                if d.startswith("backend.app.") and d.split(".")[2] in BUSINESS_ROOTS
+                if d.startswith("opsmesh.") and d.split(".")[1] in BUSINESS_ROOTS
             ]
             for r in records
             if r["path"].startswith("shared/")
             and any(
-                d.startswith("backend.app.") and d.split(".")[2] in BUSINESS_ROOTS
+                d.startswith("opsmesh.") and d.split(".")[1] in BUSINESS_ROOTS
                 for d in r["dependencies"]
             )
         },
@@ -273,248 +286,13 @@ def check_snapshot() -> None:
         raise SystemExit(
             "Application source differs from review snapshot; refresh review before delivery."
         )
-    manifest = OUTPUT / "file-dispositions.csv"
-    if manifest.exists():
-        with manifest.open(encoding="utf-8-sig", newline="") as handle:
-            rows = list(csv.DictReader(handle))
-        if len(rows) != len(expected) or {r["source"]: r["sha256"] for r in rows} != expected:
-            raise SystemExit("Disposition manifest does not cover the exact source snapshot.")
-    print(
-        f"Verified {len(expected)} unchanged source files; "
-        "disposition coverage checked when present."
-    )
-
-
-def check_target_layout() -> None:
-    footprint = json.loads((OUTPUT / "target-footprint.json").read_text(encoding="utf-8"))
-    with (OUTPUT / "file-dispositions.csv").open(encoding="utf-8-sig", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    if len(rows) != footprint["source_files"]:
-        raise SystemExit("Disposition manifest no longer covers the full source inventory.")
-    actions = Counter(row["action"] for row in rows)
-    if dict(actions) != footprint["actions"]:
-        raise SystemExit(
-            "Disposition action counts differ from the target footprint: "
-            f"declared={footprint['actions']!r}, actual={dict(actions)!r}"
-        )
-
-    planned_files = set(footprint["target_sources"])
-    if len(planned_files) != footprint["planned_implementation_files"]:
-        raise SystemExit(
-            "Target implementation count differs from the declared footprint: "
-            f"declared={footprint['planned_implementation_files']}, "
-            f"actual={len(planned_files)}"
-        )
-    actual_files = {
-        path.relative_to(APP).as_posix() for path in APP.rglob("*.py") if path.name != "__init__.py"
-    }
-    if actual_files != planned_files:
-        missing = sorted(planned_files - actual_files)
-        unplanned = sorted(actual_files - planned_files)
-        raise SystemExit(
-            f"Target implementation files differ: missing={missing!r}, unplanned={unplanned!r}"
-        )
-
-    all_targets = {target for row in rows for target in row["targets"].split(";") if target}
-    missing_targets = sorted(target for target in all_targets if not (APP / target).exists())
-    if missing_targets:
-        raise SystemExit(f"Disposition targets are missing: {missing_targets!r}")
-    stale_sources = sorted(
-        row["source"]
-        for row in rows
-        if row["targets"]
-        and row["source"] not in row["targets"].split(";")
-        and row["source"] not in all_targets
-        and (APP / row["source"]).exists()
-    )
-    if stale_sources:
-        raise SystemExit(f"Superseded source paths still exist: {stale_sources!r}")
-
-    planned_packages = {"."}
-    for path in planned_files:
-        planned_packages.update(
-            parent.as_posix() for parent in Path(path).parents if parent.as_posix() != "."
-        )
-    if len(planned_packages) != footprint["planned_package_directories"]:
-        raise SystemExit(
-            "Target package count differs from the declared footprint: "
-            f"declared={footprint['planned_package_directories']}, "
-            f"actual={len(planned_packages)}"
-        )
-    actual_packages = {
-        init.parent.relative_to(APP).as_posix() or "." for init in APP.rglob("__init__.py")
-    }
-    if actual_packages != planned_packages:
-        missing = sorted(planned_packages - actual_packages)
-        unplanned = sorted(actual_packages - planned_packages)
-        raise SystemExit(
-            f"Target package directories differ: missing={missing!r}, unplanned={unplanned!r}"
-        )
-    print(
-        f"Verified target layout: {len(actual_files)} implementation files, "
-        f"{len(actual_packages)} package directories, no stale paths."
-    )
-
-
-def write_dispositions() -> None:
-    inventory = json.loads((OUTPUT / "source-inventory.json").read_text(encoding="utf-8"))
-    rules = json.loads((OUTPUT / "disposition-rules.json").read_text(encoding="utf-8"))
-    records = {r["path"]: r for r in inventory["files"]}
-    decisions = {}
-    prefixes = sorted(rules["prefixes"], key=lambda r: len(r["source"]), reverse=True)
-    for path in records:
-        if path.endswith("__init__.py"):
-            continue
-        decision = {
-            "action": "keep",
-            "targets": [path],
-            "phase": "R0",
-            "reason": (
-                "Retain cohesive responsibility; update imports to new owners. "
-                "No implementation deletion approved."
-            ),
-        }
-        for rule in prefixes:
-            if path.startswith(rule["source"]):
-                target = rule["target"] + path[len(rule["source"]) :]
-                decision = {
-                    "action": "move" if target != path else "keep",
-                    "targets": [target],
-                    "phase": rule["phase"],
-                    "reason": rule["reason"],
-                }
-                break
-        decisions[path] = decision
-    used_overrides = set()
-    stale_overrides = []
-    for rule in rules["overrides"]:
-        for path in rule["sources"]:
-            if path not in decisions:
-                stale_overrides.append(path)
-                continue
-            if path in used_overrides:
-                raise ValueError(f"Invalid or repeated override: {path}")
-            used_overrides.add(path)
-            decisions[path] = {key: rule[key] for key in ("action", "targets", "phase", "reason")}
-    for path, record in records.items():
-        if path not in decisions or not path.startswith("api/schemas/") or not record["forwarder"]:
-            continue
-        owners = sorted(
-            {
-                i["module"].removeprefix("backend.app.").replace(".", "/") + ".py"
-                for i in record["imports"]
-                if i["module"].startswith("backend.app.")
-            }
-        )
-        targets = sorted({target for owner in owners for target in decisions[owner]["targets"]})
-        decisions[path] = {
-            "action": "remove-forwarder",
-            "targets": targets,
-            "phase": "R2",
-            "reason": (
-                "Import each symbol from its owning contract; remove forwarding file "
-                "only after all callers and OpenAPI checks are updated."
-            ),
-        }
-    target_sources = defaultdict(list)
-    for source, decision in decisions.items():
-        for target in decision["targets"]:
-            target_sources[target].append(source)
-    target_dirs = {"."}
-    for target in target_sources:
-        target_dirs.update(p.as_posix() for p in Path(target).parents)
-    for path in records:
-        if not path.endswith("__init__.py"):
-            continue
-        retained = Path(path).parent.as_posix() in target_dirs
-        decisions[path] = {
-            "action": "retain-package-marker" if retained else "remove-package-marker",
-            "targets": [path] if retained else [],
-            "phase": "R8",
-            "reason": (
-                "Keep package marker without compatibility exports; "
-                "explicit composition replaces eager handler exports."
-            )
-            if retained
-            else (
-                "Remove obsolete package marker after migrations; "
-                "do not remove retained child packages or runtime data."
-            ),
-        }
-    fieldnames = [
-        "source",
-        "sha256",
-        "lines",
-        "action",
-        "targets",
-        "phase",
-        "reason",
-        "declarations",
-        "callers",
-        "dependencies",
-        "private_imports",
-        "review_method",
-    ]
-    with (OUTPUT / "file-dispositions.csv").open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for path, record in records.items():
-            decision = decisions[path]
-            writer.writerow(
-                {
-                    "source": path,
-                    "sha256": record["sha256"],
-                    "lines": record["lines"],
-                    **{k: decision[k] for k in ("action", "phase", "reason")},
-                    "targets": ";".join(decision["targets"]),
-                    "declarations": ";".join(d["name"] for d in record["declarations"]),
-                    "callers": ";".join(record["callers"]),
-                    "dependencies": ";".join(record["dependencies"]),
-                    "private_imports": ";".join(record["private_imports"]),
-                    "review_method": (
-                        "full-source AST/import inventory; per-file declaration review; "
-                        "selective implementation inspection "
-                        "(not exhaustive line-by-line verification)"
-                    ),
-                }
-            )
-    for target in rules["new_files"]:
-        target_sources.setdefault(target, [])
-        target_dirs.update(p.as_posix() for p in Path(target).parents)
-    footprint = {
-        "source_files": len(records),
-        "actions": dict(Counter(d["action"] for d in decisions.values())),
-        "planned_implementation_files": len(target_sources),
-        "planned_package_directories": len(target_dirs),
-        "new_files_without_single_source": rules["new_files"],
-        "target_sources": dict(sorted(target_sources.items())),
-        "notes": (
-            "Design footprint, not implemented changes or fixed quotas. "
-            "Targets of remove-forwarder are callers' replacement imports, "
-            "not copy/merge instructions."
-        ),
-    }
-    (OUTPUT / "target-footprint.json").write_text(
-        json.dumps(footprint, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
-    print(
-        json.dumps(
-            {
-                **{k: v for k, v in footprint.items() if k != "target_sources"},
-                "stale_rules_ignored": sorted(set(stale_overrides)),
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    print(f"Verified {len(expected)} unchanged source files.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--facts", action="store_true")
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--target-check", action="store_true")
-    parser.add_argument("--manifest", action="store_true")
     parser.add_argument("--architecture-check", action="store_true")
     args = parser.parse_args()
     if args.architecture_check:
@@ -526,18 +304,12 @@ def main() -> None:
     if args.check:
         check_snapshot()
         return
-    if args.target_check:
-        check_target_layout()
-        return
-    if args.manifest:
-        write_dispositions()
-        return
-    graph = grimp.build_graph("backend", cache_dir=None)
+    graph = grimp.build_graph("opsmesh", cache_dir=None)
     files = [inspect_file(path, graph) for path in sorted(APP.rglob("*.py"))]
     packages = defaultdict(list)
     for record in files:
         packages[str(Path(record["path"]).parent).replace("\\", "/")].append(record)
-    cycles = sorted(graph.nominate_cycle_breakers("backend.app"))
+    cycles = sorted(graph.nominate_cycle_breakers("opsmesh"))
     summary = {
         "head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "files": len(files),

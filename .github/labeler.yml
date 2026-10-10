@@ -1,12 +1,12 @@
 'area:backend':
   - changed-files:
-      - any-glob-to-any-file: ['backend/**']
+      - any-glob-to-any-file: ['src/**', 'tests/**', 'migrations/**']
 'area:runtime':
   - changed-files:
-      - any-glob-to-any-file: ['backend/app/runtime/**', 'runtime/**', 'operator/**']
+      - any-glob-to-any-file: ['src/opsmesh/runtime/**', 'runtime/**', 'operator/**']
 'area:security':
   - changed-files:
-      - any-glob-to-any-file: ['backend/app/identity/**', 'backend/app/shared/security/**', 'SECURITY.md', '.github/workflows/codeql.yml', '.github/workflows/dependency-review.yml']
+      - any-glob-to-any-file: ['src/opsmesh/identity/**', 'src/opsmesh/shared/security/**', 'SECURITY.md', '.github/workflows/codeql.yml', '.github/workflows/dependency-review.yml']
 'area:delivery':
   - changed-files:
       - any-glob-to-any-file: ['.github/**', 'deploy/**', 'scripts/**']

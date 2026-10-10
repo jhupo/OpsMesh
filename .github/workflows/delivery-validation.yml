@@ -6,19 +6,19 @@ on:
     paths:
       - 'operator/**'
       - 'deploy/**'
-      - 'backend/app/platform/updates/**'
-      - 'backend/app/runtime/**'
-      - 'backend/app/capabilities/mcp/**'
-      - 'backend/migrations/**'
+      - 'src/opsmesh/platform/updates/**'
+      - 'src/opsmesh/runtime/**'
+      - 'src/opsmesh/capabilities/mcp/**'
+      - 'migrations/**'
       - '.github/workflows/**'
   pull_request:
     paths:
       - 'operator/**'
       - 'deploy/**'
-      - 'backend/app/platform/updates/**'
-      - 'backend/app/runtime/**'
-      - 'backend/app/capabilities/mcp/**'
-      - 'backend/migrations/**'
+      - 'src/opsmesh/platform/updates/**'
+      - 'src/opsmesh/runtime/**'
+      - 'src/opsmesh/capabilities/mcp/**'
+      - 'migrations/**'
       - '.github/workflows/**'
 permissions:
   contents: read
@@ -45,15 +45,15 @@ jobs:
           version: '0.12.10'
           python-version: '3.12'
       - run: uv sync --frozen --all-groups
-      - run: uv run mypy operator/opsmesh_operator backend/app/platform/updates
-      - run: uv run pytest backend/tests/test_platform_updates.py backend/tests/test_operator_security.py backend/tests/test_release_delivery.py
+      - run: uv run mypy operator/opsmesh_operator src/opsmesh/platform/updates
+      - run: uv run pytest tests/test_platform_updates.py tests/test_operator_security.py tests/test_release_delivery.py
       - name: Real PostgreSQL migrations and delivery contracts
         env:
           OPSMESH_DELIVERY_POSTGRES_TEST: '1'
         run: |
           uv run python scripts/ci_command.py uv run alembic upgrade head
           uv run python scripts/ci_command.py uv run alembic check
-          uv run python scripts/ci_command.py uv run pytest backend/tests/test_delivery_postgres.py
+          uv run python scripts/ci_command.py uv run pytest tests/test_delivery_postgres.py
       - name: Fresh container deployment and runtime probe
         run: |
           cp deploy/local/env.example .env
@@ -62,12 +62,12 @@ jobs:
           docker build -f deploy/images/Dockerfile.runtime -t opsmesh-runtime:ci .
           uv run python scripts/check_runtime_image.py \
             --image opsmesh-runtime:ci \
-            --fixture backend/tests/fixtures/mcp_stdio_server.py
+            --fixture tests/fixtures/mcp_stdio_server.py
       - name: Real backup restoration and tamper denial
         run: |
           sudo env "PATH=$PATH" OPSMESH_ENVIRONMENT=test OPSMESH_DELIVERY_BACKUP_TEST=1 \
             "OPSMESH_DATABASE_URL=$OPSMESH_DATABASE_URL" \
-            .venv/bin/python scripts/ci_command.py .venv/bin/python -m pytest backend/tests/test_delivery_backup_linux.py
+            .venv/bin/python scripts/ci_command.py .venv/bin/python -m pytest tests/test_delivery_backup_linux.py
       - name: Tear down disposable CI deployment
         if: always()
         run: |

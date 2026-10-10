@@ -1,0 +1,171 @@
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+
+from opsmesh.governance.audit.chain_schemas import AuditEventResponse
+from opsmesh.governance.audit.queries import AuditQueryService
+from opsmesh.identity.auth.dependencies import workspace_dependency
+from opsmesh.identity.authorization.context import WorkspaceContext
+from opsmesh.identity.authorization.permissions import WorkspaceAction
+from opsmesh.identity.authorization.resources import ResourceAction
+from opsmesh.orchestration.runs.contracts import (
+    AgentRunProjectIOStateResponse,
+    AgentRunProjectSnapshotResponse,
+    AgentRunResponse,
+    RunEventResponse,
+)
+from opsmesh.orchestration.runs.control import RunControlService
+from opsmesh.orchestration.runs.queries import RunQueryService
+from opsmesh.orchestration.runs.service import RunOrchestrationService
+from opsmesh.runtime.queues.dependencies import get_worker_queue
+from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.shared.db.session import get_db_session
+from opsmesh.shared.http.pagination import PageResponse, pagination_params
+from opsmesh.shared.pagination import PageParams
+from opsmesh.workspaces.projects.io.support import RunProjectIOQueryService
+from opsmesh.workspaces.projects.snapshots.service import RunProjectSnapshotService
+
+router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
+
+
+@router.get("/runs", response_model=PageResponse[AgentRunResponse])
+def list_runs(
+    page: PageParams = Depends(pagination_params),
+    status_filter: str | None = Query(default=None, alias="status"),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[AgentRunResponse]:
+    items, total = RunQueryService(session).list_runs(
+        context.workspace.id,
+        page,
+        status_filter,
+    )
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get("/runs/{agent_run_id}/events", response_model=PageResponse[RunEventResponse])
+def list_run_events(
+    agent_run_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[RunEventResponse]:
+    items, total = RunQueryService(session).list_events(
+        context.workspace.id,
+        agent_run_id,
+        page,
+    )
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get(
+    "/runs/{agent_run_id}/project-snapshot",
+    response_model=AgentRunProjectSnapshotResponse,
+)
+def get_run_project_snapshot(
+    agent_run_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> AgentRunProjectSnapshotResponse:
+    snapshot = RunProjectSnapshotService(session).get_for_run(
+        context.workspace.id,
+        agent_run_id,
+    )
+    if snapshot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run project snapshot not found",
+        )
+    return AgentRunProjectSnapshotResponse.model_validate(snapshot)
+
+
+@router.get(
+    "/runs/{agent_run_id}/project-io",
+    response_model=AgentRunProjectIOStateResponse,
+)
+def get_run_project_io_state(
+    agent_run_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> AgentRunProjectIOStateResponse:
+    project_io = RunProjectIOQueryService(session).get_state(
+        context.workspace.id,
+        agent_run_id,
+    )
+    if project_io is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run project I/O state not found",
+        )
+    return AgentRunProjectIOStateResponse.model_validate(project_io)
+
+
+@router.post("/runs/{agent_run_id}/cancel", response_model=AgentRunResponse)
+def cancel_run(
+    agent_run_id: UUID,
+    context: WorkspaceContext = Depends(
+        workspace_dependency(
+            WorkspaceAction.WRITE,
+            resource_action=ResourceAction.CONTROL,
+        )
+    ),
+    session: Session = Depends(get_db_session),
+) -> AgentRunResponse:
+    try:
+        run = RunControlService(
+            session=session,
+            enqueue_run=RunOrchestrationService(session).enqueue_run,
+        ).cancel_run(
+            workspace_id=context.workspace.id,
+            run_id=agent_run_id,
+            actor_user_id=context.user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent run not found")
+    return AgentRunResponse.model_validate(run)
+
+
+@router.post(
+    "/runs/{agent_run_id}/retry",
+    response_model=AgentRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def retry_run(
+    agent_run_id: UUID,
+    context: WorkspaceContext = Depends(
+        workspace_dependency(
+            WorkspaceAction.WRITE,
+            resource_action=ResourceAction.INVOKE,
+        )
+    ),
+    session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> AgentRunResponse:
+    run_orchestration = RunOrchestrationService(session, queue=queue)
+    try:
+        run = RunControlService(
+            session=session,
+            enqueue_run=run_orchestration.enqueue_run,
+        ).retry_failed_run(
+            workspace_id=context.workspace.id,
+            run_id=agent_run_id,
+            actor_user_id=context.user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent run not found")
+    return AgentRunResponse.model_validate(run)
+
+
+@router.get("/audit-events", response_model=PageResponse[AuditEventResponse])
+def list_audit_events(
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[AuditEventResponse]:
+    items, total = AuditQueryService(session).list_events(context.workspace.id, page)
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)

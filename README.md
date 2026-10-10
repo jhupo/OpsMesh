@@ -1,106 +1,64 @@
 # OpsMesh
 
 [![Backend CI](https://github.com/jhupo/OpsMesh/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/jhupo/OpsMesh/actions/workflows/backend-ci.yml)
-[![License: LGPL-3.0-only](https://img.shields.io/badge/License-LGPL--3.0-only-blue.svg)](LICENSE)
+[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL--3.0-blue.svg)](LICENSE)
 
-OpsMesh 是一个开源的企业级 Agent 控制面，为工作空间、Agent、团队、任务编排、能力、隔离执行、审批、审计和运行运维提供统一后端。
+OpsMesh 是企业级 Agent 控制面，提供身份与工作空间、Agent 与团队、任务编排、知识与记忆、MCP 与插件、Runtime、审批、审计和运行运维 API。客户端在独立项目开发，本仓库只交付后端服务、执行运行时和管理工具。
 
-后端是当前主要产品面；Web Portal 使用 React、TypeScript、TanStack Router、TanStack Query 和 shadcn/ui，通过版本化 API 合同连接后端。
+PostgreSQL 保存持久业务事实；Redis 承担队列、锁和事件发布。API 接收请求并保存执行意图，Worker 调度任务；Agent SDK 与用户工具在授权 Runtime 中执行。共享宿主使用独立执行槽和进程组，增加 Agent 或托管 MCP 不自动创建容器。
 
-## 当前能力
+## 目录
 
-- 用户认证、API Token 和工作空间 RBAC
-- Agent Profile、Team、Task、Run、Approval 和事件流
-- Skill、Tool、MCP、插件和 Marketplace 能力治理
-- Docker/自托管 Runtime、Worker、队列和资源控制
-- 工作空间文件、Artifact、知识、记忆、通知、成本和审计
-- 平台管理员的跨工作空间管理接口
+| 路径 | 内容 |
+| --- | --- |
+| `src/opsmesh/` | 按业务功能组织的运行代码；导入包名 `opsmesh` |
+| `tests/` | 产品流程、权限边界与恢复测试 |
+| `migrations/` | Alembic 数据库迁移 |
+| `runtime/` | MCP 传输、托管进程和自托管连接器 |
+| `operator/` | 安装、发布与恢复 CLI |
+| `scripts/` | 验证、发布、API 文档导出和对话客户端 |
+| `deploy/` | Docker 镜像、Compose、systemd 和可选监控资产 |
+| `docs/` | 当前 API、执行合同和配置说明 |
 
-## 快速开始
+## 开发
 
-环境要求：
-
-- Python 3.11.8 或更高版本
-- [uv](https://docs.astral.sh/uv/)
-- Docker 和 Docker Compose
-- Node.js 与 pnpm（开发 Web Portal 时需要）
-
-安装 Python 依赖并运行基础检查：
+需要 Python 3.11.8+、uv；使用容器流程时需要 Docker。安装锁定的 workspace 依赖：
 
 ```bash
-uv sync --all-groups
-uv run ruff check .
-uv run mypy
-uv run pytest backend/tests/test_health.py
-```
-
-在 PowerShell 中创建本地配置并启动完整开发栈：
-
-```powershell
-Copy-Item deploy/local/env.example .env
+uv sync --frozen --all-groups
+cp deploy/local/env.example .env
 docker compose -f deploy/local/compose.yml up --build
 ```
 
-API 默认地址为 `http://localhost:8000`：
+API 默认位于 `http://localhost:8000/api/v1`。开发环境提供 `/docs`、`/redoc` 和 `/openapi.json`；生产环境关闭在线文档。数据库迁移由独立 migration 服务执行，API/Worker 不在启动时自动升级数据库。
+
+需要在宿主机运行代码时，先启动 PostgreSQL、Redis 并配置 `.env` 的连接地址，再使用：
 
 ```bash
-curl http://localhost:8000/api/v1/health
-curl http://localhost:8000/api/v1/health/ready
+uv run alembic upgrade head
+uv run uvicorn opsmesh.main:create_app --factory --host 127.0.0.1 --port 8000
+uv run python -m opsmesh.runtime.workers.cli
 ```
 
-单独运行 API：
+启用 Agent 或托管 MCP 前，构建 `deploy/images/Dockerfile.runtime`，将批准的镜像摘要登记到平台白名单和 Runtime 模板，并创建满足权限及网络策略的宿主。详见 [部署](deploy/server/DEPLOYMENT.md) 和 [共享 Runtime](docs/shared-runtime-hosts.md)。
+
+## 验证与接口文档
 
 ```bash
-uv run uvicorn backend.app.main:create_app --factory --reload --host 0.0.0.0 --port 8000
+uv run ruff check .
+uv run lint-imports --no-cache
+uv run python scripts/audit_app_layout.py --architecture-check
+uv run mypy
+uv run pytest tests/test_health.py
+uv run python scripts/export_api_docs.py --check
 ```
 
-## Web Portal
+接口变更后运行 `uv run python scripts/export_api_docs.py`，提交生成文档；CI 检查它们与注册路由一致。健康测试只覆盖健康接口，功能修改还需受影响的产品流程验证。
 
-```bash
-cd frontend
-pnpm install --frozen-lockfile
-pnpm dev
-```
+- [详细 API 使用说明与完整接口参考](docs/api.md)
+- [OpenAPI JSON](docs/openapi.json)
+- [文档索引](docs/README.md)
+- [服务器部署](deploy/server/DEPLOYMENT.md) 与 [发布分发](deploy/DISTRIBUTIONS.md)
+- [贡献规范](CONTRIBUTING.md) 与 [安全政策](SECURITY.md)
 
-开发服务器默认把 `/api` 转发到 `http://127.0.0.1:8000`。远程后端可以通过 `VITE_API_PROXY_TARGET` 配置目标地址；浏览器 API 前缀默认是 `/api/v1`。
-
-前端检查：
-
-```bash
-pnpm lint
-pnpm typecheck
-pnpm build
-```
-
-## API
-
-开发环境启用 OpenAPI 时：
-
-- Swagger UI：[`/docs`](http://localhost:8000/docs)
-- OpenAPI JSON：[`/openapi.json`](http://localhost:8000/openapi.json)
-- 接口索引：[docs/api.md](docs/api.md)
-
-所有工作空间资源都带有工作空间范围。长任务由 API 持久化并入队，Worker 在隔离 Runtime 中执行；API 不在请求线程内运行 Agent。
-
-## 部署
-
-- 本地开发 Compose：`deploy/local/compose.yml`
-- 服务器 Compose、systemd 和监控：`deploy/server/`
-- 自托管 Worker：`runtime/`
-- 发布分发说明：`deploy/DISTRIBUTIONS.md`
-- 服务器部署说明：`deploy/server/DEPLOYMENT.md`
-- 自托管连接器说明：`runtime/CONNECTOR.md`
-
-## 贡献
-
-请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [AGENTS.md](AGENTS.md)。
-
-提交改动前至少运行受影响的 lint、类型检查和产品流程测试。涉及租户隔离、凭据、Runtime、审批或管理员权限的改动必须同时验证允许和拒绝路径。
-
-## 安全
-
-安全问题请按照 [SECURITY.md](SECURITY.md) 私下报告，不要直接创建公开 Issue。
-
-## 许可证
-
-OpsMesh 平台、Operator 和 Runtime 使用 [LGPL-3.0-only](LICENSE)。仓库同时保留 [COPYING](COPYING)、[LICENSE-MIT](LICENSE-MIT) 和 [NOTICE](NOTICE) 中声明的第三方许可和版权信息。
+许可证见 [LICENSE](LICENSE)、[COPYING](COPYING)、[LICENSE-MIT](LICENSE-MIT) 和 [NOTICE](NOTICE)。

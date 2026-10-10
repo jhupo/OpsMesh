@@ -77,12 +77,12 @@ opsmesh-operator = { workspace = true }
 include-package-data = false
 
 [tool.setuptools.packages.find]
-include = ["backend*"]
-exclude = ["backend.tests*"]
+where = ["src"]
+include = ["opsmesh*"]
 
 [tool.pytest.ini_options]
-testpaths = ["backend/tests"]
-pythonpath = ["."]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
 addopts = "-q"
 markers = [
     "openai_smoke: opt-in tests that call the real OpenAI Agents SDK over the network",
@@ -104,13 +104,13 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"backend/migrations/versions/*.py" = ["E501"]
-"backend/app/**/routes.py" = ["B008"]
-"backend/app/**/*_routes.py" = ["B008"]
-"backend/app/**/routes/*.py" = ["B008"]
-"backend/app/**/dependencies.py" = ["B008"]
-"backend/app/**/*_dependencies.py" = ["B008"]
-"backend/app/**/http_common.py" = ["B008"]
+"migrations/versions/*.py" = ["E501"]
+"src/opsmesh/**/routes.py" = ["B008"]
+"src/opsmesh/**/*_routes.py" = ["B008"]
+"src/opsmesh/**/routes/*.py" = ["B008"]
+"src/opsmesh/**/dependencies.py" = ["B008"]
+"src/opsmesh/**/*_dependencies.py" = ["B008"]
+"src/opsmesh/**/http_common.py" = ["B008"]
 
 [tool.ruff.lint.isort]
 extra-standard-library = ["operator"]
@@ -118,15 +118,15 @@ extra-standard-library = ["operator"]
 [tool.mypy]
 python_version = "3.11"
 platform = "linux"
-mypy_path = ["operator"]
+mypy_path = ["src", "operator"]
 plugins = ["pydantic.mypy"]
 strict = true
 warn_return_any = true
 warn_unused_configs = true
-files = ["backend/app"]
+files = ["src/opsmesh"]
 
 [tool.importlinter]
-root_package = "backend"
+root_package = "opsmesh"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
@@ -134,10 +134,10 @@ id = "http-transport"
 name = "HTTP middleware is composed only at the API entry point"
 type = "protected"
 protected_modules = [
-    "backend.app.shared.http.middleware",
+    "opsmesh.shared.http.middleware",
 ]
 allowed_importers = [
-    "backend.app.main",
+    "opsmesh.main",
 ]
 
 [[tool.importlinter.contracts]]
@@ -145,22 +145,22 @@ id = "shared-no-business"
 name = "Shared mechanisms cannot import business modules or bootstrap"
 type = "forbidden"
 source_modules = [
-    "backend.app.shared",
+    "opsmesh.shared",
 ]
 forbidden_modules = [
-    "backend.app.identity",
-    "backend.app.workspaces",
-    "backend.app.agents",
-    "backend.app.teams",
-    "backend.app.capabilities",
-    "backend.app.resources",
-    "backend.app.orchestration",
-    "backend.app.runtime",
-    "backend.app.platform",
-    "backend.app.messaging",
-    "backend.app.governance",
-    "backend.app.bootstrap",
-    "backend.app.main",
+    "opsmesh.identity",
+    "opsmesh.workspaces",
+    "opsmesh.agents",
+    "opsmesh.teams",
+    "opsmesh.capabilities",
+    "opsmesh.resources",
+    "opsmesh.orchestration",
+    "opsmesh.runtime",
+    "opsmesh.platform",
+    "opsmesh.messaging",
+    "opsmesh.governance",
+    "opsmesh.bootstrap",
+    "opsmesh.main",
 ]
 
 [[tool.importlinter.contracts]]
@@ -168,7 +168,7 @@ id = "pagination-no-transport"
 name = "Pagination inputs have no HTTP or database dependency"
 type = "forbidden"
 source_modules = [
-    "backend.app.shared.pagination",
+    "opsmesh.shared.pagination",
 ]
 forbidden_modules = [
     "fastapi",
@@ -181,7 +181,7 @@ id = "production-no-test-framework"
 name = "Production code cannot depend on the test framework"
 type = "forbidden"
 source_modules = [
-    "backend.app",
+    "opsmesh",
 ]
 forbidden_modules = [
     "pytest",
@@ -195,7 +195,7 @@ protected_modules = [
     "docker",
 ]
 allowed_importers = [
-    "backend.app.runtime.backends.docker",
+    "opsmesh.runtime.backends.docker",
 ]
 
 [[tool.importlinter.contracts]]
@@ -206,7 +206,7 @@ protected_modules = [
     "boto3",
 ]
 allowed_importers = [
-    "backend.app.resources.storage.storage",
+    "opsmesh.resources.storage.storage",
 ]
 
 [[tool.importlinter.contracts]]
@@ -214,8 +214,8 @@ id = "provider-neutral-contracts"
 name = "Agent runtime contracts stay independent of vendor SDK and HTTP"
 type = "forbidden"
 source_modules = [
-    "backend.app.agents.execution.contracts",
-    "backend.app.runtime.contracts",
+    "opsmesh.agents.execution.contracts",
+    "opsmesh.runtime.contracts",
 ]
 forbidden_modules = [
     "agents",
@@ -224,7 +224,7 @@ forbidden_modules = [
     "claude_agent_sdk",
     "fastapi",
     "starlette",
-    "backend.app.bootstrap",
+    "opsmesh.bootstrap",
 ]
 
 [[tool.importlinter.contracts]]
@@ -232,13 +232,13 @@ id = "bootstrap-composition"
 name = "Only application entry points import concrete composition"
 type = "protected"
 protected_modules = [
-    "backend.app.bootstrap",
+    "opsmesh.bootstrap",
 ]
 allowed_importers = [
-    "backend.app.main",
-    "backend.app.delivery",
-    "backend.app.runtime.workers.cli",
-    "backend.app.platform.updates.daemon",
+    "opsmesh.main",
+    "opsmesh.delivery",
+    "opsmesh.runtime.workers.cli",
+    "opsmesh.platform.updates.daemon",
 ]
 
 [[tool.importlinter.contracts]]
@@ -246,19 +246,19 @@ id = "worker-dispatch-boundary"
 name = "Worker loop accepts injected business handlers and maintenance"
 type = "forbidden"
 source_modules = [
-    "backend.app.runtime.workers.runner",
-    "backend.app.runtime.workers.reporting",
-    "backend.app.runtime.workers.contracts",
+    "opsmesh.runtime.workers.runner",
+    "opsmesh.runtime.workers.reporting",
+    "opsmesh.runtime.workers.contracts",
 ]
 forbidden_modules = [
-    "backend.app.agents",
-    "backend.app.teams",
-    "backend.app.capabilities",
-    "backend.app.resources",
-    "backend.app.orchestration",
-    "backend.app.platform",
-    "backend.app.messaging",
-    "backend.app.bootstrap",
+    "opsmesh.agents",
+    "opsmesh.teams",
+    "opsmesh.capabilities",
+    "opsmesh.resources",
+    "opsmesh.orchestration",
+    "opsmesh.platform",
+    "opsmesh.messaging",
+    "opsmesh.bootstrap",
 ]
 allow_indirect_imports = true
 
@@ -267,10 +267,10 @@ id = "email-http-composition"
 name = "Email HTTP routes are only composed by the platform API"
 type = "protected"
 protected_modules = [
-    "backend.app.messaging.email.routes",
+    "opsmesh.messaging.email.routes",
 ]
 allowed_importers = [
-    "backend.app.bootstrap.platform_routes",
+    "opsmesh.bootstrap.platform_routes",
 ]
 
 [[tool.importlinter.contracts]]
@@ -278,17 +278,17 @@ id = "email-service-boundary"
 name = "Email persistence and delivery stay independent of HTTP and consumers"
 type = "forbidden"
 source_modules = [
-    "backend.app.messaging.email.service",
-    "backend.app.messaging.email.schemas",
-    "backend.app.messaging.email.models",
-    "backend.app.messaging.email.smtp",
+    "opsmesh.messaging.email.service",
+    "opsmesh.messaging.email.schemas",
+    "opsmesh.messaging.email.models",
+    "opsmesh.messaging.email.smtp",
 ]
 forbidden_modules = [
-    "backend.app.bootstrap",
-    "backend.app.runtime",
-    "backend.app.identity",
-    "backend.app.workspaces",
-    "backend.app.orchestration",
+    "opsmesh.bootstrap",
+    "opsmesh.runtime",
+    "opsmesh.identity",
+    "opsmesh.workspaces",
+    "opsmesh.orchestration",
     "fastapi",
     "starlette",
 ]
@@ -298,9 +298,9 @@ id = "email-model-owner"
 name = "Email persistence is private to its service and registration"
 type = "protected"
 protected_modules = [
-    "backend.app.messaging.email.models",
+    "opsmesh.messaging.email.models",
 ]
 allowed_importers = [
-    "backend.app.messaging.email.service",
-    "backend.app.bootstrap.models",
+    "opsmesh.messaging.email.service",
+    "opsmesh.bootstrap.models",
 ]

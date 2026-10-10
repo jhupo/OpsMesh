@@ -1,6 +1,6 @@
 # SDK 原生执行边界
 
-核对日期：2026-10-10。OpenAI Agents SDK 在控制面和 Runtime 中均锁定为 `0.17.2`。本文描述当前实现，不代表服务器已经部署。
+OpenAI Agents SDK 以 `uv.lock` 中锁定的 `0.17.2` 为准。本文描述当前代码合同，部署状态由目标环境独立验收。
 
 ## 职责
 
@@ -10,7 +10,7 @@ Worker 的每个活动 Job 是一个 asyncio Task；模型等待和自托管 MCP
 
 ## 会话与恢复
 
-- 官方 `SQLAlchemySession` 使用 AsyncEngine 写入 `sdk_agent_sessions` / `sdk_agent_messages`。Alembic 管理表结构，运行时禁止自动建表。`persistent_agent_sessions` 只保留工作空间、用户作用域、Agent、Session key 和管理状态。
+- Runtime 中的 `RpcSession` 实现官方公共 Session 接口，将会话操作提交给控制面授权网关；Runtime 不接收数据库凭据。控制面的官方 `SQLAlchemySession` 使用 AsyncEngine 写入 `sdk_agent_sessions` / `sdk_agent_messages`。Alembic 管理表结构，运行时禁止自动建表。`persistent_agent_sessions` 只保留工作空间、用户作用域、Agent、Session key 和管理状态。
 - `AuthorizedSDKSession` 通过公共 Session 接口增加执行身份、会话绑定及租约检查，消息增删读全部交给父类；没有另一套消息存储算法。Session key 全局唯一，读取管理视图时必须联接租户元数据。
 - 平台只提供当前新增输入。同会话按 turn 排序，专家拥有独立 Session。后续输入、审批恢复和自托管 MCP 返回都不拼成旧历史或伪造的用户消息。
 - 审批使用加密的 SDK RunState 和原工具 call ID。自托管 MCP Job 通过 `(agent_run_id, tool_call_id)` 唯一约束去重；SDK 工具协程等待原 RPC 结果。恢复到已保存的 SDK 工具调用时先核对持久 RPC，再复用结果，不重复计费配额或再次执行远程工具。没有 SDK 快照的进程中断不等同于任意指令断点恢复；外部副作用仍不保证 exactly-once。
@@ -62,39 +62,18 @@ Agent Profile 的 `memory_policy.sdk_memory` 默认关闭。例如只读取持�
 
 结构化输出在 SDK output schema 中验证一次。OpenAI runner 仅映射已验证结果；Claude 仅使用 SDK `structured_output`，缺少时失败，不再解析普通文本冒充结构化输出。
 
-## 升级
+## 运行边界与升级
 
-`0114_sdk_sessions` 将旧 Session items 按顺序迁入 SDK 表，并保留 call ID；删除旧消息表与旧 Provider 会话列，清除重复历史快照和自动工作记忆副本。降级恢复旧表、消息顺序与旧列；已经删除的冗余快照和自动记忆不重新生成。
+SDK Runner 在 Runtime 子进程执行，通过私有 RPC 与 Worker 交换 Session 操作、授权工具回调及事件；API 与 Worker 不执行用户或 Agent 控制的代码。共享宿主的执行槽、私有目录、进程组、容量等待及取消合同见 [共享 Runtime](shared-runtime-hosts.md)。RPC 是授权与隔离边界，不复制 SDK 状态机。
 
-这是一次明确切换，不支持新旧 Worker 混跑：
+API、Worker 和 Runtime 必须使用同一版本执行合同。升级前停止领取并排空活动任务，备份数据库和存储，统一构建控制面与 Runtime 镜像，执行 `alembic upgrade head`，再按宿主生命周期更新运行中的 Runtime。只更新模板镜像不会改变已运行容器的代码。不要混跑新旧模块路径或合同版本。
 
-1. 停止领取任务并排空 Worker，备份 PostgreSQL；有未知副作用的运行先由恢复流程确认，不依赖重放。
-2. 构建包含 `openai-agents==0.17.2` 的新 Runtime 镜像，同时更新控制面、Worker、自托管连接器。Runtime MCP 合同为版本 2，旧版本必须重新构建，禁止回退旧合同。
-3. 执行 `uv run alembic upgrade head`，确认只有一个 head；之后启动新版本 API 与 Worker。
-4. 验证既有会话续接、审批恢复、工具结果与租户隔离。回滚时停新 Worker，执行降级后统一恢复旧镜像，不能只回滚部分进程。
+数据库历史迁移保留明确的升级和降级逻辑；运行源码不识别旧 Session 字段或旧包名。降级前排空活动执行并确认外部副作用，不能把进程重启视为安全重放工具的依据。
 
-Session 管理 API 的 message ID 现在是 SDK 整数 ID；不再返回 `sequence` 和 `openai_conversation_id`。仓库前端没有依赖这些字段；外部消费者需同时更新。
+## 验证边界
 
-## 全仓清理复核（2026-10-10）
+相关流程覆盖 SDK Session 多轮续接、审批 RunState 恢复、原始 tool call ID、自托管 RPC 去重及取消、MCP 返回、结构化输出和持久文件记忆；SDK 离线传输测试不等同于真实供应商请求。共享宿主生命周期测试与 PostgreSQL 并发测试分别验证进程释放和执行槽准入。
 
-扫描仓库受版本管理的源码、合同、配置、测试、脚本和当前文档，并复核执行、Session、审批恢复、MCP RPC、工具检索及队列入口的调用链。此复核针对之前替换的实现及其引用，不等同于对所有业务模块逐行审计。
-
-- 删除主动启用压缩的模块、Runner 导入和包装调用，以及要求默认启用压缩的旧测试；普通和流式路径都直接传入原生 Session。
-- 活动源码不再包含旧补充指令入口、Provider 会话同步、历史重新拼接、`resume_input`、`sdk_continuation` 或 `pending_tool_results`。拒绝旧动作与禁止旧字段的边界测试继续保留。
-- Sandbox 只按授权配置 Filesystem、Shell 和可选 Memory，不安装 Compaction。新增输入预算、Provider 上下文窗口目录和知识检索条数限制仍是当前产品合同，不是会话压缩策略。
-- Chat 正常启动和结果回写使用事务 Outbox 与队列；维护仅用于恢复。Worker 活动 Job 使用 asyncio Task，同步基础设施使用有界线程池；没有为 SDK 增加外层模型循环。
-- Alembic 中的旧字段名用于删除旧数据和支持降级；`backend-directory-migration-files.csv` 是目录迁移时的历史符号快照。这些历史记录保留，不作为当前实现，也不在运行时加载。第三方依赖的可选压缩实现不修改。
-
-原生 SDK 多轮回归在普通和流式模式下分别跨越旧十条候选项触发条件，逐轮重新打开 SQLAlchemySession，验证完整历史持久化与续接，并禁止独立 compact 请求。模型 HTTP 使用离线传输，不调用真实模型或业务订单。
-
-## 验证范围
-
-已运行真实 SDK 配合离线模型、SQLite 产品流程，以及独立本地 PostgreSQL schema 的完整 Alembic 升级/降级测试。覆盖会话隔离、审批恢复、原始 call ID、自托管 RPC 中断续接与配额、原生 stdio/HTTP、持久 Memory 初次与后续读取。没有调用真实业务订单或外部模型。
-
-此前 SDK 迁移的验证记录：210 passed / 2 skipped；Ruff、mypy（1082 个源文件）、12 项 import-linter 合同、架构归属检查和依赖锁检查通过。额外执行调度器测试时有两项既有失败：Runtime Space 用例缺少模型 Provider，提前得到 `model_provider_unavailable`；在修改前 `829bf6ab` 的完整源码快照中复现了相同结果，不作为本次 SDK 验证通过项。
-
-Linux 是现有生产 Worker 环境。Windows 下 psycopg 异步连接要求 Selector event loop，PostgreSQL 集成夹具显式设置该 loop；尚未验证同时运行 Claude 子进程等能力的 Windows PostgreSQL Worker。
-
-尚未验证：真实 Provider 的 Memory 生成与费用、生产 Runtime 镜像切换及负载。SDK 宿主进程整体迁到 Runtime host/RPC、自托管 HTTP/SSE、完整控制 Inbox、跨租户公平队列和独立 CPU 计算服务仍未实现。
+自托管 Agent MCP 的 HTTP/SSE 合同当前仍明确拒绝；stdio 路径可用。当前没有承诺跨租户公平调度或外部副作用的 exactly-once 执行。Linux 是现有服务器运行环境；Windows 的完整 PostgreSQL/Claude 子进程组合不是已验收部署能力。
 
 官方入口：[SQLAlchemySession](https://openai.github.io/openai-agents-python/sessions/sqlalchemy_session/)、[Session](https://openai.github.io/openai-agents-python/sessions/)、[MCP](https://openai.github.io/openai-agents-python/mcp/)、[本地 Context](https://openai.github.io/openai-agents-python/context/)、[锁定 SDK 源码](https://github.com/openai/openai-agents-python/tree/v0.17.2/src/agents)。

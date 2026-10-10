@@ -10,6 +10,13 @@ __pycache__
 .env
 .env.*
 .codex
+.agents
+.tmp
+.tmp-release
+output
+reports
+tests
+docs
 pytest-of-*
 .opsmesh-storage
 mockups

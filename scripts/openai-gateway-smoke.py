@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from typing import TextIO
 
-from backend.app.shared.security.egress import validate_url_shape
+from opsmesh.shared.security.egress import validate_url_shape
 
 
 @dataclass(frozen=True)
@@ -47,7 +47,7 @@ def run_pytest(config: OpenAIGatewaySmokeConfig) -> int:
             sys.executable,
             "-m",
             "pytest",
-            "backend/tests/test_agent_runtime.py",
+            "tests/test_agent_runtime.py",
             "-q",
             "-m",
             "openai_smoke",

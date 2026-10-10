@@ -1,0 +1,217 @@
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+
+from opsmesh.capabilities.skills.contracts import (
+    WorkspaceSkillAvailabilityResponse,
+    WorkspaceSkillImpactResponse,
+    WorkspaceSkillInstallConfigRequest,
+    WorkspaceSkillInstallRequest,
+    WorkspaceSkillInstallResponse,
+    WorkspaceSkillRollbackRequest,
+    WorkspaceSkillToolAvailabilityResponse,
+    WorkspaceSkillUpgradeRequest,
+)
+from opsmesh.capabilities.skills.diagnostics import SkillToolDiagnosticsService
+from opsmesh.capabilities.skills.impact import WorkspaceSkillImpactService
+from opsmesh.capabilities.skills.lifecycle import WorkspaceSkillLifecycleService
+from opsmesh.identity.auth.dependencies import workspace_dependency
+from opsmesh.identity.authorization.context import WorkspaceContext
+from opsmesh.identity.authorization.permissions import WorkspaceAction
+from opsmesh.shared.db.errors import DatabaseConflictError
+from opsmesh.shared.db.session import get_db_session
+from opsmesh.shared.http.pagination import PageResponse, pagination_params
+from opsmesh.shared.pagination import PageParams
+
+router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])
+
+
+@router.get("/workspace-skills", response_model=PageResponse[WorkspaceSkillInstallResponse])
+def list_workspace_skills(
+    page: PageParams = Depends(pagination_params),
+    include_disabled: bool = Query(default=False),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[WorkspaceSkillInstallResponse]:
+    items, total = WorkspaceSkillLifecycleService(session).list_workspace_skills(
+        context.workspace.id,
+        page,
+        include_disabled=include_disabled,
+    )
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.post(
+    "/workspace-skills",
+    response_model=WorkspaceSkillInstallResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def install_workspace_skill(
+    request: WorkspaceSkillInstallRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillInstallResponse:
+    try:
+        install = WorkspaceSkillLifecycleService(session).install_skill(
+            context.workspace.id,
+            context.user.user_id,
+            request,
+        )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return WorkspaceSkillInstallResponse.model_validate(install)
+
+
+@router.post(
+    "/skills/{skill_id}/install",
+    response_model=WorkspaceSkillInstallResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def install_skill_by_id(
+    skill_id: UUID,
+    request: WorkspaceSkillInstallConfigRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillInstallResponse:
+    try:
+        install = WorkspaceSkillLifecycleService(session).install_skill_by_id(
+            workspace_id=context.workspace.id,
+            user_id=context.user.user_id,
+            skill_id=skill_id,
+            config=request.config,
+        )
+    except DatabaseConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return WorkspaceSkillInstallResponse.model_validate(install)
+
+
+@router.post(
+    "/workspace-skills/{install_id}/upgrade",
+    response_model=WorkspaceSkillInstallResponse,
+)
+def upgrade_workspace_skill(
+    install_id: UUID,
+    request: WorkspaceSkillUpgradeRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillInstallResponse:
+    try:
+        install = WorkspaceSkillLifecycleService(session).upgrade_skill_install(
+            context.workspace.id,
+            context.user.user_id,
+            install_id,
+            request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return WorkspaceSkillInstallResponse.model_validate(install)
+
+
+@router.post(
+    "/workspace-skills/{install_id}/rollback",
+    response_model=WorkspaceSkillInstallResponse,
+)
+def rollback_workspace_skill(
+    install_id: UUID,
+    request: WorkspaceSkillRollbackRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillInstallResponse:
+    try:
+        install = WorkspaceSkillLifecycleService(session).rollback_skill_install(
+            context.workspace.id,
+            context.user.user_id,
+            install_id,
+            request,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    return WorkspaceSkillInstallResponse.model_validate(install)
+
+
+@router.post(
+    "/workspace-skills/{install_id}/disable",
+    response_model=WorkspaceSkillInstallResponse,
+)
+def disable_workspace_skill(
+    install_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillInstallResponse:
+    try:
+        install = WorkspaceSkillLifecycleService(session).disable_skill_install(
+            context.workspace.id,
+            context.user.user_id,
+            install_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return WorkspaceSkillInstallResponse.model_validate(install)
+
+
+@router.get(
+    "/workspace-skills/{install_id}/impact",
+    response_model=WorkspaceSkillImpactResponse,
+)
+def get_workspace_skill_impact(
+    install_id: UUID,
+    target_skill_id: UUID | None = Query(default=None),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillImpactResponse:
+    try:
+        impact = WorkspaceSkillImpactService(session).workspace_skill_impact(
+            context.workspace.id,
+            install_id,
+            target_skill_id=target_skill_id,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in message.lower()
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=code, detail=message) from exc
+    return WorkspaceSkillImpactResponse.model_validate(impact)
+
+
+@router.get(
+    "/workspace-skills/{install_id}/availability",
+    response_model=WorkspaceSkillAvailabilityResponse,
+)
+def get_workspace_skill_availability(
+    install_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceSkillAvailabilityResponse:
+    try:
+        availability = SkillToolDiagnosticsService(session).workspace_skill_availability(
+            context.workspace.id,
+            install_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return WorkspaceSkillAvailabilityResponse(
+        install_id=availability.install.id,
+        installed_key=availability.install.installed_key,
+        status=availability.install.status,
+        usable=availability.usable,
+        required_tools=availability.required_tools,
+        tools=[
+            WorkspaceSkillToolAvailabilityResponse.model_validate(tool)
+            for tool in availability.tools
+        ],
+        blocked_reasons=availability.blocked_reasons,
+    )
