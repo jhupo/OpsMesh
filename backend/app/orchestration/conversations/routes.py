@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.identity.auth.dependencies import workspace_dependency
 from backend.app.identity.authorization.context import WorkspaceContext
 from backend.app.identity.authorization.permissions import WorkspaceAction
+from backend.app.orchestration.conversations.models import ConversationTurn
 from backend.app.orchestration.conversations.schemas import (
     ConversationCreate,
     ConversationResponse,
@@ -22,6 +23,13 @@ from backend.app.shared.pagination import PageParams
 router = APIRouter(prefix="/workspaces/{workspace_id}/conversations", tags=["conversations"])
 
 
+def _turn_response(
+    service: ConversationService, context: WorkspaceContext, turn: ConversationTurn
+) -> TurnResponse:
+    errors = service.turn_errors(context, turn.conversation_id, [turn])
+    return TurnResponse.model_validate(turn).model_copy(update={"error": errors.get(turn.id)})
+
+
 @router.post("/{conversation_id}/turns/{turn_id}/retry", response_model=TurnResponse)
 def retry_turn(
     conversation_id: UUID,
@@ -29,9 +37,8 @@ def retry_turn(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> TurnResponse:
-    return TurnResponse.model_validate(
-        ConversationService(session).retry(context, conversation_id, turn_id)
-    )
+    service = ConversationService(session)
+    return _turn_response(service, context, service.retry(context, conversation_id, turn_id))
 
 
 @router.get("/{conversation_id}/events", response_model=list[EventResponse])
@@ -95,13 +102,16 @@ def send_message(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> TurnResponse:
-    return TurnResponse.model_validate(
-        ConversationService(session).send(
+    service = ConversationService(session)
+    return _turn_response(
+        service,
+        context,
+        service.send(
             context,
             conversation_id,
             request.body,
             idempotency_key,
-        )
+        ),
     )
 
 
@@ -112,18 +122,25 @@ def list_messages(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[TurnResponse]:
-    items, total = ConversationService(session).turns(context, conversation_id, page)
-    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+    service = ConversationService(session)
+    items, total = service.turns(context, conversation_id, page)
+    errors = service.turn_errors(context, conversation_id, items)
+    responses = [
+        TurnResponse.model_validate(turn).model_copy(update={"error": errors.get(turn.id)})
+        for turn in items
+    ]
+    return PageResponse(items=responses, total=total, limit=page.limit, offset=page.offset)
 
 
 @router.get("/{conversation_id}/executions", response_model=PageResponse[ExecutionResponse])
 def list_executions(
     conversation_id: UUID,
+    turn_id: UUID | None = Query(default=None),
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[ExecutionResponse]:
-    items, total = ConversationService(session).executions(context, conversation_id, page)
+    items, total = ConversationService(session).executions(context, conversation_id, page, turn_id)
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
@@ -134,6 +151,5 @@ def cancel_turn(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
 ) -> TurnResponse:
-    return TurnResponse.model_validate(
-        ConversationService(session).cancel(context, conversation_id, turn_id)
-    )
+    service = ConversationService(session)
+    return _turn_response(service, context, service.cancel(context, conversation_id, turn_id))

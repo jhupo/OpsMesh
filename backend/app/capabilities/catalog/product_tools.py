@@ -117,7 +117,7 @@ PRODUCT_TOOL_CATALOG = (
         input_schema=_object_schema(
             {
                 "query": {"type": "string", "minLength": 1},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
                 "source_types": {"type": "array", "items": {"type": "string"}, "uniqueItems": True},
             },
             required=("query",),

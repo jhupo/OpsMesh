@@ -772,6 +772,10 @@ def test_openai_agents_runner_wraps_persistent_session_with_native_compaction(
     assert sdk_session.underlying_session.session_id == session.session_id
     assert asyncio.run(sdk_session.underlying_session.get_items()) == []
     assert sdk_session.model == "gpt-4.1"
+    assert sdk_session.compaction_mode == "input"
+    from agents.memory.openai_responses_compaction_session import default_should_trigger_compaction
+
+    assert sdk_session.should_trigger_compaction is default_should_trigger_compaction
     assert captured["kwargs"] == {
         "context": request.context,
         "max_turns": 10,

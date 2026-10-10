@@ -216,15 +216,7 @@ def test_workspace_memory_search_returns_workspace_scoped_matches() -> None:
     }
     assert all("secret" not in item["title"] for item in results)
     assert all(item["score"] > 0 for item in results)
-    assert next(item for item in results if item["source_type"] == "workspace_file")[
-        "metadata"
-    ] == {
-        "content_type": "text/plain",
-        "size_bytes": 120,
-    }
-    assert all(item["search_backend"] == "lexical" for item in results)
-    assert all(item["resource_type"] == item["source_type"] for item in results)
-    assert all(item["resource_id"] == item["source_id"] for item in results)
+    assert all("metadata" not in item and "ranking" not in item for item in results)
 
 
 def test_workspace_memory_search_uses_pluggable_backend_with_workspace_scope() -> None:
@@ -375,7 +367,7 @@ def test_semantic_memory_can_be_versioned_searched_and_archived() -> None:
     assert entry.importance == 77
     assert results[0]["source_type"] == "workspace_memory"
     assert results[0]["source_id"] == str(entry.id)
-    assert results[0]["metadata"]["entry_type"] == "semantic_procedure"
+    assert results[0]["memory_entry_id"] == str(entry.id)
     assert other_results == []
     assert archived.status == "archived"
     assert all(item["source_id"] != str(entry.id) for item in archived_results)
@@ -515,7 +507,7 @@ def test_workspace_memory_indexing_refreshes_deterministic_chunks() -> None:
     assert second.archived_chunks == first.indexed_chunks
     assert results
     assert results[0]["source_type"] == "task"
-    assert results[0]["metadata"]["indexed"] is True
+    assert results[0]["memory_entry_id"] in {str(entry.id) for entry in chunks}
     assert all("secret" not in item["title"].lower() for item in results)
     assert stale_results == []
     assert {entry.status for entry in chunks} == {"active", "archived"}

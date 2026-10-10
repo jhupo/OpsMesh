@@ -1,7 +1,6 @@
-from __future__ import annotations
+"""Delegate session compaction and its trigger policy to the locked Agents SDK."""
 
-import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -9,58 +8,27 @@ from agents import OpenAIResponsesCompactionSession, Session
 from openai import AsyncOpenAI
 
 from backend.app.agents.execution.contracts import AgentRunRequest
-from backend.app.agents.execution.tokens import estimate_token_upper_bound
 from backend.app.agents.providers.model_api import OPENAI_CHAT_COMPLETIONS_API, canonical_model_api
-from backend.app.agents.providers.policy import (
-    canonical_model_provider,
-)
+from backend.app.agents.providers.policy import canonical_model_provider
 
 
 @asynccontextmanager
-async def openai_run_session(
-    request: AgentRunRequest,
-) -> AsyncIterator[Session | None]:
-    """Use the OpenAI SDK's native Responses compaction for persistent sessions."""
-
+async def openai_run_session(request: AgentRunRequest) -> AsyncIterator[Session | None]:
     session = cast(Session | None, request.session)
-    if session is None or not _supports_native_compaction(request):
+    if (
+        session is None
+        or canonical_model_provider(request.provider or "openai") != "openai"
+        or canonical_model_api(request.model_api) == OPENAI_CHAT_COMPLETIONS_API
+    ):
         yield session
         return
-
     if request.api_key is None:
         raise ValueError("OpenAI responses compaction requires an explicit provider API key")
-    async with AsyncOpenAI(
-        api_key=request.api_key,
-        base_url=request.base_url,
-    ) as client:
-        compacting_session = OpenAIResponsesCompactionSession(
+    async with AsyncOpenAI(api_key=request.api_key, base_url=request.base_url) as client:
+        yield OpenAIResponsesCompactionSession(
             session_id=session.session_id,
             underlying_session=session,
             client=client,
             model=request.model or request.agent_profile.model,
-            should_trigger_compaction=_token_aware_compaction_policy(request),
+            compaction_mode="input",
         )
-        yield compacting_session
-
-
-def _supports_native_compaction(request: AgentRunRequest) -> bool:
-    provider = canonical_model_provider(request.provider or "openai")
-    model_api = canonical_model_api(request.model_api)
-    return provider == "openai" and model_api != OPENAI_CHAT_COMPLETIONS_API
-
-
-def _token_aware_compaction_policy(
-    request: AgentRunRequest,
-) -> Callable[[dict[str, object]], bool]:
-    budget = request.context.metadata.get("context_budget")
-    input_budget = budget.get("input_budget_tokens") if isinstance(budget, dict) else None
-    threshold = max(1_024, int(input_budget * 0.75)) if isinstance(input_budget, int) else 24_576
-
-    def should_compact(context: dict[str, object]) -> bool:
-        items = context.get("session_items")
-        if not isinstance(items, list):
-            return False
-        serialized = json.dumps(items, default=str, ensure_ascii=False, sort_keys=True)
-        return estimate_token_upper_bound(serialized) >= threshold
-
-    return should_compact

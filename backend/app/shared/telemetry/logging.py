@@ -52,6 +52,9 @@ def configure_logging(settings: Settings) -> None:
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     root_logger.setLevel(settings.log_level.upper())
+    # The SDK emits its own skip/start/complete compaction evidence at DEBUG.
+    # Enable only that logger; HTTP bodies and other SDK internals stay at the configured level.
+    logging.getLogger("openai-agents.openai.compaction").setLevel(logging.DEBUG)
 
     handler = logging.StreamHandler(sys.stdout)
     handler.addFilter(

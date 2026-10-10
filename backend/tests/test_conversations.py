@@ -24,6 +24,69 @@ from backend.app.workspaces.members.models import WorkspaceMember
 from backend.tests.test_agent_management_api import _client, _headers, _seed_workspace
 
 
+def test_conversation_failure_exposes_redacted_run_evidence_only_to_owner() -> None:
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    other, _ = _seed_workspace(session, email="other-error@test.com", slug="other-error")
+    session.add(WorkspaceMember(workspace_id=workspace.id, user_id=other.id, role="admin"))
+    profile = AgentProfile(workspace_id=workspace.id, name="Manager", role="manager")
+    session.add(profile)
+    session.commit()
+    root = f"/api/v1/workspaces/{workspace.id}/conversations"
+    created = client.post(
+        root,
+        headers=_headers(owner.id),
+        json={
+            "mode": "agent",
+            "agent_profile_id": str(profile.id),
+        },
+    ).json()
+    url = f"{root}/{created['id']}"
+    accepted = client.post(
+        f"{url}/messages",
+        headers={
+            **_headers(owner.id),
+            "Idempotency-Key": "provider-failure",
+        },
+        json={"body": "Check an incident"},
+    ).json()
+    maintenance = ConversationMaintenanceService(session)
+    assert maintenance.process_one()
+    session.commit()
+    link = session.scalar(
+        select(ConversationExecution).where(ConversationExecution.turn_id == UUID(accepted["id"]))
+    )
+    task = session.get(Task, link.task_id)
+    run = session.scalar(select(AgentRun).where(AgentRun.task_id == task.id))
+    task.status = run.status = "failed"
+    run.error = {
+        "code": "provider_request_failed",
+        "message": "api_key=sk-error-secret",
+        "retryable": False,
+    }
+    session.commit()
+    assert maintenance.process_one()
+    session.commit()
+    response = client.get(f"{url}/messages", headers=_headers(owner.id))
+    turn = response.json()["items"][0]
+    assert turn["error_code"] == "provider_request_failed"
+    assert turn["error"]["code"] == "provider_request_failed"
+    assert "sk-error-secret" not in response.text
+    evidence = client.get(
+        f"{url}/executions", params={"turn_id": accepted["id"]}, headers=_headers(owner.id)
+    )
+    assert evidence.json()["items"][0]["runs"][0]["id"] == str(run.id)
+    assert "sk-error-secret" not in evidence.text
+    assert client.get(f"{url}/messages", headers=_headers(other.id)).status_code == 404
+    assert client.get(f"{url}/executions", headers=_headers(other.id)).status_code == 404
+    assert (
+        client.get(
+            f"{url}/executions", params={"turn_id": str(uuid4())}, headers=_headers(owner.id)
+        ).json()["items"]
+        == []
+    )
+
+
 def test_conversation_delegation_recovery_and_idempotency() -> None:
     client, session = _client()
     owner, workspace = _seed_workspace(session)

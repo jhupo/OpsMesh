@@ -15,6 +15,7 @@ from backend.app.orchestration.conversations.models import (
     turn_event,
 )
 from backend.app.orchestration.conversations.service import TERMINAL, create_execution, task_reply
+from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
 from backend.app.shared.errors import DomainError
 
@@ -123,7 +124,18 @@ class ConversationMaintenanceService:
             return
         if manager.status != "completed":
             turn.status = manager.status
-            turn.error_code = "conversation_execution_unsuccessful"
+            run = self.session.scalar(
+                select(AgentRun)
+                .where(
+                    AgentRun.workspace_id == turn.workspace_id,
+                    AgentRun.task_id == manager.id,
+                )
+                .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
+                .limit(1)
+            )
+            error = run.error if run is not None and run.error is not None else {}
+            code = error.get("code")
+            turn.error_code = str(code)[:120] if code else "conversation_execution_failed"
             return
         if children:
             if turn.round >= 3:
@@ -153,9 +165,7 @@ class ConversationMaintenanceService:
     ) -> None:
         # Only new input crosses this boundary; the SDK Session owns prior history.
         body = (
-            json.dumps({"delegated_results": results}, ensure_ascii=False)
-            if results
-            else turn.body
+            json.dumps({"delegated_results": results}, ensure_ascii=False) if results else turn.body
         )
         create_execution(
             self.session,

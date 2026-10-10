@@ -5,7 +5,7 @@
 
 ## 使用前准备
 
-升级数据库到 `0110_conversations`，启动 API、Redis 和 Worker。准备有模型凭据、
+升级数据库到最新 Alembic head，启动 API、Redis 和 Worker。准备有模型凭据、
 能力授权及有效 Runtime 绑定的 Agent。对话 Run 缺少 active/running 的 isolated、pooled
 或 persistent 执行 Runtime 时会失败，不能以无 Runtime 模式执行。
 
@@ -48,8 +48,8 @@ Agent 配置安装与授权；创建对话不会自动授予任何能力。专�
 | GET | `/conversations` | 分页列出本人对话 |
 | GET | `/conversations/{cid}` | 对话配置 |
 | POST | `/conversations/{cid}/messages` | 接收 `{"body":"…"}`，要求 `Idempotency-Key`，返回 202 和 Turn |
-| GET | `/conversations/{cid}/messages` | 按轮次分页返回用户输入、最终回复和状态 |
-| GET | `/conversations/{cid}/executions` | 分页返回关联 Task、委派父 Run 和轮次 |
+| GET | `/conversations/{cid}/messages` | 按轮次分页返回输入、回复、状态和脱敏后的底层执行错误 |
+| GET | `/conversations/{cid}/executions` | 分页返回关联 Task、委派父 Run、轮次及各 Run 的状态与错误；可按 turn_id 筛选 |
 | GET | `/conversations/{cid}/events?after_id=0&limit=100` | 按持久游标读取状态事件；下一次使用最后一个 id |
 | POST | `/conversations/{cid}/turns/{tid}/cancel` | 取消轮次及其非终态关联任务 |
 | POST | `/conversations/{cid}/turns/{tid}/retry` | 显式重试失败准入或失败的当前协调 Run |
@@ -82,10 +82,10 @@ messages 的列表项是 Turn：`body` 为用户输入，`reply` 为最终回复
 继续按配置工作。Claude 适配器原有的原生子智能体拒绝逻辑没有取消；这里通过独立
 任务调用 Claude Agent，不声称已经实现同一次 Claude SDK 调用内的子智能体权限隔离。
 
-对话上下文通过最近 12 个终态轮次传递，包含失败和取消状态；每个历史输入/回复最多
-8000 字符，每个委派结果最多 16000 字符。完整历史
-保留在数据库，可分页读取。SDK Session 使用任务范围，包括对话关联的团队任务，
-避免不同对话共享团队执行历史。当前没有自动长期摘要或运行中修改冻结输入。
+对话历史由 SDK Session 管理，平台只提交当前新增输入。Manager 的 Session 按工作空间、
+用户、对话和 Agent 隔离；专家及团队委派使用独立任务 Session。委派结果作为新输入续接，
+每个结果最多 16000 字符。OpenAI Responses 的自动压缩使用 SDK 默认判断，不设置自定义阈值；
+当前不支持运行中修改冻结输入。
 
 澄清以普通助手回复结束轮次，用户补充信息作为下一轮。审批仍使用现有审批接口，
 自然语言“同意”不会自动批准风险操作。失败需要显式重试；存在后续轮次或委派预算
@@ -102,7 +102,10 @@ python scripts/conversation_client.py --agent <manager-id> "检查项目的权�
 python scripts/conversation_client.py --conversation <conversation-id> "继续检查租户隔离"
 ```
 
-脚本输出 conversation_id、turn_id，轮询至终态或超时；等待审批时输出关联任务入口信息。
+脚本输出 conversation_id、turn_id、执行状态与工具开始/完成/失败事件，并显示临时输出预览和
+最终回复。它订阅现有 `/tasks/{task_id}/events/stream`；持久工具证据仍通过
+`/runs/{run_id}/events` 查询。失败时输出脱敏错误，等待审批或超时时输出执行入口，
+不会自动重试模型或重新投递任务。
 请求密钥从环境读取，不写入文件或日志。
 
 ## 验证范围

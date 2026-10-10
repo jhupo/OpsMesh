@@ -12,7 +12,7 @@ from pydantic import (
 )
 
 from backend.app.shared.contracts import TimestampedModel
-from backend.app.shared.security.redaction import redact_sensitive_text
+from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
 class ConversationCreate(BaseModel):
@@ -75,11 +75,27 @@ class TurnResponse(TimestampedModel):
     reply: str | None
     status: str
     error_code: str | None
+    error: dict[str, object] | None = None
     round: int
 
     @field_serializer("body", "reply")
     def redact(self, value: str | None) -> str | None:
         return redact_sensitive_text(value) if value is not None else None
+
+    @field_serializer("error")
+    def redact_error(self, value: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
+
+
+class ExecutionRunResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    status: str
+    error: dict[str, object] | None
+
+    @field_serializer("error")
+    def redact_error(self, value: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(value) if value is not None else None
 
 
 class ExecutionResponse(TimestampedModel):
@@ -88,6 +104,7 @@ class ExecutionResponse(TimestampedModel):
     purpose: str
     parent_run_id: UUID | None
     round: int
+    runs: list[ExecutionRunResponse]
 
 
 class EventResponse(BaseModel):
