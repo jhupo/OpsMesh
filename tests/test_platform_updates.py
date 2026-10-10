@@ -155,6 +155,45 @@ class FakeDeployment:
             raise RuntimeError("health failure")
 
 
+@pytest.mark.parametrize("action", ["backup", "rollback"])
+def test_local_recovery_plans_do_not_fetch_a_different_published_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    _, session, _ = _client()
+    monkeypatch.setattr(
+        daemon, "SessionLocal", sessionmaker(bind=session.get_bind(), expire_on_commit=False)
+    )
+    deployment = FakeDeployment()
+    monkeypatch.setattr(daemon, "deployment_for", lambda _: deployment)
+    current = manifest("v0.2.0")
+    monkeypatch.setattr(Installation, "current", lambda _: current)
+
+    def reject_download(*args: object) -> None:
+        raise AssertionError("Local backup/rollback must use the installed build record")
+
+    monkeypatch.setattr(daemon.ReleaseSource, "fetch_manifest", reject_download)
+    installation = Installation(root=tmp_path, mode="compose")
+    target = current if action == "backup" else manifest()
+    directory = installation.release_dir(target)
+    directory.mkdir(parents=True)
+    (directory / "release-manifest.json").write_text(target.model_dump_json())
+    (tmp_path / ".env").write_text("TEST=example")
+    updater = daemon.HostUpdater(installation)
+    monkeypatch.setattr(updater, "revision", lambda: target.database_revision)
+    job = UpdateService(session).request(tag=target.tag, action=action, key=f"local-{action}")
+    session.commit()
+    updater.plan(job.id)
+    session.expire_all()
+    assert session.get(PlatformUpdateJob, job.id).plan["target"] == target.model_dump(mode="json")
+    if action == "rollback":
+        other = target.model_copy(update={"commit": "e" * 40})
+        duplicate = installation.release_dir(other)
+        duplicate.mkdir()
+        (duplicate / "release-manifest.json").write_text(other.model_dump_json())
+        with pytest.raises(ValueError, match="unambiguous"):
+            updater.plan(job.id)
+
+
 @pytest.mark.parametrize("health_failure", [False, True])
 def test_host_workflow_is_durable_and_never_replays_interrupted_work(
     tmp_path: Path,
