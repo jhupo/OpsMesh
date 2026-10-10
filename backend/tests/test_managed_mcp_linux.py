@@ -15,6 +15,11 @@ from backend.app.capabilities.mcp.catalog.discovery import McpToolDiscoveryServi
 def exercise_process() -> dict[str, object]:
     identifier = str(uuid4())
     fixture = str(Path(__file__).parent / "fixtures" / "mcp_persistent_server.py")
+    runtime_source = Path(__file__).resolve().parents[2] / "runtime"
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(runtime_source), environment.get("PYTHONPATH")))
+    )
     with TemporaryDirectory() as directory:
         request_file = Path(directory) / "request.json"
 
@@ -32,8 +37,10 @@ def exercise_process() -> dict[str, object]:
                 capture_output=True,
                 text=True,
                 timeout=80,
+                env=environment,
             )
             assert "smoke-only-secret" not in result.stderr
+            assert result.stdout, result.stderr
             return json.loads(result.stdout)
 
         try:
