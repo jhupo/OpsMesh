@@ -18,6 +18,7 @@ from backend.app.runtime.operations.contracts.queue import (
 from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.shared.redis.keys import RedisKeyBuilder
+from backend.app.shared.utils import ensure_aware_utc
 
 
 def job_ids(jobs: list[JobPayload], *, limit: int = 25) -> list[UUID]:
@@ -41,14 +42,8 @@ def run_ids(runs: list[AgentRun], *, limit: int = 25) -> list[UUID]:
     return [run.id for run in runs[:limit]]
 
 
-def aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
-
-
 def oldest_age_seconds(now: datetime, values: list[datetime]) -> int | None:
-    ages = [max(0, int((now - aware_datetime(value)).total_seconds())) for value in values]
+    ages = [max(0, int((now - ensure_aware_utc(value)).total_seconds())) for value in values]
     return max(ages) if ages else None
 
 
@@ -189,7 +184,7 @@ def _old_queued_jobs(
     stale_after_seconds: int,
 ) -> list[JobPayload]:
     cutoff = generated_at - timedelta(seconds=stale_after_seconds)
-    return [job for job in workspace_jobs if aware_datetime(job.created_at) < cutoff]
+    return [job for job in workspace_jobs if ensure_aware_utc(job.created_at) < cutoff]
 
 
 class QueueGovernanceSnapshotBuilder:
@@ -338,11 +333,11 @@ def _job_issue_responses(
 
 
 def _oldest_job_age(now: datetime, jobs: list[JobPayload]) -> int | None:
-    return oldest_age_seconds(now, [aware_datetime(job.created_at) for job in jobs])
+    return oldest_age_seconds(now, [ensure_aware_utc(job.created_at) for job in jobs])
 
 
 def _oldest_run_age(now: datetime, runs: list[AgentRun]) -> int | None:
-    return oldest_age_seconds(now, [aware_datetime(run.updated_at) for run in runs])
+    return oldest_age_seconds(now, [ensure_aware_utc(run.updated_at) for run in runs])
 
 
 def queue_governance_response(

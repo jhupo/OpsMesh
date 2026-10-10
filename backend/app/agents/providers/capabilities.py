@@ -77,3 +77,10 @@ def _provider_key(provider: str | None) -> str:
     if provider is None or not provider.strip():
         return ""
     return canonical_model_provider(provider)
+
+
+def model_capability_payload(
+    provider: str | None, model: str | None, catalog: object
+) -> dict[str, object] | None:
+    capability = resolve_model_capability(provider, model, catalog)
+    return capability.as_dict() if capability is not None else None

@@ -19,7 +19,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/approvals", tags=["approva
 
 
 @router.get("", response_model=PageResponse[ApprovalResponse])
-async def list_approvals(
+def list_approvals(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
@@ -35,7 +35,7 @@ async def list_approvals(
 
 
 @router.post("/{approval_id}/approve", response_model=ApprovalResponse)
-async def approve(
+def approve(
     approval_id: UUID,
     request: ApprovalDecisionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
@@ -59,7 +59,7 @@ async def approve(
 
 
 @router.post("/{approval_id}/reject", response_model=ApprovalResponse)
-async def reject(
+def reject(
     approval_id: UUID,
     request: ApprovalDecisionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),

@@ -348,7 +348,7 @@ class McpToolDiscoveryService:
 
     @staticmethod
     def _url(server: McpServer) -> str:
-        value = server.connection.get("url") or server.connection.get("endpoint")
+        value = server.connection.get("url")
         if not isinstance(value, str) or not value:
             raise McpDiscoveryError("MCP server is missing a remote URL")
         return value
@@ -368,10 +368,10 @@ class McpToolDiscoveryService:
         if not isinstance(name, str) or not name.strip():
             raise McpDiscoveryError("MCP discovery returned a tool without a name")
         reject_embedded_secrets(name, path="tool_name")
-        input_schema = item.get("inputSchema") or item.get("input_schema") or {}
+        input_schema = item.get("inputSchema")
         if not isinstance(input_schema, dict):
             raise McpDiscoveryError(f"MCP tool {name.strip()} input schema is invalid")
-        output_schema = item.get("outputSchema") or item.get("output_schema") or {}
+        output_schema = item.get("outputSchema", {})
         if not isinstance(output_schema, dict):
             raise McpDiscoveryError(f"MCP tool {name.strip()} output schema is invalid")
         normalized_output_schema = dict(output_schema)

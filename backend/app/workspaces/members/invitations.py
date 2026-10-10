@@ -13,6 +13,7 @@ from backend.app.governance.audit.service import AuditService
 from backend.app.identity.users.models import User
 from backend.app.shared.config import Settings, get_settings
 from backend.app.shared.db.errors import commit_or_raise_conflict
+from backend.app.shared.utils import ensure_aware_utc
 from backend.app.workspaces.management.errors import (
     WorkspaceInviteConflictError,
     WorkspaceInviteNotFoundError,
@@ -20,7 +21,6 @@ from backend.app.workspaces.management.errors import (
 )
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.management.snapshots import (
-    as_utc,
     canonical_datetime,
     invite_snapshot,
     member_snapshot,
@@ -190,7 +190,7 @@ class WorkspaceInviteService:
                 fingerprint=invite.fingerprint,
             )
         now = datetime.now(UTC)
-        if as_utc(invite.expires_at) <= now:
+        if ensure_aware_utc(invite.expires_at) <= now:
             before = invite_snapshot(invite)
             invite.status = "expired"
             AuditService(self._session).record_user_action(

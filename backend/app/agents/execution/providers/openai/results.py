@@ -5,11 +5,18 @@ from typing import Any
 
 from agents import Agent, Tool
 from agents import __version__ as agents_sdk_version
+from agents.stream_events import (
+    AgentUpdatedStreamEvent,
+    RawResponsesStreamEvent,
+    RunItemStreamEvent,
+    StreamEvent,
+)
 from agents.usage import Usage
 from pydantic import TypeAdapter
 
 from backend.app.agents.execution.contracts import (
     AgentRuntimeAgentRef,
+    AgentRuntimeContext,
     AgentRuntimeEvent,
     AgentRuntimeHandoffResult,
     AgentRuntimeInterruption,
@@ -24,13 +31,13 @@ from backend.app.shared.security.redaction import redact_sensitive_payload
 
 class OpenAIAgentsResultMapper:
     def final_output(self, result: Any) -> tuple[str, AgentRuntimeStructuredOutput | None]:
-        value = getattr(result, "final_output", None)
+        value = result.final_output
         if value is None:
             return "", None
         if isinstance(value, str):
             return value, None
         normalized = jsonable(value)
-        output_schema = getattr(getattr(result, "last_agent", None), "output_type", None)
+        output_schema = getattr(result.last_agent, "output_type", None)
         schema_name = None
         if output_schema is not None:
             name = getattr(output_schema, "name", None)
@@ -49,26 +56,19 @@ class OpenAIAgentsResultMapper:
     def safe_raw_output(self, result: Any) -> dict[str, object]:
         final_output, _ = self.final_output(result)
         payload: dict[str, object] = {"final_output": final_output}
-        last_agent = getattr(result, "last_agent", None)
+        last_agent = result.last_agent
         if last_agent is not None:
             payload["last_agent"] = str(getattr(last_agent, "name", last_agent))
-        usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
+        usage = result.context_wrapper.usage
         if isinstance(usage, Usage):
             payload["usage"] = TypeAdapter(Usage).dump_python(usage, mode="json")
         return redact_sensitive_payload(payload)
 
     def resume_state(self, result: Any) -> AgentRuntimeResumeState | None:
-        interruptions = getattr(result, "interruptions", None)
+        interruptions = result.interruptions
         if not isinstance(interruptions, list | tuple) or not interruptions:
             return None
-        to_state = getattr(result, "to_state", None)
-        if not callable(to_state):
-            raise ValueError("Interrupted OpenAI Agents run did not expose resumable state")
-        state = to_state()
-        to_json = getattr(state, "to_json", None)
-        if not callable(to_json):
-            raise ValueError("Interrupted OpenAI Agents run state is not serializable")
-        state_payload = to_json(
+        state_payload = result.to_state().to_json(
             context_serializer=_serialize_runtime_context,
             strict_context=True,
             include_tracing_api_key=False,
@@ -90,7 +90,7 @@ class OpenAIAgentsResultMapper:
 
     def interruptions(self, result: Any) -> list[AgentRuntimeInterruption]:
         mapped: list[AgentRuntimeInterruption] = []
-        for item in getattr(result, "interruptions", ()) or ():
+        for item in result.interruptions:
             call_id = getattr(item, "call_id", None)
             tool_name = getattr(item, "name", None)
             raw_arguments = getattr(item, "arguments", None)
@@ -138,51 +138,18 @@ class OpenAIAgentsResultMapper:
         return mapped
 
     def runtime_events(self, result: Any) -> list[AgentRuntimeEvent]:
-        events: list[AgentRuntimeEvent] = []
-        last_agent = getattr(result, "last_agent", None)
-        new_items = getattr(result, "new_items", ()) or ()
-        has_handoff_item = any(
-            getattr(item, "type", None) == "handoff_output_item" for item in new_items
-        )
-        if last_agent is not None and not has_handoff_item:
-            events.append(
-                AgentRuntimeEvent(
-                    event_type="agent.handoff",
-                    message="Run finished with agent handoff state.",
-                    payload={"target_agent": str(getattr(last_agent, "name", last_agent))},
-                )
-            )
-        usage = getattr(result, "usage", None)
-        if usage is not None:
-            events.append(
+        usage = result.context_wrapper.usage
+        return (
+            [
                 AgentRuntimeEvent(
                     event_type="model.usage",
                     message="Model usage recorded.",
-                    payload={"usage": jsonable(usage)},
+                    payload={"usage": TypeAdapter(Usage).dump_python(usage, mode="json")},
                 )
-            )
-        raw_events = getattr(result, "events", None)
-        if isinstance(raw_events, list | tuple):
-            for item in raw_events:
-                event = runtime_event_from_sdk_item(item)
-                if event is not None:
-                    events.append(event)
-        return events
-
-    def stream_events(self, result: Any) -> list[AgentRuntimeStreamEvent]:
-        """Map buffered SDK stream items without exposing SDK event instances."""
-
-        raw_events = getattr(result, "stream_events", None)
-        if not isinstance(raw_events, list | tuple):
-            raw_events = getattr(result, "events", None)
-        if not isinstance(raw_events, list | tuple):
-            return []
-        mapped: list[AgentRuntimeStreamEvent] = []
-        for sequence, item in enumerate(raw_events, start=1):
-            event = runtime_stream_event_from_sdk_item(item, sequence=sequence)
-            if event is not None:
-                mapped.append(event)
-        return mapped
+            ]
+            if usage.requests
+            else []
+        )
 
     def handoffs(
         self,
@@ -190,7 +157,7 @@ class OpenAIAgentsResultMapper:
         audits: dict[str, dict[str, object]] | None = None,
     ) -> list[AgentRuntimeHandoffResult]:
         mapped: list[AgentRuntimeHandoffResult] = []
-        for item in getattr(result, "new_items", ()) or ():
+        for item in result.new_items:
             if getattr(item, "type", None) != "handoff_output_item":
                 continue
             source_agent = getattr(item, "source_agent", None)
@@ -215,47 +182,27 @@ class OpenAIAgentsResultMapper:
         return mapped
 
 
-def runtime_event_from_sdk_item(item: object) -> AgentRuntimeEvent | None:
-    event_type = getattr(item, "type", None) or getattr(item, "event_type", None)
-    if not isinstance(event_type, str) or not event_type:
-        return None
-    payload = jsonable(item)
-    return AgentRuntimeEvent(
-        event_type=event_type,
-        message=str(getattr(item, "message", "") or event_type),
-        payload=redact_sensitive_payload(
-            payload if isinstance(payload, dict) else {"value": payload}
-        ),
-    )
-
-
 def runtime_stream_event_from_sdk_item(
-    item: object,
+    item: StreamEvent,
     *,
     sequence: int,
 ) -> AgentRuntimeStreamEvent | None:
-    sdk_type = getattr(item, "type", None) or getattr(item, "event_type", None)
-    event_type = sdk_type
-    payload_source = item
-    delta: object = getattr(item, "delta", None)
-    if sdk_type == "raw_response_event":
-        payload_source = getattr(item, "data", item)
-        raw_type = getattr(payload_source, "type", None)
-        event_type = _openai_raw_stream_event_type(raw_type)
-        delta = getattr(payload_source, "delta", None)
-    elif sdk_type == "run_item_stream_event":
-        name = getattr(item, "name", None)
-        event_type = _openai_run_item_event_type(name)
-    elif sdk_type == "agent_updated_stream_event":
+    delta: object = None
+    if isinstance(item, RawResponsesStreamEvent):
+        event_type = _openai_raw_stream_event_type(item.data.type)
+        delta = getattr(item.data, "delta", None)
+        payload = item.data.model_dump(mode="json")
+    elif isinstance(item, RunItemStreamEvent):
+        event_type = _openai_run_item_event_type(item.name)
+        payload = {"name": item.name, "item": jsonable(item.item.raw_item)}
+    elif isinstance(item, AgentUpdatedStreamEvent):
         event_type = "agent.updated"
-    if not isinstance(event_type, str) or not event_type:
+        payload = {"agent": item.new_agent.name}
+    else:
         return None
-    payload = jsonable(payload_source)
     normalized_payload = redact_sensitive_payload(
         payload if isinstance(payload, dict) else {"value": payload}
     )
-    if not isinstance(delta, str):
-        delta = getattr(payload_source, "text", None)
     if not isinstance(delta, str):
         delta = None
     if delta is not None:
@@ -306,15 +253,12 @@ def jsonable(value: object) -> object:
 
 
 def _serialize_runtime_context(value: object) -> dict[str, object]:
-    return {
-        key: str(item) if key.endswith("_id") and item is not None else item
-        for key, item in {
-            "workspace_id": getattr(value, "workspace_id", None),
-            "task_id": getattr(value, "task_id", None),
-            "run_id": getattr(value, "run_id", None),
-            "allowed_tools": list(getattr(value, "allowed_tools", ())),
-        }.items()
-    }
+    if not isinstance(value, AgentRuntimeContext):
+        raise ValueError("SDK state must carry its frozen OpsMesh context")
+    payload = TypeAdapter(AgentRuntimeContext).dump_python(value, mode="json")
+    if not isinstance(payload, dict):
+        raise ValueError("SDK context serialization must produce an object")
+    return payload
 
 
 def _interrupted_tool(item: object, tool_name: str) -> Tool | None:

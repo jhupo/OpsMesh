@@ -11,16 +11,15 @@ from sqlalchemy.orm import Session
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.capabilities.governance.rules import (
     agent_governance_actions,
-    dict_list,
     mcp_server_governance_actions,
     skill_governance_actions,
-    string_list,
 )
 from backend.app.capabilities.mcp.catalog.service import McpCatalogService
 from backend.app.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from backend.app.capabilities.skills.models import WorkspaceSkillInstall
 from backend.app.shared.config import Settings, get_settings
 from backend.app.shared.pagination import PageParams
+from backend.app.shared.utils import dict_list, string_list
 
 
 class McpGovernanceSummary(TypedDict):
@@ -114,9 +113,7 @@ class CapabilityGovernanceReadService:
                     "usable": availability.usable,
                     "required_tools": availability.required_tools,
                     "blocked_reasons": availability.blocked_reasons,
-                    "recommended_actions": skill_governance_actions(
-                        availability.blocked_reasons
-                    ),
+                    "recommended_actions": skill_governance_actions(availability.blocked_reasons),
                 }
             )
         return items, blocked_reasons

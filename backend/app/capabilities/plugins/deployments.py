@@ -1,4 +1,5 @@
 """Admission and durable intent for isolated, platform-managed plugin processes."""
+
 import re
 from datetime import UTC, datetime
 from typing import Literal
@@ -170,7 +171,7 @@ class PluginDeploymentService:
             platform_url=request.platform_url,
             permissions=sorted(set(request.permissions)),
             limits=policy.limits,
-            network_policy={"disabled": False, **network},
+            network_policy=network,
         ).model_dump(mode="json")
         item.encrypted_environment, item.encryption_key_id = encrypted.ciphertext, encrypted.key_id
         item.desired_state, item.status = request.desired_state, "pending"

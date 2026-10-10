@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TypeAlias
 
@@ -10,13 +10,7 @@ from redis import Redis
 from backend.app.shared.redis.keys import RedisKeyBuilder
 
 JsonValue: TypeAlias = (
-    Mapping[str, "JsonValue"]
-    | Sequence["JsonValue"]
-    | str
-    | int
-    | float
-    | bool
-    | None
+    Mapping[str, "JsonValue"] | Sequence["JsonValue"] | str | int | float | bool | None
 )
 
 
@@ -116,12 +110,6 @@ class RedisJsonCache:
 
     def delete(self, key: str) -> int:
         return int(self._redis.delete(self._storage_key(key)))
-
-    def delete_many(self, keys: Iterable[str]) -> int:
-        storage_keys = [self._storage_key(key) for key in keys]
-        if not storage_keys:
-            return 0
-        return int(self._redis.delete(*storage_keys))
 
     def delete_prefix(self, prefix: str) -> int:
         normalized_prefix = self._normalize_key(prefix)

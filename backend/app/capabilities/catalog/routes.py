@@ -30,7 +30,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capa
 
 
 @router.get("/catalog", response_model=WorkspaceCapabilityCatalogResponse)
-async def get_workspace_capability_catalog(
+def get_workspace_capability_catalog(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceCapabilityCatalogResponse:
@@ -41,7 +41,7 @@ async def get_workspace_capability_catalog(
     "/teams/{team_id}/policy",
     response_model=TeamCapabilityPolicyResponse,
 )
-async def update_team_capability_policy(
+def update_team_capability_policy(
     team_id: UUID,
     request: TeamCapabilityPolicyUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -65,7 +65,7 @@ async def update_team_capability_policy(
     "/agents/{agent_profile_id}/effective-catalog",
     response_model=EffectiveCapabilityCatalogResponse,
 )
-async def get_effective_agent_capability_catalog(
+def get_effective_agent_capability_catalog(
     agent_profile_id: UUID,
     team_id: UUID | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -80,7 +80,7 @@ async def get_effective_agent_capability_catalog(
 
 
 @router.get("/resources", response_model=PageResponse[CapabilityResourceResponse])
-async def list_capability_resources(
+def list_capability_resources(
     page: PageParams = Depends(pagination_params),
     include_disabled: bool = Query(default=False),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -104,7 +104,7 @@ async def list_capability_resources(
     response_model=CapabilityResourceResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_capability_resource(
+def create_capability_resource(
     request: CapabilityResourceCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
@@ -121,7 +121,7 @@ async def create_capability_resource(
 
 
 @router.patch("/resources/{resource_id}", response_model=CapabilityResourceResponse)
-async def update_capability_resource(
+def update_capability_resource(
     resource_id: UUID,
     request: CapabilityResourceUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -140,7 +140,7 @@ async def update_capability_resource(
     "/resources/{resource_id}/disable",
     response_model=CapabilityResourceResponse,
 )
-async def disable_capability_resource(
+def disable_capability_resource(
     resource_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),

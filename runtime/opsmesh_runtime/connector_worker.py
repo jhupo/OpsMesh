@@ -31,6 +31,8 @@ class McpJobApi(Protocol):
 
     def claim_mcp_job(self, job_id: UUID) -> None: ...
 
+    def cancellation_requested(self, job_id: UUID) -> bool: ...
+
     def complete_mcp_job(self, job_id: UUID, completion: McpJobCompletion) -> None: ...
 
 
@@ -94,7 +96,15 @@ class SelfHostedMcpConnector:
         else:
             self._state.mark_executing(job.id)
             try:
-                response: dict[str, object] = asyncio.run(self._executor(request))
+                response: dict[str, object] = asyncio.run(self._execute_cancellable(job, request))
+            except asyncio.CancelledError:
+                completion = McpJobCompletion.failed(
+                    code="run_cancelled",
+                    message=(
+                        "Runtime operation interrupted; "
+                        "external side effects may already have occurred."
+                    ),
+                )
             except Exception:
                 completion = McpJobCompletion.failed(
                     code="self_hosted_mcp_execution_failed",
@@ -112,6 +122,28 @@ class SelfHostedMcpConnector:
         self._state.mark_completion(job.id, completion)
         self._deliver(job.id, completion)
         return "completed" if completion.status == "completed" else "failed"
+
+    async def _execute_cancellable(
+        self, job: McpJob, request: dict[str, object]
+    ) -> dict[str, object]:
+        async def wait_cancellation() -> None:
+            while not await asyncio.to_thread(self._api.cancellation_requested, job.id):
+                await asyncio.sleep(0.5)
+
+        operation = asyncio.create_task(self._executor(request))
+        cancelled = asyncio.create_task(wait_cancellation())
+        try:
+            done, _ = await asyncio.wait(
+                (operation, cancelled), return_when=asyncio.FIRST_COMPLETED
+            )
+            if operation in done:
+                return await operation
+            await cancelled
+            raise asyncio.CancelledError
+        finally:
+            operation.cancel()
+            cancelled.cancel()
+            await asyncio.gather(operation, cancelled, return_exceptions=True)
 
     def _deliver(self, job_id: UUID, completion: McpJobCompletion) -> None:
         self._api.complete_mcp_job(job_id, completion)

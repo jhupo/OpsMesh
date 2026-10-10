@@ -21,7 +21,7 @@ router = APIRouter()
     response_model=LocalFileReferenceResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_local_file_reference(
+def create_local_file_reference(
     request: LocalFileReferenceRequest,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
     service: SelfHostedRuntimeService = Depends(self_hosted_service),
@@ -38,7 +38,7 @@ async def create_local_file_reference(
     response_model=ArtifactUploadResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def register_artifact_upload(
+def register_artifact_upload(
     request: ArtifactUploadRequest,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
     service: SelfHostedRuntimeService = Depends(self_hosted_service),

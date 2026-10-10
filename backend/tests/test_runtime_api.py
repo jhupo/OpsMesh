@@ -121,7 +121,7 @@ def test_runtime_api_lifecycle_and_workspace_scope() -> None:
     )
     assert created.status_code == 201
     runtime_id = created.json()["id"]
-    assert created.json()["network_policy"]["disabled"] is True
+    assert created.json()["network_policy"]["mode"] == "none"
     assert created.json()["runtime_space_id"] == str(runtime_space.id)
     assert created.json()["status"] == "queued"
     assert created.json()["execution_mode"] == "pooled"
@@ -243,7 +243,7 @@ def test_runtime_api_rejects_disallowed_image_and_network() -> None:
         session,
         name="unsafe",
         image="ubuntu:24.04",
-        network_policy={"disabled": True},
+        network_policy={"mode": "none"},
     )
 
     blocked_image = client.post(
@@ -403,7 +403,7 @@ def test_runtime_responses_redact_sensitive_policy_fields() -> None:
 def test_runtime_api_allows_network_when_template_allows_it() -> None:
     client, session, docker, queue = _client(allowed_images=[PINNED_IMAGE])
     owner, workspace = _seed_workspace(session, role="owner")
-    template = _seed_template(session, network_policy={"allow_network": True})
+    template = _seed_template(session, network_policy={"mode": "internet"})
     session.add(
         PlatformPolicy(
             policy_key=RISKY_EXECUTION_POLICY_KEY,
@@ -429,7 +429,7 @@ def test_runtime_api_allows_network_when_template_allows_it() -> None:
     )
 
     assert response.status_code == 201
-    assert response.json()["network_policy"]["disabled"] is False
+    assert response.json()["network_policy"]["mode"] == "internet"
     job = queue.dequeue()
     assert job is not None
     WorkerJobHandler(
@@ -444,7 +444,7 @@ def test_runtime_api_allows_network_when_template_allows_it() -> None:
 def test_runtime_api_rejects_network_when_platform_policy_disables_egress() -> None:
     client, session, docker, _ = _client(allowed_images=[PINNED_IMAGE])
     owner, workspace = _seed_workspace(session, role="owner")
-    template = _seed_template(session, network_policy={"allow_network": True})
+    template = _seed_template(session, network_policy={"mode": "internet"})
     session.add(
         PlatformPolicy(
             policy_key=RISKY_EXECUTION_POLICY_KEY,
@@ -553,7 +553,7 @@ def _seed_template(
             "disk_mb": 1024,
             "timeout_seconds": 60,
         },
-        default_network_policy=network_policy or {"disabled": True},
+        default_network_policy=network_policy or {"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add(template)

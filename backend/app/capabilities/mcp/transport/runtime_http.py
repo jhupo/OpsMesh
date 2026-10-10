@@ -1,11 +1,8 @@
 """Send native SDK remote MCP execution into an already-authorized Docker Runtime."""
 
-import json
-
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionError
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer
 from backend.app.capabilities.mcp.transport.payloads import (
-    result_from_sdk_output,
     string_dict_setting,
 )
 from backend.app.capabilities.mcp.transport.remote import (
@@ -13,8 +10,8 @@ from backend.app.capabilities.mcp.transport.remote import (
     validate_mcp_auth_headers,
     validate_mcp_url,
 )
-from backend.app.runtime.instances.contracts import RuntimeCommandInputFile
-from backend.app.runtime.instances.manager import RuntimeManager
+from backend.app.capabilities.mcp.transport.runtime_operation import RuntimeMcpOperation
+from backend.app.runtime.instances.contracts import DockerRuntimeClient
 from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.shared.security.egress import MCP_EGRESS_URL_POLICY
 from backend.app.shared.security.secrets import SecretEncryptionService
@@ -23,13 +20,13 @@ from backend.app.shared.security.secrets import SecretEncryptionService
 class DockerRuntimeHttpMcpToolAdapter:
     def __init__(
         self,
-        manager: RuntimeManager,
+        docker: DockerRuntimeClient,
         runtime: WorkspaceRuntime,
         secrets: SecretEncryptionService | None,
     ) -> None:
-        self.manager, self.runtime, self.secrets = manager, runtime, secrets
+        self.docker, self.runtime, self.secrets = docker, runtime, secrets
 
-    async def call(
+    def prepare(
         self,
         *,
         server: McpServer,
@@ -37,8 +34,8 @@ class DockerRuntimeHttpMcpToolAdapter:
         arguments: dict[str, object],
         credential_refs: list[McpCredentialReference],
         timeout_seconds: int,
-    ) -> dict[str, object]:
-        url = server.connection.get("url") or server.connection.get("endpoint")
+    ) -> RuntimeMcpOperation:
+        url = server.connection.get("url")
         declared_transport = (
             server.connection.get("transport")
             if server.server_type == "hosted"
@@ -68,14 +65,8 @@ class DockerRuntimeHttpMcpToolAdapter:
             },
             "tool": {"name": tool_name, "arguments": arguments, "timeout_seconds": timeout_seconds},
         }
-        record = await self.manager.execute_command_async(
-            workspace_id=server.workspace_id,
-            runtime=self.runtime,
-            command=["python", "-m", "opsmesh_runtime.mcp_http_client"],
-            input_file=RuntimeCommandInputFile(
-                content=json.dumps(request).encode(), argument_name="--request-file"
-            ),
+        if not self.runtime.docker_container_id:
+            raise McpExecutionError("Runtime has no container", code="mcp_runtime_unavailable")
+        return RuntimeMcpOperation(
+            self.docker, self.runtime.docker_container_id, "http", request, timeout_seconds
         )
-        if record.status != "completed" or record.exit_code != 0:
-            raise McpExecutionError("Runtime MCP HTTP call failed", code="mcp_runtime_http_failed")
-        return result_from_sdk_output(record.stdout)

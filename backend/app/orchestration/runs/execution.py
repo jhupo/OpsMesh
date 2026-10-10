@@ -1,10 +1,5 @@
-import asyncio
-import json
-from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from types import TracebackType
-from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,42 +7,27 @@ from sqlalchemy.orm import Session
 from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
-    AgentRuntimeContext,
-    AgentRuntimeExecutor,
-    AgentRuntimeStructuredOutput,
-    AgentRuntimeToolExecutor,
-    AgentRuntimeToolResult,
 )
-from backend.app.agents.execution.errors import AgentRuntimeCancelledError, AgentRuntimePolicyError
+from backend.app.agents.execution.errors import AgentRuntimePolicyError
 from backend.app.agents.execution.state import AgentRunStateStore
-from backend.app.agents.execution.tools.gateway import AgentToolGateway
 from backend.app.agents.providers.contracts import ModelProviderUnavailableError
 from backend.app.governance.audit.service import AuditService
-from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resource_queries import (
-    execution_resource_queries,
     unbind_resource_queries,
 )
 from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.orchestration.approvals.agent_tool_interruptions import (
     AgentToolInterruptionService,
 )
-from backend.app.orchestration.approvals.models import Approval
 from backend.app.orchestration.approvals.pending_tools import (
-    PendingToolInvocationRequest,
     PendingToolInvocationService,
 )
-from backend.app.orchestration.approvals.service import ApprovalService
-from backend.app.orchestration.approvals.waiting import ApprovalWaitingService
-from backend.app.orchestration.definitions.data import resolve_workflow_inputs
-from backend.app.orchestration.definitions.subworkflows import SubworkflowExecutionService
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.run_gateway import ModelRunGateway
 from backend.app.orchestration.runs.authorization.policy import RunRuntimeAuthorizationError
 from backend.app.orchestration.runs.authorization.validation import RunAuthorizationService
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.lifecycle import RunLifecycleService
-from backend.app.orchestration.runs.live_events import LiveToolExecutor, RunLivePublisher
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
 from backend.app.orchestration.runs.runtime_event_messages import RunRuntimeEventMessageMapper
 from backend.app.orchestration.runs.state import RunStatus
@@ -63,7 +43,6 @@ from backend.app.runtime.queues.contracts import JobPayload
 from backend.app.runtime.queues.execution_control import current_execution_control
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.shared.config import Settings, get_settings
-from backend.app.shared.utils import payload_hash
 from backend.app.workspaces.projects.io.service import RunProjectIOService
 from backend.app.workspaces.projects.io.support import ProjectRunIOError
 
@@ -85,7 +64,6 @@ class RunExecutionService:
     session: Session
     dependencies: RunExecutionDependencies
     queue: RedisQueue | None = None
-    agent_runner: AgentRuntimeExecutor | None = None
     settings: Settings | None = None
     docker_client: DockerRuntimeClient | None = None
     storage: ObjectStorage | None = None
@@ -102,30 +80,6 @@ class RunExecutionService:
 
     def __post_init__(self) -> None:
         self.settings = self.settings or get_settings()
-
-    async def run_agent(self, job: JobPayload) -> AgentRun:
-        run = self.session.scalar(
-            select(AgentRun).where(
-                AgentRun.workspace_id == job.workspace_id,
-                AgentRun.id == job.resource_id,
-            )
-        )
-        if run is None:
-            raise ValueError("Agent run not found")
-        if run.workspace_id != job.workspace_id:
-            raise ValueError("Agent run workspace mismatch")
-        if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
-            return run
-
-        try:
-            user = ExecutionIdentityService(self.session).for_run(run.workspace_id, run.id)
-            with execution_resource_queries(self.session, run.workspace_id, user):
-                return await self._run_authorized_agent(
-                    run,
-                    job.model_copy(update={"requested_by_user_id": user.user_id}),
-                )
-        except ResourceAccessDenied as exc:
-            return self.reject_authorization(run, exc)
 
     def reject_authorization(self, run: AgentRun, exc: ResourceAccessDenied) -> AgentRun:
         # Discard uncommitted output and terminate through trusted lifecycle code. Revoked
@@ -144,34 +98,6 @@ class RunExecutionService:
         self._lifecycle().mark_run_failed(run, exc)
         self.commit_and_refresh(run)
         return run
-
-    async def _run_authorized_agent(self, run: AgentRun, job: JobPayload) -> AgentRun:
-
-        with self._lock_for_run(run) as acquired:
-            if not acquired:
-                raise RuntimeError("Agent run is already locked")
-
-            request = self.prepare_run(run, job)
-            if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
-                return run
-            if request is None and self.node_type(run) not in {
-                "tool",
-                "mcp",
-                "approval",
-                "subworkflow",
-            }:
-                return run
-            node_type = self.node_type(run)
-            try:
-                direct_result = await self._run_non_agent_node(run, job, request, node_type)
-            except Exception as exc:
-                self._lifecycle().mark_run_failed(run, exc)
-                self.commit_and_refresh(run)
-                return run
-            if direct_result is not None:
-                return self._complete_direct_result(run, direct_result, job)
-            assert request is not None
-            return await self._execute_model_result(run, request, job)
 
     def prepare_run(self, run: AgentRun, job: JobPayload) -> AgentRunRequest | None:
         if self._run_should_skip_execution(run):
@@ -226,63 +152,6 @@ class RunExecutionService:
             self._events().append_context_built_event(run, request)
         return request
 
-    def _complete_direct_result(
-        self,
-        run: AgentRun,
-        result: AgentRuntimeToolResult,
-        job: JobPayload,
-    ) -> AgentRun:
-        ExecutionIdentityService(self.session).for_run(run.workspace_id, run.id)
-        if result.status == "waiting_approval":
-            self._lifecycle().mark_run_waiting_approval(run)
-        elif result.status == "waiting_subworkflow":
-            self._lifecycle().mark_run_waiting_subworkflow(run)
-        elif result.status == "completed":
-            output = result.output or {}
-            self._lifecycle().mark_run_completed(
-                run,
-                AgentRunResult(
-                    final_output=json.dumps(output, ensure_ascii=False, default=str),
-                    raw_output=output,
-                    structured_output=AgentRuntimeStructuredOutput(
-                        value=output,
-                        schema_name="direct_tool_result",
-                        validated=False,
-                    ),
-                ),
-                job.requested_by_user_id,
-            )
-        else:
-            self._lifecycle().mark_run_failed(
-                run,
-                ValueError(str((result.error or {}).get("message", "Tool failed"))),
-            )
-        if result.status in {"completed", "failed"} and self.node_type(run) in {"tool", "mcp"}:
-            PendingToolInvocationService(
-                self.session,
-                self._request_builder().secret_service(),
-            ).mark_decisions_consumed(workspace_id=run.workspace_id, run_id=run.id)
-        self.commit_and_refresh(run)
-        return run
-
-    async def _execute_model_result(
-        self,
-        run: AgentRun,
-        request: AgentRunRequest,
-        job: JobPayload,
-    ) -> AgentRun:
-        try:
-            result = await self._run_model_with_runtime_limit(run, request, job)
-        except TimeoutError:
-            return self.complete_timeout(run)
-        except AgentRuntimeCancelledError:
-            return self.complete_cancellation(run, request)
-        ExecutionIdentityService(self.session).for_run(run.workspace_id, run.id)
-        if result is None or self.run_cancelled_after_model_result(run):
-            self.commit_and_refresh(run)
-            return run
-        return self.persist_model_result(run, request, job, result)
-
     def complete_timeout(self, run: AgentRun) -> AgentRun:
         unbind_resource_queries(self.session)
         timeout_seconds = self.runtime_timeout_seconds(run)
@@ -310,7 +179,7 @@ class RunExecutionService:
         self.commit_and_refresh(run)
         return run
 
-    def complete_cancellation(self, run: AgentRun, request: AgentRunRequest) -> AgentRun:
+    def complete_cancellation(self, run: AgentRun, *, provider: str | None) -> AgentRun:
         control = current_execution_control()
         if control is not None:
             control.check_ownership()
@@ -321,8 +190,8 @@ class RunExecutionService:
         self._events().append_event(
             run,
             "run.cancellation_propagated",
-            "Cancellation stopped the active agent SDK run",
-            {"provider": request.provider},
+            "Cancellation stopped the active runtime operation",
+            {"provider": provider} if provider is not None else {},
         )
         self.commit_and_refresh(run)
         return run
@@ -375,9 +244,6 @@ class RunExecutionService:
         self.commit_and_refresh(run)
         return run
 
-    def run_agent_sync(self, job: JobPayload) -> AgentRun:
-        return asyncio.run(self.run_agent(job))
-
     def _run_should_skip_execution(self, run: AgentRun) -> bool:
         self.session.refresh(run)
         status = RunStatus(run.status)
@@ -423,18 +289,6 @@ class RunExecutionService:
         task = self.session.get(Task, run.task_id)
         return task is not None and TaskStatus(task.status) == TaskStatus.CANCELLED
 
-    async def _run_model_with_runtime_limit(
-        self,
-        run: AgentRun,
-        request: AgentRunRequest,
-        job: JobPayload,
-    ) -> AgentRunResult | None:
-        timeout_seconds = self.runtime_timeout_seconds(run)
-        gateway = self.model_gateway().run_with_provider_fallback(run, request, job)
-        if timeout_seconds is None:
-            return await gateway
-        return await asyncio.wait_for(gateway, timeout=timeout_seconds)
-
     def runtime_timeout_seconds(self, run: AgentRun) -> int | None:
         if run.runtime_id is None:
             return None
@@ -465,257 +319,6 @@ class RunExecutionService:
             is not None
         )
 
-    async def _run_non_agent_node(
-        self,
-        run: AgentRun,
-        job: JobPayload,
-        request: AgentRunRequest | None,
-        node_type: str | None,
-    ) -> AgentRuntimeToolResult | None:
-        if run.task_step_id is None:
-            return None
-        from backend.app.orchestration.tasks.models import TaskStep
-
-        step = self.session.get(TaskStep, run.task_step_id)
-        if step is None or not isinstance(step.dependencies, dict):
-            return None
-        raw_node_type = step.dependencies.get("node_type")
-        node_type = node_type or (raw_node_type if isinstance(raw_node_type, str) else None)
-        if node_type == "approval":
-            approval = ApprovalService(self.session).create_approval(
-                workspace_id=run.workspace_id,
-                task_id=run.task_id,
-                agent_run_id=run.id,
-                requested_by_agent_profile_id=run.agent_profile_id,
-                approval_type="workflow.node",
-                risk_level="medium",
-                payload={
-                    "node_type": "approval",
-                    "work_package_id": step.work_package_id,
-                    "title": step.title,
-                    "acceptance_criteria": step.acceptance_criteria,
-                },
-            )
-            ApprovalWaitingService(self.session).mark_waiting(
-                workspace_id=run.workspace_id, run_id=run.id, task_id=run.task_id
-            )
-            return AgentRuntimeToolResult(
-                status="waiting_approval",
-                metadata={"approval_id": str(approval.id), "node_type": "approval"},
-            )
-        if node_type == "subworkflow":
-            if run.task_id is None:
-                raise ValueError("Subworkflow run has no parent task")
-            parent_task = self.session.scalar(
-                select(Task).where(
-                    Task.workspace_id == run.workspace_id,
-                    Task.id == run.task_id,
-                )
-            )
-            if parent_task is None:
-                raise ValueError("Subworkflow parent task not found")
-            launch = SubworkflowExecutionService(self.session, queue=self.queue).launch(
-                parent_run=run,
-                parent_task=parent_task,
-                parent_step=step,
-                requested_by_user_id=job.requested_by_user_id,
-            )
-            return AgentRuntimeToolResult(
-                status=launch.status,
-                output=launch.output,
-                error=launch.error,
-                metadata={
-                    "invocation_id": str(launch.invocation_id),
-                    "child_task_id": str(launch.child_task_id),
-                    "child_run_id": str(launch.child_run_id)
-                    if launch.child_run_id is not None
-                    else None,
-                    "node_type": "subworkflow",
-                },
-            )
-        if node_type not in {"tool", "mcp"}:
-            return None
-        tool_name = step.dependencies.get("tool_name")
-        if not isinstance(tool_name, str) or not tool_name:
-            raise ValueError("Direct tool node has no tool name")
-        arguments = step.dependencies.get("arguments", {})
-        if not isinstance(arguments, dict):
-            raise ValueError("Direct tool node arguments must be an object")
-        if run.task_id is None:
-            raise ValueError("Direct tool run has no parent task")
-        parent_task = self.session.scalar(
-            select(Task).where(
-                Task.workspace_id == run.workspace_id,
-                Task.id == run.task_id,
-            )
-        )
-        if parent_task is None:
-            raise ValueError("Direct tool parent task not found")
-        arguments = {
-            **{key: value for key, value in arguments.items() if isinstance(key, str)},
-            **resolve_workflow_inputs(self.session, parent_task, step),
-        }
-        context: AgentRuntimeContext
-        tool_executor: AgentRuntimeToolExecutor | None
-        if request is None:
-            context, tool_executor = self._request_builder().build_direct_tool_context(run, job)
-        else:
-            tool_executor = request.tool_executor
-            context = request.context
-        if tool_executor is None:
-            raise ValueError("Direct tool node has no authorized tool executor")
-        direct_approval = self._direct_tool_approval(run, tool_name)
-        approval_status = direct_approval.status if direct_approval is not None else None
-        tool_call_id = f"direct:{run.task_step_id}:{tool_name}"
-        approved_arguments = (
-            self._approved_direct_arguments(context, tool_name, arguments, direct_approval)
-            if direct_approval is not None
-            else None
-        )
-        if approval_status == "pending" and direct_approval is not None:
-            assert approved_arguments is not None
-            self._bind_direct_approval(
-                run,
-                step.id,
-                tool_name,
-                node_type,
-                approved_arguments,
-                tool_call_id,
-                direct_approval,
-            )
-            return AgentRuntimeToolResult(
-                status="waiting_approval",
-                metadata={"node_type": node_type, "tool_name": tool_name},
-            )
-        if approval_status == "rejected":
-            return AgentRuntimeToolResult(
-                status="failed",
-                error={
-                    "code": "tool_approval_rejected",
-                    "message": "Direct tool execution was rejected",
-                },
-                metadata={"node_type": node_type, "tool_name": tool_name},
-            )
-        if approval_status == "approved" and direct_approval is not None:
-            assert approved_arguments is not None
-            self._bind_direct_approval(
-                run,
-                step.id,
-                tool_name,
-                node_type,
-                approved_arguments,
-                tool_call_id,
-                direct_approval,
-            )
-        if self.queue is not None and run.task_id is not None:
-            tool_executor = LiveToolExecutor(
-                tool_executor,
-                RunLivePublisher(
-                    RedisTaskEventBus(self.queue.redis, self._settings().redis_key_prefix),
-                    run.workspace_id,
-                    run.task_id,
-                    run.id,
-                    step.id,
-                    step.work_package_id,
-                ),
-            )
-        result = await tool_executor.execute_tool(
-            context=context,
-            tool_name=tool_name,
-            arguments=arguments,
-            tool_call_id=tool_call_id,
-            approval_granted=approval_status == "approved",
-        )
-        if result.status == "waiting_approval":
-            direct_approval = self._direct_tool_approval(run, tool_name)
-            if direct_approval is None or direct_approval.status != "pending":
-                raise ValueError("Direct tool approval was not persisted")
-            approved_arguments = self._approved_direct_arguments(
-                context, tool_name, arguments, direct_approval
-            )
-            self._bind_direct_approval(
-                run,
-                step.id,
-                tool_name,
-                node_type,
-                approved_arguments,
-                tool_call_id,
-                direct_approval,
-            )
-        return result
-
-    def _approved_direct_arguments(
-        self,
-        context: AgentRuntimeContext,
-        tool_name: str,
-        arguments: dict[str, object],
-        approval: Approval,
-    ) -> dict[str, object]:
-        prepared = AgentToolGateway(self.session).prepare(
-            context=context,
-            tool_name=tool_name,
-            arguments=arguments,
-        )
-        payload = approval.payload if isinstance(approval.payload, dict) else {}
-        if payload.get("arguments_sha256") != payload_hash(prepared.arguments):
-            raise ValueError("Direct tool arguments changed after approval was requested")
-        return prepared.arguments
-
-    def _bind_direct_approval(
-        self,
-        run: AgentRun,
-        step_id: UUID,
-        tool_name: str,
-        node_type: str,
-        arguments: dict[str, object],
-        tool_call_id: str,
-        approval: Approval,
-    ) -> None:
-        pending = PendingToolInvocationService(
-            self.session,
-            self._request_builder().secret_service(),
-        )
-        invocation = pending.create_or_get(
-            PendingToolInvocationRequest(
-                workspace_id=run.workspace_id,
-                task_id=run.task_id,
-                agent_run_id=run.id,
-                approval_id=approval.id,
-                tool_call_id=tool_call_id,
-                tool_name=tool_name,
-                tool_kind=node_type,
-                arguments=arguments,
-                policy_decision={"source": "workflow.direct_tool"},
-                idempotency_key=f"direct:{run.id}:{step_id}",
-            )
-        )
-        if approval.status == "approved" and invocation.status == "pending":
-            pending.record_decision(
-                workspace_id=run.workspace_id,
-                approval_id=approval.id,
-                status="approved",
-            )
-
-    def _direct_tool_approval(self, run: AgentRun, tool_name: str) -> Approval | None:
-        approvals = self.session.scalars(
-            select(Approval)
-            .where(
-                Approval.workspace_id == run.workspace_id,
-                Approval.agent_run_id == run.id,
-                Approval.approval_type.in_(("product.tool", "mcp.tool")),
-            )
-            .order_by(Approval.created_at.desc(), Approval.id.desc())
-        )
-        has_prior_tool_approval = False
-        for approval in approvals:
-            has_prior_tool_approval = True
-            payload = approval.payload
-            if isinstance(payload, dict) and payload.get("tool_name") == tool_name:
-                return approval
-        if has_prior_tool_approval:
-            raise ValueError("Direct tool changed after approval was requested")
-        return None
-
     def node_type(self, run: AgentRun) -> str | None:
         if run.task_step_id is None:
             return None
@@ -731,7 +334,6 @@ class RunExecutionService:
         return ModelRunGateway(
             session=self.session,
             settings=self._settings(),
-            agent_runner=self._agent_runner(),
             request_builder=self._request_builder(),
             events=self._events(),
             mark_run_failed=self._lifecycle().mark_run_failed,
@@ -778,11 +380,6 @@ class RunExecutionService:
             )
         return self._runtime_environment_service
 
-    def _lock_for_run(self, run: AgentRun) -> AbstractContextManager[bool]:
-        if self.queue is not None:
-            return self.queue.run_lock(str(run.workspace_id), str(run.id))
-        return _NoopLock()
-
     def commit_and_refresh(self, run: AgentRun) -> None:
         control = current_execution_control()
         if control is not None:
@@ -797,21 +394,3 @@ class RunExecutionService:
         if self.settings is None:
             raise ValueError("Run execution settings are not configured")
         return self.settings
-
-    def _agent_runner(self) -> AgentRuntimeExecutor:
-        if self.agent_runner is None:
-            raise ValueError("Run execution agent runner is not configured")
-        return self.agent_runner
-
-
-class _NoopLock:
-    def __enter__(self) -> bool:
-        return True
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        return None

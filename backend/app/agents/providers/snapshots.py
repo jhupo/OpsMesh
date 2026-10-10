@@ -4,7 +4,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.agents.providers.capabilities import resolve_model_capability
+from backend.app.agents.providers.capabilities import (
+    model_capability_payload,
+)
 from backend.app.agents.providers.metadata import budget_is_exhausted
 from backend.app.agents.providers.model_api import (
     default_model_api,
@@ -115,7 +117,7 @@ class ModelProviderResolutionService:
             default_model_api=default_model_api(capability_provider)
             if capability_provider is not None
             else None,
-            model_capability=_model_capability_payload(
+            model_capability=model_capability_payload(
                 capability_provider,
                 selected_model,
                 credential.model_capabilities if credential else [],
@@ -177,10 +179,3 @@ def _capability_provider(
     if credential is not None:
         return credential.provider
     return None
-
-
-def _model_capability_payload(
-    provider: str | None, model: str | None, catalog: object
-) -> dict[str, object] | None:
-    capability = resolve_model_capability(provider, model, catalog)
-    return capability.as_dict() if capability is not None else None

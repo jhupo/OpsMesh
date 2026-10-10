@@ -59,6 +59,8 @@ class McpProcess:
         )
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        future: asyncio.Future[dict[str, Any]] | None = None
+        disconnected: asyncio.Task[bytes] | None = None
         try:
             async with asyncio.timeout(60):
                 request = json.loads(await reader.readline())
@@ -69,15 +71,27 @@ class McpProcess:
                     self.stopped.set()
                     result = {"status": "stopping"}
                 elif action in {"discover", "call"} and self.state == "running":
-                    future: asyncio.Future[dict[str, Any]] = (
-                        asyncio.get_running_loop().create_future()
-                    )
+                    future = asyncio.get_running_loop().create_future()
                     self.requests.put_nowait((request, future))
+                    disconnected = asyncio.create_task(reader.read(1))
+                    await asyncio.wait((future, disconnected), return_when=asyncio.FIRST_COMPLETED)
+                    if not future.done():
+                        return
                     result = await future
                 else:
                     result = {"error": "mcp_process_not_ready"}
         except Exception:
             result = {"error": "mcp_process_request_failed"}
+        finally:
+            if future is not None and not future.done():
+                future.cancel()
+            if disconnected is not None:
+                disconnected.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await disconnected
+            if reader.at_eof():
+                writer.close()
+                await writer.wait_closed()
         try:
             encoded = json.dumps(result).encode() + b"\n"
             if len(encoded) > MAX_BYTES:
@@ -136,7 +150,28 @@ class McpProcess:
                                 seen.add(cursor)
                             result = {"tools": tools}
                         else:
-                            response = await server.call_tool(request["name"], request["arguments"])
+                            operation = asyncio.create_task(
+                                server.call_tool(request["name"], request["arguments"])
+                            )
+
+                            def cancel_disconnected(
+                                completed: asyncio.Future[dict[str, Any]],
+                                running: asyncio.Task[Any] = operation,
+                            ) -> None:
+                                if completed.cancelled():
+                                    running.cancel()
+
+                            future.add_done_callback(cancel_disconnected)
+                            try:
+                                response = await operation
+                            except asyncio.CancelledError:
+                                if future.cancelled():
+                                    continue
+                                raise
+                            finally:
+                                operation.cancel()
+                                with contextlib.suppress(asyncio.CancelledError):
+                                    await operation
                             result = response.model_dump(
                                 mode="json", by_alias=True, exclude_none=True
                             )

@@ -31,7 +31,7 @@ from backend.app.agents.providers.models import ModelProviderCredential
 from backend.app.agents.sessions.models import PersistentAgentSession
 from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.bootstrap.worker import build_worker_runner
-from backend.app.capabilities.mcp.models import McpServer, McpToolAllowlist, McpToolCallLog
+from backend.app.capabilities.mcp.models import McpServer
 from backend.app.governance.audit.models import AuditEvent
 from backend.app.governance.costs.models import (
     ModelPricingRule,
@@ -39,7 +39,6 @@ from backend.app.governance.costs.models import (
     WorkspaceCostBudget,
 )
 from backend.app.governance.reviews.model_request import ModelRequestReview
-from backend.app.governance.reviews.service import ResourceReview
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.identity.users.models import User
@@ -86,13 +85,6 @@ from backend.app.workspaces.members.models import WorkspaceMember
 
 @pytest.fixture(autouse=True)
 def approve_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_resource_review(self, **kwargs):  # noqa: ANN001, ANN202
-        return ResourceReview(
-            required=False,
-            risk_level="low",
-            reasons=["llm_review.approved"],
-            signals={"reviewer": "llm", "verdict": "approve"},
-        )
 
     def fake_model_request_review(self, **kwargs):  # noqa: ANN001, ANN202
         return ModelRequestReview(
@@ -102,10 +94,6 @@ def approve_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
             signals={"reviewer": "llm", "verdict": "approve"},
         )
 
-    monkeypatch.setattr(
-        "backend.app.governance.reviews.service.ResourcePolicyReviewBuilder.review_tool_execution",
-        fake_resource_review,
-    )
     monkeypatch.setattr(
         "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         fake_model_request_review,
@@ -161,7 +149,16 @@ class ApprovingTeamAgentRunner:
                         "summary": "manager_approved_delivery",
                         "reasons": [],
                     }
-                )
+                ),
+                structured_output=AgentRuntimeStructuredOutput(
+                    value={
+                        "decision": "approved",
+                        "summary": "manager_approved_delivery",
+                        "reasons": [],
+                    },
+                    schema_name="pm_acceptance",
+                    validated=True,
+                ),
             )
         return AgentRunResult(final_output=f"completed_by:{request.agent_profile.name}")
 
@@ -2224,101 +2221,6 @@ def test_worker_runner_skips_jobs_that_do_not_match_worker_capacity() -> None:
         assert lease.lease_metadata["routing"] == {"runtime_modes": ["systemd"]}
 
 
-def test_worker_runner_processes_mcp_tool_execution_job() -> None:
-    session_factory = _session_factory()
-    queue = _queue()
-    workspace_id, run_id, _ = _seed_run(session_factory)
-    with session_factory() as session:
-        server = McpServer(
-            workspace_id=workspace_id,
-            name="image-tools",
-            server_type="streamable_http",
-            connection={"url": "https://mcp.example.test/jsonrpc"},
-            health_status="healthy",
-            last_health_check_at=datetime.now(UTC),
-        )
-        session.add(server)
-        session.flush()
-        session.add(
-            McpToolAllowlist(
-                workspace_id=workspace_id,
-                mcp_server_id=server.id,
-                tool_name="generate_image",
-                capability_key="image.generate",
-                risk_level="low",
-            )
-        )
-        run = session.get(AgentRun, run_id)
-        assert run is not None
-        task = session.scalar(
-            select(Task).where(
-                Task.workspace_id == workspace_id,
-                Task.id == run.task_id,
-            )
-        )
-        agent = session.scalar(
-            select(AgentProfile).where(
-                AgentProfile.workspace_id == workspace_id,
-                AgentProfile.id == run.agent_profile_id,
-            )
-        )
-        assert task is not None and agent is not None
-        agent.tool_policy = {"allowed_tools": ["generate_image"]}
-        agent.runtime_policy = {"mcp": {"timeout_seconds": 15}}
-        session.flush()
-        run.input = {
-            "authorization_snapshot": RunAuthorizationSnapshotService(
-                session,
-                RunRequestBuilder(session, Settings(environment="test")),
-            ).build_authorization_snapshot(task, None, agent)
-        }
-        session.commit()
-        server_id = server.id
-    adapter = RecordingMcpAdapter({"asset_id": "img_123", "status": "created"})
-    queue.enqueue(
-        JobPayload(
-            workspace_id=workspace_id,
-            job_type=JobType.MCP_TOOL_EXECUTION,
-            resource_id=run_id,
-            idempotency_key=f"mcp.tool:{workspace_id}:{run_id}:generate_image",
-            routing={
-                "mcp_server_id": str(server_id),
-                "tool_name": "generate_image",
-                "arguments": {"prompt": "mountain"},
-                "runtime_allowed_tools": ["generate_image"],
-            },
-        )
-    )
-    runner = build_worker_runner(
-        queue=queue,
-        session_factory=session_factory,
-        config=WorkerRunnerConfig(worker_id="worker-mcp", queue_name="agent_runs"),
-        mcp_adapter=adapter,
-    )
-
-    assert runner.run_once() is True
-
-    with session_factory() as session:
-        log = session.scalar(select(McpToolCallLog))
-        lease = session.scalar(select(WorkerLease).where(WorkerLease.worker_id == "worker-mcp"))
-        assert log is not None
-        assert log.workspace_id == workspace_id
-        assert log.agent_run_id == run_id
-        assert log.status == "completed"
-        assert log.response is not None
-        assert log.response["result"] == {"asset_id": "img_123", "status": "created"}
-        assert lease is not None
-        assert lease.status == "completed"
-        assert lease.job_type == JobType.MCP_TOOL_EXECUTION.value
-    assert adapter.calls == [
-        {
-            "tool_name": "generate_image",
-            "arguments": {"prompt": "mountain"},
-            "timeout_seconds": 15,
-        }
-    ]
-
-
 def test_worker_runner_processes_memory_index_job() -> None:
     session_factory = _session_factory()
     queue = _queue()
@@ -3356,7 +3258,7 @@ def _seed_team_loop_task(
                     "disk_mb": 1024,
                     "timeout_seconds": 60,
                 },
-                default_network_policy={"disabled": True},
+                default_network_policy={"mode": "none"},
                 created_at=datetime.now(UTC),
             )
             if with_runtime_template

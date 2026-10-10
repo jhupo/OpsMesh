@@ -11,6 +11,7 @@ from backend.app.runtime.self_hosted.routes.dependencies import (
     self_hosted_mcp_job_service,
 )
 from backend.app.runtime.self_hosted.schemas import (
+    McpJobCancellationResponse,
     McpJobClaimResponse,
     McpJobCompleteRequest,
     McpJobCompleteResponse,
@@ -21,7 +22,7 @@ router = APIRouter()
 
 
 @router.get("/self-hosted/mcp-jobs/next", response_model=SelfHostedMcpJobResponse | None)
-async def poll_mcp_job(
+def poll_mcp_job(
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
     service: SelfHostedDispatchService = Depends(self_hosted_dispatch_service),
 ) -> SelfHostedMcpJobResponse | None:
@@ -42,7 +43,7 @@ async def poll_mcp_job(
 
 
 @router.post("/self-hosted/mcp-jobs/{mcp_job_id}/claim", response_model=McpJobClaimResponse)
-async def claim_mcp_job(
+def claim_mcp_job(
     mcp_job_id: UUID,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
     service: SelfHostedDispatchService = Depends(self_hosted_dispatch_service),
@@ -64,11 +65,26 @@ async def claim_mcp_job(
     return McpJobClaimResponse(id=job.id, status=job.status, claimed_at=job.claimed_at)
 
 
+@router.get(
+    "/self-hosted/mcp-jobs/{mcp_job_id}/cancellation", response_model=McpJobCancellationResponse
+)
+def mcp_job_cancellation(
+    mcp_job_id: UUID,
+    auth: AuthenticatedWorker = Depends(get_authenticated_worker),
+    service: SelfHostedMcpJobService = Depends(self_hosted_mcp_job_service),
+) -> McpJobCancellationResponse:
+    try:
+        requested = service.cancellation_requested(auth, mcp_job_id)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    return McpJobCancellationResponse(id=mcp_job_id, cancel_requested=requested)
+
+
 @router.post(
     "/self-hosted/mcp-jobs/{mcp_job_id}/complete",
     response_model=McpJobCompleteResponse,
 )
-async def complete_mcp_job(
+def complete_mcp_job(
     mcp_job_id: UUID,
     request: McpJobCompleteRequest,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),

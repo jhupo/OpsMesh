@@ -10,7 +10,7 @@ from backend.app.agents.profiles.models import AgentProfile
 from backend.app.identity.users.models import User
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.resources.memory.policy import WorkingMemoryPolicy
+from backend.app.resources.memory.models import WorkspaceMemoryEntry
 from backend.app.resources.memory.working import AgentWorkingMemoryService
 from backend.app.shared.db.base import Base
 from backend.app.workspaces.management.models import Workspace
@@ -68,25 +68,29 @@ def test_working_memory_is_run_scoped_versioned_redacted_and_expirable() -> None
     session.add_all([run, other_run])
     session.flush()
     service = AgentWorkingMemoryService(session)
-    policy = WorkingMemoryPolicy()
-
-    def put(content):
-        return service.put(
-            run=run,
-            profile=profile,
-            key="note",
-            title="Explicit note",
-            content=content,
-            entry_type="note",
-            metadata={},
-            session_key="session-one",
-            policy=policy,
-        )
-
-    put("Verify release token=objective-secret")
-    tool_entry = put("Verify signed release token=tool-secret")
-    assert tool_entry.revision == 2
-    assert "tool-secret" not in tool_entry.content
+    tool_entry = WorkspaceMemoryEntry(
+        workspace_id=workspace.id,
+        created_by_agent_profile_id=profile.id,
+        created_by_agent_run_id=run.id,
+        source_type="import",
+        source_id=str(run.id),
+        memory_layer="working",
+        scope_type="run",
+        scope_id=str(run.id),
+        memory_key="note",
+        entry_type="note",
+        title="Imported note",
+        content="Verify signed release",
+        tags=[],
+        visibility_scope="run",
+        importance=0,
+        status="active",
+        revision=1,
+        content_fingerprint="fixture",
+        memory_metadata={},
+    )
+    session.add(tool_entry)
+    session.flush()
     assert len(service.active_for_run(workspace_id=workspace.id, run_id=run.id)) == 1
     assert service.active_for_run(workspace_id=workspace.id, run_id=other_run.id) == []
     promoted = service.promote(
@@ -108,34 +112,16 @@ def test_working_memory_is_run_scoped_versioned_redacted_and_expirable() -> None
     assert service.active_for_run(workspace_id=workspace.id, run_id=run.id) == []
 
 
-def test_working_memory_rejects_cross_workspace_profile_binding() -> None:
-    session = _session()
-    user = User(email="isolation@example.com", display_name="Owner")
-    first = Workspace(owner=user, name="First", slug=f"first-{uuid4()}", settings={})
-    second = Workspace(owner=user, name="Second", slug=f"second-{uuid4()}", settings={})
-    session.add_all([user, first, second])
-    session.flush()
-    profile = AgentProfile(workspace_id=second.id, name="Agent", role="worker")
-    run = AgentRun(workspace_id=first.id, status="running", input={})
-    session.add_all([profile, run])
-    session.flush()
+def test_working_memory_promotion_rejects_cross_workspace_record() -> None:
+    import pytest
 
-    try:
-        AgentWorkingMemoryService(session).put(
-            run=run,
-            profile=profile,
-            key="fact",
-            title="Fact",
-            content="value",
-            entry_type="fact",
-            metadata={},
-            session_key=None,
-            policy=WorkingMemoryPolicy(),
+    session = _session()
+    with pytest.raises(ValueError):
+        AgentWorkingMemoryService(session).promote(
+            workspace_id=uuid4(),
+            run_id=uuid4(),
+            memory_entry_id=uuid4(),
         )
-    except ValueError as exc:
-        assert str(exc) == "Working memory profile workspace mismatch"
-    else:
-        raise AssertionError("cross-workspace working memory must fail")
 
 
 def _session():

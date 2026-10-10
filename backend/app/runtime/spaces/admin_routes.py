@@ -18,7 +18,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.get("/runtime-spaces", response_model=PageResponse[RuntimeSpaceResponse])
-async def list_admin_runtime_spaces(
+def list_admin_runtime_spaces(
     page: PageParams = Depends(pagination_params),
     status: str | None = Query(default=None),
     workspace_id: UUID | None = Query(default=None),
@@ -36,7 +36,7 @@ async def list_admin_runtime_spaces(
     "/runtime-spaces/{runtime_space_id}/quarantine",
     response_model=AdminQuarantineRuntimeSpaceResponse,
 )
-async def quarantine_admin_runtime_space(
+def quarantine_admin_runtime_space(
     runtime_space_id: UUID,
     request: AdminQuarantineRuntimeSpaceRequest,
     service: AdminRuntimeService = Depends(admin_runtime_service),

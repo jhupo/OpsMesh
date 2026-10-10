@@ -4,7 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from uuid import UUID
 
-from backend.app.shared.utils import string_list, uuid_or_none
+from backend.app.shared.utils import non_empty_string_or_none, string_list, uuid_or_none
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,7 @@ def _org_members(snapshot: dict[str, object] | None) -> list[OrgMember]:
     for raw_member in raw_members:
         if not isinstance(raw_member, dict):
             continue
-        member_id = _string_or_none(raw_member.get("id"))
+        member_id = non_empty_string_or_none(raw_member.get("id"))
         if member_id is None:
             continue
         team_role = str(raw_member.get("team_role") or "")
@@ -112,11 +112,13 @@ def _org_members(snapshot: dict[str, object] | None) -> list[OrgMember]:
             OrgMember(
                 id=member_id,
                 agent_profile_id=uuid_or_none(raw_member.get("agent_profile_id")),
-                reports_to_member_id=_string_or_none(raw_member.get("reports_to_member_id")),
+                reports_to_member_id=non_empty_string_or_none(
+                    raw_member.get("reports_to_member_id")
+                ),
                 team_role=team_role,
                 normalized_role=normalize_role(team_role),
-                department=_string_or_none(raw_member.get("department")),
-                position_title=_string_or_none(raw_member.get("position_title")),
+                department=non_empty_string_or_none(raw_member.get("department")),
+                position_title=non_empty_string_or_none(raw_member.get("position_title")),
                 responsibilities=tuple(string_list(raw_member.get("responsibilities"))),
                 order_index=_int_or_default(raw_member.get("order_index"), 0),
                 raw=raw_member,
@@ -146,13 +148,6 @@ def _reporting_cycle_member_ids(members: tuple[OrgMember, ...]) -> set[str]:
 
 def _member_sort_key(member: OrgMember) -> tuple[int, str, str]:
     return (member.order_index, member.normalized_role, member.id)
-
-
-def _string_or_none(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None
 
 
 def _int_or_default(value: object, default: int) -> int:

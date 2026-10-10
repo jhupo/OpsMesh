@@ -35,7 +35,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     response_model=CurrentUserResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def register_user(
+def register_user(
     request: UserRegisterRequest,
     http_request: Request,
     session: Session = Depends(get_db_session),
@@ -65,7 +65,7 @@ async def register_user(
 
 
 @router.post("/login", response_model=UserAPITokenCreateResponse)
-async def login_user(
+def login_user(
     request: UserLoginRequest,
     http_request: Request,
     session: Session = Depends(get_db_session),
@@ -101,7 +101,7 @@ async def login_user(
 
 
 @router.get("/me", response_model=CurrentUserResponse)
-async def get_current_user_profile(
+def get_current_user_profile(
     current_user: AuthenticatedUser = Depends(
         account_action_dependency(AccountAction.PROFILE_READ)
     ),
@@ -219,7 +219,7 @@ def get_current_user_avatar(
 
 
 @router.put("/password", response_model=CurrentUserResponse)
-async def change_current_user_password(
+def change_current_user_password(
     request: PasswordChangeRequest,
     http_request: Request,
     current_user: AuthenticatedUser = Depends(
@@ -261,7 +261,7 @@ async def change_current_user_password(
 
 
 @router.get("/tokens", response_model=list[UserAPITokenResponse])
-async def list_current_user_tokens(
+def list_current_user_tokens(
     current_user: AuthenticatedUser = Depends(account_action_dependency(AccountAction.TOKENS_READ)),
     session: Session = Depends(get_db_session),
 ) -> list[UserAPITokenResponse]:
@@ -274,7 +274,7 @@ async def list_current_user_tokens(
     response_model=UserAPITokenCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_current_user_token(
+def create_current_user_token(
     request: UserAPITokenCreateRequest,
     http_request: Request,
     current_user: AuthenticatedUser = Depends(
@@ -307,7 +307,7 @@ async def create_current_user_token(
 
 
 @router.delete("/tokens", response_model=UserAPITokenRevokeAllResponse)
-async def revoke_current_user_tokens(
+def revoke_current_user_tokens(
     request: Request,
     current_user: AuthenticatedUser = Depends(
         account_action_dependency(AccountAction.TOKENS_MANAGE)
@@ -329,7 +329,7 @@ async def revoke_current_user_tokens(
 
 
 @router.delete("/tokens/{token_id}", response_model=UserAPITokenResponse)
-async def revoke_current_user_token(
+def revoke_current_user_token(
     token_id: UUID,
     request: Request,
     current_user: AuthenticatedUser = Depends(
@@ -355,7 +355,7 @@ async def revoke_current_user_token(
 
 
 @router.post("/tokens/{token_id}/rotate", response_model=UserAPITokenCreateResponse)
-async def rotate_current_user_token(
+def rotate_current_user_token(
     token_id: UUID,
     request: UserAPITokenRotateRequest,
     http_request: Request,

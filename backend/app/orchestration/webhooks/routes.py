@@ -37,7 +37,7 @@ router = APIRouter(
 
 
 @router.get("", response_model=PageResponse[WebhookSubscriptionResponse])
-async def list_webhook_subscriptions(
+def list_webhook_subscriptions(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -57,7 +57,7 @@ async def list_webhook_subscriptions(
     response_model=WebhookSubscriptionResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_webhook_subscription(
+def create_webhook_subscription(
     request: WebhookSubscriptionCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -78,7 +78,7 @@ async def create_webhook_subscription(
 
 
 @router.patch("/{subscription_id}", response_model=WebhookSubscriptionResponse)
-async def update_webhook_subscription(
+def update_webhook_subscription(
     subscription_id: UUID,
     request: WebhookSubscriptionUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -101,7 +101,7 @@ async def update_webhook_subscription(
 
 
 @router.post("/{subscription_id}/rotate-signing-secret", response_model=WebhookSubscriptionResponse)
-async def rotate_webhook_signing_secret(
+def rotate_webhook_signing_secret(
     subscription_id: UUID,
     request: WebhookSigningSecretRotateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -120,7 +120,7 @@ async def rotate_webhook_signing_secret(
 
 
 @router.post("/{subscription_id}/disable", response_model=WebhookSubscriptionResponse)
-async def disable_webhook_subscription(
+def disable_webhook_subscription(
     subscription_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -140,7 +140,7 @@ async def disable_webhook_subscription(
     "/{subscription_id}/delivery-attempts",
     response_model=PageResponse[WebhookDeliveryAttemptResponse],
 )
-async def list_webhook_delivery_attempts(
+def list_webhook_delivery_attempts(
     subscription_id: UUID,
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -172,7 +172,7 @@ async def list_webhook_delivery_attempts(
     "/{subscription_id}/delivery-attempts/{delivery_attempt_id}/replay",
     response_model=WebhookDeliveryAttemptResponse,
 )
-async def replay_webhook_delivery_attempt(
+def replay_webhook_delivery_attempt(
     request: Request,
     subscription_id: UUID,
     delivery_attempt_id: UUID,

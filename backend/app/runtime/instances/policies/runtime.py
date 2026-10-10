@@ -218,12 +218,11 @@ def team_runtime_policy(team: AgentTeam) -> dict[str, object]:
 
 def policy_disables_network(policy: dict[str, object]) -> bool:
     network = policy.get("network")
-    if isinstance(network, dict):
-        if network.get("disabled") is True:
-            return True
-        mode = network.get("mode")
-        return isinstance(mode, str) and mode.lower() in {"none", "disabled", "off"}
-    return False
+    if network is None:
+        return False
+    if not isinstance(network, dict):
+        raise ValueError("Runtime network policy must be an object")
+    return resolve_egress_policy(network, forced_disabled=False).disabled
 
 
 def apply_limit_caps(

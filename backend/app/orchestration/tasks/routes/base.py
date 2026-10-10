@@ -45,7 +45,7 @@ STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
 
 
 @router.get("/tasks", response_model=PageResponse[TaskResponse])
-async def list_tasks(
+def list_tasks(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -60,7 +60,7 @@ async def list_tasks(
 
 
 @router.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
-async def create_task(
+def create_task(
     request: TaskCreateRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -106,7 +106,7 @@ async def create_task(
 
 
 @router.get("/tasks/manager-queue", response_model=TaskManagerQueueResponse)
-async def list_task_manager_queue(
+def list_task_manager_queue(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     team_id: UUID | None = Query(default=None),
@@ -129,7 +129,7 @@ async def list_task_manager_queue(
 
 
 @router.get("/tasks/handoff-queue", response_model=TaskHandoffQueueResponse)
-async def list_task_handoff_queue(
+def list_task_handoff_queue(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     team_id: UUID | None = Query(default=None),
@@ -154,7 +154,7 @@ async def list_task_handoff_queue(
 
 
 @router.post("/tasks/{task_id}/cancel", response_model=TaskResponse)
-async def cancel_task(
+def cancel_task(
     task_id: UUID,
     context: WorkspaceContext = Depends(
         workspace_dependency(

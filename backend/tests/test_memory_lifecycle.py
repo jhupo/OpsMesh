@@ -96,6 +96,7 @@ def test_hybrid_retrieval_uses_weighted_rrf_and_deduplicates_content() -> None:
         now=now,
     )
     request = MemorySearchRequest(
+        snippet_length=200,
         workspace_id=uuid4(),
         query="deployment rules",
         limit=5,
@@ -245,7 +246,7 @@ def test_embedding_configuration_schedules_and_completes_versioned_work(
     )
     MemoryEmbeddingJobHandler(
         WorkerJobHandlerContext(
-            runtime_backends=build_runtime_backend_registry(None),
+            runtime_backends=build_runtime_backend_registry(None, lambda: 30),
             session=session,
             settings=Settings(environment="test"),
         )
@@ -403,8 +404,7 @@ def test_lifecycle_archives_promotes_and_records_deterministic_evidence() -> Non
     promoted = session.scalar(
         select(WorkspaceMemoryEntry).where(
             WorkspaceMemoryEntry.workspace_id == workspace.id,
-            WorkspaceMemoryEntry.memory_key
-            == f"promoted-episode:{promotable.content_fingerprint}",
+            WorkspaceMemoryEntry.memory_key == f"promoted-episode:{promotable.content_fingerprint}",
         )
     )
     assert promoted is not None

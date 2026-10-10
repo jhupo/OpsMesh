@@ -134,10 +134,3 @@ class KnowledgeSourceRevisionResponse(ORMModel):
     @field_serializer("source_config")
     def _serialize_source_config(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
-
-
-class KnowledgeSourceListResponse(BaseModel):
-    items: list[KnowledgeSourceResponse]
-    total: int
-    limit: int
-    offset: int

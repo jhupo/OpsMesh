@@ -26,7 +26,7 @@ router = APIRouter()
     "/workspaces/{workspace_id}/talent-installs",
     response_model=PageResponse[WorkspaceAgentInstallResponse],
 )
-async def list_workspace_talent_installs(
+def list_workspace_talent_installs(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -44,7 +44,7 @@ async def list_workspace_talent_installs(
     "/workspaces/{workspace_id}/talent-installs/{install_id}/upgrade-status",
     response_model=TalentUpgradeStatusResponse,
 )
-async def get_talent_install_upgrade_status(
+def get_talent_install_upgrade_status(
     install_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -65,7 +65,7 @@ async def get_talent_install_upgrade_status(
     "/workspaces/{workspace_id}/talent-installs/{install_id}/pin",
     response_model=WorkspaceAgentInstallResponse,
 )
-async def update_talent_install_pin(
+def update_talent_install_pin(
     install_id: UUID,
     request: TalentInstallPinRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -89,7 +89,7 @@ async def update_talent_install_pin(
     "/workspaces/{workspace_id}/talent-installs/{install_id}/upgrade",
     response_model=WorkspaceAgentInstallResponse,
 )
-async def upgrade_talent_install(
+def upgrade_talent_install(
     install_id: UUID,
     request: TalentInstallUpgradeRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),

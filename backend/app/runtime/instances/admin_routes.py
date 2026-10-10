@@ -19,7 +19,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.get("/runtimes", response_model=PageResponse[AdminWorkspaceRuntimeResponse])
-async def list_admin_runtimes(
+def list_admin_runtimes(
     page: PageParams = Depends(pagination_params),
     workspace_id: UUID | None = Query(default=None),
     runtime_space_id: UUID | None = Query(default=None),
@@ -38,7 +38,7 @@ async def list_admin_runtimes(
 
 
 @router.post("/runtimes/{runtime_id}/force-stop", response_model=AdminWorkspaceRuntimeResponse)
-async def force_stop_admin_runtime(
+def force_stop_admin_runtime(
     runtime_id: UUID,
     request: AdminForceStopRuntimeRequest,
     service: AdminRuntimeService = Depends(admin_runtime_service),

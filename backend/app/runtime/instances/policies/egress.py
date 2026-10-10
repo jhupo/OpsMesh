@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import ipaddress
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import urlsplit
+
+from backend.app.shared.utils import non_empty_string_or_none
 
 EgressMode = Literal["none", "restricted", "internet"]
 
@@ -25,18 +27,12 @@ class RuntimeEgressPolicy:
     def as_dict(self) -> dict[str, object]:
         return {
             "mode": self.mode,
-            "disabled": self.disabled,
             "allowed_domains": list(self.allowed_domains),
             "allowed_cidrs": list(self.allowed_cidrs),
             "allowed_ports": list(self.allowed_ports),
             "allowed_protocols": list(self.allowed_protocols),
             "gateway_network": self.gateway_network,
             "proxy_url": self.proxy_url,
-            "enforcement": "docker_network_gateway"
-            if self.mode == "restricted"
-            else "docker_network_none"
-            if self.mode == "none"
-            else "docker_bridge",
         }
 
 
@@ -53,15 +49,28 @@ def resolve_egress_policy(
 ) -> RuntimeEgressPolicy:
     """Normalize an effective network policy and fail closed for invalid restrictions."""
     policy = raw or {}
-    if forced_disabled or _is_disabled(policy):
-        return RuntimeEgressPolicy(mode="none")
+    allowed = {
+        "mode",
+        "allowed_domains",
+        "allowed_cidrs",
+        "allowed_ports",
+        "allowed_protocols",
+        "gateway_network",
+        "proxy_url",
+    }
+    if set(policy) - allowed:
+        raise RuntimeEgressPolicyError(
+            "runtime_egress_field_invalid", "Unknown runtime egress field"
+        )
     mode = _mode(policy)
+    if forced_disabled:
+        return RuntimeEgressPolicy(mode="none")
     if mode == "none":
         return RuntimeEgressPolicy(mode="none")
     if mode == "internet":
         return RuntimeEgressPolicy(mode="internet")
 
-    gateway_network = _string(policy.get("gateway_network"))
+    gateway_network = non_empty_string_or_none(policy.get("gateway_network"))
     if gateway_network is None:
         raise RuntimeEgressPolicyError(
             "runtime_egress_gateway_required",
@@ -79,24 +88,12 @@ def resolve_egress_policy(
 
 
 def _mode(policy: dict[str, object]) -> EgressMode:
-    raw_mode = policy.get("mode") or policy.get("egress_mode")
-    if isinstance(raw_mode, str):
-        normalized = raw_mode.strip().lower().replace("-", "_")
-        if normalized in {"none", "disabled", "off", "deny"}:
-            return "none"
-        if normalized in {"restricted", "allowlist", "allow_list", "gateway"}:
-            return "restricted"
-        if normalized in {"internet", "online", "public", "bridge"}:
-            return "internet"
+    mode = policy.get("mode", "none")
+    if mode not in {"none", "restricted", "internet"}:
         raise RuntimeEgressPolicyError(
-            "runtime_egress_mode_invalid",
-            "Runtime egress mode is unsupported",
+            "runtime_egress_mode_invalid", "Runtime egress mode is unsupported"
         )
-    return "internet" if policy.get("allow_network") is True else "none"
-
-
-def _is_disabled(policy: dict[str, object]) -> bool:
-    return policy.get("disabled") is True or policy.get("allow_network") is False
+    return cast(EgressMode, mode)
 
 
 def _domains(value: object) -> tuple[str, ...]:
@@ -209,10 +206,3 @@ def _proxy_url(value: object) -> str | None:
             "Runtime egress proxy URL must be an unauthenticated HTTP(S) endpoint",
         )
     return proxy
-
-
-def _string(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None

@@ -1,7 +1,5 @@
 import asyncio
 from contextlib import suppress
-from inspect import isawaitable
-from typing import Any
 
 from backend.app.agents.execution.contracts import AgentRunRequest, AgentRuntimeCancellation
 from backend.app.agents.execution.errors import AgentRuntimeCancelledError
@@ -14,12 +12,8 @@ async def raise_if_cancelled(cancellation: AgentRuntimeCancellation | None) -> N
 
 async def cancel_active_tools(request: AgentRunRequest) -> None:
     executor = request.tool_executor
-    cancel = getattr(executor, "cancel_active_tools", None)
-    if not callable(cancel):
-        return
-    result: Any = cancel(context=request.context)
-    if isawaitable(result):
-        await result
+    if executor is not None:
+        await executor.cancel_active_tools(context=request.context)
 
 
 async def stop_cancellation_watcher(task: asyncio.Task[object] | None) -> None:

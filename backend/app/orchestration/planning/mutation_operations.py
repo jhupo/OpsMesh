@@ -17,13 +17,6 @@ def package_map(packages: list[dict[str, object]]) -> dict[str, dict[str, object
     return {str(package["package_id"]): package for package in packages}
 
 
-def package_dependencies(package: dict[str, object]) -> list[str]:
-    value = package.get("depends_on", [])
-    if not isinstance(value, list):
-        raise ValueError("Package dependencies must be a list")
-    return [str(item) for item in value if isinstance(item, str)]
-
-
 def ordered_unique(values: list[str] | tuple[str, ...] | object) -> list[str]:
     if not isinstance(values, (list, tuple)):
         return []

@@ -25,7 +25,7 @@ router = APIRouter()
     response_model=RuntimeRegistrationResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def register_self_hosted_runtime(
+def register_self_hosted_runtime(
     request: RuntimeRegistrationRequest,
     service: SelfHostedRuntimeService = Depends(self_hosted_service),
 ) -> RuntimeRegistrationResponse:
@@ -37,7 +37,7 @@ async def register_self_hosted_runtime(
 
 
 @router.post("/self-hosted/heartbeat", response_model=WorkerHeartbeatResponse)
-async def heartbeat(
+def heartbeat(
     request: WorkerHeartbeatRequest,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
     service: SelfHostedRuntimeService = Depends(self_hosted_service),

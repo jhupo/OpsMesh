@@ -1,11 +1,12 @@
-import asyncio
 from uuid import uuid4
 
 import pytest
 
 from backend.app.agents.execution.contracts import (
     AgentRunRequest,
+    AgentRunResult,
     AgentRuntimeContext,
+    AgentRuntimeStructuredOutput,
     AgentRuntimeToolResult,
 )
 from backend.app.agents.profiles.models import AgentProfile
@@ -19,6 +20,7 @@ from backend.app.orchestration.definitions.subworkflows import (
     SubworkflowExecutionError,
     SubworkflowExecutionService,
 )
+from backend.app.orchestration.runs.direct_execution import DirectToolCall, DirectWorkflowExecutor
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService
 from backend.app.orchestration.runs.models import AgentRun
@@ -62,9 +64,7 @@ def test_typed_workflow_nodes_require_explicit_execution_targets() -> None:
     optional = WorkflowNode(
         package_id="optional",
         title="Optional",
-        input_bindings={
-            "source": {"reference": "task.input.customer", "required": False}
-        },
+        input_bindings={"source": {"reference": "task.input.customer", "required": False}},
     )
     assert optional.input_bindings["source"].required is False
 
@@ -107,18 +107,18 @@ def test_direct_tool_node_uses_authorized_executor_without_model_execution() -> 
         resource_id=run.id,
         idempotency_key=str(uuid4()),
     )
-    result = asyncio.run(
+    call = DirectWorkflowExecutor(
         RunExecutionService(
             session,
             RunExecutionDependencies(
-                lifecycle=None,  # type: ignore[arg-type]
-                runtime_backends=build_runtime_backend_registry(None, lambda: 60),
+                lifecycle=None, runtime_backends=build_runtime_backend_registry(None, lambda: 60)
             ),
-        )._run_non_agent_node(run, job, request, "tool")
-    )
-    assert result is not None
-    assert result.status == "completed"
-    assert result.output == {"ok": True}
+        )
+    ).prepare_node(run, job, request, "tool")
+    assert isinstance(call, DirectToolCall)
+    assert call.tool_name == "echo"
+    assert call.arguments == {"value": 1}
+    assert call.context == request.context
 
 
 def test_control_only_workflow_finishes_after_control_nodes_complete() -> None:
@@ -287,7 +287,27 @@ def test_workflow_data_bindings_resolve_task_and_completed_step_outputs() -> Non
     )
     session.add(run)
     session.flush()
-    TaskStepCompletionService(session, lambda *args: None).validate_step_output(run, "")
+    TaskStepCompletionService(session, lambda *args: None).validate_step_output(
+        run,
+        AgentRunResult(
+            final_output="",
+            structured_output=AgentRuntimeStructuredOutput(
+                value=run.output["structured_output"]["value"],
+                schema_name="workflow_result",
+                validated=True,
+            ),
+        ),
+    )
     run.output = {"structured_output": {"value": {"ok": "wrong"}}}
     with pytest.raises(ValueError, match="workflow step output"):
-        TaskStepCompletionService(session, lambda *args: None).validate_step_output(run, "")
+        TaskStepCompletionService(session, lambda *args: None).validate_step_output(
+            run,
+            AgentRunResult(
+                final_output="",
+                structured_output=AgentRuntimeStructuredOutput(
+                    value=run.output["structured_output"]["value"],
+                    schema_name="workflow_result",
+                    validated=True,
+                ),
+            ),
+        )

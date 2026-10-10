@@ -23,19 +23,7 @@ from backend.tests.test_worker_runner import (
 @pytest.fixture(autouse=True)
 def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.app.governance.reviews.model_request import ModelRequestReview
-    from backend.app.governance.reviews.models import ResourceReview
-    from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 
-    monkeypatch.setattr(
-        ResourcePolicyReviewBuilder,
-        "review_tool_execution",
-        lambda self, **kwargs: ResourceReview(
-            required=False,
-            risk_level="low",
-            reasons=["llm_review.approved"],
-            signals={"reviewer": "llm", "verdict": "approve"},
-        ),
-    )
     monkeypatch.setattr(
         "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         lambda self, **kwargs: ModelRequestReview(

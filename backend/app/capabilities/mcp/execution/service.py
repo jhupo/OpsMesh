@@ -16,8 +16,9 @@ from backend.app.capabilities.mcp.execution.contracts import (
 )
 from backend.app.capabilities.mcp.execution.invocation import McpToolInvoker
 from backend.app.capabilities.mcp.execution.policy import resolve_mcp_execution_policy
+from backend.app.capabilities.mcp.execution.prepared import PreparedMcpExecution
 from backend.app.capabilities.mcp.execution.validation import McpExecutionValidator
-from backend.app.capabilities.mcp.models import McpToolCallLog
+from backend.app.capabilities.mcp.models import McpServer, McpToolCallLog
 from backend.app.capabilities.mcp.policy import MCP_LIMIT_COUNTED_STATUSES
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.orchestration.approvals.policy import ApprovalPolicyEngine
@@ -36,9 +37,9 @@ class McpToolExecutionService:
         self._adapter_or_resolver = adapter
         self._settings = settings or get_settings()
 
-    async def execute(self, request: McpExecutionRequest) -> McpExecutionResult:
+    def prepare(self, request: McpExecutionRequest) -> McpExecutionResult | PreparedMcpExecution:
         with telemetry_span(
-            "opsmesh.mcp.tool.execute",
+            "opsmesh.mcp.tool.prepare",
             parent=current_trace_context(),
             kind=SpanKind.CLIENT,
             attributes={
@@ -47,9 +48,9 @@ class McpToolExecutionService:
                 "opsmesh.tool.name": request.tool_name,
             },
         ):
-            return await self._execute(request)
+            return self._prepare(request)
 
-    async def _execute(self, request: McpExecutionRequest) -> McpExecutionResult:
+    def _prepare(self, request: McpExecutionRequest) -> McpExecutionResult | PreparedMcpExecution:
         validated = McpExecutionValidator(self._session, self._settings).validate(request)
         request = validated.request
         run = validated.run
@@ -110,7 +111,7 @@ class McpToolExecutionService:
                 execution_review=execution_review,
             )
 
-        return await McpToolInvoker(self._session, self._adapter_or_resolver).invoke(
+        return McpToolInvoker(self._session, self._adapter_or_resolver).prepare(
             request=request,
             run=run,
             server=server,
@@ -129,6 +130,13 @@ class McpToolExecutionService:
     ) -> None:
         if max_calls_per_run is None and max_calls_per_hour is None:
             return
+        # Serialize admission only for this tenant's server. The reservation is
+        # committed before Runtime I/O; no lock is held while a tool executes.
+        self._session.scalar(
+            select(McpServer)
+            .where(McpServer.workspace_id == request.workspace_id, McpServer.id == server_id)
+            .with_for_update()
+        )
         if max_calls_per_run is not None:
             current_run_count = self._session.scalar(
                 select(func.count())

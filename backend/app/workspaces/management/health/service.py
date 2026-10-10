@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.shared.utils import dict_list, dict_or_empty, string_list
+from backend.app.shared.utils import dict_list, dict_or_empty, ensure_aware_utc, string_list
 from backend.app.workspaces.management.health.collector import WorkspaceHealthCollector
 from backend.app.workspaces.management.health.metrics import (
     delivery_summary,
@@ -20,7 +20,6 @@ from backend.app.workspaces.management.health.metrics import (
     task_summary,
 )
 from backend.app.workspaces.management.health.policy import (
-    aware_datetime,
     health_snapshot_policy,
     snapshot_due,
 )
@@ -157,7 +156,7 @@ class WorkspaceHealthService:
         limit: int = 100,
         now: datetime | None = None,
     ) -> WorkspaceHealthSnapshotMaintenanceSummary:
-        current_time = aware_datetime(now or datetime.now(UTC))
+        current_time = ensure_aware_utc(now or datetime.now(UTC))
         workspaces = list(
             self._session.scalars(
                 select(Workspace)

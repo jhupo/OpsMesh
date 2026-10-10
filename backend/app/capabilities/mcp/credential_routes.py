@@ -28,7 +28,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capa
     response_model=McpCredentialReferenceResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_mcp_credential_reference(
+def create_mcp_credential_reference(
     request: McpCredentialReferenceCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
@@ -59,7 +59,7 @@ async def create_mcp_credential_reference(
     "/mcp-credentials/{credential_id}",
     response_model=McpCredentialReferenceResponse,
 )
-async def update_mcp_credential_reference(
+def update_mcp_credential_reference(
     credential_id: UUID,
     request: McpCredentialReferenceUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -90,7 +90,7 @@ async def update_mcp_credential_reference(
     "/mcp-credentials/{credential_id}/rotate",
     response_model=McpCredentialReferenceResponse,
 )
-async def rotate_mcp_credential_reference(
+def rotate_mcp_credential_reference(
     credential_id: UUID,
     request: McpCredentialReferenceRotateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -124,7 +124,7 @@ async def rotate_mcp_credential_reference(
 
 
 @router.get("/mcp-credentials", response_model=PageResponse[McpCredentialReferenceResponse])
-async def list_mcp_credential_references(
+def list_mcp_credential_references(
     page: PageParams = Depends(pagination_params),
     mcp_server_id: UUID | None = Query(default=None),
     include_disabled: bool = Query(default=False),
@@ -147,7 +147,7 @@ async def list_mcp_credential_references(
     "/mcp-credentials/{credential_id}/disable",
     response_model=McpCredentialReferenceResponse,
 )
-async def disable_mcp_credential_reference(
+def disable_mcp_credential_reference(
     credential_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),

@@ -50,7 +50,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operat
 
 
 @router.post("/worker-heartbeats", response_model=WorkerHeartbeatResponse)
-async def record_worker_heartbeat(
+def record_worker_heartbeat(
     payload: WorkerHeartbeatRequest,
     request: Request,
     worker_heartbeat_token: str | None = Header(default=None, alias="X-Worker-Heartbeat-Token"),
@@ -114,7 +114,7 @@ def _require_worker_heartbeat_token(
 
 
 @router.get("/workers", response_model=PageResponse[WorkerNodeResponse])
-async def list_workers(
+def list_workers(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     worker_type: str | None = Query(default=None),
@@ -135,7 +135,7 @@ async def list_workers(
 
 
 @router.post("/workers/{worker_id}/drain", response_model=WorkerNodeResponse)
-async def drain_worker(
+def drain_worker(
     worker_id: str,
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -147,7 +147,7 @@ async def drain_worker(
 
 
 @router.post("/workers/{worker_id}/status", response_model=WorkerNodeResponse)
-async def update_worker_status(
+def update_worker_status(
     worker_id: str,
     request: WorkerStatusUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
@@ -166,7 +166,7 @@ async def update_worker_status(
 
 
 @router.get("/worker-leases", response_model=PageResponse[WorkerLeaseResponse])
-async def list_worker_leases(
+def list_worker_leases(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     worker_id: str | None = Query(default=None),
@@ -188,7 +188,7 @@ async def list_worker_leases(
 
 
 @router.get("/runtime-leases", response_model=PageResponse[RuntimeLeaseResponse])
-async def list_runtime_leases(
+def list_runtime_leases(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     runtime_space_id: UUID | None = Query(default=None),
@@ -210,7 +210,7 @@ async def list_runtime_leases(
 
 
 @router.post("/runtime-cleanup", response_model=RuntimeCleanupResponse)
-async def cleanup_runtimes(
+def cleanup_runtimes(
     stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
     stale_lease_after_seconds: int = Query(default=900, ge=60, le=86_400),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),

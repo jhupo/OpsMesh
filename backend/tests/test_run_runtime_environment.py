@@ -79,7 +79,7 @@ def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> Non
         name="run-isolation-image",
         image="python@sha256:" + "0" * 64,
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -153,7 +153,7 @@ def test_pooled_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
         name="pooled-image",
         image="python@sha256:" + "0" * 64,
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -225,7 +225,7 @@ def test_pooled_runs_use_distinct_pool_members_until_a_member_is_released() -> N
         name="pool-members-image",
         image="python@sha256:" + "0" * 64,
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -302,7 +302,7 @@ def test_persistent_run_binds_parent_without_child_or_container_cleanup() -> Non
         name="persistent-image",
         image="python@sha256:" + "0" * 64,
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -346,7 +346,7 @@ def test_persistent_runtime_rejects_a_concurrent_run() -> None:
         name="persistent-busy-image",
         image="python@sha256:" + "0" * 64,
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])

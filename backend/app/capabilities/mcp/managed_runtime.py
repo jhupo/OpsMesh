@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from uuid import UUID
 
@@ -11,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionError
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpDeployment, McpServer
-from backend.app.capabilities.mcp.transport.payloads import result_from_sdk_output
+from backend.app.capabilities.mcp.transport.runtime_operation import RuntimeMcpOperation
 from backend.app.runtime.instances.contracts import DockerRuntimeClient, RuntimeCommandInputFile
 from backend.app.runtime.instances.models import WorkspaceRuntime
 
@@ -62,7 +61,7 @@ class ManagedMcpToolAdapter:
         self.session = session
         self.docker = docker
 
-    async def call(
+    def prepare(
         self,
         *,
         server: McpServer,
@@ -70,7 +69,7 @@ class ManagedMcpToolAdapter:
         arguments: dict[str, object],
         credential_refs: list[McpCredentialReference],
         timeout_seconds: int,
-    ) -> dict[str, object]:
+    ) -> RuntimeMcpOperation:
         deployment = self.session.scalar(
             select(McpDeployment).where(
                 McpDeployment.workspace_id == server.workspace_id,
@@ -105,18 +104,20 @@ class ManagedMcpToolAdapter:
             raise McpExecutionError(
                 "Managed MCP runtime is unavailable", code="mcp_process_not_ready"
             )
-        self.session.commit()
-        result = await asyncio.to_thread(
-            process_request,
+        if not runtime.docker_container_id:
+            raise McpExecutionError(
+                "Managed Runtime has no container", code="mcp_process_not_ready"
+            )
+        return RuntimeMcpOperation(
             self.docker,
-            runtime,
-            server.id,
+            runtime.docker_container_id,
+            "managed",
             {
                 "action": "call",
                 "name": tool_name,
                 "arguments": arguments,
                 "timeout_seconds": min(timeout_seconds, 50),
             },
-            timeout_seconds=min(timeout_seconds, 70),
+            min(timeout_seconds, 70),
+            server_id=str(server.id),
         )
-        return result_from_sdk_output(json.dumps(result))

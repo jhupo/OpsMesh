@@ -94,16 +94,6 @@ class SandboxBinding:
     session: SandboxSession
 
 
-class SandboxBackend(Protocol):
-    """Provider-neutral isolated execution boundary."""
-
-    name: str
-
-    def acquire(self, manifest: SandboxManifest) -> SandboxSession: ...
-
-    def release(self, session: SandboxSession) -> None: ...
-
-
 @dataclass(frozen=True, slots=True)
 class SandboxPolicy:
     mode: SandboxMode

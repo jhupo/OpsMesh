@@ -67,7 +67,7 @@ def _user_detail(
 
 
 @router.get("/users", response_model=PageResponse[AdminUserListResponse])
-async def list_admin_users(
+def list_admin_users(
     page: PageParams = Depends(pagination_params),
     user_status: Literal["active", "disabled", "invited"] | None = Query(
         default=None, alias="status"
@@ -93,7 +93,7 @@ async def list_admin_users(
     response_model=AdminUserCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_admin_user(
+def create_admin_user(
     payload: AdminUserCreateRequest,
     request: Request,
     session: Session = Depends(get_db_session),
@@ -135,7 +135,7 @@ async def create_admin_user(
 
 
 @router.get("/users/{user_id}", response_model=AdminUserDetailResponse)
-async def get_admin_user(
+def get_admin_user(
     user_id: UUID,
     session: Session = Depends(get_db_session),
 ) -> AdminUserDetailResponse:
@@ -147,7 +147,7 @@ async def get_admin_user(
 
 
 @router.patch("/users/{user_id}", response_model=AdminUserResponse)
-async def update_admin_user(
+def update_admin_user(
     user_id: UUID,
     payload: AdminUserUpdateRequest,
     request: Request,
@@ -186,7 +186,7 @@ async def update_admin_user(
     "/users/{user_id}/reset-password",
     response_model=AdminUserPasswordResetResponse,
 )
-async def reset_admin_user_password(
+def reset_admin_user_password(
     user_id: UUID,
     request: Request,
     session: Session = Depends(get_db_session),
@@ -223,7 +223,7 @@ async def reset_admin_user_password(
     "/users/{user_id}/revoke-tokens",
     response_model=AdminUserTokenRevokeResponse,
 )
-async def revoke_admin_user_tokens(
+def revoke_admin_user_tokens(
     user_id: UUID,
     request: Request,
     session: Session = Depends(get_db_session),
@@ -246,7 +246,7 @@ async def revoke_admin_user_tokens(
 
 
 @router.put("/users/{user_id}/status", response_model=AdminUserResponse)
-async def update_admin_user_status(
+def update_admin_user_status(
     user_id: UUID,
     payload: AdminUserStatusUpdateRequest,
     request: Request,

@@ -203,7 +203,9 @@ def test_workspace_can_publish_public_plugin_listing_and_install_it() -> None:
     denied_discovery = client.post(
         f"/api/v1/workspaces/{buyer_workspace.id}/capabilities/mcp-servers/{resource_id}/discover",
         headers=_headers(buyer.id),
-        json={},
+        json={
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert denied_discovery.status_code == 403
     assert denied_discovery.json()["error"]["code"] == "plugin_unavailable"
@@ -866,12 +868,6 @@ def test_talent_install_uses_frozen_public_snapshot_without_private_workspace_re
             "context_window_tokens": None,
             "output_reserve_tokens": 4_096,
             "safety_margin_tokens": 1_024,
-        },
-        "working_memory": {
-            "enabled": True,
-            "ttl_seconds": 86_400,
-            "max_entries": 64,
-            "max_entry_tokens": 2_048,
         },
         "episodic_memory": {
             "capture_enabled": False,

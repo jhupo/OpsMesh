@@ -31,7 +31,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operat
     "/team-runtimes/{team_id}/timeline",
     response_model=TeamRuntimeTimelineResponse,
 )
-async def team_runtime_timeline(
+def team_runtime_timeline(
     team_id: UUID,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),

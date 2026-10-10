@@ -52,7 +52,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operat
 
 
 @router.get("/overview", response_model=OperationsOverviewResponse)
-async def operations_overview(
+def operations_overview(
     queue_name: str = Query(default="agent_runs"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -78,7 +78,7 @@ async def operations_overview(
 
 
 @router.get("/control-plane", response_model=OperationsControlPlaneResponse)
-async def operations_control_plane(
+def operations_control_plane(
     queue_name: str = Query(default="agent_runs"),
     window_seconds: int = Query(default=86_400, ge=60, le=2_592_000),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
@@ -113,7 +113,7 @@ async def operations_control_plane(
 
 
 @router.get("/capacity", response_model=OperationsCapacityResponse)
-async def operations_capacity(
+def operations_capacity(
     queue_name: str = Query(default="agent_runs"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -139,7 +139,7 @@ async def operations_capacity(
 
 
 @router.get("/runtime-capacity", response_model=OperationsRuntimeCapacityResponse)
-async def operations_runtime_capacity(
+def operations_runtime_capacity(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
@@ -164,7 +164,7 @@ async def operations_runtime_capacity(
 
 
 @router.get("/worker-lifecycle", response_model=OperationsWorkerLifecycleResponse)
-async def operations_worker_lifecycle(
+def operations_worker_lifecycle(
     queue_name: str = Query(default="agent_runs"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -190,7 +190,7 @@ async def operations_worker_lifecycle(
 
 
 @router.get("/run-activity", response_model=OperationsRunActivityResponse)
-async def operations_run_activity(
+def operations_run_activity(
     team_id: UUID | None = Query(default=None),
     scan_limit: int = Query(default=500, ge=1, le=1_000),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
@@ -215,7 +215,7 @@ async def operations_run_activity(
 
 
 @router.get("/mcp-jobs", response_model=OperationsMcpJobsResponse)
-async def operations_mcp_jobs(
+def operations_mcp_jobs(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
     cache: RedisJsonCache = Depends(get_cache_service),
@@ -234,7 +234,7 @@ async def operations_mcp_jobs(
 
 
 @router.get("/self-hosted-machines", response_model=OperationsSelfHostedMachinesResponse)
-async def operations_self_hosted_machines(
+def operations_self_hosted_machines(
     stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -257,7 +257,7 @@ async def operations_self_hosted_machines(
 
 
 @router.get("/outcomes", response_model=OperationsOutcomesResponse)
-async def operations_outcomes(
+def operations_outcomes(
     window_seconds: int = Query(default=86_400, ge=60, le=2_592_000),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),

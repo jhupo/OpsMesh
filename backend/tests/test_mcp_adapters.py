@@ -1,480 +1,156 @@
-from __future__ import annotations
-
 import asyncio
-import json
-from typing import Any
 from uuid import uuid4
+
+import pytest
 
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionError
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer
-from backend.app.capabilities.mcp.transport.remote import (
-    HostedMcpToolAdapter,
-    SseMcpToolAdapter,
-    StreamableHttpMcpToolAdapter,
-)
-from backend.app.capabilities.mcp.transport.resolver import McpAdapterResolver
+from backend.app.capabilities.mcp.transport.payloads import stdio_command
+from backend.app.capabilities.mcp.transport.runtime_http import DockerRuntimeHttpMcpToolAdapter
 from backend.app.capabilities.mcp.transport.stdio import DockerRuntimeStdioMcpToolAdapter
 from backend.app.capabilities.mcp.transport.stdio_credentials import (
     self_hosted_stdio_environment_refs,
 )
-from backend.app.capabilities.mcp.transport.unsupported import UnsupportedMcpToolAdapter
-from backend.app.runtime.instances.contracts import RuntimeCommandInputFile, RuntimeCommandResult
-from backend.app.runtime.instances.models import RuntimeCommand, WorkspaceRuntime
-from backend.app.shared.security.egress import EgressUrlPolicy
+from backend.app.runtime.agent_host.wire import RpcFrame
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.shared.concurrency import BlockingIO
 from backend.app.shared.security.secrets import SecretEncryptionService
 
 
-def test_streamable_http_mcp_adapter_uses_official_client_session(monkeypatch) -> None:
-    sdk = _FakeMcpSdk([_FakeCallToolResult(content=[_FakeContent({"type": "text", "text": "ok"})])])
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.MCPServerStreamableHttp", sdk.server
+class RuntimeChannel:
+    def __init__(self, block=False):
+        self.request = None
+        self.closed = False
+        self.block = block
+        self.entered = asyncio.Event()
+        self.frames = 0
+
+    async def attach(self):
+        pass
+
+    async def send(self, data):
+        import json
+
+        self.request = json.loads(data)
+
+    async def receive(self):
+        self.frames += 1
+        if self.frames == 1:
+            return RpcFrame(
+                type="ready", payload={"pid": 27, "operation_id": self.request["operation_id"]}
+            ).encoded()
+        self.entered.set()
+        if self.block:
+            await asyncio.Event().wait()
+        return RpcFrame(
+            type="result",
+            payload={"content": [], "structuredContent": {"ok": True}, "isError": False},
+        ).encoded()
+
+    async def close(self):
+        self.closed = True
+
+
+class RuntimeDocker:
+    def __init__(self, channel):
+        self.channel = channel
+        self.terminated = []
+
+    def open_mcp_channel(self, container_id, *, working_dir):
+        return self.channel
+
+    def terminate_agent_process(self, container_id, pid):
+        self.terminated.append((container_id, pid))
+
+
+def runtime():
+    return WorkspaceRuntime(
+        id=uuid4(), workspace_id=uuid4(), docker_container_id="runtime-test", status="running"
     )
-    secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
-    encrypted = secret_service.encrypt_payload(
-        {
-            "bearer_token": "secret-token",
-            "headers": {"x-tenant": "acme"},
-        }
-    )
+
+
+def test_stdio_request_executes_in_runtime_and_credentials_stay_in_private_payload():
+    target = runtime()
+    channel = RuntimeChannel()
+    docker = RuntimeDocker(channel)
+    secrets = SecretEncryptionService(secret="test-secret", key_id="test")
+    encrypted = secrets.encrypt_payload({"env": {"MCP_KEY": "private-token"}})
     credential = McpCredentialReference(
-        workspace_id=uuid4(),
-        name="hosted",
-        provider="hosted",
-        external_ref="",
-        encrypted_secret_payload=encrypted.ciphertext,
-        secret_fingerprint=encrypted.fingerprint,
-        encryption_key_id=encrypted.key_id,
+        provider="hosted", encrypted_secret_payload=encrypted.ciphertext
+    )
+    operation = DockerRuntimeStdioMcpToolAdapter(
+        docker=docker, runtime=target, secret_service=secrets
+    ).prepare(
+        server=McpServer(
+            workspace_id=target.workspace_id,
+            connection={"command": "mcp-test", "args": ["--stdio"]},
+        ),
+        tool_name="lookup",
+        arguments={},
+        credential_refs=[credential],
+        timeout_seconds=5,
     )
 
-    response = asyncio.run(
-        StreamableHttpMcpToolAdapter(
-            secret_service=secret_service,
-            egress_policy=_local_test_egress_policy(),
-        ).call(
+    async def execute():
+        with BlockingIO(1, name="mcp-test") as io:
+            return await operation.execute(io)
+
+    result = asyncio.run(execute())
+    assert result["structuredContent"] == {"ok": True}
+    assert channel.request["request"]["server"]["env"] == {"MCP_KEY": "private-token"}
+    assert "private-token" not in repr(operation)
+    assert channel.closed and docker.terminated == [("runtime-test", 27)]
+
+
+def test_cancelled_operation_terminates_runtime_process_and_closes_socket():
+    target = runtime()
+
+    async def execute():
+        channel = RuntimeChannel(block=True)
+        docker = RuntimeDocker(channel)
+        operation = DockerRuntimeStdioMcpToolAdapter(docker=docker, runtime=target).prepare(
             server=McpServer(
-                workspace_id=uuid4(),
-                name="http-tools",
-                server_type="streamable_http",
-                connection={
-                    "url": "https://mcp.example.test/mcp",
-                    "headers": {"x-static": "yes"},
-                },
+                workspace_id=target.workspace_id, connection={"command": "mcp-test", "args": []}
             ),
-            tool_name="generate_image",
-            arguments={"prompt": "mountain"},
-            credential_refs=[credential],
-            timeout_seconds=5,
-        )
-    )
-
-    assert response == {"content": [{"type": "text", "text": "ok"}], "isError": False}
-    assert sdk.transport_calls == [
-        {
-            "transport": "streamable_http",
-            "url": "https://mcp.example.test/mcp",
-            "headers": {
-                "x-static": "yes",
-                "authorization": "Bearer secret-token",
-                "x-tenant": "acme",
-            },
-            "timeout": 5,
-        }
-    ]
-    assert sdk.initialize_calls == 1
-    assert sdk.tool_calls == [
-        {
-            "name": "generate_image",
-            "arguments": {"prompt": "mountain"},
-            "timeout_seconds": 5,
-        }
-    ]
-
-
-def test_streamable_http_mcp_adapter_does_not_replay_failed_tool_call(monkeypatch) -> None:
-    sdk = _FakeMcpSdk(
-        [
-            _FakeStatusError(500),
-            _FakeCallToolResult(structured_content={"ok": True}),
-        ]
-    )
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.MCPServerStreamableHttp", sdk.server
-    )
-    try:
-        asyncio.run(
-            StreamableHttpMcpToolAdapter(
-                egress_policy=_local_test_egress_policy(),
-            ).call(
-                server=McpServer(
-                    workspace_id=uuid4(),
-                    name="http-tools",
-                    server_type="streamable_http",
-                    connection={"url": "https://retry.example.test/mcp"},
-                ),
-                tool_name="generate_image",
-                arguments={"prompt": "mountain"},
-                credential_refs=[],
-                timeout_seconds=5,
-            )
-        )
-    except McpExecutionError as exc:
-        assert exc.code == "mcp_http_status_error"
-    else:
-        raise AssertionError("Expected the failed MCP call to propagate")
-
-    assert len(sdk.tool_calls) == 1
-
-
-def test_streamable_http_mcp_adapter_runs_inside_async_runner(
-    monkeypatch,
-) -> None:
-    sdk = _FakeMcpSdk([_FakeCallToolResult(structured_content={"ok": True})])
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.MCPServerStreamableHttp", sdk.server
-    )
-    adapter = StreamableHttpMcpToolAdapter(egress_policy=_local_test_egress_policy())
-
-    async def invoke() -> dict[str, object]:
-        return await adapter.call(
-            server=McpServer(
-                workspace_id=uuid4(),
-                name="http-tools",
-                server_type="streamable_http",
-                connection={"url": "https://async.example.test/mcp"},
-            ),
-            tool_name="generate_image",
-            arguments={"prompt": "mountain"},
-            credential_refs=[],
-            timeout_seconds=5,
-        )
-
-    assert asyncio.run(invoke()) == {
-        "content": [],
-        "structuredContent": {"ok": True},
-        "isError": False,
-    }
-
-
-def test_streamable_http_mcp_adapter_sanitizes_remote_errors(monkeypatch) -> None:
-    sdk = _FakeMcpSdk([_FakeCallToolResult(is_error=True)])
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.MCPServerStreamableHttp", sdk.server
-    )
-    try:
-        asyncio.run(
-            StreamableHttpMcpToolAdapter(egress_policy=_local_test_egress_policy()).call(
-                server=McpServer(
-                    workspace_id=uuid4(),
-                    name="http-tools",
-                    server_type="streamable_http",
-                    connection={"url": "https://errors.example.test/mcp"},
-                ),
-                tool_name="generate_image",
-                arguments={"prompt": "mountain"},
-                credential_refs=[],
-                timeout_seconds=5,
-            )
-        )
-    except McpExecutionError as exc:
-        assert exc.code == "mcp_remote_error"
-        assert str(exc) == "Remote MCP tool failed"
-        assert "secret-token" not in str(exc)
-    else:
-        raise AssertionError("Expected remote MCP error")
-
-
-def test_hosted_mcp_adapter_delegates_to_official_remote_http_transport(monkeypatch) -> None:
-    sdk = _FakeMcpSdk([_FakeCallToolResult(structured_content={"ok": True})])
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.MCPServerStreamableHttp", sdk.server
-    )
-    secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
-    encrypted = secret_service.encrypt_payload({"api_key": "secret-key"})
-    credential = McpCredentialReference(
-        workspace_id=uuid4(),
-        name="hosted",
-        provider="hosted",
-        external_ref="",
-        encrypted_secret_payload=encrypted.ciphertext,
-        secret_fingerprint=encrypted.fingerprint,
-        encryption_key_id=encrypted.key_id,
-    )
-
-    response = asyncio.run(
-        HostedMcpToolAdapter(
-            secret_service=secret_service,
-            egress_policy=_local_test_egress_policy(),
-        ).call(
-            server=McpServer(
-                workspace_id=uuid4(),
-                name="hosted-tools",
-                server_type="hosted",
-                connection={
-                    "transport": "streamable_http",
-                    "url": "https://hosted.example.test/mcp",
-                },
-            ),
-            tool_name="generate_image",
-            arguments={"prompt": "mountain"},
-            credential_refs=[credential],
-            timeout_seconds=5,
-        )
-    )
-
-    assert response == {"content": [], "structuredContent": {"ok": True}, "isError": False}
-    assert sdk.transport_calls[0]["headers"]["x-api-key"] == "secret-key"
-
-
-def test_hosted_mcp_adapter_blocks_missing_remote_transport() -> None:
-    try:
-        asyncio.run(
-            HostedMcpToolAdapter().call(
-                server=McpServer(
-                    workspace_id=uuid4(),
-                    name="hosted-tools",
-                    server_type="hosted",
-                    connection={"command": "mcp-server"},
-                ),
-                tool_name="generate_image",
-                arguments={"prompt": "mountain"},
-                credential_refs=[],
-                timeout_seconds=5,
-            )
-        )
-    except McpExecutionError as exc:
-        assert exc.code == "mcp_hosted_transport_unsupported"
-    else:
-        raise AssertionError("Expected hosted MCP without remote transport to be blocked")
-
-
-def test_http_mcp_adapter_blocks_private_egress_before_request() -> None:
-    try:
-        asyncio.run(
-            StreamableHttpMcpToolAdapter().call(
-                server=McpServer(
-                    workspace_id=uuid4(),
-                    name="http-tools",
-                    server_type="streamable_http",
-                    connection={"url": "http://127.0.0.1/mcp"},
-                ),
-                tool_name="generate_image",
-                arguments={"prompt": "mountain"},
-                credential_refs=[],
-                timeout_seconds=5,
-            )
-        )
-    except McpExecutionError as exc:
-        assert exc.code == "mcp_server_url_invalid"
-    else:
-        raise AssertionError("Expected private MCP egress URL to be blocked")
-
-
-def test_docker_runtime_stdio_mcp_adapter_executes_inside_runtime_manager() -> None:
-    workspace_id = uuid4()
-    runtime = WorkspaceRuntime(
-        id=uuid4(),
-        workspace_id=workspace_id,
-        name="team-runtime",
-        docker_container_id="container-123",
-        limits={},
-    )
-    runtime_manager = RecordingRuntimeManager(
-        [
-            RuntimeCommandResult(
-                exit_code=0,
-                stdout=json.dumps(
-                    {
-                        "status": "ready",
-                        "contract_version": 2,
-                        "sdk_package": "openai-agents",
-                        "sdk_version": "0.17.2",
-                        "stdio_server": "available",
-                    }
-                ),
-                stderr="",
-            ),
-            RuntimeCommandResult(
-                exit_code=0,
-                stdout=json.dumps({"structuredContent": {"ok": True}}),
-                stderr="",
-            ),
-        ]
-    )
-
-    response = asyncio.run(
-        DockerRuntimeStdioMcpToolAdapter(
-            runtime_manager=runtime_manager,
-            runtime=runtime,
-        ).call(
-            server=McpServer(
-                workspace_id=workspace_id,
-                name="stdio-tools",
-                server_type="stdio",
-                connection={"command": ["mcp-server", "--stdio"]},
-            ),
-            tool_name="generate_image",
-            arguments={"prompt": "mountain"},
-            credential_refs=[],
-            timeout_seconds=5,
-        )
-    )
-
-    assert response == {"structuredContent": {"ok": True}}
-    assert runtime_manager.calls[0]["workspace_id"] == workspace_id
-    assert runtime_manager.calls[0]["runtime"] is runtime
-    assert runtime_manager.calls[0]["command"] == [
-        "python",
-        "-m",
-        "opsmesh_runtime.mcp_stdio_client",
-        "--check",
-    ]
-    command = runtime_manager.calls[1]["command"]
-    assert command[:3] == [
-        "python",
-        "-m",
-        "opsmesh_runtime.mcp_stdio_client",
-    ]
-    assert len(command) == 3
-    input_file = runtime_manager.calls[1]["input_file"]
-    assert isinstance(input_file, RuntimeCommandInputFile)
-    assert input_file.argument_name == "--request-file"
-    payload = json.loads(input_file.content)
-    assert payload["contract_version"] == 2
-    assert payload["client"] == {
-        "package": "openai-agents",
-        "entrypoint": "agents.mcp.MCPServerStdio",
-    }
-    assert payload["server"] == {
-        "command": "mcp-server",
-        "args": ["--stdio"],
-    }
-    assert payload["tool"] == {
-        "name": "generate_image",
-        "arguments": {"prompt": "mountain"},
-        "timeout_seconds": 5,
-    }
-
-
-def test_docker_runtime_stdio_mcp_adapter_reuses_valid_sdk_capability() -> None:
-    workspace_id = uuid4()
-    runtime = WorkspaceRuntime(
-        id=uuid4(),
-        workspace_id=workspace_id,
-        name="team-runtime",
-        docker_container_id="container-123",
-        limits={},
-        capabilities={
-            "mcp_stdio_sdk": {
-                "status": "ready",
-                "contract_version": 2,
-                "sdk_package": "openai-agents",
-                "sdk_version": "0.17.2",
-                "stdio_server": "available",
-            }
-        },
-    )
-    runtime_manager = RecordingRuntimeManager(
-        [
-            RuntimeCommandResult(
-                exit_code=0,
-                stdout=json.dumps({"structuredContent": {"ok": True}}),
-                stderr="",
-            )
-        ]
-    )
-
-    response = asyncio.run(
-        DockerRuntimeStdioMcpToolAdapter(
-            runtime_manager=runtime_manager,
-            runtime=runtime,
-        ).call(
-            server=McpServer(
-                workspace_id=workspace_id,
-                name="stdio-tools",
-                server_type="stdio",
-                connection={"command": "mcp-server"},
-            ),
-            tool_name="generate_image",
+            tool_name="lookup",
             arguments={},
             credential_refs=[],
             timeout_seconds=5,
         )
-    )
+        with BlockingIO(1, name="mcp-test") as io:
+            task = asyncio.create_task(operation.execute(io))
+            await channel.entered.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert channel.closed and docker.terminated == [("runtime-test", 27)]
 
-    assert response == {"structuredContent": {"ok": True}}
-    assert len(runtime_manager.calls) == 1
-    assert runtime_manager.calls[0]["command"][:3] == [
-        "python",
-        "-m",
-        "opsmesh_runtime.mcp_stdio_client",
-    ]
+    asyncio.run(execute())
 
 
-def test_docker_runtime_stdio_mcp_adapter_injects_hosted_credentials_via_stdin() -> None:
-    workspace_id = uuid4()
-    secret_service = SecretEncryptionService(secret="test-secret", key_id="test")
-    encrypted = secret_service.encrypt_payload({"env": {"MCP_API_KEY": "runtime-secret"}})
-    credential = McpCredentialReference(
-        workspace_id=workspace_id,
-        name="stdio-key",
-        provider="hosted",
-        external_ref="",
-        encrypted_secret_payload=encrypted.ciphertext,
-        secret_fingerprint=encrypted.fingerprint,
-        encryption_key_id=encrypted.key_id,
-    )
-    runtime = WorkspaceRuntime(
-        id=uuid4(),
-        workspace_id=workspace_id,
-        name="team-runtime",
-        docker_container_id="container-123",
-        limits={},
-        capabilities={
-            "mcp_stdio_sdk": {
-                "status": "ready",
-                "contract_version": 2,
-                "sdk_package": "openai-agents",
-                "sdk_version": "0.17.2",
-                "stdio_server": "available",
-            }
-        },
-    )
-    runtime_manager = RecordingRuntimeManager(
-        [RuntimeCommandResult(exit_code=0, stdout='{"structuredContent":{"ok":true}}', stderr="")]
-    )
-
-    response = asyncio.run(
-        DockerRuntimeStdioMcpToolAdapter(
-            runtime_manager=runtime_manager,
-            runtime=runtime,
-            secret_service=secret_service,
-        ).call(
+def test_remote_private_network_is_rejected_before_runtime_execution():
+    target = runtime()
+    docker = RuntimeDocker(RuntimeChannel())
+    with pytest.raises(McpExecutionError):
+        DockerRuntimeHttpMcpToolAdapter(docker, target, None).prepare(
             server=McpServer(
-                workspace_id=workspace_id,
-                name="stdio-tools",
-                server_type="stdio",
-                connection={"command": "mcp-server"},
+                workspace_id=target.workspace_id,
+                server_type="sse",
+                connection={"url": "http://127.0.0.1/mcp"},
             ),
-            tool_name="authenticated_tool",
+            tool_name="lookup",
             arguments={},
-            credential_refs=[credential],
+            credential_refs=[],
             timeout_seconds=5,
         )
-    )
 
-    call = runtime_manager.calls[0]
-    assert response == {"structuredContent": {"ok": True}}
-    assert call["command"] == [
-        "python",
-        "-m",
-        "opsmesh_runtime.mcp_stdio_client",
-    ]
-    assert "runtime-secret" not in str(call["command"])
-    input_file = call["input_file"]
-    assert isinstance(input_file, RuntimeCommandInputFile)
-    assert input_file.argument_name == "--request-file"
-    request = json.loads(input_file.content)
-    assert request["server"]["env"] == {"MCP_API_KEY": "runtime-secret"}
+
+@pytest.mark.parametrize(
+    "connection", [{"command": ["mcp-test"]}, {"command": "mcp-test", "args": "--stdio"}]
+)
+def test_stdio_rejects_noncanonical_command(connection):
+    with pytest.raises(McpExecutionError):
+        stdio_command(connection)
 
 
 def test_self_hosted_stdio_credentials_block_connector_runtime_credential() -> None:
@@ -492,258 +168,3 @@ def test_self_hosted_stdio_credentials_block_connector_runtime_credential() -> N
         assert "OPSMESH_RUNTIME_CREDENTIAL" not in str(exc)
     else:
         raise AssertionError("Expected the connector credential to remain unavailable to MCP")
-
-
-def test_docker_runtime_stdio_mcp_adapter_rejects_invalid_sdk_report() -> None:
-    workspace_id = uuid4()
-    runtime_manager = RecordingRuntimeManager(
-        [RuntimeCommandResult(exit_code=0, stdout="{}", stderr="")]
-    )
-
-    try:
-        asyncio.run(
-            DockerRuntimeStdioMcpToolAdapter(
-                runtime_manager=runtime_manager,
-                runtime=WorkspaceRuntime(
-                    id=uuid4(),
-                    workspace_id=workspace_id,
-                    name="team-runtime",
-                    docker_container_id="container-123",
-                    limits={},
-                ),
-            ).call(
-                server=McpServer(
-                    workspace_id=workspace_id,
-                    name="stdio-tools",
-                    server_type="stdio",
-                    connection={"command": "mcp-server"},
-                ),
-                tool_name="generate_image",
-                arguments={},
-                credential_refs=[],
-                timeout_seconds=5,
-            )
-        )
-    except McpExecutionError as exc:
-        assert exc.code == "mcp_stdio_runtime_not_ready"
-    else:
-        raise AssertionError("Expected an invalid MCP SDK capability report to fail closed")
-
-
-def test_docker_runtime_stdio_mcp_adapter_sanitizes_command_failure() -> None:
-    workspace_id = uuid4()
-    runtime_manager = RecordingRuntimeManager(
-        [RuntimeCommandResult(exit_code=2, stdout="", stderr="secret stderr")]
-    )
-
-    try:
-        asyncio.run(
-            DockerRuntimeStdioMcpToolAdapter(
-                runtime_manager=runtime_manager,
-                runtime=WorkspaceRuntime(
-                    id=uuid4(),
-                    workspace_id=workspace_id,
-                    name="team-runtime",
-                    docker_container_id="container-123",
-                    limits={},
-                ),
-            ).call(
-                server=McpServer(
-                    workspace_id=workspace_id,
-                    name="stdio-tools",
-                    server_type="stdio",
-                    connection={"command": "mcp-server"},
-                ),
-                tool_name="generate_image",
-                arguments={"prompt": "mountain"},
-                credential_refs=[],
-                timeout_seconds=5,
-            )
-        )
-    except McpExecutionError as exc:
-        assert exc.code == "mcp_stdio_sdk_unavailable"
-        assert "secret" not in str(exc)
-    else:
-        raise AssertionError("Expected failed stdio runtime command to be normalized")
-
-
-def test_mcp_adapter_resolver_selects_remote_adapters_and_blocks_unsafe_direct_stdio() -> None:
-    resolver = McpAdapterResolver()
-
-    http_adapter = resolver.resolve(
-        McpServer(
-            workspace_id=uuid4(),
-            name="http-tools",
-            server_type="streamable_http",
-            connection={"url": "https://example.test/mcp"},
-        )
-    )
-    sse_adapter = resolver.resolve(
-        McpServer(
-            workspace_id=uuid4(),
-            name="sse-tools",
-            server_type="sse",
-            connection={"url": "https://example.test/sse"},
-        )
-    )
-    hosted_adapter = resolver.resolve(
-        McpServer(
-            workspace_id=uuid4(),
-            name="hosted-tools",
-            server_type="hosted",
-            connection={"transport": "streamable_http", "url": "https://example.test/mcp"},
-        )
-    )
-    stdio_adapter = resolver.resolve(
-        McpServer(
-            workspace_id=uuid4(),
-            name="stdio-tools",
-            server_type="stdio",
-            connection={"command": "mcp-server"},
-        )
-    )
-
-    assert isinstance(http_adapter, StreamableHttpMcpToolAdapter)
-    assert isinstance(sse_adapter, SseMcpToolAdapter)
-    assert isinstance(hosted_adapter, HostedMcpToolAdapter)
-    assert isinstance(stdio_adapter, UnsupportedMcpToolAdapter)
-
-
-def _local_test_egress_policy() -> EgressUrlPolicy:
-    return EgressUrlPolicy(
-        allowed_schemes=frozenset({"http", "https"}),
-        allow_private_addresses=True,
-    )
-
-
-class _FakeCallToolResult:
-    def __init__(
-        self,
-        *,
-        content: list[_FakeContent] | None = None,
-        structured_content: dict[str, object] | None = None,
-        is_error: bool = False,
-    ) -> None:
-        self.content = content or []
-        self.structuredContent = structured_content
-        self.isError = is_error
-
-    def model_dump(self, **kwargs):
-        payload = {"content": [item.model_dump() for item in self.content], "isError": self.isError}
-        if self.structuredContent is not None:
-            payload["structuredContent"] = self.structuredContent
-        return payload
-
-
-class _FakeContent:
-    def __init__(self, payload: dict[str, object]) -> None:
-        self._payload = payload
-
-    def model_dump(self, **_: object) -> dict[str, object]:
-        return self._payload
-
-
-class _FakeStatusError(Exception):
-    def __init__(self, status_code: int) -> None:
-        super().__init__("remote secret must not escape")
-        self.response = _FakeStatusResponse(status_code)
-
-
-class _FakeStatusResponse:
-    def __init__(self, status_code: int) -> None:
-        self.status_code = status_code
-
-
-class _FakeMcpServer:
-    def __init__(self, sdk, params, timeout):
-        self.sdk = sdk
-        self.timeout = timeout
-        sdk.transport_calls.append(
-            {
-                "transport": "streamable_http",
-                "url": params["url"],
-                "headers": params["headers"],
-                "timeout": params["timeout"],
-            }
-        )
-
-    async def __aenter__(self):
-        self.sdk.initialize_calls += 1
-        return self
-
-    async def __aexit__(self, *exc_info):
-        return None
-
-    async def call_tool(self, name, arguments):
-        self.sdk.tool_calls.append(
-            {"name": name, "arguments": arguments, "timeout_seconds": self.timeout}
-        )
-        outcome = self.sdk.outcomes.pop(0)
-        if isinstance(outcome, Exception):
-            raise outcome
-        return outcome
-
-
-class _FakeMcpSdk:
-    def __init__(self, outcomes):
-        self.outcomes = outcomes
-        self.transport_calls = []
-        self.initialize_calls = 0
-        self.tool_calls = []
-
-    def server(self, *, params, client_session_timeout_seconds, max_retry_attempts, **kwargs):
-        assert max_retry_attempts == 0
-        return _FakeMcpServer(self, params, client_session_timeout_seconds)
-
-
-class RecordingRuntimeManager:
-    def __init__(self, results: list[RuntimeCommandResult]) -> None:
-        self._results = results
-        self.calls: list[dict[str, Any]] = []
-
-    def execute_command(
-        self,
-        *,
-        workspace_id: object,
-        runtime: WorkspaceRuntime,
-        command: list[str],
-        input_file: RuntimeCommandInputFile | None = None,
-        working_dir: str | None = None,
-    ) -> RuntimeCommand:
-        self.calls.append(
-            {
-                "workspace_id": workspace_id,
-                "runtime": runtime,
-                "command": command,
-                "input_file": input_file,
-                "working_dir": working_dir,
-            }
-        )
-        result = self._results.pop(0)
-        return RuntimeCommand(
-            workspace_id=workspace_id,
-            workspace_runtime_id=runtime.id,
-            runtime_space_id=runtime.runtime_space_id,
-            command=command,
-            status="completed" if result.exit_code == 0 else "failed",
-            exit_code=result.exit_code,
-            stdout=result.stdout,
-            stderr=result.stderr,
-        )
-
-    async def execute_command_async(
-        self,
-        *,
-        workspace_id: object,
-        runtime: WorkspaceRuntime,
-        command: list[str],
-        input_file: RuntimeCommandInputFile | None = None,
-        working_dir: str | None = None,
-    ) -> RuntimeCommand:
-        return self.execute_command(
-            workspace_id=workspace_id,
-            runtime=runtime,
-            command=command,
-            input_file=input_file,
-            working_dir=working_dir,
-        )

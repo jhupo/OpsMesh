@@ -24,7 +24,7 @@ router = APIRouter()
     response_model=WorkspaceAgentInstallResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def hire_agent_from_talent_market(
+def hire_agent_from_talent_market(
     listing_id: UUID,
     request: HireTalentRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -49,7 +49,7 @@ async def hire_agent_from_talent_market(
     response_model=WorkspaceAgentInstallResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def hire_talent_for_task_staffing_gap(
+def hire_talent_for_task_staffing_gap(
     task_id: UUID,
     request: HireTaskTalentRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),

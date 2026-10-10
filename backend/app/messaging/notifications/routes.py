@@ -26,7 +26,7 @@ router = APIRouter(
 
 
 @router.get("", response_model=PageResponse[NotificationResponse])
-async def list_notifications(
+def list_notifications(
     page: PageParams = Depends(pagination_params),
     include_archived: bool = Query(default=False),
     read: bool | None = Query(default=None),
@@ -50,7 +50,7 @@ async def list_notifications(
 
 
 @router.get("/counts", response_model=NotificationCountsResponse)
-async def get_notification_counts(
+def get_notification_counts(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> NotificationCountsResponse:
@@ -62,7 +62,7 @@ async def get_notification_counts(
 
 
 @router.post("/mark-read", response_model=NotificationMarkReadResponse)
-async def mark_notifications_read(
+def mark_notifications_read(
     request: NotificationMarkReadRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -80,7 +80,7 @@ async def mark_notifications_read(
 
 
 @router.post("/{notification_id}/read", response_model=NotificationResponse)
-async def mark_notification_read(
+def mark_notification_read(
     notification_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -97,7 +97,7 @@ async def mark_notification_read(
 
 
 @router.post("/{notification_id}/archive", response_model=NotificationResponse)
-async def archive_notification(
+def archive_notification(
     notification_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -114,7 +114,7 @@ async def archive_notification(
 
 
 @router.get("/preferences", response_model=NotificationPreferenceResponse)
-async def get_notification_preferences(
+def get_notification_preferences(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> NotificationPreferenceResponse:
@@ -137,7 +137,7 @@ async def get_notification_preferences(
 
 
 @router.put("/preferences", response_model=NotificationPreferenceResponse)
-async def update_notification_preferences(
+def update_notification_preferences(
     request: NotificationPreferenceUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),

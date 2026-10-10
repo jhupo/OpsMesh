@@ -7,7 +7,7 @@ from backend.app.orchestration.planning.team_project_plan import (
     step_dependencies_for_package,
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
-from backend.app.shared.utils import uuid_or_none
+from backend.app.shared.utils import string_list, uuid_or_none
 
 
 def build_step(
@@ -27,9 +27,9 @@ def project_step(
 ) -> None:
     step.assigned_agent_profile_id = _required_uuid(package.get("assigned_agent_profile_id"))
     step.required_role = str(package.get("required_role") or "")
-    step.required_skills = _strings(package.get("required_skills"))
-    step.expected_artifacts = _strings(package.get("expected_artifacts"))
-    step.acceptance_criteria = _strings(package.get("acceptance_criteria"))
+    step.required_skills = string_list(package.get("required_skills"))
+    step.expected_artifacts = string_list(package.get("expected_artifacts"))
+    step.acceptance_criteria = string_list(package.get("acceptance_criteria"))
     review_policy = package.get("review_policy")
     step.review_policy = dict(review_policy) if isinstance(review_policy, dict) else {}
     step.title = str(package.get("title") or "Work package")
@@ -42,7 +42,3 @@ def _required_uuid(value: object) -> UUID:
     if parsed is None:
         raise ValueError("Agent profile ID is invalid")
     return parsed
-
-
-def _strings(value: object) -> list[str]:
-    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []

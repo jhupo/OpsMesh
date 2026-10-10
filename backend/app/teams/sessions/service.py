@@ -117,9 +117,6 @@ class TeamRuntimeService:
         self._session.flush()
         return thread
 
-    def ensure_member_sessions(self, team: AgentTeam) -> list[PersistentAgentSession]:
-        return self._sessions.member_sessions(team)
-
     def bind_runtime(
         self,
         *,

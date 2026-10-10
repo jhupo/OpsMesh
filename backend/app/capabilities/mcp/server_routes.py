@@ -42,7 +42,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capa
 
 
 @router.get("/mcp-servers", response_model=PageResponse[McpServerResponse])
-async def list_mcp_servers(
+def list_mcp_servers(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -52,7 +52,7 @@ async def list_mcp_servers(
 
 
 @router.post("/mcp-servers", response_model=McpServerResponse, status_code=status.HTTP_201_CREATED)
-async def create_mcp_server(
+def create_mcp_server(
     request: McpServerCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
@@ -72,7 +72,7 @@ async def create_mcp_server(
 
 
 @router.patch("/mcp-servers/{mcp_server_id}", response_model=McpServerResponse)
-async def update_mcp_server(
+def update_mcp_server(
     mcp_server_id: UUID,
     request: McpServerUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -98,7 +98,7 @@ async def update_mcp_server(
 
 
 @router.get("/mcp-catalog", response_model=PageResponse[McpCatalogServerResponse])
-async def list_mcp_catalog(
+def list_mcp_catalog(
     page: PageParams = Depends(pagination_params),
     agent_profile_id: UUID | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -164,7 +164,7 @@ async def discover_mcp_server_tools(
     "/mcp-servers/{mcp_server_id}/discovered-tools",
     response_model=list[McpToolAllowResponse],
 )
-async def list_discovered_mcp_tools(
+def list_discovered_mcp_tools(
     mcp_server_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -182,7 +182,7 @@ async def list_discovered_mcp_tools(
     response_model=McpToolAllowResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def allow_mcp_tool(
+def allow_mcp_tool(
     mcp_server_id: UUID,
     request: McpToolAllowRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -207,7 +207,7 @@ async def allow_mcp_tool(
     "/mcp-servers/{mcp_server_id}/tools/{allowlist_id}/enable",
     response_model=McpToolAllowResponse,
 )
-async def enable_discovered_mcp_tool(
+def enable_discovered_mcp_tool(
     mcp_server_id: UUID,
     allowlist_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -232,7 +232,7 @@ async def enable_discovered_mcp_tool(
 
 
 @router.post("/mcp-servers/{mcp_server_id}/disable", response_model=McpServerResponse)
-async def disable_mcp_server(
+def disable_mcp_server(
     mcp_server_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
@@ -252,7 +252,7 @@ async def disable_mcp_server(
     "/mcp-servers/{mcp_server_id}/tools/{allowlist_id}",
     response_model=McpToolAllowResponse,
 )
-async def update_mcp_tool(
+def update_mcp_tool(
     mcp_server_id: UUID,
     allowlist_id: UUID,
     request: McpToolAllowUpdateRequest,
@@ -282,7 +282,7 @@ async def update_mcp_tool(
 
 
 @router.post("/mcp-servers/{mcp_server_id}/health-check", response_model=McpServerResponse)
-async def record_mcp_server_health_check(
+def record_mcp_server_health_check(
     mcp_server_id: UUID,
     request: McpServerHealthCheckRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -304,7 +304,7 @@ async def record_mcp_server_health_check(
     "/mcp-servers/{mcp_server_id}/tools/{allowlist_id}/disable",
     response_model=McpToolAllowResponse,
 )
-async def disable_mcp_tool(
+def disable_mcp_tool(
     mcp_server_id: UUID,
     allowlist_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -323,7 +323,7 @@ async def disable_mcp_tool(
 
 
 @router.get("/mcp-tools", response_model=list[McpToolDescriptor])
-async def list_mapped_mcp_tools(
+def list_mapped_mcp_tools(
     agent_profile_id: UUID | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),

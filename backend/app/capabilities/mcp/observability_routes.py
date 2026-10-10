@@ -27,7 +27,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capa
     "/agents/{agent_profile_id}/tool-policy-diagnostics",
     response_model=AgentToolPolicyDiagnosticsResponse,
 )
-async def get_agent_tool_policy_diagnostics(
+def get_agent_tool_policy_diagnostics(
     agent_profile_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -43,13 +43,11 @@ async def get_agent_tool_policy_diagnostics(
 
 
 @router.get("/tool-policy-matrix", response_model=WorkspaceToolPolicyMatrixResponse)
-async def get_workspace_tool_policy_matrix(
+def get_workspace_tool_policy_matrix(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceToolPolicyMatrixResponse:
-    matrix = SkillToolDiagnosticsService(session).workspace_tool_policy_matrix(
-        context.workspace.id
-    )
+    matrix = SkillToolDiagnosticsService(session).workspace_tool_policy_matrix(context.workspace.id)
     return WorkspaceToolPolicyMatrixResponse.model_validate(matrix)
 
 
@@ -58,7 +56,7 @@ async def get_workspace_tool_policy_matrix(
     response_model=McpToolCallLogResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def log_mcp_tool_call(
+def log_mcp_tool_call(
     request: McpToolCallLogRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -74,7 +72,7 @@ async def log_mcp_tool_call(
 
 
 @router.get("/mcp-tool-call-logs", response_model=PageResponse[McpToolCallLogResponse])
-async def list_mcp_tool_call_logs(
+def list_mcp_tool_call_logs(
     page: PageParams = Depends(pagination_params),
     mcp_server_id: UUID | None = Query(default=None),
     tool_name: str | None = Query(default=None, min_length=1, max_length=160),

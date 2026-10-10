@@ -77,6 +77,9 @@ def test_openai_sdk_applies_structured_output_and_guardrails(
             assert guardrail_result.output.tripwire_triggered is False
         return SimpleNamespace(
             final_output=value,
+            context_wrapper=context,
+            last_agent=agent,
+            interruptions=[],
             new_items=[],
             events=[],
             usage=None,
@@ -205,6 +208,8 @@ def test_openai_waiting_approval_defers_final_output_validation(
         )
         return SimpleNamespace(
             final_output=None,
+            context_wrapper=RunContextWrapper(kwargs["context"]),
+            last_agent=agent,
             new_items=[],
             events=[],
             usage=None,

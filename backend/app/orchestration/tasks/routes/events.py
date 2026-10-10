@@ -54,7 +54,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
     response_model=TaskMessageResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def record_task_feedback(
+def record_task_feedback(
     task_id: UUID,
     request: TaskFeedbackRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -74,7 +74,7 @@ async def record_task_feedback(
 
 
 @router.get("/tasks/{task_id}/messages", response_model=PageResponse[TaskMessageResponse])
-async def list_task_messages(
+def list_task_messages(
     task_id: UUID,
     page: PageParams = Depends(pagination_params),
     message_type: str | None = Query(default=None),
@@ -94,7 +94,7 @@ async def list_task_messages(
 
 
 @router.get("/tasks/{task_id}/live-status", response_model=TaskLiveStatusResponse)
-async def get_task_live_status(
+def get_task_live_status(
     task_id: UUID,
     after_sequence: int = Query(default=0, ge=0),
     message_limit: int = Query(default=50, ge=1, le=200),
@@ -236,7 +236,7 @@ async def stream_task_events(
     "/tasks/{task_id}/planning-attempts",
     response_model=PageResponse[TaskPlanningAttemptResponse],
 )
-async def list_task_planning_attempts(
+def list_task_planning_attempts(
     task_id: UUID,
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),

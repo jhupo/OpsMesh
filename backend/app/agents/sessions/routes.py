@@ -26,7 +26,7 @@ router = APIRouter(
 
 
 @router.get("/sessions", response_model=PageResponse[AgentSessionSummaryResponse])
-async def list_agent_sessions(
+def list_agent_sessions(
     agent_id: UUID,
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
@@ -61,7 +61,7 @@ async def list_agent_sessions(
 
 
 @router.get("/sessions/{session_id}", response_model=AgentSessionDetailResponse)
-async def get_agent_session(
+def get_agent_session(
     agent_id: UUID,
     session_id: UUID,
     item_limit: int = Query(default=50, ge=1, le=500),
@@ -83,7 +83,7 @@ async def get_agent_session(
 
 
 @router.post("/sessions/{session_id}/archive", response_model=AgentSessionSummaryResponse)
-async def archive_agent_session(
+def archive_agent_session(
     agent_id: UUID,
     session_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -99,7 +99,7 @@ async def archive_agent_session(
 
 
 @router.post("/sessions/{session_id}/freeze", response_model=AgentSessionSummaryResponse)
-async def freeze_agent_session(
+def freeze_agent_session(
     agent_id: UUID,
     session_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -115,7 +115,7 @@ async def freeze_agent_session(
 
 
 @router.post("/sessions/{session_id}/activate", response_model=AgentSessionSummaryResponse)
-async def activate_agent_session(
+def activate_agent_session(
     agent_id: UUID,
     session_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -131,7 +131,7 @@ async def activate_agent_session(
 
 
 @router.delete("/sessions/{session_id}/items", response_model=AgentSessionClearResponse)
-async def clear_agent_session_items(
+def clear_agent_session_items(
     agent_id: UUID,
     session_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),

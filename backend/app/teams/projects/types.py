@@ -81,12 +81,6 @@ def relationship_ids(
     )
 
 
-def list_of_dicts(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict)]
-
-
 def number(value: object) -> int | float:
     return value if isinstance(value, int | float) else 0
 

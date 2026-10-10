@@ -14,7 +14,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operat
 
 
 @router.get("/model-providers", response_model=ModelProviderOperationsResponse)
-async def model_provider_operations(
+def model_provider_operations(
     run_limit: int = Query(default=50, ge=1, le=200),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),

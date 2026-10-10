@@ -8,6 +8,7 @@ from backend.app.capabilities.mcp.models import McpServer
 from backend.app.shared.security.redaction import redact_sensitive_text
 
 MCP_LIMIT_COUNTED_STATUSES = (
+    "running",
     "completed",
     "failed",
     "waiting_self_hosted",

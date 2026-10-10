@@ -38,9 +38,6 @@ class TalentCatalogService:
             return filtered[page.offset : page.offset + page.limit], len(filtered)
         return self._page(statement.order_by(TalentListing.created_at.desc()), page)
 
-    def get_listing(self, listing_id: UUID) -> TalentListing | None:
-        return self._repository.get_public_listing(listing_id)
-
     def get_install(self, workspace_id: UUID, install_id: UUID) -> WorkspaceAgentInstall | None:
         return self._repository.get_install(workspace_id, install_id)
 

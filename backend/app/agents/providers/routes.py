@@ -33,7 +33,7 @@ router = APIRouter(
 
 
 @router.get("", response_model=PageResponse[ModelProviderCredentialResponse])
-async def list_model_provider_credentials(
+def list_model_provider_credentials(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -57,7 +57,7 @@ async def list_model_provider_credentials(
 
 
 @router.get("/usage-audit", response_model=PageResponse[ModelProviderUsageAuditResponse])
-async def list_model_provider_usage_audit(
+def list_model_provider_usage_audit(
     page: PageParams = Depends(pagination_params),
     action: str | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -82,7 +82,7 @@ async def list_model_provider_usage_audit(
     response_model=ModelProviderCredentialResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_model_provider_credential(
+def create_model_provider_credential(
     request: ModelProviderCredentialCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -116,7 +116,7 @@ async def create_model_provider_credential(
 
 
 @router.patch("/{credential_id}", response_model=ModelProviderCredentialResponse)
-async def update_model_provider_credential(
+def update_model_provider_credential(
     credential_id: UUID,
     request: ModelProviderCredentialUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -152,7 +152,7 @@ async def update_model_provider_credential(
 
 
 @router.post("/{credential_id}/rotate-key", response_model=ModelProviderCredentialResponse)
-async def rotate_model_provider_credential_key(
+def rotate_model_provider_credential_key(
     credential_id: UUID,
     request: ModelProviderCredentialRotateKeyRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -223,7 +223,7 @@ async def check_model_provider_credential_health(
 
 
 @router.post("/{credential_id}/set-default", response_model=ModelProviderCredentialResponse)
-async def set_default_model_provider_credential(
+def set_default_model_provider_credential(
     credential_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -245,7 +245,7 @@ async def set_default_model_provider_credential(
 
 
 @router.post("/{credential_id}/disable", response_model=ModelProviderCredentialResponse)
-async def disable_model_provider_credential(
+def disable_model_provider_credential(
     credential_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),

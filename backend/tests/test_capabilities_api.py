@@ -105,6 +105,7 @@ def test_capability_skill_and_mcp_control_plane() -> None:
             "requires_approval": True,
             "risk_level": "medium",
             "policy": {"write_artifact": True},
+            "connection": {"command": "mcp-test", "args": []},
         },
     )
     assert allowed.status_code == 201
@@ -141,7 +142,11 @@ def test_capability_skill_and_mcp_control_plane() -> None:
     blocked_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "delete_image", "risk_level": "high"},
+        json={
+            "tool_name": "delete_image",
+            "risk_level": "high",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert blocked_tool.status_code == 201
     assert blocked_tool.json()["status"] == "active"
@@ -335,7 +340,11 @@ def test_operator_cannot_approve_resource_review(monkeypatch) -> None:
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(owner.id),
-        json={"name": "dangerous-tools", "server_type": "stdio"},
+        json={
+            "name": "dangerous-tools",
+            "server_type": "stdio",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     approval = client.get(
         f"/api/v1/workspaces/{workspace.id}/approvals?status=pending",
@@ -642,7 +651,11 @@ def test_private_mcp_resources_skip_resource_review_by_default(monkeypatch) -> N
     tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "shell.exec", "risk_level": "high"},
+        json={
+            "tool_name": "shell.exec",
+            "risk_level": "high",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     credential = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
@@ -703,7 +716,10 @@ def test_hosted_mcp_credentials_are_encrypted_and_not_returned() -> None:
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(owner.id),
-        json={"name": "hosted-tools"},
+        json={
+            "name": "hosted-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert server.status_code == 201
 
@@ -766,7 +782,10 @@ def test_mcp_server_connection_update_resets_health_and_records_redacted_audit()
     healthy = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server_id}/health-check",
         headers=_headers(owner.id),
-        json={"health_status": "healthy"},
+        json={
+            "health_status": "healthy",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert healthy.status_code == 200
 
@@ -796,7 +815,10 @@ def test_mcp_credential_rotation_encrypts_and_supports_external_reference() -> N
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(owner.id),
-        json={"name": "credential-mcp"},
+        json={
+            "name": "credential-mcp",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert server.status_code == 201
     credential = client.post(
@@ -866,12 +888,18 @@ def test_mcp_credentials_can_be_listed_filtered_and_disabled() -> None:
     other_server = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
         headers=_headers(other.id),
-        json={"name": "other-tools"},
+        json={
+            "name": "other-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     credential = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
@@ -991,14 +1019,20 @@ def test_mcp_server_scope_is_enforced() -> None:
     server = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
         headers=_headers(other.id),
-        json={"name": "other-tools"},
+        json={
+            "name": "other-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert server.status_code == 201
 
     denied = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "steal_data"},
+        json={
+            "tool_name": "steal_data",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
 
     assert denied.status_code == 403
@@ -1036,7 +1070,10 @@ def test_mcp_catalog_summarizes_tools_credentials_and_agent_scope() -> None:
     foreign_server = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
         headers=_headers(other.id),
-        json={"name": "foreign-tools"},
+        json={
+            "name": "foreign-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert image_server.status_code == 201
     assert research_server.status_code == 201
@@ -1051,13 +1088,18 @@ def test_mcp_catalog_summarizes_tools_credentials_and_agent_scope() -> None:
             "capability_key": "image.generate",
             "requires_approval": True,
             "risk_level": "medium",
+            "connection": {"command": "mcp-test", "args": []},
         },
     )
     research_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{research_server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "search_web", "capability_key": "web.search"},
+        json={
+            "tool_name": "search_web",
+            "capability_key": "web.search",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     credential = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-credentials",
@@ -1141,7 +1183,10 @@ def test_mcp_catalog_flags_missing_required_credentials() -> None:
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "create_asset"},
+        json={
+            "tool_name": "create_asset",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     catalog = client.get(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
@@ -1271,7 +1316,10 @@ def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "search_docs"},
+        json={
+            "tool_name": "search_docs",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     agent = client.post(
         f"/api/v1/workspaces/{workspace.id}/agents",
@@ -1328,7 +1376,11 @@ def test_mcp_catalog_and_policy_diagnostics_block_stale_health_checks() -> None:
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{server.json()['id']}/health-check",
         headers=_headers(owner.id),
-        json={"health_status": "healthy", "error_code": "token-like-value-is-not-stored"},
+        json={
+            "health_status": "healthy",
+            "error_code": "token-like-value-is-not-stored",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     refreshed_catalog = client.get(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-catalog",
@@ -1378,6 +1430,7 @@ def test_mcp_unhealthy_health_check_redacts_error_code_in_responses_and_audit() 
         json={
             "health_status": "unhealthy",
             "error_code": "api_key=sk-health-secret",
+            "connection": {"command": "mcp-test", "args": []},
         },
     )
     listed = client.get(
@@ -1433,7 +1486,10 @@ def test_workspace_capability_governance_can_refresh_stale_mcp_health_checks() -
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "search_docs"},
+        json={
+            "tool_name": "search_docs",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     stored_server = session.get(McpServer, UUID(server.json()["id"]))
     assert stored_server is not None
@@ -1537,6 +1593,7 @@ def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
         json={
             "tool_name": "generate_image",
             "policy": {"headers": {"authorization": "Bearer hidden"}},
+            "connection": {"command": "mcp-test", "args": []},
         },
     )
     assert rejected_tool.status_code == 422
@@ -1554,12 +1611,16 @@ def test_mcp_catalog_includes_tool_and_server_usage_rollups() -> None:
                 "max_calls_per_run": 1,
                 "max_calls_per_hour": 2,
             },
+            "connection": {"command": "mcp-test", "args": []},
         },
     )
     second_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "upscale_image"},
+        json={
+            "tool_name": "upscale_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     succeeded = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
@@ -1640,12 +1701,18 @@ def test_mcp_server_and_tool_can_be_disabled() -> None:
     first_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     second_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "upscale_image"},
+        json={
+            "tool_name": "upscale_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     disabled_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools/"
@@ -1701,17 +1768,26 @@ def test_mcp_tool_call_logs_can_be_listed_and_filtered() -> None:
     other_server = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
         headers=_headers(other.id),
-        json={"name": "other-tools"},
+        json={
+            "name": "other-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     first_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     second_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "upscale_image"},
+        json={
+            "tool_name": "upscale_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     completed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
@@ -1796,24 +1872,36 @@ def test_mcp_tool_call_log_rejects_foreign_server_reference() -> None:
     local_server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(owner.id),
-        json={"name": "local-tools"},
+        json={
+            "name": "local-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     local_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{local_server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     foreign_server = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers",
         headers=_headers(other.id),
-        json={"name": "foreign-tools"},
+        json={
+            "name": "foreign-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     foreign_tool = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers/"
         f"{foreign_server.json()['id']}/tools",
         headers=_headers(other.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     forged_log = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
@@ -1846,17 +1934,26 @@ def test_mcp_tool_call_log_enforces_agent_policy_and_binds_run_context() -> None
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(owner.id),
-        json={"name": "image-tools"},
+        json={
+            "name": "image-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     denied_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "delete_image"},
+        json={
+            "tool_name": "delete_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     task = Task(workspace_id=workspace.id, created_by_user_id=owner.id, title="Make poster")
     agent = AgentProfile(
@@ -1951,18 +2048,27 @@ def test_mcp_tool_call_log_requires_tool_to_belong_to_declared_server() -> None:
     image_server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(owner.id),
-        json={"name": "image-tools"},
+        json={
+            "name": "image-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     text_server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(owner.id),
-        json={"name": "text-tools"},
+        json={
+            "name": "text-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{image_server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     forged_log = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tool-call-logs",
@@ -1989,7 +2095,10 @@ def test_operator_cannot_manage_capabilities() -> None:
     denied = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(operator.id),
-        json={"name": "operator-tools"},
+        json={
+            "name": "operator-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     listed = client.get(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
@@ -2141,7 +2250,11 @@ def test_workspace_skill_availability_reports_required_mcp_tool_state() -> None:
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers/"
         f"{server.json()['id']}/tools",
         headers=_headers(other.id),
-        json={"tool_name": "generate_image", "capability_key": "image.generate"},
+        json={
+            "tool_name": "generate_image",
+            "capability_key": "image.generate",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     missing_tool_availability = client.get(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/workspace-skills/"
@@ -2152,7 +2265,11 @@ def test_workspace_skill_availability_reports_required_mcp_tool_state() -> None:
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-servers/"
         f"{server.json()['id']}/tools",
         headers=_headers(other.id),
-        json={"tool_name": "upscale_image", "capability_key": "image.upscale"},
+        json={
+            "tool_name": "upscale_image",
+            "capability_key": "image.upscale",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     credential = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/capabilities/mcp-credentials",
@@ -2257,6 +2374,7 @@ def test_agent_tool_policy_diagnostics_explain_skill_and_mcp_effective_access() 
             "capability_key": "image.generate",
             "requires_approval": True,
             "risk_level": "medium",
+            "connection": {"command": "mcp-test", "args": []},
         },
     )
     missing_install_id = str(uuid4())
@@ -2368,6 +2486,7 @@ def test_workspace_tool_policy_matrix_summarizes_agent_tool_access() -> None:
             "capability_key": "image.generate",
             "requires_approval": True,
             "risk_level": "high",
+            "connection": {"command": "mcp-test", "args": []},
         },
     )
     _approve_resource_review(client, workspace.id, owner.id, allowed.json()["id"])
@@ -2481,7 +2600,10 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{server.json()['id']}/health-check",
         headers=_headers(owner.id),
-        json={"health_status": "healthy"},
+        json={
+            "health_status": "healthy",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert checked.status_code == 200
     allowed = client.post(
@@ -2492,6 +2614,7 @@ def test_workspace_capability_governance_summarizes_skill_agent_and_mcp_risk() -
             "capability_key": "image.generate",
             "requires_approval": True,
             "risk_level": "high",
+            "connection": {"command": "mcp-test", "args": []},
         },
     )
     _approve_resource_review(client, workspace.id, owner.id, allowed.json()["id"])
@@ -2697,13 +2820,21 @@ def test_workspace_capability_governance_actions_apply_safe_quarantine() -> None
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{broken_server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "broken_search", "risk_level": "low"},
+        json={
+            "tool_name": "broken_search",
+            "risk_level": "low",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     repairable_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{safe_repairable_server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "repairable_search", "risk_level": "low"},
+        json={
+            "tool_name": "repairable_search",
+            "risk_level": "low",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert skill.status_code == 201
     assert installed.status_code == 201
@@ -2821,13 +2952,19 @@ def test_workspace_capability_governance_repairs_unallowed_agent_mcp_tools() -> 
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     checked = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{server.json()['id']}/health-check",
         headers=_headers(owner.id),
-        json={"health_status": "healthy"},
+        json={
+            "health_status": "healthy",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert checked.status_code == 200
     agent = client.post(
@@ -2944,13 +3081,20 @@ def test_workspace_capability_governance_reenables_disabled_mcp_tools() -> None:
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image", "risk_level": "low"},
+        json={
+            "tool_name": "generate_image",
+            "risk_level": "low",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     checked = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{server.json()['id']}/health-check",
         headers=_headers(owner.id),
-        json={"health_status": "healthy"},
+        json={
+            "health_status": "healthy",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     assert checked.status_code == 200
     disabled = client.post(
@@ -3222,24 +3366,36 @@ def test_capability_conflicts_return_409_and_keep_session_usable() -> None:
     first_server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(owner.id),
-        json={"name": "image-tools"},
+        json={
+            "name": "image-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     duplicate_server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=_headers(owner.id),
-        json={"name": "image-tools"},
+        json={
+            "name": "image-tools",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     allowed = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{first_server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     duplicate_tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/"
         f"{first_server.json()['id']}/tools",
         headers=_headers(owner.id),
-        json={"tool_name": "generate_image"},
+        json={
+            "tool_name": "generate_image",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     mapped = client.get(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-tools",

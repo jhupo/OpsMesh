@@ -7,7 +7,6 @@ import socket
 from threading import Event
 
 from backend.app.bootstrap.models import register_models
-from backend.app.bootstrap.providers import build_agent_runtime_registry
 from backend.app.bootstrap.runtime import get_default_docker_runtime_client
 from backend.app.bootstrap.telemetry import configure_worker_telemetry
 from backend.app.bootstrap.worker import build_worker_runner
@@ -82,7 +81,6 @@ def _build_runner(settings: Settings, config: WorkerRunnerConfig) -> WorkerRunne
         queue=build_default_queue(redis_client, settings),
         session_factory=SessionLocal,
         config=config,
-        agent_runner=build_agent_runtime_registry(),
         settings=settings,
         runtime_docker_client=get_default_docker_runtime_client(),
     )

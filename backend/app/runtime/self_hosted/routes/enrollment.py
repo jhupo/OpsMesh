@@ -19,7 +19,7 @@ router = APIRouter()
     response_model=EnrollmentTokenCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_enrollment_token(
+def create_enrollment_token(
     request: EnrollmentTokenCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     service: SelfHostedRuntimeService = Depends(self_hosted_service),

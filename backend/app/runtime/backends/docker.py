@@ -21,6 +21,7 @@ from docker.models.containers import Container
 from docker.types import Mount
 from requests.exceptions import Timeout as RequestsTimeout
 
+from backend.app.runtime.agent_host.channel import DockerAgentChannel
 from backend.app.runtime.backends.contracts import RuntimeBackendCapabilities
 from backend.app.runtime.contracts import (
     SandboxCommandResult,
@@ -156,6 +157,48 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
     ) -> None:
         self._control_timeout = control_timeout
         self._client_factory = client_factory or _create_docker_client
+
+    def open_agent_channel(self, container_id: str, *, working_dir: str) -> DockerAgentChannel:
+        return self._open_channel(container_id, "backend.app.bootstrap.agent_host", working_dir)
+
+    def open_mcp_channel(self, container_id: str, *, working_dir: str) -> DockerAgentChannel:
+        return self._open_channel(container_id, "opsmesh_runtime.mcp_host", working_dir)
+
+    def _open_channel(self, container_id: str, module: str, working_dir: str) -> DockerAgentChannel:
+        client = self._client_factory(self._control_timeout())
+        try:
+            execution = client.api.exec_create(
+                container_id,
+                ["python", "-m", module],
+                stdin=True,
+                stdout=True,
+                stderr=True,
+                tty=False,
+                workdir=working_dir,
+            )
+            connection = client.api.exec_start(execution["Id"], socket=True)
+            return DockerAgentChannel(connection, client)
+        except BaseException:
+            client.close()
+            raise
+
+    def terminate_agent_process(self, container_id: str, pid: int) -> None:
+        if pid <= 1:
+            raise ValueError("SDK process identity is invalid")
+        with self._client(self._control_timeout()) as client:
+            container = client.containers.get(container_id)
+            # TERM allows SDK cleanup, then KILL bounds shutdown for uncooperative
+            # project subprocesses. Signals target only this invocation's group.
+            script = (
+                "import os,signal,sys,time; pid=int(sys.argv[1]); "
+                "\nfor sig in (signal.SIGTERM,signal.SIGKILL):"
+                "\n try: os.killpg(pid,sig)"
+                "\n except ProcessLookupError: break"
+                "\n if sig == signal.SIGTERM: time.sleep(0.1)"
+            )
+            result = _exec(container, ["python", "-c", script, str(pid)], working_dir="/")
+            if result.exit_code != 0:
+                raise RuntimeError("Runtime SDK process termination failed")
 
     def create_container(self, request: RuntimeCreateRequest) -> str:
         labels = {

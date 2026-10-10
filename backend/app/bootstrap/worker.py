@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from backend.app.agents.execution.contracts import AgentRuntimeExecutor
 from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.capabilities.mcp.managed_maintenance import reconcile_managed_mcp
-from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.orchestration.conversations.recovery import ConversationRecoveryService
 from backend.app.orchestration.runs.async_execution import AsyncAgentRunExecutor
 from backend.app.orchestration.scheduling.maintenance import WorkerMaintenanceService
@@ -40,7 +39,6 @@ def build_worker_runner(
     session_factory: Callable[[], Session],
     config: WorkerRunnerConfig,
     agent_runner: AgentRuntimeExecutor | None = None,
-    mcp_adapter: McpToolAdapter | McpToolAdapterResolver | None = None,
     settings: Settings | None = None,
     runtime_docker_client: DockerRuntimeClient | None = None,
     monotonic: Callable[[], float] = time.monotonic,
@@ -115,16 +113,14 @@ def build_worker_runner(
                 session_factory=session_factory,
                 queue=queue,
                 settings=settings or get_settings(),
-                agent_runner=agent_runner,
                 docker_client=runtime_docker_client,
+                agent_runner=agent_runner,
             ).handle
         },
         handler_factory=lambda session: WorkerJobHandler(
             session=session,
             queue=queue,
-            agent_runner=agent_runner,
             settings=settings,
-            mcp_adapter=mcp_adapter,
             runtime_docker_client=runtime_docker_client,
         ),
         maintenance=maintenance,

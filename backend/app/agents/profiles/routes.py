@@ -40,7 +40,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
 
 
 @router.get("/agents", response_model=PageResponse[AgentProfileResponse])
-async def list_agents(
+def list_agents(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -60,7 +60,7 @@ async def list_agents(
 
 
 @router.get("/agents/{agent_id}", response_model=AgentProfileResponse)
-async def get_agent(
+def get_agent(
     agent_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -72,7 +72,7 @@ async def get_agent(
 
 
 @router.post("/agents", response_model=AgentProfileResponse, status_code=status.HTTP_201_CREATED)
-async def create_agent(
+def create_agent(
     request: AgentProfileCreateRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -110,7 +110,7 @@ async def create_agent(
 
 
 @router.patch("/agents/{agent_id}", response_model=AgentProfileResponse)
-async def update_agent(
+def update_agent(
     agent_id: UUID,
     request: AgentProfileUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -131,7 +131,7 @@ async def update_agent(
 
 
 @router.post("/agents/{agent_id}/archive", response_model=AgentProfileResponse)
-async def archive_agent(
+def archive_agent(
     agent_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -150,7 +150,7 @@ async def archive_agent(
 
 
 @router.post("/agents/{agent_id}/activate", response_model=AgentProfileResponse)
-async def activate_agent(
+def activate_agent(
     agent_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -169,7 +169,7 @@ async def activate_agent(
 
 
 @router.delete("/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_agent(
+def delete_agent(
     agent_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -192,7 +192,7 @@ async def delete_agent(
     response_model=AgentProfileResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def clone_agent(
+def clone_agent(
     agent_id: UUID,
     request: AgentProfileCloneRequest | None = None,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
@@ -235,7 +235,7 @@ async def clone_agent(
     "/agents/{agent_id}/versions",
     response_model=PageResponse[AgentProfileVersionResponse],
 )
-async def list_agent_versions(
+def list_agent_versions(
     agent_id: UUID,
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -256,7 +256,7 @@ async def list_agent_versions(
     "/agents/{agent_id}/versions/{version}/rollback",
     response_model=AgentProfileResponse,
 )
-async def rollback_agent_version(
+def rollback_agent_version(
     agent_id: UUID,
     version: int = Path(ge=1),
     request: AgentProfileRollbackRequest | None = None,

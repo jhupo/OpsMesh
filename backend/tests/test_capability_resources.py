@@ -21,6 +21,7 @@ from backend.app.shared.db.session import get_db_session
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
+from backend.tests.fixtures.database import flow_database_url
 
 TOKEN = "capability-resource-test-token"
 
@@ -67,8 +68,7 @@ def test_resource_lifecycle_and_workspace_catalog() -> None:
         json={"description": "Approved project inputs"},
     )
     disabled = client.post(
-        f"/api/v1/workspaces/{workspace.id}/capabilities/resources/"
-        f"{created.json()['id']}/disable",
+        f"/api/v1/workspaces/{workspace.id}/capabilities/resources/{created.json()['id']}/disable",
         headers=_headers(owner.id),
     )
 
@@ -76,9 +76,7 @@ def test_resource_lifecycle_and_workspace_catalog() -> None:
     assert created.json()["version"] == 1
     assert created.json()["parameter_schema"]["additionalProperties"] is False
     assert any(tool["name"] == "read_workspace_file" for tool in catalog.json()["tools"])
-    assert [item["key"] for item in catalog.json()["resources"]] == [
-        "project.requirements"
-    ]
+    assert [item["key"] for item in catalog.json()["resources"]] == ["project.requirements"]
     assert updated.status_code == 200
     assert updated.json()["version"] == 2
     assert disabled.status_code == 200
@@ -86,9 +84,7 @@ def test_resource_lifecycle_and_workspace_catalog() -> None:
     assert disabled.json()["version"] == 3
     actions = {
         event.action
-        for event in session.query(AuditEvent)
-        .filter(AuditEvent.workspace_id == workspace.id)
-        .all()
+        for event in session.query(AuditEvent).filter(AuditEvent.workspace_id == workspace.id).all()
     }
     assert {
         "capability_resource.created",
@@ -289,9 +285,7 @@ def test_effective_catalog_applies_team_department_and_locked_parameters() -> No
     assert policy.json()["capability_policy_version"] == 2
     assert effective.status_code == 200
     body = effective.json()
-    assert [item["descriptor"]["name"] for item in body["tools"]] == [
-        "read_workspace_file"
-    ]
+    assert [item["descriptor"]["name"] for item in body["tools"]] == ["read_workspace_file"]
     assert body["resources"][0]["parameters"] == {"section": "approved"}
     assert body["resources"][0]["locked_parameters"] == ["section"]
     assert body["department"] == "Engineering"
@@ -301,10 +295,14 @@ def test_effective_catalog_applies_team_department_and_locked_parameters() -> No
     )
     assert body["fingerprint"].startswith("sha256:")
     assert repeated.json()["fingerprint"] == body["fingerprint"]
-    audit = session.query(AuditEvent).filter_by(
-        workspace_id=workspace.id,
-        action="team.capability_policy_updated",
-    ).one()
+    audit = (
+        session.query(AuditEvent)
+        .filter_by(
+            workspace_id=workspace.id,
+            action="team.capability_policy_updated",
+        )
+        .one()
+    )
     assert audit.audit_metadata["capability_policy_version"] == 2
 
 
@@ -399,7 +397,7 @@ def test_effective_catalog_denies_ambiguous_mcp_tool_names() -> None:
 def _client() -> tuple[TestClient, Session]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
+        flow_database_url(),
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,

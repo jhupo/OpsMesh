@@ -14,7 +14,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.get("/security-events", response_model=PageResponse[AdminSecurityEventResponse])
-async def list_admin_security_events(
+def list_admin_security_events(
     page: PageParams = Depends(pagination_params),
     severity: str | None = Query(default=None),
     workspace_id: UUID | None = Query(default=None),

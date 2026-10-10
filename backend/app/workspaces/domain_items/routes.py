@@ -30,7 +30,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["domain-tasks"])
 
 
 @router.get("/domain-projects", response_model=PageResponse[DomainProjectResponse])
-async def list_domain_projects(
+def list_domain_projects(
     page: PageParams = Depends(pagination_params),
     domain_type: str | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -49,7 +49,7 @@ async def list_domain_projects(
     response_model=DomainProjectResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_domain_project(
+def create_domain_project(
     request: DomainProjectCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -62,7 +62,7 @@ async def create_domain_project(
 
 
 @router.get("/domain-items", response_model=PageResponse[DomainItemResponse])
-async def list_domain_items(
+def list_domain_items(
     page: PageParams = Depends(pagination_params),
     task_id: UUID | None = Query(default=None),
     project_id: UUID | None = Query(default=None),
@@ -83,7 +83,7 @@ async def list_domain_items(
     response_model=DomainItemResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_domain_item(
+def create_domain_item(
     request: DomainItemCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -96,7 +96,7 @@ async def create_domain_item(
 
 
 @router.get("/tasks/{task_id}/view", response_model=TaskViewResponse)
-async def get_task_view(
+def get_task_view(
     task_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -119,7 +119,7 @@ async def get_task_view(
     response_model=ReviewCommentResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_review_comment(
+def create_review_comment(
     task_id: UUID,
     request: ReviewCommentCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -144,7 +144,7 @@ async def create_review_comment(
     response_model=RevisionRequestResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_revision_request(
+def create_revision_request(
     task_id: UUID,
     request: RevisionRequestCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),

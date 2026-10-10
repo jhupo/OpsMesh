@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.contracts import AgentProfileResponse
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.agents.providers.capabilities import resolve_model_capability
+from backend.app.agents.providers.capabilities import (
+    model_capability_payload,
+)
 from backend.app.agents.providers.metadata import budget_is_exhausted
 from backend.app.agents.providers.model_api import (
     configured_model_api,
@@ -98,7 +100,7 @@ def agent_model_provider_summary(
                 "requested_model_api": unsupported_model_api,
                 "model_apis": list(model_api_options_for_provider(credential.provider)),
                 "default_model_api": default_model_api(credential.provider),
-                "model_capability": _model_capability_payload(
+                "model_capability": model_capability_payload(
                     credential.provider,
                     _selected_model(agent.model, credential),
                     credential.model_capabilities,
@@ -233,12 +235,3 @@ def _selected_model(agent_model: str, credential: ModelProviderCredential) -> st
         if not agent_model or agent_model == "workspace-default"
         else agent_model
     )
-
-
-def _model_capability_payload(
-    provider: str | None,
-    model: str | None,
-    catalog: object,
-) -> dict[str, object] | None:
-    capability = resolve_model_capability(provider, model, catalog)
-    return capability.as_dict() if capability is not None else None

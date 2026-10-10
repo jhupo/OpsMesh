@@ -1,4 +1,3 @@
-import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -10,6 +9,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 import backend.app.agents.execution.providers.openai.runner as openai_runtime
 from backend.app.agents.execution.contracts import (
@@ -19,22 +19,21 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeEvent,
     AgentRuntimeInterruption,
     AgentRuntimeResumeState,
+    AgentRuntimeStructuredOutput,
 )
 from backend.app.agents.execution.errors import AgentRuntimeProviderError
 from backend.app.agents.execution.state import AgentRunStateStore
+from backend.app.agents.execution.tools.executor import BackendToolExecutor
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
 from backend.app.agents.sessions.models import PersistentAgentSession
-from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer, McpToolAllowlist
 from backend.app.capabilities.references.models import CapabilityResource
 from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from backend.app.governance.audit.models import AuditEvent
 from backend.app.governance.costs.models import ModelUsageRecord
 from backend.app.governance.reviews.model_request import ModelRequestReview
-from backend.app.governance.reviews.models import ResourceReview
-from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.users.models import User
 from backend.app.orchestration.approvals.agent_tool_interruptions import (
@@ -54,7 +53,6 @@ from backend.app.orchestration.runs.authorization.snapshot import RunAuthorizati
 from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.orchestration.runs.events import RunEventRecorder
-from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService
 from backend.app.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
 from backend.app.orchestration.runs.models import (
     AUTHORIZATION_SNAPSHOT_VERSION,
@@ -63,7 +61,10 @@ from backend.app.orchestration.runs.models import (
     RunEvent,
     authorization_snapshot_fingerprint,
 )
-from backend.app.orchestration.runs.resources import RunResourceReservationService
+from backend.app.orchestration.runs.resources import (
+    RunResourceReservationService,
+    release_run_reservations,
+)
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.runs.state import RunStatus
 from backend.app.orchestration.runs.steps.launcher import RunStepLauncher
@@ -79,10 +80,9 @@ from backend.app.resources.memory.models import (
     WorkspaceMemoryRetrievalEvent,
     memory_content_fingerprint,
 )
-from backend.app.runtime.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.queues.contracts import JobPayload, JobType
-from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceBinding,
@@ -98,18 +98,14 @@ from backend.app.teams.sessions.service import TeamRuntimeService
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 from backend.app.workspaces.quotas.models import WorkspaceQuota, WorkspaceReservation
+from backend.tests.fixtures.database import flow_database_url
 from backend.tests.fixtures.execution import author_fixture_plan, test_agent_id
+from backend.tests.fixtures.tools import execute_tool
+from backend.tests.fixtures.worker import WorkerFlow
 
 
 @pytest.fixture(autouse=True)
 def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_resource_review(self, **kwargs):  # noqa: ANN001, ANN202
-        return ResourceReview(
-            required=False,
-            risk_level="low",
-            reasons=["llm_review.approved"],
-            signals={"reviewer": "llm", "verdict": "approve"},
-        )
 
     def fake_model_request_review(self, **kwargs):  # noqa: ANN001, ANN202
         return ModelRequestReview(
@@ -119,11 +115,6 @@ def approve_resource_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None
             signals={"reviewer": "llm", "verdict": "approve"},
         )
 
-    monkeypatch.setattr(
-        ResourcePolicyReviewBuilder,
-        "review_tool_execution",
-        fake_resource_review,
-    )
     monkeypatch.setattr(
         "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         fake_model_request_review,
@@ -141,7 +132,16 @@ class DeterministicAgentRunner:
                         "summary": "deterministic_run_completed",
                         "reasons": [],
                     }
-                )
+                ),
+                structured_output=AgentRuntimeStructuredOutput(
+                    value={
+                        "decision": "approved",
+                        "summary": "deterministic_run_completed",
+                        "reasons": [],
+                    },
+                    schema_name="pm_acceptance",
+                    validated=True,
+                ),
             )
         return AgentRunResult(final_output="deterministic_run_completed")
 
@@ -179,10 +179,7 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
     assert run.status == RunStatus.QUEUED.value
     assert run.input["authorization_snapshot"]["runtime_binding"]["mode"] == "none"
 
-    handled = consume_once(
-        queue,
-        WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner()).handle,
-    )
+    handled = WorkerFlow(session, queue, agent_runner=DeterministicAgentRunner()).process_next()
 
     stored_run = session.get(AgentRun, run.id)
     stored_task = session.get(Task, task.id)
@@ -262,9 +259,7 @@ def test_task_start_creates_queued_run_and_worker_completes_injected_runner() ->
         async def run(self, request):
             raise AssertionError("Revoked principal must never reach the model")
 
-    assert consume_once(
-        queue, WorkerJobHandler(session, queue, agent_runner=ForbiddenRunner()).handle
-    )
+    assert WorkerFlow(session, queue, agent_runner=ForbiddenRunner()).process_next()
     session.refresh(revoked_task)
     assert revoked_task.status == TaskStatus.FAILED.value
     rejected_run = session.scalar(select(AgentRun).where(AgentRun.task_id == revoked_task.id))
@@ -327,7 +322,7 @@ def test_worker_persists_interrupted_sdk_state_for_resume() -> None:
         idempotency_key="interrupt-state",
     )
 
-    _run_agent_sync(
+    _execute_run(
         session,
         job,
         agent_runner=InterruptingRunner(),
@@ -466,7 +461,7 @@ def test_phase_one_approval_flow_survives_worker_restart_and_executes_once() -> 
         idempotency_key="phase-one-initial-run",
     )
 
-    _run_agent_sync(
+    _execute_run(
         session,
         job,
         agent_runner=InterruptingRunner(),
@@ -493,15 +488,12 @@ def test_phase_one_approval_flow_survives_worker_restart_and_executes_once() -> 
     ).approve(approval, user_id, "approved after restart")
     resuming_runner = ResumingRunner()
 
-    handled = consume_once(
+    handled = WorkerFlow(
+        restarted,
         queue,
-        WorkerJobHandler(
-            restarted,
-            queue,
-            agent_runner=resuming_runner,
-            settings=settings,
-        ).handle,
-    )
+        agent_runner=resuming_runner,
+        settings=settings,
+    ).process_next()
 
     stored_run = restarted.get(AgentRun, run_id)
     stored_task = restarted.get(Task, task_id)
@@ -565,6 +557,12 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
 
     class FakeSdkResult:
         final_output = "sdk-e2e-ok"
+        last_agent = None
+        interruptions = []
+        new_items = []
+        from agents import RunContextWrapper
+
+        context_wrapper = RunContextWrapper(None)
         last_response_id = "resp_sdk_e2e"
         conversation_id = "conv_sdk_e2e"
         usage = None
@@ -585,15 +583,12 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
 
     monkeypatch.setattr(openai_runtime.Runner, "run_streamed", fake_runner_run)
     settings = Settings(environment="test")
-    handled = consume_once(
+    handled = WorkerFlow(
+        session,
         queue,
-        WorkerJobHandler(
-            session,
-            queue,
-            agent_runner=openai_runtime.OpenAIAgentsRunner(),
-            settings=settings,
-        ).handle,
-    )
+        agent_runner=openai_runtime.OpenAIAgentsRunner(),
+        settings=settings,
+    ).process_next()
 
     session.refresh(run)
     session.refresh(task)
@@ -649,10 +644,7 @@ def test_worker_fails_closed_without_model_provider_credential() -> None:
     orchestration.enqueue_run(run, requested_by_user_id=user.id)
     session.commit()
 
-    handled = consume_once(
-        queue,
-        WorkerJobHandler(session, queue, agent_runner=ExplodingAgentRunner()).handle,
-    )
+    handled = WorkerFlow(session, queue, agent_runner=ExplodingAgentRunner()).process_next()
 
     stored_run = session.get(AgentRun, run.id)
     stored_task = session.get(Task, task.id)
@@ -894,9 +886,9 @@ def test_team_task_runs_manager_specialists_and_summary_in_order() -> None:
     orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
     session.commit()
 
-    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
+    handler = WorkerFlow(session, queue, agent_runner=DeterministicAgentRunner())
     handled_jobs = 0
-    while consume_once(queue, handler.handle):
+    while handler.process_next():
         handled_jobs += 1
 
     steps = session.scalars(
@@ -962,7 +954,7 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
         created_by_user_id=user.id,
         name="Market Team Space",
         scope="team",
-        policy={"runtime_modes": ["docker"], "resource_requirements": {"cpu": 1}},
+        policy={"runtime_modes": ["pooled"], "resource_requirements": {"cpu_count": 1}},
     )
     session.add(runtime_space)
     session.flush()
@@ -1055,9 +1047,9 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
     orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
     session.commit()
 
-    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
+    handler = WorkerFlow(session, queue, agent_runner=DeterministicAgentRunner())
     handled = 0
-    while consume_once(queue, handler.handle):
+    while handler.process_next():
         handled += 1
 
     session.refresh(task)
@@ -1284,7 +1276,7 @@ def test_runtime_space_reserves_multi_resource_capacity_for_team_steps() -> None
     assert quota_by_key["artifact_mb"].reserved_value == 50
     assert "self_hosted_jobs" not in quota_by_key
 
-    _run_reservations(session).release_for_run(run, released_at=datetime.now(UTC))
+    release_run_reservations(session, run, released_at=datetime.now(UTC))
 
     for quota in quota_by_key.values():
         assert quota.reserved_value == 0
@@ -1423,8 +1415,8 @@ def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
     orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
     session.commit()
 
-    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
-    assert consume_once(queue, handler.handle) is True
+    handler = WorkerFlow(session, queue, agent_runner=DeterministicAgentRunner())
+    assert handler.process_next() is True
     assert queue.count_queued(workspace_id=workspace.id) == 2
 
     active_specialist_runs = session.scalars(
@@ -1441,7 +1433,7 @@ def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
         "Analysis-2",
     }
 
-    assert consume_once(queue, handler.handle) is True
+    assert handler.process_next() is True
     session.refresh(task)
     assert task.status == TaskStatus.RUNNING.value
     assert queue.count_queued(workspace_id=workspace.id) == 1
@@ -1452,7 +1444,7 @@ def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
     )
     assert summary_run_before_ready is None
 
-    assert consume_once(queue, handler.handle) is True
+    assert handler.process_next() is True
     assert queue.count_queued(workspace_id=workspace.id) == 1
     summary_run = session.scalar(
         select(AgentRun)
@@ -1462,7 +1454,7 @@ def test_team_task_enqueues_dependency_free_specialists_in_parallel() -> None:
     assert summary_run is not None
     assert summary_run.status == RunStatus.QUEUED.value
 
-    assert consume_once(queue, handler.handle) is True
+    assert handler.process_next() is True
     session.refresh(task)
     assert task.status == TaskStatus.COMPLETED.value
 
@@ -1523,8 +1515,8 @@ def test_workspace_run_quota_limits_parallel_specialist_scheduling() -> None:
     orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
     session.commit()
 
-    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
-    assert consume_once(queue, handler.handle) is True
+    handler = WorkerFlow(session, queue, agent_runner=DeterministicAgentRunner())
+    assert handler.process_next() is True
     session.expire_all()
 
     queued_runs = session.scalars(
@@ -2122,7 +2114,13 @@ def test_pm_summary_acceptance_completes_task_with_structured_decision() -> None
     lifecycle.mark_run_started(run)
     lifecycle.mark_run_completed(
         run,
-        AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        AgentRunResult(
+            final_output=output,
+            raw_output=json.loads(output),
+            structured_output=AgentRuntimeStructuredOutput(
+                value=json.loads(output), schema_name="pm_acceptance", validated=True
+            ),
+        ),
         requested_by_user_id=user.id,
     )
     session.flush()
@@ -2178,7 +2176,13 @@ def test_pm_summary_revision_decision_materializes_follow_up_steps() -> None:
     lifecycle.mark_run_started(run)
     lifecycle.mark_run_completed(
         run,
-        AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        AgentRunResult(
+            final_output=output,
+            raw_output=json.loads(output),
+            structured_output=AgentRuntimeStructuredOutput(
+                value=json.loads(output), schema_name="pm_acceptance", validated=True
+            ),
+        ),
         requested_by_user_id=user.id,
     )
     session.flush()
@@ -2267,7 +2271,13 @@ def test_pm_summary_missing_work_matches_team_member_and_queues_follow_up() -> N
     lifecycle.mark_run_started(run)
     lifecycle.mark_run_completed(
         run,
-        AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        AgentRunResult(
+            final_output=output,
+            raw_output=json.loads(output),
+            structured_output=AgentRuntimeStructuredOutput(
+                value=json.loads(output), schema_name="pm_acceptance", validated=True
+            ),
+        ),
         requested_by_user_id=user.id,
     )
     session.flush()
@@ -2334,7 +2344,13 @@ def test_team_task_persists_auditable_task_messages() -> None:
     lifecycle.mark_run_started(run)
     lifecycle.mark_run_completed(
         run,
-        AgentRunResult(final_output=output, raw_output=json.loads(output)),
+        AgentRunResult(
+            final_output=output,
+            raw_output=json.loads(output),
+            structured_output=AgentRuntimeStructuredOutput(
+                value=json.loads(output), schema_name="pm_acceptance", validated=True
+            ),
+        ),
         requested_by_user_id=user.id,
     )
     session.flush()
@@ -2414,7 +2430,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
         tool_policy={"allowed_tools": ["generate_image"]},
         runtime_policy={
             "provider": "docker",
-            "network": "disabled",
+            "network": {"mode": "none"},
             "mcp": {"timeout_seconds": 45, "max_output_bytes": 512_000},
         },
         approval_policy={"required_tools": ["write_artifact"]},
@@ -2598,9 +2614,8 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     assert "vault://do-not-freeze" not in str(snapshot["installed_skills"])
     assert snapshot["runtime_policy"] == {
         "provider": "docker",
-        "network": "disabled",
+        "network": {"mode": "none"},
         "mcp": {
-            "network_mode": "disabled",
             "timeout_seconds": 45,
             "max_input_bytes": 64_000,
             "max_output_bytes": 512_000,
@@ -2608,7 +2623,7 @@ def test_run_authorization_snapshot_freezes_agent_tool_policy() -> None:
     }
     assert snapshot["approval_policy"] == {"required_tools": ["write_artifact"]}
     assert request.context.allowed_tools == ("generate_image",)
-    assert request.tool_executor is not None
+    assert request.tool_executor is None
     assert (
         request.context.metadata["authorization_snapshot_version"] == AUTHORIZATION_SNAPSHOT_VERSION
     )
@@ -3005,7 +3020,7 @@ def test_agent_request_uses_sdk_session_without_provider_native_history() -> Non
         idempotency_key="provider-native-continuation",
     )
 
-    _run_agent_sync(session, job, agent_runner=runner)
+    _execute_run(session, job, agent_runner=runner)
 
     assert len(runner.requests) == 1
     request = runner.requests[0]
@@ -3060,7 +3075,7 @@ def test_model_request_review_allows_low_risk_request_after_semantic_approval() 
             return AgentRunResult(final_output="draft complete")
 
     runner = CapturingRunner()
-    _run_agent_sync(
+    _execute_run(
         session,
         JobPayload(
             workspace_id=workspace.id,
@@ -3136,7 +3151,7 @@ def test_model_request_review_routes_sensitive_input_to_admin_approval(
         async def run(self, request: AgentRunRequest) -> AgentRunResult:
             raise AssertionError("sensitive model request must wait for admin approval")
 
-    _run_agent_sync(
+    _execute_run(
         session,
         JobPayload(
             workspace_id=workspace.id,
@@ -3230,7 +3245,7 @@ def test_model_request_review_does_not_repeat_after_admin_approval() -> None:
     session.add(approval)
     session.commit()
 
-    _run_agent_sync(session, job, agent_runner=runner, settings=settings)
+    _execute_run(session, job, agent_runner=runner, settings=settings)
 
     assert len(runner.requests) == 1
     assert run.status == RunStatus.COMPLETED.value
@@ -3328,8 +3343,8 @@ def test_team_task_orchestration_uses_frozen_team_snapshot(member_revoked: bool)
     orchestration.enqueue_run(first_run, requested_by_user_id=user.id)
     session.commit()
 
-    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
-    while consume_once(queue, handler.handle):
+    handler = WorkerFlow(session, queue, agent_runner=DeterministicAgentRunner())
+    while handler.process_next():
         pass
 
     steps = session.scalars(
@@ -3452,38 +3467,11 @@ def test_worker_rejects_workspace_mismatch() -> None:
     )
 
     try:
-        WorkerJobHandler(session).handle(bad_job)
+        WorkerFlow(session).handle(bad_job)
     except ValueError as exc:
         assert "Agent run not found" in str(exc)
     else:
         raise AssertionError("Expected workspace mismatch to raise")
-
-
-def test_failed_worker_job_is_retried_by_queue() -> None:
-    queue = RedisQueue(
-        redis=fakeredis.FakeRedis(decode_responses=True),
-        keys=RedisKeyBuilder("opsmesh"),
-        queue_name="agent_runs",
-    )
-    job = JobPayload(
-        workspace_id=uuid4(),
-        job_type=JobType.AGENT_RUN,
-        resource_id=uuid4(),
-        idempotency_key="retry-demo",
-        max_attempts=2,
-    )
-    queue.enqueue(job)
-
-    try:
-        consume_once(queue, lambda _: (_ for _ in ()).throw(RuntimeError("boom")))
-    except RuntimeError:
-        pass
-    else:
-        raise AssertionError("Expected failed handler to raise")
-
-    retried = queue.dequeue()
-    assert retried is not None
-    assert retried.attempt == 1
 
 
 def test_worker_persists_failed_run_event() -> None:
@@ -3514,7 +3502,7 @@ def test_worker_persists_failed_run_event() -> None:
     )
 
     try:
-        WorkerJobHandler(session, agent_runner=FailingRunner()).handle(job)
+        WorkerFlow(session, agent_runner=FailingRunner()).handle(job)
     except RuntimeError:
         pass
     else:
@@ -3583,7 +3571,7 @@ def test_worker_flushes_running_status_before_model_call() -> None:
         idempotency_key="flush-running-before-model",
     )
 
-    WorkerJobHandler(session, agent_runner=RefreshingRunner()).handle(job)
+    WorkerFlow(session, agent_runner=RefreshingRunner()).handle(job)
 
     stored_run = session.get(AgentRun, run.id)
     assert observed_statuses == [RunStatus.RUNNING.value]
@@ -3628,7 +3616,7 @@ def test_worker_skips_cancelled_run_without_starting_model() -> None:
         idempotency_key="cancelled-run",
     )
 
-    WorkerJobHandler(session, agent_runner=ExplodingRunner()).handle(job)
+    WorkerFlow(session, agent_runner=ExplodingRunner()).handle(job)
 
     stored_run = session.get(AgentRun, run.id)
     event_types = session.scalars(
@@ -3678,7 +3666,7 @@ def test_worker_discards_model_result_when_run_cancelled_during_execution() -> N
         idempotency_key="cancel-during-run",
     )
 
-    WorkerJobHandler(session, agent_runner=CancellingRunner()).handle(job)
+    WorkerFlow(session, agent_runner=CancellingRunner()).handle(job)
 
     stored_run = session.get(AgentRun, run.id)
     stored_task = session.get(Task, task.id)
@@ -3793,7 +3781,7 @@ def test_worker_maps_runtime_events_to_sanitized_task_messages() -> None:
         idempotency_key="runtime-events",
     )
 
-    WorkerJobHandler(session, agent_runner=EventfulRunner()).handle(job)
+    WorkerFlow(session, agent_runner=EventfulRunner()).handle(job)
 
     messages = session.scalars(
         select(TaskMessage).where(TaskMessage.task_id == task.id).order_by(TaskMessage.sequence)
@@ -3896,10 +3884,29 @@ def test_worker_persists_structured_task_progress_from_agent_output() -> None:
                         },
                         "task_input": {"outline": {"acts": 3}},
                     }
-                )
+                ),
+                structured_output=AgentRuntimeStructuredOutput(
+                    value={
+                        "task_progress": {
+                            "summary": "Chapter draft expanded.",
+                            "progress": 0.5,
+                            "generic_state": {
+                                "word_count": 2400,
+                                "nested": {"added": "yes"},
+                            },
+                            "domain_state": {
+                                "chapters": [{"title": "Chapter 1", "status": "revised"}],
+                                "continuity_notes": ["Keep the clue visible."],
+                            },
+                            "task_input": {"outline": {"acts": 3}},
+                        }
+                    },
+                    schema_name="workflow_result",
+                    validated=True,
+                ),
             )
 
-    WorkerJobHandler(session, agent_runner=ProgressRunner()).handle(
+    WorkerFlow(session, agent_runner=ProgressRunner()).handle(
         JobPayload(
             workspace_id=workspace.id,
             job_type=JobType.AGENT_RUN,
@@ -4897,7 +4904,7 @@ def test_worker_fails_closed_without_model_provider_fallback() -> None:
     )
 
     with pytest.raises(RuntimeError):
-        _run_agent_sync(session, job, agent_runner=runner, settings=settings)
+        _execute_run(session, job, agent_runner=runner, settings=settings)
 
     events = session.scalars(
         select(RunEvent).where(RunEvent.agent_run_id == run.id).order_by(RunEvent.sequence)
@@ -5049,7 +5056,7 @@ def test_worker_falls_back_across_model_provider_vendors() -> None:
         idempotency_key="cross-provider-fallback",
     )
 
-    _run_agent_sync(session, job, agent_runner=runner, settings=settings)
+    _execute_run(session, job, agent_runner=runner, settings=settings)
 
     fallback_event = session.scalar(
         select(RunEvent).where(
@@ -5225,7 +5232,7 @@ def test_worker_ignores_budget_exhausted_model_provider_fallback_policy() -> Non
     )
 
     with pytest.raises(RuntimeError):
-        _run_agent_sync(session, job, agent_runner=runner, settings=settings)
+        _execute_run(session, job, agent_runner=runner, settings=settings)
 
     fallback_event = session.scalar(
         select(RunEvent).where(
@@ -5356,7 +5363,7 @@ def test_worker_rejects_cross_workspace_model_provider_fallback() -> None:
     )
 
     try:
-        _run_agent_sync(session, job, agent_runner=FailingRunner(), settings=settings)
+        _execute_run(session, job, agent_runner=FailingRunner(), settings=settings)
     except RuntimeError:
         pass
     else:
@@ -6254,18 +6261,17 @@ def test_team_agents_exchange_mailbox_across_persistent_runs() -> None:
         "send_agent_message",
     )
     assert planner_request.session is not None
-    send_result = asyncio.run(
-        planner_request.tool_executor.execute_tool(
-            context=planner_request.context,
-            tool_name="send_agent_message",
-            arguments={
-                "recipient_agent_profile_id": str(builder.id),
-                "subject": "Builder handoff",
-                "body": "Start with the runtime ensure path.",
-            },
-            tool_call_id="test-builder-handoff",
-            approval_granted=False,
-        )
+    send_result = execute_tool(
+        BackendToolExecutor(session),
+        context=planner_request.context,
+        tool_name="send_agent_message",
+        arguments={
+            "recipient_agent_profile_id": str(builder.id),
+            "subject": "Builder handoff",
+            "body": "Start with the runtime ensure path.",
+        },
+        tool_call_id="test-builder-handoff",
+        approval_granted=False,
     )
     assert send_result.status == "completed"
     assert send_result.output is not None
@@ -6447,7 +6453,12 @@ def test_stale_run_with_completed_approved_tool_is_requeued_without_replay() -> 
 
 def _session() -> Session:
     _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = create_engine(
+        flow_database_url(),
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()
 
@@ -6521,7 +6532,7 @@ def _authorization_snapshot(session: Session, **values: object) -> dict[str, obj
     return snapshot
 
 
-def _run_agent_sync(
+def _execute_run(
     session: Session,
     job: JobPayload,
     *,
@@ -6529,16 +6540,8 @@ def _run_agent_sync(
     settings: Settings | None = None,
     queue: RedisQueue | None = None,
 ) -> AgentRun:
-    return RunExecutionService(
-        session=session,
-        queue=queue,
-        agent_runner=agent_runner,
-        settings=settings,
-        dependencies=RunExecutionDependencies(
-            lifecycle=_run_lifecycle(session),
-            runtime_backends=build_runtime_backend_registry(None, lambda: 60),
-        ),
-    ).run_agent_sync(job)
+    WorkerFlow(session, queue, agent_runner=agent_runner, settings=settings).handle(job)
+    return session.get(AgentRun, job.resource_id)
 
 
 def test_run_lifecycle_does_not_transition_foreign_task_references() -> None:
@@ -6595,9 +6598,9 @@ def _run_lifecycle(session: Session) -> RunLifecycleService:
         session,
         RunLifecycleCallbacks(
             append_event=RunEventRecorder(session).append_event,
-            release_reservations=lambda run, released_at: _run_reservations(
-                session
-            ).release_for_run(run, released_at=released_at),
+            release_reservations=lambda run, released_at: release_run_reservations(
+                session, run, released_at=released_at
+            ),
             create_next_runs=lambda task, user_id: orchestration._create_and_enqueue_next_step_runs(
                 task,
                 requested_by_user_id=user_id,

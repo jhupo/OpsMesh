@@ -15,7 +15,7 @@ from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.enrollment.policy import positive_policy_int
 from backend.app.runtime.self_hosted.models import RuntimeCredential, SelfHostedWorker
 from backend.app.shared.config import Settings
-from backend.app.shared.utils import string_list, uuid_or_none
+from backend.app.shared.utils import non_empty_string_or_none, string_list, uuid_or_none
 from backend.app.workspaces.management.models import Workspace
 
 
@@ -96,11 +96,11 @@ class SelfHostedTrustService:
             "connector": {
                 "name": "opsmesh-self-hosted-worker",
                 "protocol_version": 2,
-                "recommended_version": _version_string(
+                "recommended_version": non_empty_string_or_none(
                     version_policy.get("recommended_version")
                 ),
-                "min_version": _version_string(version_policy.get("min_version")),
-                "upgrade_url": _version_string(version_policy.get("upgrade_url")),
+                "min_version": non_empty_string_or_none(version_policy.get("min_version")),
+                "upgrade_url": non_empty_string_or_none(version_policy.get("upgrade_url")),
             },
             "endpoints": {
                 "register": f"{self._settings.api_prefix}/self-hosted/register",
@@ -111,8 +111,7 @@ class SelfHostedTrustService:
                     f"{self._settings.api_prefix}/self-hosted/jobs/{{agent_run_id}}/complete"
                 ),
                 "project_archive": (
-                    f"{self._settings.api_prefix}/self-hosted/jobs/{{agent_run_id}}/"
-                    "project/archive"
+                    f"{self._settings.api_prefix}/self-hosted/jobs/{{agent_run_id}}/project/archive"
                 ),
                 "project_output": (
                     f"{self._settings.api_prefix}/self-hosted/jobs/{{agent_run_id}}/project/"
@@ -311,9 +310,9 @@ def _worker_version_diagnostics(
     current = _parse_version(worker.version)
     if current is None:
         return []
-    min_version = _version_string(version_policy.get("min_version"))
-    recommended_version = _version_string(version_policy.get("recommended_version"))
-    upgrade_url = _version_string(version_policy.get("upgrade_url"))
+    min_version = non_empty_string_or_none(version_policy.get("min_version"))
+    recommended_version = non_empty_string_or_none(version_policy.get("recommended_version"))
+    upgrade_url = non_empty_string_or_none(version_policy.get("upgrade_url"))
     diagnostics: list[dict[str, object]] = []
     if min_version is not None:
         parsed_min = _parse_version(min_version)
@@ -345,18 +344,12 @@ def _worker_version_diagnostics(
             )
     return diagnostics
 
+
 def _parse_version(value: object) -> Version | None:
-    text = _version_string(value)
+    text = non_empty_string_or_none(value)
     if text is None:
         return None
     try:
         return Version(text)
     except InvalidVersion:
         return None
-
-
-def _version_string(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None

@@ -15,7 +15,6 @@ from backend.app.shared.telemetry.trace_context import (
 class JobType(StrEnum):
     CONVERSATION_ADVANCE = "conversation.advance"
     AGENT_RUN = "agent.run"
-    MCP_TOOL_EXECUTION = "mcp.tool_execution"
     MCP_PROCESS_CONTROL = "mcp.process_control"
     TASK_PLAN = "task.plan"
     TEAM_EXECUTION_LOOP = "team.execution_loop"

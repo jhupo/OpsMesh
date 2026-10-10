@@ -36,7 +36,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
 
 
 @router.get("/teams/{team_id}/runtime", response_model=AgentTeamRuntimeResponse)
-async def get_team_runtime(
+def get_team_runtime(
     team_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -51,7 +51,7 @@ async def get_team_runtime(
 
 
 @router.post("/teams/{team_id}/runtime/start", response_model=AgentTeamRuntimeResponse)
-async def start_team_runtime(
+def start_team_runtime(
     team_id: UUID,
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -77,7 +77,7 @@ async def start_team_runtime(
 
 
 @router.post("/teams/{team_id}/runtime/pause", response_model=AgentTeamRuntimeResponse)
-async def pause_team_runtime(
+def pause_team_runtime(
     team_id: UUID,
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -103,7 +103,7 @@ async def pause_team_runtime(
 
 
 @router.post("/teams/{team_id}/runtime/resume", response_model=AgentTeamRuntimeResponse)
-async def resume_team_runtime(
+def resume_team_runtime(
     team_id: UUID,
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -129,7 +129,7 @@ async def resume_team_runtime(
 
 
 @router.post("/teams/{team_id}/runtime/stop", response_model=AgentTeamRuntimeResponse)
-async def stop_team_runtime(
+def stop_team_runtime(
     team_id: UUID,
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -155,7 +155,7 @@ async def stop_team_runtime(
 
 
 @router.post("/teams/{team_id}/runtime/bind", response_model=AgentTeamRuntimeResponse)
-async def bind_team_runtime(
+def bind_team_runtime(
     team_id: UUID,
     request: AgentTeamRuntimeBindRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -184,7 +184,7 @@ async def bind_team_runtime(
 
 
 @router.post("/teams/{team_id}/runtime/ensure", response_model=AgentTeamRuntimeResponse)
-async def ensure_team_runtime(
+def ensure_team_runtime(
     team_id: UUID,
     request: AgentTeamRuntimeEnsureRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -225,7 +225,7 @@ async def ensure_team_runtime(
 
 
 @router.post("/teams/{team_id}/runtime/continue", response_model=AgentTeamRuntimeResponse)
-async def continue_team_runtime(
+def continue_team_runtime(
     team_id: UUID,
     request: AgentTeamRuntimeControlRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),

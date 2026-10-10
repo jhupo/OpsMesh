@@ -1106,7 +1106,7 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     from backend.app.shared.security.secrets import SecretEncryptionService
     from backend.tests.test_webhooks import _RecordingHttpClient
     from backend.tests.test_worker_run_execution import (
-        _run_agent_sync,
+        _execute_run,
         _seed_default_model_provider,
     )
 
@@ -1208,7 +1208,7 @@ def test_message_conversation_controls_and_continues_work_through_sdk() -> None:
     )
     assert run is not None
     settings = client.app.dependency_overrides[get_settings]()
-    _run_agent_sync(
+    _execute_run(
         session,
         JobPayload(
             workspace_id=workspace.id,
@@ -1419,8 +1419,6 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         ModelRequestReview,
         ModelRequestReviewService,
     )
-    from backend.app.governance.reviews.models import ResourceReview
-    from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
     from backend.app.identity.users.models import User
     from backend.app.orchestration.automations.service import AutomationService
     from backend.app.runtime.queues.contracts import JobPayload, JobType
@@ -1430,7 +1428,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
     from backend.app.workspaces.members.models import WorkspaceMember
     from backend.tests.test_webhooks import _queue
     from backend.tests.test_worker_run_execution import (
-        _run_agent_sync,
+        _execute_run,
         _seed_default_model_provider,
     )
 
@@ -1440,13 +1438,6 @@ def test_structured_messages_stream_before_model_completion_and_replay(
         ModelRequestReviewService,
         "review_request",
         lambda self, **kwargs: ModelRequestReview(
-            required=False, risk_level="low", reasons=[], signals={}
-        ),
-    )
-    monkeypatch.setattr(
-        ResourcePolicyReviewBuilder,
-        "review_tool_execution",
-        lambda self, **kwargs: ResourceReview(
             required=False, risk_level="low", reasons=[], signals={}
         ),
     )
@@ -1847,7 +1838,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
             required=True, risk_level="high", reasons=["flow approval"], signals={}
         ),
     )
-    waiting = _run_agent_sync(
+    waiting = _execute_run(
         session,
         JobPayload(
             workspace_id=workspace.id,
@@ -1896,7 +1887,7 @@ def test_structured_messages_stream_before_model_completion_and_replay(
             assert conflict.value.response.status_code == 409
 
     asyncio.run(approve_message())
-    executed = _run_agent_sync(
+    executed = _execute_run(
         session,
         JobPayload(
             workspace_id=workspace.id,
@@ -2158,12 +2149,19 @@ def test_workspace_user_can_edit_team_capability_and_mcp_tool_properties() -> No
     server = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers",
         headers=headers,
-        json={"name": "operations-mcp"},
+        json={
+            "name": "operations-mcp",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     tool = client.post(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}/tools",
         headers=headers,
-        json={"tool_name": "execute_operation", "capability_key": "operations.execute"},
+        json={
+            "tool_name": "execute_operation",
+            "capability_key": "operations.execute",
+            "connection": {"command": "mcp-test", "args": []},
+        },
     )
     tool_update = client.patch(
         f"/api/v1/workspaces/{workspace.id}/capabilities/mcp-servers/{server.json()['id']}"

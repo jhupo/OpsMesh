@@ -258,7 +258,7 @@ class WorkerRunner:
             job.resource_id if job.job_type.value in {"agent.run", "mcp.tool_execution"} else None
         )
         parent_trace = job.trace_context()
-        runtime_id = job.routing.get("runtime_id") or job.routing.get("workspace_runtime_id")
+        runtime_id = job.routing.get("workspace_runtime_id")
         task_id = job.routing.get("task_id")
         if not self._tracing_enabled():
             active_trace = child_trace_context(parent_trace)

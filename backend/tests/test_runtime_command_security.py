@@ -147,7 +147,7 @@ def _runtime() -> tuple[Session, WorkspaceRuntime]:
         name=str(uuid4()),
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])

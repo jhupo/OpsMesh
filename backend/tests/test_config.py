@@ -35,7 +35,6 @@ def test_settings_defaults_are_local_development_friendly(monkeypatch: pytest.Mo
     assert settings.request_slow_log_threshold_ms == 1_000
     assert settings.worker_heartbeat_token is None
     assert settings.readiness_worker_check_enabled is False
-    assert settings.readiness_worker_stale_after_seconds == 300
     assert settings.mcp_health_check_stale_after_seconds == 86_400
     assert settings.audit_event_retention_days is None
     assert settings.audit_event_worm_enabled is True

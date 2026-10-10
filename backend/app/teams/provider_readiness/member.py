@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from backend.app.agents.profiles.models import AgentProfile
+from backend.app.agents.providers.capabilities import model_capability_payload
 from backend.app.agents.providers.health import (
     model_provider_health_check_schedule_summary,
     model_provider_last_health_check_at,
@@ -21,7 +22,6 @@ from backend.app.teams.provider_readiness.payloads import (
     _capability_provider,
     _empty_health_check_schedule,
     _model_api_options_payload,
-    _model_capability_payload,
     _selected_model,
 )
 
@@ -188,7 +188,7 @@ def _model_readiness_payload(
         "requested_model_api": unsupported_model_api,
         "model_apis": _credential_model_apis(credential),
         "default_model_api": _credential_default_model_api(credential),
-        "model_capability": _model_capability_payload(
+        "model_capability": model_capability_payload(
             _capability_provider(agent, credential),
             selected_model,
             credential.model_capabilities if credential else [],

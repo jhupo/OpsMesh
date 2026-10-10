@@ -68,6 +68,16 @@ class HttpMcpJobApi:
         ):
             raise ConnectorApiError("Control plane returned an invalid MCP claim response")
 
+    def cancellation_requested(self, job_id: UUID) -> bool:
+        payload = self._request("GET", f"self-hosted/mcp-jobs/{job_id}/cancellation")
+        if (
+            not isinstance(payload, dict)
+            or payload.get("id") != str(job_id)
+            or not isinstance(payload.get("cancel_requested"), bool)
+        ):
+            raise ConnectorApiError("Control plane returned an invalid cancellation response")
+        return payload["cancel_requested"]
+
     def complete_mcp_job(self, job_id: UUID, completion: McpJobCompletion) -> None:
         payload = self._request(
             "POST",

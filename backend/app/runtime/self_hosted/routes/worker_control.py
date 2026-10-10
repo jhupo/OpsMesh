@@ -27,7 +27,7 @@ router = APIRouter()
     "/workspaces/{workspace_id}/self-hosted/worker-cleanup",
     response_model=SelfHostedWorkerCleanupResponse,
 )
-async def cleanup_self_hosted_workers(
+def cleanup_self_hosted_workers(
     stale_after_seconds: int = Query(default=600, ge=60, le=86_400),
     quarantine_after_seconds: int | None = Query(default=None, ge=60, le=604_800),
     job_claim_stale_after_seconds: int = Query(default=900, ge=60, le=86_400),
@@ -54,7 +54,7 @@ async def cleanup_self_hosted_workers(
     "/workspaces/{workspace_id}/self-hosted/workers/{worker_id}/quarantine",
     response_model=SelfHostedWorkerControlResponse,
 )
-async def quarantine_self_hosted_worker(
+def quarantine_self_hosted_worker(
     worker_id: UUID,
     request: SelfHostedWorkerControlRequest | None = None,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -67,7 +67,7 @@ async def quarantine_self_hosted_worker(
     "/workspaces/{workspace_id}/self-hosted/workers/{worker_id}/resume",
     response_model=SelfHostedWorkerControlResponse,
 )
-async def resume_self_hosted_worker(
+def resume_self_hosted_worker(
     worker_id: UUID,
     request: SelfHostedWorkerControlRequest | None = None,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -80,7 +80,7 @@ async def resume_self_hosted_worker(
     "/workspaces/{workspace_id}/self-hosted/workers/{worker_id}/revoke",
     response_model=SelfHostedWorkerControlResponse,
 )
-async def revoke_self_hosted_worker(
+def revoke_self_hosted_worker(
     worker_id: UUID,
     request: SelfHostedWorkerControlRequest | None = None,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -93,7 +93,7 @@ async def revoke_self_hosted_worker(
     "/workspaces/{workspace_id}/self-hosted/workers/trust",
     response_model=list[SelfHostedWorkerTrustResponse],
 )
-async def list_self_hosted_worker_trust(
+def list_self_hosted_worker_trust(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     service: SelfHostedRuntimeService = Depends(self_hosted_service),
 ) -> list[SelfHostedWorkerTrustResponse]:
@@ -105,7 +105,7 @@ async def list_self_hosted_worker_trust(
     "/workspaces/{workspace_id}/self-hosted/connector-manifest",
     response_model=SelfHostedConnectorManifestResponse,
 )
-async def self_hosted_connector_manifest(
+def self_hosted_connector_manifest(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     service: SelfHostedRuntimeService = Depends(self_hosted_service),
 ) -> SelfHostedConnectorManifestResponse:
@@ -117,7 +117,7 @@ async def self_hosted_connector_manifest(
     "/workspaces/{workspace_id}/self-hosted/credentials/{credential_id}/revoke",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def revoke_runtime_credential(
+def revoke_runtime_credential(
     credential_id: UUID,
     request: RuntimeCredentialRevokeRequest | None = None,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),

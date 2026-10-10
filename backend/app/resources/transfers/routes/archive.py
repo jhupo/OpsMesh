@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.post("/archive", status_code=status.HTTP_200_OK)
-async def export_workspace_archive(
+def export_workspace_archive(
     request: WorkspaceArchiveExportRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),

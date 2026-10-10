@@ -21,10 +21,19 @@ def normalize_connection(server_type: str, value: dict[str, object]) -> dict[str
     """Normalize transport/auth metadata without accepting secret-bearing headers."""
 
     connection = dict(value)
+    if "endpoint" in connection:
+        raise ValueError("MCP connection uses url; endpoint is not a supported field")
     reject_embedded_secrets(connection, path="connection")
     normalized_type = server_type.lower().strip()
+    if normalized_type == "stdio":
+        command, args = connection.get("command"), connection.get("args", [])
+        if not isinstance(command, str) or not command.strip():
+            raise ValueError("Stdio MCP requires a command string")
+        if not isinstance(args, list) or not all(isinstance(part, str) for part in args):
+            raise ValueError("Stdio MCP args must be strings")
+        connection["command"], connection["args"] = command.strip(), args
     if normalized_type in REMOTE_SERVER_TYPES or normalized_type == "hosted":
-        url = connection.get("url") or connection.get("endpoint")
+        url = connection.get("url")
         if not isinstance(url, str) or not url.lower().startswith(("http://", "https://")):
             raise ValueError("Remote MCP server requires an http(s) url")
         validate_url_shape(url, allowed_schemes=frozenset({"http", "https"}))
@@ -191,7 +200,7 @@ def connection_summary(server: McpServer) -> dict[str, object]:
     auth_method = connection.get("auth_method")
     if isinstance(auth_method, str) and auth_method:
         summary["auth_method"] = auth_method
-    url = connection.get("url") or connection.get("endpoint")
+    url = connection.get("url")
     if isinstance(url, str) and url:
         parsed = urlparse(url)
         summary["remote_host"] = parsed.netloc or None
@@ -212,7 +221,7 @@ def has_stdio_command(server: McpServer) -> bool:
 
 
 def has_remote_url(server: McpServer) -> bool:
-    url = server.connection.get("url") or server.connection.get("endpoint")
+    url = server.connection.get("url")
     return isinstance(url, str) and url.lower().startswith(("https://", "http://"))
 
 

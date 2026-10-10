@@ -27,18 +27,6 @@ MCP_SERVER_GOVERNANCE_DISABLE_REASONS = {
 }
 
 
-def dict_list(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, dict)]
-
-
-def string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
-
-
 def skill_governance_actions(blocked_reasons: list[str]) -> list[str]:
     actions: list[str] = []
     reasons = set(blocked_reasons)

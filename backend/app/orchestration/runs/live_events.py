@@ -94,6 +94,9 @@ class LiveToolExecutor:
     executor: AgentRuntimeToolExecutor
     publisher: RunLivePublisher
 
+    async def cancel_active_tools(self, *, context: AgentRuntimeContext) -> None:
+        await self.executor.cancel_active_tools(context=context)
+
     async def review_tool_call(
         self, *, context: AgentRuntimeContext, tool_name: str, arguments: dict[str, object]
     ) -> dict[str, object]:

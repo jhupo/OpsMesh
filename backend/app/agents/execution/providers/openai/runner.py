@@ -82,6 +82,7 @@ from backend.app.agents.providers.model_api import (
 from backend.app.agents.providers.policy import (
     is_openai_compatible_provider,
 )
+from backend.app.resources.memory.policy import SDKMemoryPolicy
 
 
 class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
@@ -219,7 +220,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             OutputGuardrailTripwireTriggered,
         ) as exc:
             raise _guardrail_blocked_error(exc, guardrail_results) from exc
-        usage = getattr(getattr(result, "context_wrapper", None), "usage", None)
+        usage = result.context_wrapper.usage
         meter = memory_usage.get()
         if isinstance(usage, Usage) and meter is not None:
             usage.add(meter)
@@ -228,7 +229,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         final_output, structured_output = self._result_mapper.final_output(result)
         if request.output_schema is not None and not interruptions:
             structured_output = AgentRuntimeStructuredOutput(
-                value=getattr(result, "final_output", None),
+                value=result.final_output,
                 schema_name=request.output_schema.name,
                 schema_version=request.output_schema.version,
                 validated=True,
@@ -360,7 +361,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         guardrail_results: list[AgentRuntimeGuardrailResult] | None = None,
     ) -> Agent[Any]:
         profile = request.agent_profile
-        capabilities = sandbox_capabilities(request)
+        capabilities = sandbox_capabilities(request) if self._uses_sdk_sandbox(request) else []
         model_name = request.model or profile.model
         if request.api_key is None:
             raise ValueError("OpenAI-compatible runtime requires an explicit provider API key")
@@ -389,11 +390,11 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             request,
             runtime_guardrail_results,
         )
-        agent_class = GovernedSandboxAgent if request.sandbox is not None else GovernedAgent
+        agent_class = GovernedSandboxAgent if self._uses_sdk_sandbox(request) else GovernedAgent
         return agent_class(
             **cast(
                 dict[str, Any],
-                {"capabilities": capabilities} if request.sandbox else {},
+                {"capabilities": capabilities} if self._uses_sdk_sandbox(request) else {},
             ),
             name=profile.name,
             instructions=profile.instructions,
@@ -536,16 +537,22 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             scoped_request,
             guardrail_results,
         )
-        capabilities = sandbox_capabilities(
-            scoped_request,
-            profile_id=definition.target.ref.profile_id,
-            model_settings=definition.target.model_settings,
+        capabilities = (
+            sandbox_capabilities(
+                scoped_request,
+                profile_id=definition.target.ref.profile_id,
+                model_settings=definition.target.model_settings,
+            )
+            if self._uses_sdk_sandbox(scoped_request)
+            else []
         )
-        agent_class = GovernedSandboxAgent if scoped_request.sandbox is not None else GovernedAgent
+        agent_class = (
+            GovernedSandboxAgent if self._uses_sdk_sandbox(scoped_request) else GovernedAgent
+        )
         return agent_class(
             **cast(
                 dict[str, Any],
-                {"capabilities": capabilities} if scoped_request.sandbox else {},
+                {"capabilities": capabilities} if self._uses_sdk_sandbox(scoped_request) else {},
             ),
             name=definition.target.ref.name,
             handoff_description=definition.target.handoff_description,
@@ -675,10 +682,14 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         guardrail_results: list[AgentRuntimeGuardrailResult],
     ) -> Agent[Any]:
         model_name = definition.model or request.model or request.agent_profile.model
-        capabilities = sandbox_capabilities(
-            replace(request, model=model_name),
-            profile_id=definition.ref.profile_id,
-            model_settings=definition.model_settings,
+        capabilities = (
+            sandbox_capabilities(
+                replace(request, model=model_name),
+                profile_id=definition.ref.profile_id,
+                model_settings=definition.model_settings,
+            )
+            if self._uses_sdk_sandbox(request)
+            else []
         )
         if request.api_key is None:
             raise ValueError("OpenAI-compatible runtime requires an explicit provider API key")
@@ -691,11 +702,11 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             request,
             guardrail_results,
         )
-        agent_class = GovernedSandboxAgent if request.sandbox is not None else GovernedAgent
+        agent_class = GovernedSandboxAgent if self._uses_sdk_sandbox(request) else GovernedAgent
         return agent_class(
             **cast(
                 dict[str, Any],
-                {"capabilities": capabilities} if request.sandbox else {},
+                {"capabilities": capabilities} if self._uses_sdk_sandbox(request) else {},
             ),
             name=definition.ref.name,
             handoff_description=definition.handoff_description,
@@ -713,6 +724,22 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             output_guardrails=output_guardrails,
         )
 
+    @staticmethod
+    def _uses_sdk_sandbox(request: AgentRunRequest) -> bool:
+        # Native sandbox tools require Responses. Chat Completions still runs in
+        # the same approved Runtime, with its supported product/MCP tools.
+        supported = _use_responses_api(request.model_api) is not False
+        if not supported and SDKMemoryPolicy.model_validate(
+            request.context.metadata.get("sdk_memory", {})
+        ).enabled:
+            raise AgentRuntimePolicyError(
+                code="sdk_memory_api_unsupported",
+                message="Native SDK Memory requires the Responses API",
+                event_type="runtime.authorization_blocked",
+                metadata={},
+            )
+        return request.sandbox is not None and supported
+
     def _run_config(self, request: AgentRunRequest) -> RunConfig | None:
         tracing = request.tracing
         return RunConfig(
@@ -723,7 +750,11 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             trace_metadata=tracing.metadata if tracing else None,
             tracing_disabled=tracing.disabled if tracing else True,
             trace_include_sensitive_data=tracing.include_sensitive_data if tracing else False,
-            sandbox=sandbox_run_config(request.sandbox) if request.sandbox is not None else None,
+            sandbox=(
+                sandbox_run_config(request.sandbox)
+                if self._uses_sdk_sandbox(request) and request.sandbox is not None
+                else None
+            ),
         )
 
 

@@ -4,7 +4,7 @@ import fakeredis
 import pytest
 
 from backend.app.runtime.queues.contracts import JobPayload, JobType
-from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.shared.telemetry.trace_context import TraceContext, trace_context
 
@@ -253,28 +253,6 @@ def test_run_lock_allows_one_holder() -> None:
         assert next_lock is True
 
 
-def test_consume_once_requeues_failed_job_then_dead_letters() -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
-    keys = RedisKeyBuilder("opsmesh")
-    queue = _queue(redis, keys=keys)
-    job = _job(max_attempts=2)
-    queue.enqueue(job)
-
-    with pytest.raises(RuntimeError, match="boom"):
-        consume_once(queue, lambda _: (_ for _ in ()).throw(RuntimeError("boom")))
-
-    retry = queue.dequeue()
-    assert retry is not None
-    assert retry.attempt == 1
-
-    queue.retry_or_dead_letter(retry)
-    raw_dead_letter = redis.lpop(keys.dead_letter_queue("agent_runs"))
-    assert raw_dead_letter is not None
-    dead_letter = JobPayload.model_validate_json(raw_dead_letter)
-    assert dead_letter.attempt == 2
-    assert dead_letter.last_error is None
-
-
 def test_retry_can_be_delayed_and_reclaimed_with_error_metadata() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = _queue(redis)
@@ -300,20 +278,6 @@ def test_retry_can_be_delayed_and_reclaimed_with_error_metadata() -> None:
     assert reclaimed[0].last_failed_at is not None
     assert queue.count_scheduled_retries() == 0
     assert queue.dequeue() == reclaimed[0]
-
-
-def test_consume_once_acks_successful_job() -> None:
-    redis = fakeredis.FakeRedis(decode_responses=True)
-    queue = _queue(redis)
-    job = _job()
-    handled: list[JobPayload] = []
-    queue.enqueue(job)
-
-    assert consume_once(queue, handled.append) is True
-
-    assert handled == [job]
-    assert queue.count_queued() == 0
-    assert queue.count_processing() == 0
 
 
 def test_dead_letter_jobs_can_be_listed_and_requeued() -> None:

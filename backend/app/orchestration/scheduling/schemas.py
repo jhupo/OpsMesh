@@ -73,9 +73,3 @@ class ScheduledJobResponse(ORMModel):
     @field_serializer("schedule_config", "routing", "metadata_")
     def _serialize_metadata(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
-
-
-class ScheduledJobMaintenanceResponse(BaseModel):
-    enqueued: int
-    recorded: int
-    skipped: int

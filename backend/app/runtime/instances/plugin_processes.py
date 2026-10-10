@@ -1,4 +1,5 @@
 """Reconcile durable plugin intent through the existing runtime lifecycle."""
+
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -224,7 +225,7 @@ class PluginProcessWorker:
                 runtime,
                 template=template,
                 limits=DeploymentConfiguration.model_validate(item.configuration).limits,
-                network_disabled=runtime.network_policy.get("disabled") is True,
+                network_disabled=runtime.network_policy.get("mode") == "none",
                 process=RuntimeProcess({str(k): str(v) for k, v in environment.items()}),
             )
         if not self.docker.container_running(runtime.docker_container_id or ""):

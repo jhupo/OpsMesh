@@ -927,7 +927,7 @@ def test_self_hosted_worker_enforces_capability_policy_for_jobs() -> None:
         )
     )
     assert runtime is not None
-    runtime.network_policy = {"disabled": True}
+    runtime.network_policy = {"mode": "none"}
     ModelProviderCredentialCommandService(
         session,
         SecretEncryptionService(secret="change-me-credential-encryption-secret", key_id="local"),

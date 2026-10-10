@@ -57,11 +57,12 @@ def runtime_isolation_metadata(
         },
         "network": {
             **dict(network_policy or {}),
-            "disabled": network_disabled,
             "mode": (
                 str((network_policy or {}).get("mode"))
                 if isinstance((network_policy or {}).get("mode"), str)
-                else "none" if network_disabled else "internet"
+                else "none"
+                if network_disabled
+                else "internet"
             ),
         },
     }
@@ -102,9 +103,7 @@ def runtime_hardening_metadata(
             "profile": policy.seccomp_profile or "default",
             "enforced": policy.seccomp_profile != "unconfined",
             "source": (
-                "docker_default"
-                if policy.seccomp_profile in {"", "default"}
-                else "configured"
+                "docker_default" if policy.seccomp_profile in {"", "default"} else "configured"
             ),
         },
         "apparmor": {

@@ -28,15 +28,6 @@ class ContextBudgetPolicy(BaseModel):
     )
 
 
-class WorkingMemoryPolicy(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool = True
-    ttl_seconds: int = Field(default=86_400, ge=300, le=604_800)
-    max_entries: int = Field(default=64, ge=1, le=500)
-    max_entry_tokens: int = Field(default=2_048, ge=128, le=16_384)
-
-
 class EpisodicMemoryPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -79,7 +70,6 @@ class AgentMemoryPolicy(BaseModel):
 
     context_budget: ContextBudgetPolicy = Field(default_factory=ContextBudgetPolicy)
     sdk_memory: SDKMemoryPolicy = Field(default_factory=lambda: SDKMemoryPolicy())
-    working_memory: WorkingMemoryPolicy = Field(default_factory=WorkingMemoryPolicy)
     episodic_memory: EpisodicMemoryPolicy = Field(default_factory=EpisodicMemoryPolicy)
     semantic_memory: SemanticMemoryPolicy = Field(default_factory=SemanticMemoryPolicy)
     context_retrieval: ContextMemoryRetrievalPolicy = Field(
@@ -146,10 +136,6 @@ def context_budget_policy(memory_policy: object) -> ContextBudgetPolicy:
 
 def normalized_memory_policy(value: object) -> dict[str, object]:
     return agent_memory_policy(value).model_dump(mode="json")
-
-
-def working_memory_policy(memory_policy: object) -> WorkingMemoryPolicy:
-    return agent_memory_policy(memory_policy).working_memory
 
 
 def episodic_memory_policy(memory_policy: object) -> EpisodicMemoryPolicy:

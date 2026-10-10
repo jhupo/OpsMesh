@@ -9,18 +9,11 @@ def hash_from_payload(payload: dict[str, object] | None, key: str) -> str | None
 
 
 def response_hash(response: dict[str, object] | None) -> str | None:
-    if response is None:
-        return None
-    result = response.get("result")
-    return payload_hash(result) if isinstance(result, dict) else None
+    return payload_hash(response) if response is not None else None
 
 
 def response_hash_from_payload(payload: dict[str, object] | None) -> str | None:
-    existing = hash_from_payload(payload, "response_sha256")
-    if existing is not None:
-        return existing
-    result = payload.get("result") if isinstance(payload, dict) else None
-    return payload_hash(result) if isinstance(result, dict) else None
+    return response_hash(payload)
 
 
 def error_code(error: dict[str, object] | None) -> str | None:

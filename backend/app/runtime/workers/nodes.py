@@ -20,7 +20,7 @@ from backend.app.runtime.workers.models import WorkerHeartbeat, WorkerNode
 from backend.app.shared.db.pagination import page_scalars
 from backend.app.shared.pagination import PageParams
 from backend.app.shared.telemetry.trace_context import with_current_trace_metadata
-from backend.app.shared.utils import non_empty_string_or_none
+from backend.app.shared.utils import int_or_zero, non_empty_string_or_none
 
 
 class WorkerHeartbeatOperationsService:
@@ -226,7 +226,7 @@ def _normalize_heartbeat_details(details: dict[str, object]) -> dict[str, object
         "scheduled_job_actions_recorded",
         "scheduled_job_actions_skipped",
     )
-    counts = {key: _integer_count(sanitized.get(key)) for key in keys}
+    counts = {key: int_or_zero(sanitized.get(key)) for key in keys}
     by_type = {key: _string_int_dict(sanitized.get(f"{key}_by_job_type")) for key in keys}
     if not any((*counts.values(), *by_type.values())):
         return sanitized
@@ -245,10 +245,6 @@ def _normalize_heartbeat_details(details: dict[str, object]) -> dict[str, object
         },
     }
     return sanitized
-
-
-def _integer_count(value: object) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def _string_int_dict(value: object) -> dict[str, int]:

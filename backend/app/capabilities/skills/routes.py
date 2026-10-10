@@ -28,7 +28,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capa
 
 
 @router.get("/workspace-skills", response_model=PageResponse[WorkspaceSkillInstallResponse])
-async def list_workspace_skills(
+def list_workspace_skills(
     page: PageParams = Depends(pagination_params),
     include_disabled: bool = Query(default=False),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -47,7 +47,7 @@ async def list_workspace_skills(
     response_model=WorkspaceSkillInstallResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def install_workspace_skill(
+def install_workspace_skill(
     request: WorkspaceSkillInstallRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
@@ -70,7 +70,7 @@ async def install_workspace_skill(
     response_model=WorkspaceSkillInstallResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def install_skill_by_id(
+def install_skill_by_id(
     skill_id: UUID,
     request: WorkspaceSkillInstallConfigRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -94,7 +94,7 @@ async def install_skill_by_id(
     "/workspace-skills/{install_id}/upgrade",
     response_model=WorkspaceSkillInstallResponse,
 )
-async def upgrade_workspace_skill(
+def upgrade_workspace_skill(
     install_id: UUID,
     request: WorkspaceSkillUpgradeRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -116,7 +116,7 @@ async def upgrade_workspace_skill(
     "/workspace-skills/{install_id}/rollback",
     response_model=WorkspaceSkillInstallResponse,
 )
-async def rollback_workspace_skill(
+def rollback_workspace_skill(
     install_id: UUID,
     request: WorkspaceSkillRollbackRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -144,7 +144,7 @@ async def rollback_workspace_skill(
     "/workspace-skills/{install_id}/disable",
     response_model=WorkspaceSkillInstallResponse,
 )
-async def disable_workspace_skill(
+def disable_workspace_skill(
     install_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
@@ -164,7 +164,7 @@ async def disable_workspace_skill(
     "/workspace-skills/{install_id}/impact",
     response_model=WorkspaceSkillImpactResponse,
 )
-async def get_workspace_skill_impact(
+def get_workspace_skill_impact(
     install_id: UUID,
     target_skill_id: UUID | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -191,7 +191,7 @@ async def get_workspace_skill_impact(
     "/workspace-skills/{install_id}/availability",
     response_model=WorkspaceSkillAvailabilityResponse,
 )
-async def get_workspace_skill_availability(
+def get_workspace_skill_availability(
     install_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),

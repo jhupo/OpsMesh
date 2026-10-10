@@ -23,7 +23,7 @@ router = APIRouter(
 
 
 @router.post("", response_model=ScheduledJobResponse, status_code=status.HTTP_201_CREATED)
-async def create_scheduled_job(
+def create_scheduled_job(
     request: ScheduledJobCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -51,7 +51,7 @@ async def create_scheduled_job(
 
 
 @router.get("", response_model=PageResponse[ScheduledJobResponse])
-async def list_scheduled_jobs(
+def list_scheduled_jobs(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -67,7 +67,7 @@ async def list_scheduled_jobs(
 
 
 @router.post("/{scheduled_job_id}/pause", response_model=ScheduledJobResponse)
-async def pause_scheduled_job(
+def pause_scheduled_job(
     scheduled_job_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -84,7 +84,7 @@ async def pause_scheduled_job(
 
 
 @router.post("/{scheduled_job_id}/resume", response_model=ScheduledJobResponse)
-async def resume_scheduled_job(
+def resume_scheduled_job(
     scheduled_job_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),

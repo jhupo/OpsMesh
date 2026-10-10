@@ -30,7 +30,7 @@ router = APIRouter()
     response_model=WorkspaceExportJobResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def create_workspace_archive_export_job(
+def create_workspace_archive_export_job(
     request: WorkspaceArchiveExportRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -46,7 +46,7 @@ async def create_workspace_archive_export_job(
 
 
 @router.get("/archive/jobs/{job_id}", response_model=WorkspaceExportJobResponse)
-async def get_workspace_archive_export_job(
+def get_workspace_archive_export_job(
     job_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -61,7 +61,7 @@ async def get_workspace_archive_export_job(
 
 
 @router.get("/archive/jobs/{job_id}/download")
-async def download_workspace_archive_export_job(
+def download_workspace_archive_export_job(
     job_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -92,7 +92,7 @@ async def download_workspace_archive_export_job(
     "/archive/jobs/{job_id}/verify",
     response_model=WorkspaceArchiveIntegrityResponse,
 )
-async def verify_workspace_archive_export_job(
+def verify_workspace_archive_export_job(
     job_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -116,7 +116,7 @@ async def verify_workspace_archive_export_job(
     "/archive/jobs/{job_id}/restore-drill",
     response_model=WorkspaceRestoreDrillResponse,
 )
-async def run_workspace_archive_restore_drill(
+def run_workspace_archive_restore_drill(
     job_id: UUID,
     request: WorkspaceArchiveRestoreDrillRequest = Body(
         default_factory=WorkspaceArchiveRestoreDrillRequest

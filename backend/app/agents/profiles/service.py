@@ -367,29 +367,6 @@ class AgentManagementService:
         self._session.refresh(profile)
         return profile
 
-    def list_versions(
-        self,
-        *,
-        workspace_id: UUID,
-        agent_profile_id: UUID,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> list[AgentProfileVersion]:
-        self._require_profile(workspace_id, agent_profile_id)
-        statement = (
-            select(AgentProfileVersion)
-            .where(
-                AgentProfileVersion.workspace_id == workspace_id,
-                AgentProfileVersion.agent_profile_id == agent_profile_id,
-            )
-            .order_by(AgentProfileVersion.version.desc())
-        )
-        if offset:
-            statement = statement.offset(offset)
-        if limit is not None:
-            statement = statement.limit(limit)
-        return list(self._session.scalars(statement).all())
-
     def list_agent_versions(
         self,
         workspace_id: UUID,

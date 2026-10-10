@@ -17,7 +17,10 @@ from backend.app.capabilities.plugins.policy import require_plugin_resource
 from backend.app.capabilities.references.models import CapabilityResource
 from backend.app.capabilities.skills.models import Skill, WorkspaceSkillInstall
 from backend.app.governance.security_events.models import SecurityEvent
-from backend.app.orchestration.runs.authorization.policy import RunRuntimeAuthorizationError
+from backend.app.orchestration.runs.authorization.policy import (
+    RunRuntimeAuthorizationError,
+    catalog_for_snapshot,
+)
 from backend.app.orchestration.runs.authorization.runtime import RunRuntimeAuthorizationService
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import (
@@ -152,7 +155,7 @@ class RunAuthorizationService:
             self.record_runtime_denial(run, exc)
             raise
         self._require_active_installed_skills(run.workspace_id, snapshot, lock=lock_resources)
-        catalog = capability_catalog_for_snapshot(snapshot)
+        catalog = catalog_for_snapshot(snapshot)
         if catalog is None:
             if snapshot.get("allowed_tools") not in ([], None):
                 raise ValueError("Authorization snapshot capability catalog is missing")
@@ -522,17 +525,10 @@ def agent_runtime_profile_for_snapshot(
     )
 
 
-def capability_catalog_for_snapshot(
-    snapshot: dict[str, object],
-) -> dict[str, object] | None:
-    catalog = snapshot.get("capability_catalog")
-    return catalog if isinstance(catalog, dict) else None
-
-
 def tool_definitions_for_snapshot(
     snapshot: dict[str, object],
 ) -> tuple[AgentRuntimeToolDefinition, ...]:
-    catalog = capability_catalog_for_snapshot(snapshot)
+    catalog = catalog_for_snapshot(snapshot)
     raw_tools = catalog.get("tools") if catalog is not None else None
     if raw_tools is None:
         return ()
@@ -599,7 +595,7 @@ def tool_definitions_for_snapshot(
 def resource_grants_for_snapshot(
     snapshot: dict[str, object],
 ) -> tuple[AgentRuntimeResourceGrant, ...]:
-    catalog = capability_catalog_for_snapshot(snapshot)
+    catalog = catalog_for_snapshot(snapshot)
     raw_resources = catalog.get("resources") if catalog is not None else None
     if raw_resources is None:
         return ()

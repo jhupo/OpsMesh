@@ -41,7 +41,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/memories", tags=["workspac
 
 
 @router.get("/configuration", response_model=WorkspaceMemoryConfigurationResponse)
-async def get_memory_configuration(
+def get_memory_configuration(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceMemoryConfigurationResponse:
@@ -55,7 +55,7 @@ async def get_memory_configuration(
 
 
 @router.put("/configuration", response_model=WorkspaceMemoryConfigurationResponse)
-async def update_memory_configuration(
+def update_memory_configuration(
     request: WorkspaceMemoryConfigurationUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -84,7 +84,7 @@ async def update_memory_configuration(
 
 
 @router.post("/embeddings/retry", response_model=MemoryEmbeddingRetryResponse)
-async def retry_memory_embeddings(
+def retry_memory_embeddings(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> MemoryEmbeddingRetryResponse:
@@ -100,7 +100,7 @@ async def retry_memory_embeddings(
 
 
 @router.get("/retrieval-events", response_model=MemoryRetrievalEventListResponse)
-async def list_memory_retrieval_events(
+def list_memory_retrieval_events(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -120,7 +120,7 @@ async def list_memory_retrieval_events(
 
 
 @router.get("/lifecycle-events", response_model=MemoryLifecycleEventListResponse)
-async def list_memory_lifecycle_events(
+def list_memory_lifecycle_events(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -140,7 +140,7 @@ async def list_memory_lifecycle_events(
 
 
 @router.get("/embedding-events", response_model=MemoryEmbeddingEventListResponse)
-async def list_memory_embedding_events(
+def list_memory_embedding_events(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -160,7 +160,7 @@ async def list_memory_embedding_events(
 
 
 @router.post("/semantic", response_model=SemanticMemoryResponse)
-async def upsert_semantic_memory(
+def upsert_semantic_memory(
     request: SemanticMemoryUpsertRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -207,7 +207,7 @@ async def upsert_semantic_memory(
 
 
 @router.get("/semantic", response_model=SemanticMemoryListResponse)
-async def list_semantic_memory(
+def list_semantic_memory(
     scope_type: SemanticScope | None = Query(default=None),
     scope_id: UUID | None = Query(default=None),
     include_archived: bool = Query(default=False),
@@ -236,16 +236,19 @@ async def list_semantic_memory(
     "/semantic/{memory_entry_id}/versions",
     response_model=list[SemanticMemoryVersionResponse],
 )
-async def list_semantic_memory_versions(
+def list_semantic_memory_versions(
     memory_entry_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> list[SemanticMemoryVersionResponse]:
     service = AgentSemanticMemoryService(session)
-    if service.get(
-        workspace_id=context.workspace.id,
-        memory_entry_id=memory_entry_id,
-    ) is None:
+    if (
+        service.get(
+            workspace_id=context.workspace.id,
+            memory_entry_id=memory_entry_id,
+        )
+        is None
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Semantic memory not found",
@@ -263,7 +266,7 @@ async def list_semantic_memory_versions(
     "/semantic/{memory_entry_id}/archive",
     response_model=SemanticMemoryResponse,
 )
-async def archive_semantic_memory(
+def archive_semantic_memory(
     memory_entry_id: UUID,
     request: SemanticMemoryArchiveRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),

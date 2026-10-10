@@ -1,15 +1,11 @@
 from sqlalchemy.orm import Session
 
-from backend.app.agents.execution.contracts import AgentRuntimeExecutor
 from backend.app.agents.providers.jobs import ModelProviderHealthJobHandler
-from backend.app.capabilities.mcp.execution.jobs import McpToolExecutionJobHandler
 from backend.app.capabilities.mcp.managed_jobs import ManagedMcpJobHandler
-from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.governance.audit.jobs import AuditIntegrityJobHandler
 from backend.app.governance.credentials.jobs import SecretReencryptJobHandler
 from backend.app.orchestration.conversations.jobs import ConversationAdvanceJobHandler
 from backend.app.orchestration.planning.jobs import TaskPlanJobHandler
-from backend.app.orchestration.runs.jobs import AgentRunJobHandler
 from backend.app.orchestration.webhooks.jobs import WebhookDeliveryJobHandler
 from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.knowledge.jobs import KnowledgeIngestJobHandler
@@ -32,9 +28,7 @@ class WorkerJobHandler:
         self,
         session: Session,
         queue: RedisQueue | None = None,
-        agent_runner: AgentRuntimeExecutor | None = None,
         settings: Settings | None = None,
-        mcp_adapter: McpToolAdapter | McpToolAdapterResolver | None = None,
         runtime_docker_client: DockerRuntimeClient | None = None,
     ) -> None:
         context = WorkerJobHandlerContext(
@@ -44,9 +38,7 @@ class WorkerJobHandler:
                 lambda: operational_configuration(session).file_transfer_timeout_seconds,
             ),
             queue=queue,
-            agent_runner=agent_runner,
             settings=settings,
-            mcp_adapter=mcp_adapter,
             runtime_docker_client=runtime_docker_client,
         )
         self._handlers = _build_handler_registry(context)
@@ -63,9 +55,7 @@ def _build_handler_registry(
 ) -> dict[JobType, WorkerJobTypeHandler]:
     return {
         JobType.CONVERSATION_ADVANCE: ConversationAdvanceJobHandler(context),
-        JobType.AGENT_RUN: AgentRunJobHandler(context),
         JobType.AUDIT_INTEGRITY_CHECK: AuditIntegrityJobHandler(context),
-        JobType.MCP_TOOL_EXECUTION: McpToolExecutionJobHandler(context),
         JobType.MCP_PROCESS_CONTROL: ManagedMcpJobHandler(context),
         JobType.TASK_PLAN: TaskPlanJobHandler(context),
         JobType.TEAM_EXECUTION_LOOP: TeamExecutionLoopJobHandler(context),

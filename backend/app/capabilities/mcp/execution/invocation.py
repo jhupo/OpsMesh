@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from time import monotonic
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -17,24 +18,21 @@ from backend.app.capabilities.mcp.execution.events import (
     McpToolCallLogService,
 )
 from backend.app.capabilities.mcp.execution.policy import McpExecutionPolicy
+from backend.app.capabilities.mcp.execution.prepared import PreparedMcpExecution
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
-from backend.app.capabilities.tools.contracts import ToolPermissionError
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.runtime.queues.execution_control import (
-    ExecutionOwnershipLostError,
-    current_execution_control,
-)
 from backend.app.shared.security.redaction import redact_sensitive_text
+from backend.app.shared.telemetry.trace_context import current_trace_context, telemetry_span
 from backend.app.shared.utils import canonical_payload, payload_hash
 
 
 @dataclass(slots=True)
 class McpToolInvoker:
     session: Session
-    adapter_or_resolver: McpToolAdapter | McpToolAdapterResolver
+    adapter_or_resolver: McpToolAdapter | McpToolAdapterResolver | None
 
-    async def invoke(
+    def prepare(
         self,
         *,
         request: McpExecutionRequest,
@@ -43,65 +41,135 @@ class McpToolInvoker:
         snapshot: dict[str, object],
         policy: McpExecutionPolicy,
         credentials: tuple[McpCredentialReference, ...],
-    ) -> McpExecutionResult:
+    ) -> McpExecutionResult | PreparedMcpExecution:
+        log = self._logs().record(
+            request=request,
+            server_id=server.id,
+            status="running",
+            response=None,
+            error=None,
+            snapshot=snapshot,
+            run=run,
+        )
         self._notify_called(request=request, run=run, server=server, snapshot=snapshot)
         started = monotonic()
         try:
             self._enforce_payload_size(request.arguments, policy.max_input_bytes)
-            adapter = self._adapter_for(server)
-            self.session.commit()  # persist call intent and release locks before remote I/O
-            response = await adapter.call(
+            operation = self._adapter_for(server).prepare(
                 server=server,
                 tool_name=request.tool_name,
                 arguments=request.arguments,
                 credential_refs=list(credentials),
                 timeout_seconds=policy.timeout_seconds,
             )
-            control = current_execution_control()
-            if control is not None:
-                control.check_ownership()
-            self._enforce_payload_size(response, policy.max_output_bytes)
-        except ExecutionOwnershipLostError:
-            self.session.rollback()
-            raise
-        except McpExecutionPending as exc:
+        except McpExecutionPending as error:
             return self._record_pending(
                 request=request,
                 run=run,
                 server=server,
                 snapshot=snapshot,
-                pending=exc,
+                pending=error,
                 latency_ms=_latency_ms(started),
+                log_id=log.id,
             )
-        except ToolPermissionError:
-            raise
-        except McpExecutionError as exc:
+        except McpExecutionError as error:
             return self._record_failure(
                 request=request,
                 run=run,
                 server=server,
                 snapshot=snapshot,
-                error=_normalized_error(exc),
+                error=_normalized_error(error),
                 latency_ms=_latency_ms(started),
+                log_id=log.id,
             )
-        except Exception as exc:
-            self._record_crash(
+        except Exception as error:
+            return self._record_failure(
                 request=request,
                 run=run,
                 server=server,
                 snapshot=snapshot,
-                error={"code": "mcp_adapter_crashed", "message": exc.__class__.__name__},
+                error={"code": "mcp_adapter_failed", "message": type(error).__name__},
                 latency_ms=_latency_ms(started),
+                log_id=log.id,
             )
-            raise
+        return PreparedMcpExecution(
+            request,
+            server.id,
+            log.id,
+            snapshot,
+            policy,
+            operation,
+            started,
+            current_trace_context(),
+        )
 
+    def complete(
+        self,
+        prepared: PreparedMcpExecution,
+        response: dict[str, object] | None,
+        error: BaseException | None,
+    ) -> McpExecutionResult:
+        with telemetry_span("opsmesh.mcp.tool.complete", parent=prepared.trace):
+            return self._complete(prepared, response, error)
+
+    def _complete(
+        self,
+        prepared: PreparedMcpExecution,
+        response: dict[str, object] | None,
+        error: BaseException | None,
+    ) -> McpExecutionResult:
+        request = prepared.request
+        run = self.session.get(AgentRun, request.agent_run_id)
+        server = self.session.get(McpServer, prepared.server_id)
+        if (
+            run is None
+            or server is None
+            or run.workspace_id != request.workspace_id
+            or server.workspace_id != request.workspace_id
+        ):
+            raise ValueError("MCP completion is outside its workspace")
+        if error is None:
+            if response is None:
+                raise ValueError("MCP completion is missing a result")
+            try:
+                self._enforce_payload_size(response, prepared.policy.max_output_bytes)
+            except McpExecutionError as failure:
+                error = failure
+        if error is not None:
+            payload: dict[str, object] = (
+                _normalized_error(error)
+                if isinstance(error, Exception)
+                else {"code": "mcp_execution_cancelled", "message": "Runtime operation cancelled"}
+            )
+            return self._record_failure(
+                request=request,
+                run=run,
+                server=server,
+                snapshot=prepared.snapshot,
+                error=payload,
+                latency_ms=_latency_ms(prepared.started),
+                log_id=prepared.log_id,
+            )
+        assert response is not None
+        if response.get("isError") is True:
+            return self._record_failure(
+                request=request,
+                run=run,
+                server=server,
+                snapshot=prepared.snapshot,
+                error={"code": "mcp_remote_error", "message": "MCP tool reported an error"},
+                latency_ms=_latency_ms(prepared.started),
+                log_id=prepared.log_id,
+                response=response,
+            )
         return self._record_success(
             request=request,
             run=run,
             server=server,
-            snapshot=snapshot,
+            snapshot=prepared.snapshot,
             response=response,
-            latency_ms=_latency_ms(started),
+            latency_ms=_latency_ms(prepared.started),
+            log_id=prepared.log_id,
         )
 
     def _notify_called(
@@ -134,17 +202,19 @@ class McpToolInvoker:
         snapshot: dict[str, object],
         pending: McpExecutionPending,
         latency_ms: int,
+        log_id: UUID,
     ) -> McpExecutionResult:
         response = {**pending.response, "status": "waiting_self_hosted"}
         log = self._logs().record(
             request=request,
             server_id=server.id,
             status="waiting_self_hosted",
-            response={"result": response, "latency_ms": latency_ms},
+            response=response,
             error=None,
             snapshot=snapshot,
             run=run,
             latency_ms=latency_ms,
+            log_id=log_id,
         )
         notifier = McpExecutionNotifier(self.session)
         notifier.append_run_event(
@@ -197,16 +267,19 @@ class McpToolInvoker:
         snapshot: dict[str, object],
         error: dict[str, object],
         latency_ms: int,
+        log_id: UUID,
+        response: dict[str, object] | None = None,
     ) -> McpExecutionResult:
         log = self._logs().record(
             request=request,
             server_id=server.id,
             status="failed",
-            response=None,
+            response=response,
             error={**error, "latency_ms": latency_ms},
             snapshot=snapshot,
             run=run,
             latency_ms=latency_ms,
+            log_id=log_id,
         )
         notifier = McpExecutionNotifier(self.session)
         notifier.append_run_event(
@@ -237,48 +310,11 @@ class McpToolInvoker:
         self.session.flush()
         return McpExecutionResult(
             status="failed",
-            response=None,
+            response=response,
             error=error,
             log_id=log.id,
             latency_ms=latency_ms,
         )
-
-    def _record_crash(
-        self,
-        *,
-        request: McpExecutionRequest,
-        run: AgentRun,
-        server: McpServer,
-        snapshot: dict[str, object],
-        error: dict[str, object],
-        latency_ms: int,
-    ) -> None:
-        log = self._logs().record(
-            request=request,
-            server_id=server.id,
-            status="failed",
-            response=None,
-            error={**error, "latency_ms": latency_ms},
-            snapshot=snapshot,
-            run=run,
-            latency_ms=latency_ms,
-        )
-        notifier = McpExecutionNotifier(self.session)
-        notifier.append_run_event(
-            run=run,
-            event_type="tool.failed",
-            message=request.tool_name,
-            metadata={"tool_kind": "mcp", "error": error, "latency_ms": latency_ms},
-        )
-        notifier.append_execution_audit(
-            run=run,
-            request=request,
-            server_id=server.id,
-            log=log,
-            action="mcp_tool.failed",
-            snapshot=snapshot,
-        )
-        self.session.flush()
 
     def _record_success(
         self,
@@ -289,16 +325,18 @@ class McpToolInvoker:
         snapshot: dict[str, object],
         response: dict[str, object],
         latency_ms: int,
+        log_id: UUID,
     ) -> McpExecutionResult:
         log = self._logs().record(
             request=request,
             server_id=server.id,
             status="completed",
-            response={"result": response, "latency_ms": latency_ms},
+            response=response,
             error=None,
             snapshot=snapshot,
             run=run,
             latency_ms=latency_ms,
+            log_id=log_id,
         )
         notifier = McpExecutionNotifier(self.session)
         notifier.append_run_event(
@@ -351,13 +389,10 @@ class McpToolInvoker:
             )
 
     def _adapter_for(self, server: McpServer) -> McpToolAdapter:
+        if self.adapter_or_resolver is None:
+            raise ValueError("MCP preparation requires an adapter resolver")
         if isinstance(self.adapter_or_resolver, McpToolAdapterResolver):
             adapter = self.adapter_or_resolver.resolve(server)
-            if not hasattr(adapter, "call"):
-                raise McpExecutionError(
-                    "MCP adapter resolver returned an invalid adapter",
-                    code="mcp_adapter_invalid",
-                )
             return adapter
         return self.adapter_or_resolver
 

@@ -16,7 +16,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capa
 
 
 @router.get("/governance", response_model=WorkspaceCapabilityGovernanceResponse)
-async def get_workspace_capability_governance(
+def get_workspace_capability_governance(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceCapabilityGovernanceResponse:
@@ -30,7 +30,7 @@ async def get_workspace_capability_governance(
     "/governance/actions/apply",
     response_model=WorkspaceCapabilityGovernanceApplyResponse,
 )
-async def apply_workspace_capability_governance_actions(
+def apply_workspace_capability_governance_actions(
     request: WorkspaceCapabilityGovernanceApplyRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),

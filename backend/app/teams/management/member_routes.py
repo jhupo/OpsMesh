@@ -50,7 +50,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
 
 
 @router.get("/teams/{team_id}/members", response_model=PageResponse[AgentTeamMemberResponse])
-async def list_team_members(
+def list_team_members(
     team_id: UUID,
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -72,7 +72,7 @@ async def list_team_members(
     response_model=AgentTeamMemberResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_team_member(
+def create_team_member(
     team_id: UUID,
     request: AgentTeamMemberCreateRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
@@ -122,7 +122,7 @@ async def create_team_member(
     "/teams/{team_id}/members/{member_id}",
     response_model=AgentTeamMemberResponse,
 )
-async def update_team_member(
+def update_team_member(
     team_id: UUID,
     member_id: UUID,
     request: AgentTeamMemberUpdateRequest,
@@ -152,7 +152,7 @@ async def update_team_member(
     "/teams/{team_id}/members/{member_id}/model-provider",
     response_model=AgentProfileResponse,
 )
-async def update_team_member_model_provider(
+def update_team_member_model_provider(
     team_id: UUID,
     member_id: UUID,
     request: AgentTeamMemberModelProviderUpdateRequest,

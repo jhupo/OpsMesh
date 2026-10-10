@@ -1,20 +1,16 @@
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from opentelemetry.trace import SpanKind
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from backend.app.agents.execution.cancellation import raise_if_cancelled
 from backend.app.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
-    AgentRuntimeExecutor,
 )
 from backend.app.agents.execution.errors import (
     AgentRuntimeCancelledError,
-    AgentRuntimePolicyError,
     AgentRuntimeProviderError,
 )
 from backend.app.governance.costs.service import (
@@ -33,11 +29,9 @@ from backend.app.orchestration.tasks.events import TaskEventBus
 from backend.app.orchestration.tasks.models import TaskStep
 from backend.app.runtime.queues.contracts import JobPayload
 from backend.app.runtime.queues.execution_control import (
-    ExecutionOwnershipLostError,
     current_execution_control,
 )
 from backend.app.shared.config import Settings
-from backend.app.shared.telemetry.trace_context import current_trace_context, telemetry_span
 
 MarkRunFailed = Callable[[AgentRun, Exception], None]
 
@@ -46,147 +40,10 @@ MarkRunFailed = Callable[[AgentRun, Exception], None]
 class ModelRunGateway:
     session: Session
     settings: Settings | None
-    agent_runner: AgentRuntimeExecutor
     request_builder: RunRequestBuilder
     events: RunEventRecorder
     mark_run_failed: MarkRunFailed
     event_bus: TaskEventBus | None = None
-
-    async def run_with_provider_fallback(
-        self,
-        run: AgentRun,
-        request: AgentRunRequest,
-        job: JobPayload,
-    ) -> AgentRunResult | None:
-        approval = self.approvals()
-        routing = self.routing()
-        if approval.requires_approval(run, request):
-            return None
-        try:
-            return await self.execute_model_request(
-                run,
-                request,
-                job,
-                fallback_selected=False,
-            )
-        except CostBudgetExceededError as exc:
-            self.mark_run_failed(run, exc)
-            self.session.commit()
-            return None
-        except ExecutionOwnershipLostError:
-            self.session.rollback()
-            raise
-        except AgentRuntimeCancelledError:
-            raise
-        except AgentRuntimePolicyError as exc:
-            self.mark_run_failed(run, exc)
-            self.session.commit()
-            return None
-        except Exception as exc:
-            if isinstance(exc, SQLAlchemyError):
-                self.session.rollback()
-            if not isinstance(exc, AgentRuntimeProviderError):
-                self.mark_run_failed(run, exc)
-                self.session.commit()
-                raise
-            fallback_request = routing.fallback_request(
-                run=run,
-                job=job,
-                failed_request=request,
-                exc=exc,
-            )
-            if fallback_request is None:
-                self.mark_run_failed(run, exc)
-                self.session.commit()
-                raise
-
-        if approval.requires_approval(run, fallback_request):
-            return None
-        try:
-            result = await self.execute_model_request(
-                run,
-                fallback_request,
-                job,
-                fallback_selected=True,
-            )
-        except CostBudgetExceededError as exc:
-            self.mark_run_failed(run, exc)
-            self.session.commit()
-            return None
-        except ExecutionOwnershipLostError:
-            self.session.rollback()
-            raise
-        except AgentRuntimeCancelledError:
-            raise
-        except AgentRuntimePolicyError as exc:
-            self.mark_run_failed(run, exc)
-            self.session.commit()
-            return None
-        except Exception as fallback_exc:
-            if isinstance(fallback_exc, SQLAlchemyError):
-                self.session.rollback()
-            self.mark_run_failed(run, fallback_exc)
-            self.session.commit()
-            raise
-
-        self.events.append_model_provider_fallback_selected_event(
-            run,
-            failed_request=request,
-            selected_request=fallback_request,
-        )
-        return result
-
-    async def execute_model_request(
-        self,
-        run: AgentRun,
-        request: AgentRunRequest,
-        job: JobPayload,
-        *,
-        fallback_selected: bool,
-    ) -> AgentRunResult:
-        request, budget_decision = self.prepare_model_request(
-            run, request, fallback_selected=fallback_selected
-        )
-        with telemetry_span(
-            "opsmesh.model.request",
-            parent=current_trace_context(),
-            kind=SpanKind.CLIENT,
-            attributes={
-                "opsmesh.workspace.id": str(run.workspace_id),
-                "opsmesh.run.id": str(run.id),
-                "gen_ai.provider.name": request.provider or "openai",
-                "gen_ai.request.model": request.model or request.agent_profile.model,
-                "opsmesh.model.fallback": fallback_selected,
-            },
-        ):
-            try:
-                result = await self.agent_runner.run(request)
-                control = current_execution_control()
-                if control is not None:
-                    control.check_ownership()
-                await raise_if_cancelled(request.cancellation)
-            except ExecutionOwnershipLostError:
-                self.session.rollback()
-                raise
-            except Exception as exc:
-                self.record_model_failure(
-                    run,
-                    request,
-                    job,
-                    fallback_selected=fallback_selected,
-                    budget_decision=budget_decision,
-                    error=exc,
-                )
-                raise
-            self.record_model_success(
-                run,
-                request,
-                job,
-                result,
-                fallback_selected=fallback_selected,
-                budget_decision=budget_decision,
-            )
-        return result
 
     def prepare_model_request(
         self, run: AgentRun, request: AgentRunRequest, *, fallback_selected: bool
