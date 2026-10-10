@@ -9,6 +9,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
+from backend.app.capabilities.mcp.catalog.discovery import McpToolDiscoveryService
+
 
 def exercise_process() -> dict[str, object]:
     identifier = str(uuid4())
@@ -42,11 +44,20 @@ def exercise_process() -> dict[str, object]:
                         "command": sys.executable,
                         "args": [fixture],
                         "env": {"TEST_PASSWORD": "smoke-only-secret"},
+                        "restart_policy": {
+                            "max_restarts": 2,
+                            "initial_backoff_seconds": 1,
+                            "max_backoff_seconds": 2,
+                            "stable_after_seconds": 300,
+                        },
                     },
                 )["status"]
                 == "running"
             )
-            assert len(request("discover")["tools"]) == 2
+            tools = request("discover")["tools"]
+            assert len(tools) == 2
+            for tool in tools:
+                McpToolDiscoveryService._normalize_tool(tool)
             first = request("call", name="count", arguments={})["structuredContent"]
             second = request("call", name="count", arguments={})["structuredContent"]
             assert first["pid"] == second["pid"] and second["calls"] == 2
