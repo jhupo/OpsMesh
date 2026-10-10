@@ -156,6 +156,14 @@ class RunRequestBuilder:
         model_provider_override: dict[str, Any] | None,
     ) -> _AuthorizedRequestInputs:
         task = authorized_task_for_run(self.session, run)
+        live_profile = authorized_profile_for_run(self.session, run)
+        snapshot = authorization_snapshot_for_run(run)
+        self.validate_authorization_snapshot(run, task, live_profile, snapshot)
+        runtime_binding = RunRuntimeAuthorizationService(self.session).validate_for_run(
+            run=run,
+            task=task,
+            snapshot=snapshot,
+        )
         if (
             self.session.scalar(
                 select(ConversationExecution.id).where(
@@ -165,10 +173,15 @@ class RunRequestBuilder:
             )
             is not None
         ):
+            runtime_id = (
+                runtime_binding.workspace_runtime_id
+                if _runtime_execution_mode(run) == "persistent"
+                else runtime_binding.execution_runtime_id
+            )
             runtime = self.session.scalar(
                 select(WorkspaceRuntime).where(
                     WorkspaceRuntime.workspace_id == run.workspace_id,
-                    WorkspaceRuntime.id == run.execution_runtime_id,
+                    WorkspaceRuntime.id == runtime_id,
                     WorkspaceRuntime.execution_mode.in_(["isolated", "pooled", "persistent"]),
                     WorkspaceRuntime.status.in_(["active", "running"]),
                 )
@@ -179,9 +192,6 @@ class RunRequestBuilder:
                     "Conversation execution requires an approved "
                     "isolated, pooled or persistent Runtime",
                 )
-        live_profile = authorized_profile_for_run(self.session, run)
-        snapshot = authorization_snapshot_for_run(run)
-        self.validate_authorization_snapshot(run, task, live_profile, snapshot)
         runtime_profile = agent_runtime_profile_for_snapshot(
             snapshot,
             workspace_id=run.workspace_id,
@@ -197,11 +207,6 @@ class RunRequestBuilder:
                 model=runtime_profile.model,
                 model_settings=dict(runtime_profile.model_settings),
             )
-        runtime_binding = RunRuntimeAuthorizationService(self.session).validate_for_run(
-            run=run,
-            task=task,
-            snapshot=snapshot,
-        )
         return _AuthorizedRequestInputs(
             task=task,
             profile=profile,
