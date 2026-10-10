@@ -36,6 +36,8 @@ def select_tests(changed: list[str]) -> list[str]:
             tests.add("test_deployment_assets.py")
         if name.startswith("scripts/release"):
             tests.add("test_release_delivery.py")
+        if name in {"scripts/ci_tests.py", "scripts/ci_command.py"}:
+            tests.add("test_ci_command.py")
         if name in {"pyproject.toml", "uv.lock"}:
             tests.update({"test_health.py", "test_user_orchestration.py"})
         if name.startswith("tests/test_") and path.is_file():
