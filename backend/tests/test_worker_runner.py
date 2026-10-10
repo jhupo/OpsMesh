@@ -2849,8 +2849,6 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
             "team_runtime_paused": 2,
             "queue_idempotency_duplicate": 10,
         },
-        task_events_published=13,
-        task_event_publish_failures=14,
         scheduled_job_actions_enqueued=15,
         scheduled_job_actions_recorded=16,
         scheduled_job_actions_skipped=17,
@@ -2880,8 +2878,8 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
         "team_runtime_paused": 2,
         "queue_idempotency_duplicate": 10,
     }
-    assert summary.task_events_published == 13
-    assert summary.task_event_publish_failures == 14
+    assert summary.task_events_published == 0
+    assert summary.task_event_publish_failures == 0
     assert summary.scheduled_job_actions_enqueued == 15
     assert summary.scheduled_job_actions_recorded == 16
     assert summary.scheduled_job_actions_skipped == 17
@@ -2910,8 +2908,8 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
             "team_runtime_paused": 2,
             "queue_idempotency_duplicate": 10,
         }
-        assert heartbeat.details["task_events_published"] == 13
-        assert heartbeat.details["task_event_publish_failures"] == 14
+        assert heartbeat.details["task_events_published"] == 0
+        assert heartbeat.details["task_event_publish_failures"] == 0
         assert heartbeat.details["scheduled_job_actions_enqueued"] == 15
         assert heartbeat.details["scheduled_job_actions_recorded"] == 16
         assert heartbeat.details["scheduled_job_actions_skipped"] == 17
@@ -2924,7 +2922,7 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
         assert heartbeat.details["scheduled_job_actions_skipped_by_job_type"] == {"task.plan": 17}
 
 
-def test_worker_maintenance_publishes_task_event_outbox_and_counts_result() -> None:
+def test_worker_dispatch_publishes_task_event_outbox_and_counts_result() -> None:
     session_factory = _session_factory()
     queue = _queue()
     workspace_id, run_id, _ = _seed_run(session_factory, slug="task-event-outbox")
@@ -2952,7 +2950,7 @@ def test_worker_maintenance_publishes_task_event_outbox_and_counts_result() -> N
         ),
     )
 
-    summary = runner.run_maintenance()
+    summary = runner.dispatch_events()
     events = RedisTaskEventBus(redis=queue.redis, key_prefix="opsmesh").read(
         workspace_id=workspace_id,
         task_id=task_id,

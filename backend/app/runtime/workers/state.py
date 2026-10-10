@@ -68,8 +68,6 @@ class WorkerRunState:
             self.team_execution_loop_skip_reasons,
             maintenance.team_execution_loop_skip_reasons,
         )
-        self.task_events_published += maintenance.task_events_published
-        self.task_event_publish_failures += maintenance.task_event_publish_failures
         self.webhook_delivery_jobs_enqueued += maintenance.webhook_delivery_jobs_enqueued
         self.webhook_delivery_jobs_skipped += maintenance.webhook_delivery_jobs_skipped
         self.scheduled_job_actions_enqueued += maintenance.scheduled_job_actions_enqueued
@@ -87,21 +85,11 @@ class WorkerRunState:
             self.scheduled_job_actions_skipped_by_job_type,
             maintenance.scheduled_job_actions_skipped_by_job_type,
         )
-        self.audit_integrity_workspaces_checked += (
-            maintenance.audit_integrity_workspaces_checked
-        )
-        self.audit_integrity_workspaces_invalid += (
-            maintenance.audit_integrity_workspaces_invalid
-        )
-        self.workspace_health_snapshots_created += (
-            maintenance.workspace_health_snapshots_created
-        )
-        self.workspace_health_snapshots_skipped += (
-            maintenance.workspace_health_snapshots_skipped
-        )
-        self.workspace_health_snapshots_disabled += (
-            maintenance.workspace_health_snapshots_disabled
-        )
+        self.audit_integrity_workspaces_checked += maintenance.audit_integrity_workspaces_checked
+        self.audit_integrity_workspaces_invalid += maintenance.audit_integrity_workspaces_invalid
+        self.workspace_health_snapshots_created += maintenance.workspace_health_snapshots_created
+        self.workspace_health_snapshots_skipped += maintenance.workspace_health_snapshots_skipped
+        self.workspace_health_snapshots_disabled += maintenance.workspace_health_snapshots_disabled
         self.queue_rehydrated_runs += maintenance.queue_rehydrated_runs
         self.queue_recovery_failures += maintenance.queue_recovery_failures
         if maintenance.last_error is not None:

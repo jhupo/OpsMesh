@@ -86,6 +86,8 @@ def test_task_event_outbox_publisher_records_failure_and_retries_later() -> None
     assert "redis unavailable" in str(stored.last_error)
     event_id = stored.event_id
 
+    stored.available_at = stored.created_at
+    session.commit()
     bus = InMemoryTaskEventBus()
     retried = TaskEventOutboxPublisher(session, bus).publish_pending(limit=10)
 
@@ -101,7 +103,7 @@ def test_task_event_outbox_publisher_records_failure_and_retries_later() -> None
     assert events[0].payload["outbox_id"] == str(stored.id)
 
 
-def test_worker_maintenance_publishes_task_event_outbox() -> None:
+def test_worker_dispatch_publishes_task_event_outbox() -> None:
     session_factory = _session_factory()
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = RedisQueue(
@@ -128,7 +130,7 @@ def test_worker_maintenance_publishes_task_event_outbox() -> None:
         config=WorkerRunnerConfig(worker_id="worker-events", queue_name="agent_runs"),
     )
 
-    summary = runner.run_maintenance()
+    summary = runner.dispatch_events()
 
     assert summary.task_events_published == 1
     assert summary.task_event_publish_failures == 0

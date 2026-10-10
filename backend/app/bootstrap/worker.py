@@ -11,15 +11,19 @@ from backend.app.agents.execution.contracts import AgentRuntimeExecutor
 from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.capabilities.mcp.managed_maintenance import reconcile_managed_mcp
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
-from backend.app.orchestration.conversations.maintenance import ConversationMaintenanceService
+from backend.app.orchestration.conversations.recovery import ConversationRecoveryService
 from backend.app.orchestration.runs.async_execution import AsyncAgentRunExecutor
 from backend.app.orchestration.scheduling.maintenance import WorkerMaintenanceService
+from backend.app.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
+from backend.app.orchestration.tasks.events import RedisTaskEventBus
 from backend.app.platform.updates.service import maintenance_enabled
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
 from backend.app.runtime.operations.admin_requests import AdminOperationService
 from backend.app.runtime.operations.history import PlatformHistoryService
 from backend.app.runtime.queues.contracts import JobType
+from backend.app.runtime.queues.dispatch import QueueDispatchPublisher
 from backend.app.runtime.queues.service import RedisQueue
+from backend.app.runtime.workers.dispatch_contracts import WorkerEventDispatchSummary
 from backend.app.runtime.workers.maintenance_contracts import (
     WorkerMaintenanceConfig,
     WorkerMaintenanceSummary,
@@ -61,12 +65,9 @@ def build_worker_runner(
                     reconcile_managed_mcp(session, queue)
         except Exception:
             logging.getLogger(__name__).error("Managed MCP maintenance failed")
-        for _ in range(5):
-            with failure_session_scope() as session:
-                if maintenance_enabled(session):
-                    break
-                if not ConversationMaintenanceService(session).process_one():
-                    break
+        with failure_session_scope() as session:
+            if not maintenance_enabled(session):
+                ConversationRecoveryService(session).recover(limit=config.recovery_batch_size)
         try:
             with failure_session_scope() as session:
                 PlatformHistoryService(session).capture(settings or get_settings())
@@ -89,6 +90,17 @@ def build_worker_runner(
             settings=settings,
             runtime_docker_client=runtime_docker_client,
         ).run()
+
+    def dispatch_events() -> WorkerEventDispatchSummary:
+        with failure_session_scope() as session:
+            if maintenance_enabled(session):
+                return WorkerEventDispatchSummary()
+            QueueDispatchPublisher(session, queue).publish_pending(limit=config.recovery_batch_size)
+        with failure_session_scope() as session:
+            result = TaskEventOutboxPublisher(
+                session, RedisTaskEventBus(redis=queue.redis, key_prefix=queue.keys.prefix)
+            ).publish_pending(limit=config.recovery_batch_size)
+            return WorkerEventDispatchSummary(result.published, result.failed)
 
     failure_reporter = TeamWorkerFailureReporter(
         config=config,
@@ -116,6 +128,7 @@ def build_worker_runner(
             runtime_docker_client=runtime_docker_client,
         ),
         maintenance=maintenance,
+        dispatch_events=dispatch_events,
         admission_blocked=maintenance_enabled,
         on_job_failure=failure_reporter.record_failure,
         settings=settings,

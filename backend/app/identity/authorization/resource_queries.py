@@ -176,7 +176,7 @@ def _row_predicate(
     table = Base.metadata.tables[table_name]
     service = ResourceAuthorizationService(session, scope.user)
     tenant = table.c.workspace_id == scope.workspace_id
-    if table_name == "conversations":
+    if table_name in {"conversations", "queue_dispatches"}:
         return and_(tenant, table.c.created_by_user_id == scope.user.user_id)
     if table_name == "marketplace_listings" and action == ResourceAction.READ:
         return or_(
@@ -437,7 +437,7 @@ def _authorize_changes(session: Session, flush_context: object, instances: objec
         if row.workspace_id != scope.workspace_id:
             raise ResourceAccessDenied()
         if row in session.new:
-            if table.name == "conversations":
+            if table.name in {"conversations", "queue_dispatches"}:
                 if row.created_by_user_id != scope.user.user_id:
                     raise ResourceAccessDenied()
                 continue

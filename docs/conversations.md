@@ -64,13 +64,14 @@ messages 的列表项是 Turn：`body` 为用户输入，`reply` 为最终回复
 
 ## 执行与恢复
 
-1. API 将消息、冻结的用户/Token 身份和 queued 轮次提交到 PostgreSQL。
-2. Worker maintenance 锁定对话，恢复并检查原始执行身份，创建现有 Task / Run。
-3. 已有 QueueRehydrationService 将持久化的 queued Run 投递 Redis；无需客户端再次发送。
+1. API 将消息、冻结的用户/Token 身份、queued 轮次及 conversation.advance 投递意图在同一事务中提交到 PostgreSQL，提交后立即发布到 Redis。
+2. Worker 领取 conversation.advance，按工作空间锁定对话，恢复并检查原始执行身份，按 sequence 创建 Task / Run 和事务队列投递记录。
+3. Worker 完成任务后立即发布已提交的队列记录和工具/进度事件。独立事件发布通道也会每秒检查未投递的 outbox，支持其他进程写入及 Redis 故障后的投递恢复；不依赖 60 秒维护任务。
 4. Worker 的现有授权、配额、审批与 Runtime 链路处理执行。
 5. Manager 可以直接回复、使用自己的授权工具/Skill，或调用发现与委派工具。
-6. 委派工具返回 Task ID。Manager 结束本轮执行后，对话进入 waiting_tasks；Worker
-   观察到子任务完成，创建新的 Manager 执行，注入结果并最终写回 reply。
+6. Task 状态变更与会话唤醒记录在同一事务中提交。委派工具返回 Task ID；Manager 结束本轮执行后，对话进入 waiting_tasks；子任务完成事件唤醒同一调度器，创建新的 Manager 执行，注入结果并最终写回 reply。完成、失败或取消后，同一调度器立即启动下一个排队轮次。
+
+正常启动、续答和结果回写只走队列调度。维护任务仅对超过 60 秒未推进的非终态对话补发唤醒，并由现有 QueueRehydrationService 恢复丢失的 queued Run 投递；不执行另一套对话状态机。重复事件通过数据库对话锁和执行唯一键幂等处理；事务回滚不会发布队列任务。
 
 发现工具只返回当前执行身份可 invoke 的 active 专家与团队。委派时再次校验权限；
 被委派任务继承原始 Token 权限上限并保存父 Run。稳定 `request_key` 防止模型重试时

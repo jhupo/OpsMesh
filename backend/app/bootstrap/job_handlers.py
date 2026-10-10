@@ -7,6 +7,7 @@ from backend.app.capabilities.mcp.managed_jobs import ManagedMcpJobHandler
 from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.governance.audit.jobs import AuditIntegrityJobHandler
 from backend.app.governance.credentials.jobs import SecretReencryptJobHandler
+from backend.app.orchestration.conversations.jobs import ConversationAdvanceJobHandler
 from backend.app.orchestration.planning.jobs import TaskPlanJobHandler
 from backend.app.orchestration.runs.jobs import AgentRunJobHandler
 from backend.app.orchestration.webhooks.jobs import WebhookDeliveryJobHandler
@@ -61,6 +62,7 @@ def _build_handler_registry(
     context: WorkerJobHandlerContext,
 ) -> dict[JobType, WorkerJobTypeHandler]:
     return {
+        JobType.CONVERSATION_ADVANCE: ConversationAdvanceJobHandler(context),
         JobType.AGENT_RUN: AgentRunJobHandler(context),
         JobType.AUDIT_INTEGRITY_CHECK: AuditIntegrityJobHandler(context),
         JobType.MCP_TOOL_EXECUTION: McpToolExecutionJobHandler(context),
