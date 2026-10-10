@@ -185,7 +185,10 @@ def test_workspace_file_ingestion_materializes_versioned_memory_chunks(tmp_path)
         ),
     )
     assert product_results[0]["citations"]
-    memory_entry_id = UUID(str(product_results[0]["metadata"]["memory_entry_id"]))
+    assert "quote" not in product_results[0]["citations"][0]
+    assert "metadata" not in product_results[0]
+    assert "ranking" not in product_results[0]
+    memory_entry_id = UUID(str(product_results[0]["memory_entry_id"]))
     citation_result = ProductToolService(session).memory.get_knowledge_citations(
         product_context,
         memory_entry_id=memory_entry_id,

@@ -313,7 +313,7 @@ def _execute_product_tool(
             "items": service.memory.search_workspace_memory(
                 context,
                 query=str_argument(arguments, "query", default=""),
-                limit=int_argument(arguments, "limit", default=10),
+                limit=int_argument(arguments, "limit", default=5),
                 source_types=source_types,
                 access_scopes=memory_read_scopes(
                     resource_grants,

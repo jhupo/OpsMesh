@@ -22,7 +22,11 @@ from backend.app.orchestration.conversations.models import (
     ConversationTurn,
     turn_event,
 )
-from backend.app.orchestration.conversations.schemas import ConversationCreate
+from backend.app.orchestration.conversations.schemas import (
+    ConversationCreate,
+    ExecutionResponse,
+    ExecutionRunResponse,
+)
 from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.service import RunOrchestrationService
@@ -182,10 +186,14 @@ class ConversationService:
         )
 
     def executions(
-        self, context: WorkspaceContext, conversation_id: UUID, page: PageParams
-    ) -> tuple[list[ConversationExecution], int]:
+        self,
+        context: WorkspaceContext,
+        conversation_id: UUID,
+        page: PageParams,
+        turn_id: UUID | None = None,
+    ) -> tuple[list[ExecutionResponse], int]:
         self.get(context, conversation_id)
-        return page_scalars(
+        links, total = page_scalars(
             self.session,
             select(ConversationExecution)
             .join(
@@ -196,10 +204,71 @@ class ConversationService:
                 ConversationExecution.workspace_id == context.workspace.id,
                 ConversationTurn.workspace_id == context.workspace.id,
                 ConversationTurn.conversation_id == conversation_id,
+                *([ConversationTurn.id == turn_id] if turn_id is not None else []),
             )
             .order_by(ConversationExecution.created_at, ConversationExecution.id),
             page,
         )
+        runs = (
+            list(
+                self.session.scalars(
+                    select(AgentRun)
+                    .where(
+                        AgentRun.workspace_id == context.workspace.id,
+                        AgentRun.task_id.in_([link.task_id for link in links]),
+                    )
+                    .order_by(AgentRun.created_at, AgentRun.id)
+                )
+            )
+            if links
+            else []
+        )
+        return [
+            ExecutionResponse(
+                id=link.id,
+                created_at=link.created_at,
+                updated_at=link.updated_at,
+                turn_id=link.turn_id,
+                task_id=link.task_id,
+                purpose=link.purpose,
+                parent_run_id=link.parent_run_id,
+                round=link.round,
+                runs=[
+                    ExecutionRunResponse.model_validate(run)
+                    for run in runs
+                    if run.task_id == link.task_id
+                ],
+            )
+            for link in links
+        ], total
+
+    def turn_errors(
+        self, context: WorkspaceContext, conversation_id: UUID, turns: list[ConversationTurn]
+    ) -> dict[UUID, dict[str, object]]:
+        self.get(context, conversation_id)
+        failed_ids = [turn.id for turn in turns if turn.status == "failed"]
+        if not failed_ids:
+            return {}
+        rows = self.session.execute(
+            select(ConversationTurn.id, AgentRun.error)
+            .join(ConversationExecution, ConversationExecution.turn_id == ConversationTurn.id)
+            .join(AgentRun, AgentRun.task_id == ConversationExecution.task_id)
+            .where(
+                ConversationTurn.workspace_id == context.workspace.id,
+                ConversationTurn.conversation_id == conversation_id,
+                ConversationTurn.id.in_(failed_ids),
+                ConversationExecution.workspace_id == context.workspace.id,
+                ConversationExecution.round == ConversationTurn.round,
+                ConversationExecution.purpose == "manager",
+                AgentRun.workspace_id == context.workspace.id,
+            )
+            .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
+        )
+        errors: dict[UUID, dict[str, object]] = {}
+        for turn_id, error in rows:
+            if turn_id not in errors and isinstance(error, dict):
+                errors[turn_id] = error
+        return errors
 
     def cancel(
         self, context: WorkspaceContext, conversation_id: UUID, turn_id: UUID

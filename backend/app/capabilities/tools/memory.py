@@ -42,11 +42,13 @@ class WorkspaceMemoryProductTools:
         context: ToolContext,
         query: str,
         *,
-        limit: int = 10,
+        limit: int = 5,
         source_types: set[str] | None = None,
         access_scopes: tuple[AuthorizedMemoryScope, ...],
     ) -> list[dict[str, object]]:
         context.require_tool("search_workspace_memory")
+        if not 1 <= limit <= 10:
+            raise ValueError("Memory search limit must be between 1 and 10")
         self._events.append(context, "tool.called", "search_workspace_memory")
         query_embedding, embedding_model, embedding_evidence = self._query_embedding(
             workspace_id=context.workspace_id,
@@ -90,11 +92,24 @@ class WorkspaceMemoryProductTools:
             )
             if memory_entry_id is not None:
                 result["citations"] = [
-                    _citation_payload(citation)
+                    {"id": str(citation.id), "locator": citation.locator}
                     for citation in citations_by_entry.get(memory_entry_id, [])
                 ]
         self._events.append(context, "tool.completed", "search_workspace_memory")
-        return results
+        return [
+            {
+                "memory_entry_id": metadata.get("memory_entry_id"),
+                "source_type": result["source_type"],
+                "source_id": result["source_id"],
+                "title": result["title"],
+                "snippet": result["snippet"],
+                "score": result["score"],
+                "citations": result.get("citations", []),
+            }
+            for result in results
+            for metadata in [result.get("metadata", {})]
+            if isinstance(metadata, dict)
+        ]
 
     def get_knowledge_citations(
         self,
@@ -286,9 +301,7 @@ def _require_memory_write(
 def _citation_payload(citation: KnowledgeCitation) -> dict[str, object]:
     return {
         "id": str(citation.id),
-        "workspace_id": str(citation.workspace_id),
         "source_id": str(citation.source_id),
-        "ingestion_id": str(citation.ingestion_id),
         "memory_entry_id": str(citation.memory_entry_id),
         "source_version": citation.source_version,
         "chunk_index": citation.chunk_index,
@@ -296,7 +309,6 @@ def _citation_payload(citation: KnowledgeCitation) -> dict[str, object]:
         "start_offset": citation.start_offset,
         "end_offset": citation.end_offset,
         "quote": citation.quote,
-        "quote_sha256": citation.quote_sha256,
     }
 
 

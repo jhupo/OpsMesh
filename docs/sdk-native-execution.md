@@ -36,7 +36,9 @@ stdio、Streamable HTTP、SSE 的实际连接在批准的 Runtime 执行，使�
 
 ## 压缩、记忆与输出
 
-会话压缩只有一个所有者：OpenAI Responses 路径通过原生 `OpenAIResponsesCompactionSession` 包装同一个 SQLAlchemySession。平台只配置按预算触发的阈值，不再安装 Sandbox Compaction；Chat Completions 和其他不支持该能力的 Provider 不执行自制压缩或静默降级。第三方网关是否支持 `responses.compact` 需要部署方验证。
+会话压缩只有一个所有者：OpenAI Responses 路径通过原生 `OpenAIResponsesCompactionSession` 包装同一个 SQLAlchemySession。触发判断完全使用锁定 SDK 的默认策略，平台不配置 token 阈值，不按字节估算触发，也不安装 Sandbox Compaction。使用 SDK 的 `compaction_mode="input"`，由 SDK 提供 Session 历史，不依赖第三方网关持久保存响应 ID。SDK 的 `openai-agents.openai.compaction` 日志经过平台脱敏过滤，记录跳过、开始及完成；Chat Completions 和其他不支持该能力的 Provider 不执行自制压缩或静默降级。第三方网关是否支持 `responses.compact` 的 input 模式需要实际联调验证。
+
+知识搜索工具默认返回前 5 条、最多 10 条匹配摘要和引用定位；完整片段通过 `get_knowledge_citations` 按需读取。排名诊断和内部存储元数据留在平台检索审计中，不自动进入模型工具输出。
 
 Agent Profile 的 `memory_policy.sdk_memory` 默认关闭。例如只读取持久文件记忆：
 
