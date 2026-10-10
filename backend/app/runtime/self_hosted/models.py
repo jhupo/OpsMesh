@@ -158,7 +158,7 @@ class SelfHostedMcpJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     error_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     claimed_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    cancel_requested_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
