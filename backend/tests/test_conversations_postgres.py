@@ -189,6 +189,7 @@ def test_chat_turns_complete_in_order_while_maintenance_is_blocked() -> None:
             second = service.send(context, cid, "second", "second", queue=queue).id
         completed = []
         release_maintenance = threading.Event()
+        maintenance_released = []
 
         async def complete(job, io: BlockingIO, controls: BlockingIO):
             # Replace only the external execution boundary; exercise actual queue leases,
@@ -209,7 +210,7 @@ def test_chat_turns_complete_in_order_while_maintenance_is_blocked() -> None:
         def blocked_maintenance():
             from backend.app.runtime.workers.maintenance_contracts import WorkerMaintenanceSummary
 
-            assert release_maintenance.wait(10), "Chat waited for maintenance"
+            maintenance_released.append(release_maintenance.wait(10))
             return WorkerMaintenanceSummary(recovered_runs=0, expired_leases=0)
 
         runner = build_worker_runner(
@@ -222,6 +223,7 @@ def test_chat_turns_complete_in_order_while_maintenance_is_blocked() -> None:
         result = runner.run(max_jobs=6)
         assert result.failed == 0
         assert release_maintenance.is_set()
+        assert maintenance_released == [True], "Chat waited for maintenance"
         with factory() as session:
             assert session.get(ConversationTurn, first).reply == "first"
             assert session.get(ConversationTurn, second).reply == "second"
