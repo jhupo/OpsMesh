@@ -2844,7 +2844,7 @@ def test_bound_team_runtime_stop_and_resume_control_workspace_runtime() -> None:
         docker_container_id="bound-container",
         limits={},
         network_policy={},
-        capabilities={},
+        capabilities={"node_id": "test-node"},
     )
     session.add_all([team, runtime])
     session.commit()

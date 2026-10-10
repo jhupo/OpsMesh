@@ -79,7 +79,10 @@ def test_chat_request_uses_the_leased_execution_runtime_and_releases_it(mode: st
             "max_processes": 64,
             "max_concurrent_executions": 2,
         },
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace"}},
+        },
     )
     session.add(parent)
     session.flush()
