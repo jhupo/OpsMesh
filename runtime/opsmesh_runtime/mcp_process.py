@@ -138,7 +138,8 @@ class McpProcess:
                             while True:
                                 page = await session.list_tools(cursor=cursor)
                                 tools.extend(
-                                    t.model_dump(mode="json", by_alias=True) for t in page.tools
+                                    t.model_dump(mode="json", by_alias=True, exclude_none=True)
+                                    for t in page.tools
                                 )
                                 if len(tools) > 1000:
                                     raise ValueError("Too many MCP tools")
