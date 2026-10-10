@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.bootstrap.job_handlers import WorkerJobHandler
+from backend.app.capabilities.references.models import CapabilityResource
 from backend.app.capabilities.tools.contracts import ToolContext
 from backend.app.capabilities.tools.conversations import ConversationProductTools
 from backend.app.identity.authorization.models import ResourceGrant, SecuredResource
@@ -16,6 +17,10 @@ from backend.app.orchestration.requests.sessions import RunRequestSessionService
 from backend.app.orchestration.runs.authorization.policy import RunRuntimeAuthorizationError
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
+from backend.app.runtime.backends.docker import DockerRuntimeBackend
+from backend.app.runtime.backends.registry import RuntimeBackendRegistry
+from backend.app.runtime.instances.models import RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.instances.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.queues.dependencies import get_worker_queue
 from backend.app.runtime.queues.dispatch import QueueDispatchPublisher
@@ -23,6 +28,7 @@ from backend.app.runtime.recovery.rehydration import QueueRehydrationService
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.members.models import WorkspaceMember
 from backend.tests.test_agent_management_api import _client, _headers, _seed_workspace
+from backend.tests.test_run_runtime_environment import FakeDockerClient
 
 
 def _advance(client, session) -> bool:
@@ -38,6 +44,123 @@ def _advance(client, session) -> bool:
         QueueDispatchPublisher(session, queue).publish_pending()
         handled = True
     return handled
+
+
+@pytest.mark.parametrize("mode", ["isolated", "pooled", "persistent"])
+def test_chat_request_uses_the_leased_execution_runtime_and_releases_it(mode: str) -> None:
+    from datetime import UTC, datetime
+
+    client, session = _client()
+    owner, workspace = _seed_workspace(session)
+    template = RuntimeTemplate(
+        name="Chat SDK",
+        image="python@sha256:" + "0" * 64,
+        default_limits={},
+        default_network_policy={"mode": "none"},
+        created_at=datetime.now(UTC),
+    )
+    session.add(template)
+    session.flush()
+    parent = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_template_id=template.id,
+        name="Chat placement",
+        execution_mode=mode,
+        status="running",
+        connection_status="online",
+        docker_container_id="chat-container",
+        network_policy={"mode": "none"},
+        limits={
+            "cpu_count": 1,
+            "memory_mb": 512,
+            "disk_mb": 1024,
+            "timeout_seconds": 30,
+            "max_output_bytes": 256000,
+            "max_processes": 64,
+        },
+        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+    )
+    session.add(parent)
+    session.flush()
+    resource = CapabilityResource(
+        workspace_id=workspace.id,
+        created_by_user_id=owner.id,
+        key="chat-runtime",
+        name="Chat runtime",
+        resource_type="runtime",
+        access_mode="execute",
+        locator={"workspace_runtime_id": str(parent.id)},
+    )
+    session.add(resource)
+    session.flush()
+    profile = AgentProfile(
+        workspace_id=workspace.id,
+        name="Chat manager",
+        role="manager",
+        capabilities={"resource_ids": [str(resource.id)]},
+    )
+    session.add(profile)
+    session.commit()
+    root = f"/api/v1/workspaces/{workspace.id}/conversations"
+    created = client.post(
+        root,
+        headers=_headers(owner.id),
+        json={"mode": "agent", "agent_profile_id": str(profile.id)},
+    )
+    assert created.status_code == 201, created.text
+    accepted = client.post(
+        f"{root}/{created.json()['id']}/messages",
+        headers={**_headers(owner.id), "Idempotency-Key": "runtime-chat"},
+        json={"body": "Inspect the incident"},
+    )
+    assert accepted.status_code == 202, accepted.text
+    assert _advance(client, session)
+    session.commit()
+    link = session.scalar(
+        select(ConversationExecution).where(
+            ConversationExecution.turn_id == UUID(accepted.json()["id"])
+        )
+    )
+    run = session.scalar(select(AgentRun).where(AgentRun.task_id == link.task_id))
+    docker = FakeDockerClient()
+    environment = RunRuntimeEnvironmentService(session, docker)
+    result = environment.ensure_for_run(run)
+    session.commit()
+    job = JobPayload(
+        workspace_id=workspace.id,
+        job_type=JobType.AGENT_RUN,
+        resource_id=run.id,
+        idempotency_key="chat-sdk",
+    )
+    backends = RuntimeBackendRegistry({"cloud_docker": DockerRuntimeBackend(docker, lambda: 30)})
+    request = RunRequestBuilder(
+        session, client.app.state.settings, docker_client=docker, runtime_backends=backends
+    ).build_agent_request(
+        run,
+        job,
+        model_provider_override={
+            "provider": "openai-compatible",
+            "model": "offline",
+            "model_api": "responses",
+            "base_url": "http://offline.test/v1",
+            "api_key": "offline",
+            "model_provider_credential_id": None,
+        },
+    )
+    assert request.sandbox is not None
+    assert request.sandbox.session.executor.container_id == result.runtime.docker_container_id
+    assert request.sandbox.session.persistent is (mode == "persistent")
+    assert request.context.metadata["runtime_execution"]["execution_runtime_id"] == str(
+        result.runtime.id
+    )
+    assert environment.cleanup_for_run(run)
+    if mode == "persistent":
+        assert docker.created == docker.removed == docker.removed_volumes == []
+        with pytest.raises(RunRuntimeAuthorizationError) as error:
+            RunRequestBuilder(
+                session, client.app.state.settings, docker_client=docker, runtime_backends=backends
+            ).build_agent_request(run, job, model_provider_override={})
+        assert error.value.code == "runtime_execution_lease_invalid"
 
 
 def test_conversation_failure_exposes_redacted_run_evidence_only_to_owner() -> None:
