@@ -13,8 +13,6 @@ from backend.app.orchestration.automations.service import AutomationService
 from backend.app.orchestration.runs.control import RunControlService
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.scheduling.service import WorkspaceScheduledJobService
-from backend.app.orchestration.tasks.event_outbox import TaskEventOutboxPublisher
-from backend.app.orchestration.tasks.events import RedisTaskEventBus
 from backend.app.orchestration.webhooks.scheduler import WebhookDeliveryScheduler
 from backend.app.platform.settings.policy import operational_configuration
 from backend.app.resources.lifecycle.service import WorkspaceDataLifecycleService
@@ -144,13 +142,6 @@ class WorkerMaintenanceService:
             queue=self._queue,
             limit=self._config.recovery_batch_size,
         )
-        task_event_summary = TaskEventOutboxPublisher(
-            session,
-            RedisTaskEventBus(
-                redis=self._queue.redis,
-                key_prefix=self._queue.keys.prefix,
-            ),
-        ).publish_pending(limit=self._config.recovery_batch_size)
         webhook_delivery_summary = WebhookDeliveryScheduler(session).enqueue_due(
             queue=self._queue,
             limit=self._config.recovery_batch_size,
@@ -192,8 +183,6 @@ class WorkerMaintenanceService:
             team_execution_loop_jobs_enqueued=team_loop_summary.enqueued,
             team_execution_loop_jobs_skipped=team_loop_summary.skipped,
             team_execution_loop_skip_reasons=team_loop_summary.skipped_reasons,
-            task_events_published=task_event_summary.published,
-            task_event_publish_failures=task_event_summary.failed,
             webhook_delivery_jobs_enqueued=webhook_delivery_summary.enqueued,
             webhook_delivery_jobs_skipped=webhook_delivery_summary.skipped,
             scheduled_job_actions_enqueued=scheduled_job_summary.enqueued,

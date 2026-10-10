@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.orchestration.tasks.events import TaskEventBus
 from backend.app.orchestration.tasks.models import TaskEventOutbox
 from backend.app.orchestration.webhooks.delivery import WebhookDeliveryService
+from backend.app.shared.security.redaction import redact_sensitive_text
 
 TASK_EVENT_OUTBOX_PENDING = "pending"
 TASK_EVENT_OUTBOX_PUBLISHED = "published"
@@ -81,6 +82,7 @@ class TaskEventOutboxPublisher:
                 continue
             self._record_published(event, stream_id=stream_id)
             published += 1
+        self._session.commit()
         return TaskEventOutboxPublishSummary(
             scanned=len(events),
             published=published,
@@ -113,16 +115,17 @@ class TaskEventOutboxPublisher:
             payload=event.payload,
             event_id=str(event.event_id),
         )
-        self._session.commit()
 
     def _record_failure(self, event: TaskEventOutbox, exc: Exception) -> None:
         event.attempts += 1
         event.last_error = _truncate_error(exc)
         event.status = TASK_EVENT_OUTBOX_PENDING
+        event.available_at = datetime.now(UTC) + timedelta(
+            seconds=min(2 ** min(event.attempts, 8), 300)
+        )
         self._session.add(event)
-        self._session.commit()
 
 
 def _truncate_error(exc: Exception) -> str:
     error = str(exc) or exc.__class__.__name__
-    return error[:TASK_EVENT_OUTBOX_ERROR_MAX_LENGTH]
+    return redact_sensitive_text(error)[:TASK_EVENT_OUTBOX_ERROR_MAX_LENGTH]

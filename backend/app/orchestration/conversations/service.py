@@ -15,6 +15,7 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
+from backend.app.orchestration.conversations.dispatch import request_advance
 from backend.app.orchestration.conversations.models import (
     Conversation,
     ConversationEvent,
@@ -32,6 +33,8 @@ from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.tasks.models import Task
 from backend.app.orchestration.tasks.service import TaskCreateCommand, WorkspaceTaskService
+from backend.app.runtime.queues.dispatch import QueueDispatchPublisher, stage_job
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.shared.db.pagination import page_scalars
 from backend.app.shared.errors import ConflictError, NotFoundError
 from backend.app.shared.pagination import PageParams
@@ -123,7 +126,13 @@ class ConversationService:
         return row
 
     def send(
-        self, context: WorkspaceContext, conversation_id: UUID, body: str, key: str
+        self,
+        context: WorkspaceContext,
+        conversation_id: UUID,
+        body: str,
+        key: str,
+        *,
+        queue: RedisQueue,
     ) -> ConversationTurn:
         conversation = self.get(context, conversation_id, lock=True)
         existing = self.session.scalar(
@@ -167,7 +176,11 @@ class ConversationService:
         self.session.flush()
         self._audit(context, "conversation.message.accepted", turn.id)
         self.session.add(turn_event(turn))
+        request_advance(self.session, context.workspace.id, conversation.id, context.user.user_id)
         self.session.commit()
+        QueueDispatchPublisher(self.session, queue).publish_pending(
+            workspace_id=context.workspace.id
+        )
         return turn
 
     def turns(
@@ -271,7 +284,7 @@ class ConversationService:
         return errors
 
     def cancel(
-        self, context: WorkspaceContext, conversation_id: UUID, turn_id: UUID
+        self, context: WorkspaceContext, conversation_id: UUID, turn_id: UUID, *, queue: RedisQueue
     ) -> ConversationTurn:
         self.get(context, conversation_id, lock=True)
         turn = self.session.scalar(
@@ -310,8 +323,12 @@ class ConversationService:
                 )
         turn.status = "cancelled"
         self.session.add(turn_event(turn))
+        request_advance(self.session, context.workspace.id, conversation_id, context.user.user_id)
         self._audit(context, "conversation.turn.cancelled", turn.id)
         self.session.commit()
+        QueueDispatchPublisher(self.session, queue).publish_pending(
+            workspace_id=context.workspace.id
+        )
         return turn
 
     def _audit(self, context: WorkspaceContext, action: str, identifier: UUID) -> None:
@@ -325,7 +342,7 @@ class ConversationService:
         )
 
     def retry(
-        self, context: WorkspaceContext, conversation_id: UUID, turn_id: UUID
+        self, context: WorkspaceContext, conversation_id: UUID, turn_id: UUID, *, queue: RedisQueue
     ) -> ConversationTurn:
         self.get(context, conversation_id, lock=True)
         turn = self.session.scalar(
@@ -394,8 +411,14 @@ class ConversationService:
         turn.status = "queued" if link is None else "running"
         turn.error_code = None
         self.session.add(turn_event(turn))
+        if link is not None:
+            stage_task_runs(self.session, context.workspace.id, link.task_id, context.user.user_id)
+        request_advance(self.session, context.workspace.id, conversation_id, context.user.user_id)
         self._audit(context, "conversation.turn.retry_requested", turn.id)
         self.session.commit()
+        QueueDispatchPublisher(self.session, queue).publish_pending(
+            workspace_id=context.workspace.id
+        )
         return turn
 
     def events(
@@ -469,4 +492,17 @@ def create_execution(
         )
     )
     session.flush()
+    stage_task_runs(session, conversation.workspace_id, task.id, conversation.created_by_user_id)
     return task
+
+
+def stage_task_runs(session: Session, workspace_id: UUID, task_id: UUID, user_id: UUID) -> None:
+    orchestration = RunOrchestrationService(session)
+    for run in session.scalars(
+        select(AgentRun).where(
+            AgentRun.workspace_id == workspace_id,
+            AgentRun.task_id == task_id,
+            AgentRun.status == "queued",
+        )
+    ):
+        stage_job(session, orchestration.job_for_run(run, user_id))

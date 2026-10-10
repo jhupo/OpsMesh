@@ -4,12 +4,12 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.agents.profiles.models import AgentProfile
+from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.capabilities.tools.contracts import ToolContext
 from backend.app.capabilities.tools.conversations import ConversationProductTools
 from backend.app.identity.authorization.models import ResourceGrant, SecuredResource
 from backend.app.identity.authorization.resources import ResourceAccessDenied
 from backend.app.identity.users.models import User
-from backend.app.orchestration.conversations.maintenance import ConversationMaintenanceService
 from backend.app.orchestration.conversations.models import ConversationExecution, ConversationTurn
 from backend.app.orchestration.requests.builder import RunRequestBuilder
 from backend.app.orchestration.requests.sessions import RunRequestSessionService
@@ -18,10 +18,26 @@ from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task
 from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.dispatch import QueueDispatchPublisher
 from backend.app.runtime.recovery.rehydration import QueueRehydrationService
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.members.models import WorkspaceMember
 from backend.tests.test_agent_management_api import _client, _headers, _seed_workspace
+
+
+def _advance(client, session) -> bool:
+    queue = client.app.dependency_overrides[get_worker_queue]()
+    QueueDispatchPublisher(session, queue).publish_pending()
+    handled = False
+    while lease := queue.dequeue_matching_with_lease(
+        lambda job: job.job_type == JobType.CONVERSATION_ADVANCE
+    ):
+        WorkerJobHandler(session, queue, settings=client.app.state.settings).handle(lease.job)
+        session.commit()
+        queue.ack(lease.job, lease_token=lease.lease_token)
+        QueueDispatchPublisher(session, queue).publish_pending()
+        handled = True
+    return handled
 
 
 def test_conversation_failure_exposes_redacted_run_evidence_only_to_owner() -> None:
@@ -50,8 +66,7 @@ def test_conversation_failure_exposes_redacted_run_evidence_only_to_owner() -> N
         },
         json={"body": "Check an incident"},
     ).json()
-    maintenance = ConversationMaintenanceService(session)
-    assert maintenance.process_one()
+    assert _advance(client, session)
     session.commit()
     link = session.scalar(
         select(ConversationExecution).where(ConversationExecution.turn_id == UUID(accepted["id"]))
@@ -65,7 +80,7 @@ def test_conversation_failure_exposes_redacted_run_evidence_only_to_owner() -> N
         "retryable": False,
     }
     session.commit()
-    assert maintenance.process_one()
+    assert _advance(client, session)
     session.commit()
     response = client.get(f"{url}/messages", headers=_headers(owner.id))
     turn = response.json()["items"][0]
@@ -143,8 +158,7 @@ def test_conversation_delegation_recovery_and_idempotency() -> None:
     )
     assert client.post(url, headers=headers, json={"body": "different"}).status_code == 409
     turn_id = UUID(accepted.json()["id"])
-    maintenance = ConversationMaintenanceService(session)
-    assert maintenance.process_one()
+    assert _advance(client, session)
     session.commit()
     turn = session.get(ConversationTurn, turn_id)
     assert turn.status == "running", turn.error_code
@@ -159,10 +173,12 @@ def test_conversation_delegation_recovery_and_idempotency() -> None:
         json={"body": "What did you find?"},
     )
     assert queued.status_code == 202
-    maintenance.process_one()
+    _advance(client, session)
     session.commit()
     assert session.get(ConversationTurn, UUID(queued.json()["id"])).status == "queued"
     queue = client.app.dependency_overrides[get_worker_queue]()
+    assert QueueRehydrationService(session, queue).rehydrate_queued_runs().requeued_runs == 0
+    queue.redis.flushall()
     assert QueueRehydrationService(session, queue).rehydrate_queued_runs().requeued_runs == 1
     assert QueueRehydrationService(session, queue).rehydrate_queued_runs().requeued_runs == 0
     with pytest.raises(RunRuntimeAuthorizationError, match="approved"):
@@ -206,7 +222,7 @@ def test_conversation_delegation_recovery_and_idempotency() -> None:
     parent.status = "completed"
     parent.final_output = {"final_output": "Submitted; waiting for real results"}
     session.commit()
-    maintenance.process_one()
+    _advance(client, session)
     session.commit()
     assert turn.status == "waiting_tasks"
     child = session.get(Task, UUID(result["task_id"]))
@@ -227,7 +243,7 @@ def test_conversation_delegation_recovery_and_idempotency() -> None:
     team_task.status = "completed"
     team_task.final_output = {"final_output": "Team review complete"}
     session.commit()
-    maintenance.process_one()
+    _advance(client, session)
     session.commit()
     assert turn.round == 1
     resumed = session.scalar(
@@ -239,7 +255,7 @@ def test_conversation_delegation_recovery_and_idempotency() -> None:
     resumed.status = "completed"
     resumed.final_output = {"final_output": "Reviewed permissions successfully"}
     session.commit()
-    maintenance.process_one()
+    _advance(client, session)
     session.commit()
     response = client.get(url, headers=_headers(owner.id))
     assert response.json()["items"][0]["reply"] == "Reviewed permissions successfully"
@@ -304,14 +320,15 @@ def test_conversation_is_private_and_cancelled_messages_are_not_dispatched() -> 
         ]
         == "cancelled"
     )
-    assert not ConversationMaintenanceService(session).process_one()
+    _advance(client, session)
+    assert session.scalar(select(ConversationExecution.id)) is None
     accepted = client.post(
         f"{prefix}/{cid}/messages",
         headers={**_headers(owner.id), "Idempotency-Key": "follow-up"},
         json={"body": "What happened?"},
     )
     assert accepted.status_code == 202
-    ConversationMaintenanceService(session).process_one()
+    _advance(client, session)
     session.commit()
     task = session.scalar(
         select(Task)
@@ -351,7 +368,7 @@ def test_conversation_rechecks_revoked_membership_before_dispatch() -> None:
     )
     member.status = "inactive"
     session.commit()
-    assert ConversationMaintenanceService(session).process_one()
+    assert _advance(client, session)
     session.commit()
     turn = session.get(ConversationTurn, UUID(accepted.json()["id"]))
     assert turn.status == "failed"
@@ -362,7 +379,7 @@ def test_conversation_rechecks_revoked_membership_before_dispatch() -> None:
     retry_url = f"{prefix}/{cid}/turns/{turn.id}/retry"
     retried = client.post(retry_url, headers=_headers(owner.id))
     assert retried.status_code == 200, retried.text
-    assert ConversationMaintenanceService(session).process_one()
+    assert _advance(client, session)
     session.commit()
     task = session.scalar(
         select(Task)
@@ -373,7 +390,7 @@ def test_conversation_rechecks_revoked_membership_before_dispatch() -> None:
     task.status = "failed"
     run.status = "failed"
     session.commit()
-    ConversationMaintenanceService(session).process_one()
+    _advance(client, session)
     session.commit()
     retried = client.post(retry_url, headers=_headers(owner.id))
     assert retried.status_code == 200, retried.text
@@ -437,7 +454,7 @@ def test_operator_manager_cannot_discover_or_delegate_ungranted_expert() -> None
         json={"body": "ask the private expert"},
     )
     assert message.status_code == 202, message.text
-    ConversationMaintenanceService(session).process_one()
+    _advance(client, session)
     session.commit()
     turn = session.get(ConversationTurn, UUID(message.json()["id"]))
     assert turn.status == "running", turn.error_code
@@ -521,7 +538,7 @@ def test_conversation_runs_configured_expert_without_platform_prompts(target: st
         json={"body": "Answer my question"},
     )
     assert accepted.status_code == 202, accepted.text
-    assert ConversationMaintenanceService(session).process_one()
+    assert _advance(client, session)
     session.commit()
     turn = session.get(ConversationTurn, UUID(accepted.json()["id"]))
     assert turn.status == "running", turn.error_code
@@ -585,8 +602,7 @@ def test_conversation_reuses_sdk_history_across_turns_and_isolates_delegates() -
         json={"body": "Explain that result"},
     )
     assert first.status_code == second.status_code == 202
-    maintenance = ConversationMaintenanceService(session)
-    assert maintenance.process_one()
+    assert _advance(client, session)
     session.commit()
     first_turn = session.get(ConversationTurn, UUID(first.json()["id"]))
     first_link = session.scalar(
@@ -673,9 +689,7 @@ def test_conversation_reuses_sdk_history_across_turns_and_isolates_delegates() -
     first_run.status = first_task.status = "completed"
     first_task.final_output = {"final_output": result.final_output}
     session.commit()
-    assert maintenance.process_one()
-    session.commit()
-    assert maintenance.process_one()
+    assert _advance(client, session)
     session.commit()
     second_link = session.scalar(
         select(ConversationExecution).where(
@@ -733,12 +747,12 @@ def test_conversation_reuses_sdk_history_across_turns_and_isolates_delegates() -
         json={"body": "Independent question"},
     )
     assert other_message.status_code == 202
-    # Finish the active turn so maintenance can advance the independent conversation.
+    # Finish the active turn so task notification advances the independent conversation.
     second_run.status = second_task.status = "completed"
     second_task.final_output = {"final_output": "done"}
     session.commit()
     for _ in range(3):
-        maintenance.process_one()
+        _advance(client, session)
         session.commit()
     other_link = session.scalar(
         select(ConversationExecution).where(

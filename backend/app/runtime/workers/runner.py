@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from functools import partial
-from threading import Event
+from threading import Event, Lock
 
 from opentelemetry.trace import SpanKind
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from backend.app.runtime.queues.execution_control import (
 from backend.app.runtime.queues.service import QueueLease, RedisQueue
 from backend.app.runtime.workers.capacity import WorkerCapacitySnapshotService, worker_can_run_job
 from backend.app.runtime.workers.contracts import WorkerFailureHandler, WorkerJobTypeHandler
+from backend.app.runtime.workers.dispatch_contracts import WorkerEventDispatchSummary
 from backend.app.runtime.workers.maintenance_contracts import (
     WorkerMaintenanceSummary,
 )
@@ -64,6 +65,7 @@ class WorkerRunner:
         config: WorkerRunnerConfig,
         handler_factory: Callable[[Session], WorkerJobTypeHandler],
         maintenance: Callable[[], WorkerMaintenanceSummary],
+        dispatch_events: Callable[[], WorkerEventDispatchSummary],
         admission_blocked: Callable[[Session], bool],
         on_job_failure: WorkerFailureHandler,
         settings: Settings | None = None,
@@ -80,6 +82,9 @@ class WorkerRunner:
         self._config = config
         self._handler_factory = handler_factory
         self._maintenance = maintenance
+        self._dispatch_events = dispatch_events
+        self._event_counts = WorkerEventDispatchSummary()
+        self._event_counts_lock = Lock()
         self._admission_blocked = admission_blocked
         self._on_job_failure = on_job_failure
         self._settings = settings
@@ -138,6 +143,7 @@ class WorkerRunner:
             BlockingIO(self._config.blocking_io_concurrency, name="opsmesh-io") as io,
             BlockingIO(2, name="opsmesh-control") as controls,
         ):
+            await controls.run(self.dispatch_events)
             claimed = await controls.run(self._claim)
             if claimed is None:
                 return False
@@ -172,6 +178,7 @@ class WorkerRunner:
                 await controls.run(partial(self._settle_failure, lease, control, exc))
                 raise
             await controls.run(lambda: self._settle_success(lease, control))
+            await controls.run(self.dispatch_events)
 
     def _settle_failure(
         self, lease: QueueLease, control: ExecutionControl, error: Exception
@@ -309,9 +316,9 @@ class WorkerRunner:
         active: dict[asyncio.Task[None], ActiveExecution] = {}
         next_heartbeat_at = 0.0
         next_maintenance_at = 0.0
+        next_dispatch_at = 0.0
         maintenance: asyncio.Task[WorkerMaintenanceSummary] | None = None
         claimed = 0
-        initialized = False
         health_status = "online"
         with (
             BlockingIO(self._config.blocking_io_concurrency, name="opsmesh-io") as io,
@@ -348,11 +355,17 @@ class WorkerRunner:
                             state.last_error = str(exc)
                             logger.error("Worker maintenance failed", exc_info=exc)
                         maintenance = None
-                        initialized = True
                         next_maintenance_at = self._monotonic() + max(
                             self._config.maintenance_interval_seconds, 0.01
                         )
                     now = self._monotonic()
+                    if not stopping and now >= next_dispatch_at:
+                        await controls.run(self.dispatch_events)
+                        next_dispatch_at = self._monotonic() + 1.0
+                    state.task_events_published = self._event_counts.task_events_published
+                    state.task_event_publish_failures = (
+                        self._event_counts.task_event_publish_failures
+                    )
                     if now >= next_heartbeat_at:
                         details = state.heartbeat_details(self._config)
                         details.update(
@@ -378,9 +391,6 @@ class WorkerRunner:
                     else:
                         if maintenance is None and now >= next_maintenance_at:
                             maintenance = asyncio.create_task(upkeep.run(self.run_maintenance))
-                        if maintenance is not None and not initialized:
-                            await asyncio.wait([maintenance], timeout=0.01)
-                            continue
                         if len(active) < self._config.concurrency:
                             try:
                                 candidate = await controls.run(self._claim)
@@ -435,6 +445,8 @@ class WorkerRunner:
                 supervisor.cancel()
                 with suppress(asyncio.CancelledError):
                     await supervisor
+            state.task_events_published = self._event_counts.task_events_published
+            state.task_event_publish_failures = self._event_counts.task_event_publish_failures
             await controls.run(
                 lambda: self.record_heartbeat(
                     "stopping" if self._is_stopped(stop_event) else health_status,
@@ -489,6 +501,20 @@ class WorkerRunner:
 
     def run_maintenance(self) -> WorkerMaintenanceSummary:
         return self._maintenance()
+
+    def dispatch_events(self) -> WorkerEventDispatchSummary:
+        try:
+            summary = self._dispatch_events()
+            with self._event_counts_lock:
+                self._event_counts = WorkerEventDispatchSummary(
+                    self._event_counts.task_events_published + summary.task_events_published,
+                    self._event_counts.task_event_publish_failures
+                    + summary.task_event_publish_failures,
+                )
+            return summary
+        except Exception:
+            logger.exception("Worker event dispatch failed; committed outboxes remain recoverable")
+            return WorkerEventDispatchSummary()
 
     def _retry_delay(self, job: JobPayload) -> float:
         if not job.can_retry:

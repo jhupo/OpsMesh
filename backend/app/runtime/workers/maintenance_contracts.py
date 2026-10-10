@@ -24,8 +24,6 @@ class WorkerMaintenanceSummary:
     team_execution_loop_jobs_enqueued: int = 0
     team_execution_loop_jobs_skipped: int = 0
     team_execution_loop_skip_reasons: dict[str, int] = field(default_factory=dict)
-    task_events_published: int = 0
-    task_event_publish_failures: int = 0
     webhook_delivery_jobs_enqueued: int = 0
     webhook_delivery_jobs_skipped: int = 0
     scheduled_job_actions_enqueued: int = 0

@@ -2,9 +2,10 @@
 
 import json
 from datetime import UTC, datetime
+from uuid import UUID
 
-from sqlalchemy import exists, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend.app.governance.audit.service import AuditService
 from backend.app.identity.authorization.execution import ExecutionIdentityService
@@ -20,51 +21,40 @@ from backend.app.orchestration.tasks.models import Task
 from backend.app.shared.errors import DomainError
 
 
-class ConversationMaintenanceService:
+class ConversationAdvanceService:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def process_one(self) -> bool:
-        older = aliased(ConversationTurn)
-        turn = self.session.scalar(
-            select(ConversationTurn)
-            .join(Conversation, Conversation.id == ConversationTurn.conversation_id)
-            .where(
-                ConversationTurn.status.not_in(TERMINAL),
-                ~exists(
-                    select(older.id).where(
-                        older.workspace_id == ConversationTurn.workspace_id,
-                        older.conversation_id == ConversationTurn.conversation_id,
-                        older.sequence < ConversationTurn.sequence,
-                        older.status.not_in(TERMINAL),
-                    )
-                ),
-            )
-            .order_by(ConversationTurn.updated_at, ConversationTurn.id)
-            .with_for_update(of=Conversation, skip_locked=True)
-            .limit(1)
-        )
-        if turn is None:
-            return False
-        turn = self.session.scalar(
-            select(ConversationTurn)
-            .where(
-                ConversationTurn.workspace_id == turn.workspace_id,
-                ConversationTurn.id == turn.id,
-            )
+    def advance(self, workspace_id: UUID, conversation_id: UUID) -> None:
+        conversation = self.session.scalar(
+            select(Conversation)
+            .where(Conversation.workspace_id == workspace_id, Conversation.id == conversation_id)
             .with_for_update()
             .execution_options(populate_existing=True)
         )
-        if turn is None or turn.status in TERMINAL:
-            return True
-        conversation = self.session.scalar(
-            select(Conversation).where(
-                Conversation.workspace_id == turn.workspace_id,
-                Conversation.id == turn.conversation_id,
-            )
-        )
         if conversation is None:
-            return False
+            return
+        while True:
+            turn = self.session.scalar(
+                select(ConversationTurn)
+                .where(
+                    ConversationTurn.workspace_id == workspace_id,
+                    ConversationTurn.conversation_id == conversation_id,
+                    ConversationTurn.status.not_in(TERMINAL),
+                )
+                .order_by(ConversationTurn.sequence)
+                .with_for_update()
+                .limit(1)
+                .execution_options(populate_existing=True)
+            )
+            if turn is None:
+                return
+            self._process(conversation, turn)
+            self.session.flush()
+            if turn.status not in TERMINAL:
+                return
+
+    def _process(self, conversation: Conversation, turn: ConversationTurn) -> None:
         previous = (turn.status, turn.round)
         try:
             with self.session.begin_nested():
@@ -75,7 +65,6 @@ class ConversationMaintenanceService:
         except (DomainError, ValueError, PermissionError):
             turn.status = "failed"
             turn.error_code = "conversation_admission_denied"
-        # Rotate waiting turns so one long task cannot starve other conversations.
         turn.updated_at = datetime.now(UTC)
         if previous != (turn.status, turn.round):
             self.session.add(turn_event(turn))
@@ -91,7 +80,6 @@ class ConversationMaintenanceService:
                     "error_code": turn.error_code,
                 },
             )
-        return True
 
     def _advance(self, conversation: Conversation, turn: ConversationTurn) -> None:
         rows = self.session.execute(

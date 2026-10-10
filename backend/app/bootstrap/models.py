@@ -8,6 +8,7 @@ from sqlalchemy.orm import configure_mappers
 from backend.app.shared.db.base import Base
 
 _MODEL_MODULES = (
+    "backend.app.runtime.queues.models",
     "backend.app.orchestration.conversations.models",
     "backend.app.runtime.operations.models",
     "backend.app.governance.policies.models",
@@ -62,4 +63,7 @@ def register_models() -> MetaData:
     for module_name in _MODEL_MODULES:
         import_module(module_name)
     configure_mappers()
+    from backend.app.orchestration.conversations.dispatch import register_task_notifications
+
+    register_task_notifications()
     return Base.metadata

@@ -16,6 +16,8 @@ from backend.app.orchestration.conversations.schemas import (
     TurnResponse,
 )
 from backend.app.orchestration.conversations.service import ConversationService
+from backend.app.runtime.queues.dependencies import get_worker_queue
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.shared.db.session import get_db_session
 from backend.app.shared.http.pagination import PageResponse, pagination_params
 from backend.app.shared.pagination import PageParams
@@ -36,9 +38,12 @@ def retry_turn(
     turn_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TurnResponse:
     service = ConversationService(session)
-    return _turn_response(service, context, service.retry(context, conversation_id, turn_id))
+    return _turn_response(
+        service, context, service.retry(context, conversation_id, turn_id, queue=queue)
+    )
 
 
 @router.get("/{conversation_id}/events", response_model=list[EventResponse])
@@ -101,6 +106,7 @@ def send_message(
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=128),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TurnResponse:
     service = ConversationService(session)
     return _turn_response(
@@ -111,6 +117,7 @@ def send_message(
             conversation_id,
             request.body,
             idempotency_key,
+            queue=queue,
         ),
     )
 
@@ -150,6 +157,9 @@ def cancel_turn(
     turn_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
+    queue: RedisQueue = Depends(get_worker_queue),
 ) -> TurnResponse:
     service = ConversationService(session)
-    return _turn_response(service, context, service.cancel(context, conversation_id, turn_id))
+    return _turn_response(
+        service, context, service.cancel(context, conversation_id, turn_id, queue=queue)
+    )

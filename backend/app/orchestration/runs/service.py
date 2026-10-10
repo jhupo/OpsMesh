@@ -134,7 +134,13 @@ class RunOrchestrationService:
         if self._queue is None:
             return False
 
-        job = JobPayload(
+        job = self.job_for_run(run, requested_by_user_id)
+        if force:
+            return self._queue.ensure_enqueued(job)
+        return self._queue.enqueue(job)
+
+    def job_for_run(self, run: AgentRun, requested_by_user_id: UUID | None) -> JobPayload:
+        return JobPayload(
             workspace_id=run.workspace_id,
             job_type=JobType.AGENT_RUN,
             resource_id=run.id,
@@ -143,9 +149,6 @@ class RunOrchestrationService:
             priority=self._run_job_routing().priority(run),
             routing=self._run_job_routing().routing(run),
         )
-        if force:
-            return self._queue.ensure_enqueued(job)
-        return self._queue.enqueue(job)
 
     def schedule_workspace_steps(
         self,
