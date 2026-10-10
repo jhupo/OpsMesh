@@ -116,7 +116,7 @@ Python and application dependencies. The managed installer owns:
 
 ```text
 /opt/opsmesh/.env
-/opt/opsmesh/current -> /opt/opsmesh/releases/v1.2.3
+/opt/opsmesh/current -> /opt/opsmesh/releases/v1.2.3-<full-commit>
 /opt/opsmesh/downloads
 /opt/opsmesh/releases
 /opt/opsmesh/installation.json

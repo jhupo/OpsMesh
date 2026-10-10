@@ -37,9 +37,9 @@ def test_release_is_staged_before_managed_acceptance_and_finalized_without_asset
     package.write_bytes(b"candidate")
     manifest = ReleaseManifest(
         tag="v0.1.0rc2", commit="b" * 40, repository="jhupo/OpsMesh",
-        api_digest="sha256:" + "c" * 64,
-        worker_digest="sha256:" + "e" * 64,
-        runtime_digest="sha256:" + "d" * 64,
+        api_image="ghcr.io/jhupo/opsmesh-api@sha256:" + "c" * 64,
+        worker_image="ghcr.io/jhupo/opsmesh-worker@sha256:" + "e" * 64,
+        runtime_image="ghcr.io/jhupo/opsmesh-runtime@sha256:" + "d" * 64,
         database_revision="0071_platform_delivery", upgrade_from_revisions=[],
         rollback_database_revisions=[], connector_protocol=2, platforms=["linux/amd64"],
         files=[file_record(package)],
@@ -100,9 +100,9 @@ def test_public_download_verification_fails_closed(
     package.write_bytes(b"candidate")
     manifest = ReleaseManifest(
         tag="v0.1.0rc4", commit="b" * 40, repository="jhupo/OpsMesh",
-        api_digest="sha256:" + "c" * 64,
-        worker_digest="sha256:" + "e" * 64,
-        runtime_digest="sha256:" + "d" * 64,
+        api_image="ghcr.io/jhupo/opsmesh-api@sha256:" + "c" * 64,
+        worker_image="ghcr.io/jhupo/opsmesh-worker@sha256:" + "e" * 64,
+        runtime_image="ghcr.io/jhupo/opsmesh-runtime@sha256:" + "d" * 64,
         database_revision="0072_release_schema", upgrade_from_revisions=[],
         rollback_database_revisions=[], connector_protocol=2, platforms=["linux/amd64"],
         files=[file_record(package)],

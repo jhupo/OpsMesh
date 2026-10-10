@@ -28,10 +28,8 @@ class Installation(Contract):
         require_install_root(self.root)
         atomic_write(self.root / "installation.json", self.model_dump_json(indent=2))
 
-    def release_dir(self, tag: str) -> Path:
-        from opsmesh_operator.contracts import require_tag
-
-        return self.root / "releases" / require_tag(tag)
+    def release_dir(self, manifest: ReleaseManifest) -> Path:
+        return self.root / "releases" / f"{manifest.tag}-{manifest.commit}"
 
     def current(self) -> ReleaseManifest:
         return ReleaseManifest.model_validate_json(

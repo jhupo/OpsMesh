@@ -6,7 +6,7 @@ from typing import Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 TAG_PATTERN = r"^v[0-9]+\.[0-9]+\.[0-9]+(?:rc[0-9]+)?$"
-DIGEST_PATTERN = r"^sha256:[a-f0-9]{64}$"
+IMAGE_PATTERN = r"^(?:[a-z0-9][a-z0-9._:/-]*@)?sha256:[a-f0-9]{64}$"
 
 
 class Contract(BaseModel):
@@ -24,9 +24,9 @@ class ReleaseManifest(Contract):
     tag: str = Field(pattern=TAG_PATTERN)
     commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     repository: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-    api_digest: str = Field(pattern=DIGEST_PATTERN)
-    worker_digest: str = Field(pattern=DIGEST_PATTERN)
-    runtime_digest: str = Field(pattern=DIGEST_PATTERN)
+    api_image: str = Field(pattern=IMAGE_PATTERN)
+    worker_image: str = Field(pattern=IMAGE_PATTERN)
+    runtime_image: str = Field(pattern=IMAGE_PATTERN)
     database_revision: str = Field(pattern=r"^[A-Za-z0-9_]+$")
     upgrade_from_revisions: list[str]
     rollback_database_revisions: list[str]
@@ -41,20 +41,9 @@ class ReleaseManifest(Contract):
         return self
 
     def image(self, kind: Literal["api", "worker", "runtime"]) -> str:
-        owner = self.repository.split("/")[0].lower()
-        names = {
-            "api": "opsmesh-api",
-            "worker": "opsmesh-worker",
-            "runtime": "opsmesh-runtime",
-        }
-        digests = {
-            "api": self.api_digest,
-            "worker": self.worker_digest,
-            "runtime": self.runtime_digest,
-        }
-        name = names[kind]
-        digest = digests[kind]
-        return f"ghcr.io/{owner}/{name}@{digest}"
+        return {"api": self.api_image, "worker": self.worker_image, "runtime": self.runtime_image}[
+            kind
+        ]
 
     def accepts_database_revision(self, revision: str) -> bool:
         """Return whether this application release can run against a live schema."""

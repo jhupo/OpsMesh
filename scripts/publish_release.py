@@ -70,6 +70,10 @@ def candidate_manifest(tag: str, repository: str, directory: Path) -> ReleaseMan
     )
     if manifest.tag != tag or manifest.repository != repository:
         raise ValueError("Release identity mismatch")
+    owner = repository.split("/")[0].lower()
+    for kind in ("api", "worker", "runtime"):
+        if not manifest.image(kind).startswith(f"ghcr.io/{owner}/opsmesh-{kind}@sha256:"):
+            raise ValueError("Published images must belong to their service repository")
     if manifest.commit != command("git", "rev-parse", "HEAD"):
         raise ValueError("Release commit mismatch")
     expected = {record.name for record in manifest.files} | {"release-manifest.json"}
