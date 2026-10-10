@@ -11,6 +11,7 @@ from backend.app.runtime.commands.output import (
     command_failure_metadata,
     positive_int_limit,
 )
+from backend.app.runtime.instances.allocations import RuntimeAllocationStore
 from backend.app.runtime.instances.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -189,12 +190,14 @@ class RuntimeCommandExecutor:
         if runtime.workspace_id != workspace_id:
             raise PermissionError("Runtime does not belong to workspace")
         require_container(runtime)
+        RuntimeAllocationStore(self._session).require_idle(runtime, command_id=record.id)
         timeout_value = runtime.limits.get("timeout_seconds", 60)
         timeout_seconds = timeout_value if isinstance(timeout_value, int) else 60
         record.command = command
         record.status = "running"
         record.started_at = datetime.now(UTC)
         self._session.flush()
+        self._session.commit()
         return timeout_seconds
 
     def _execute_docker_command(

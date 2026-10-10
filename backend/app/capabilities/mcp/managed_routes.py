@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app.capabilities.mcp.managed_schemas import (
     ManagedMcpActionRequest,
     ManagedMcpCreateRequest,
+    ManagedMcpHostRequest,
     ManagedMcpResponse,
 )
 from backend.app.capabilities.mcp.managed_service import ManagedMcpService
@@ -19,6 +20,24 @@ from backend.app.shared.db.errors import DatabaseConflictError
 from backend.app.shared.db.session import get_db_session
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capabilities"])
+
+
+@router.put("/mcp-servers/{server_id}/deployment/host", response_model=ManagedMcpResponse)
+def bind_managed_mcp_host(
+    server_id: UUID,
+    request: ManagedMcpHostRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> ManagedMcpResponse:
+    row = ManagedMcpService(session, settings, queue).bind_host(
+        context.workspace.id,
+        server_id,
+        context.user,
+        request.runtime_id,
+    )
+    return ManagedMcpResponse.model_validate(row)
 
 
 @router.post("/managed-mcp", response_model=list[ManagedMcpResponse], status_code=202)

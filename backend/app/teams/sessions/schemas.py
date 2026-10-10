@@ -108,6 +108,7 @@ class AgentTeamRuntimeEnsureLimitsRequest(BaseModel):
     timeout_seconds: int = Field(ge=1, le=3_600)
     max_output_bytes: int = Field(default=256_000, ge=1, le=2_000_000)
     max_processes: int = Field(default=256, ge=1, le=512)
+    max_concurrent_executions: int = Field(default=16, ge=1, le=128)
 
 
 class AgentTeamRuntimeEnsureRequest(BaseModel):

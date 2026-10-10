@@ -15,6 +15,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from .mcp_sdk import RuntimeMCPServerStdio
 
@@ -23,8 +24,6 @@ ROOT = Path("/tmp/opsmesh-mcp")
 
 
 def socket_path(identifier: str) -> Path:
-    from uuid import UUID
-
     return ROOT / f"{UUID(identifier).hex}.sock"
 
 
@@ -249,7 +248,15 @@ async def control(request: dict[str, Any]) -> dict[str, Any]:
     path = socket_path(identifier)
     if request["action"] != "start":
         try:
-            return await exchange(path, request)
+            result = await exchange(path, request)
+            if request["action"] == "stop":
+                # Restart/admission must wait for SDK cleanup and socket removal.
+                for _ in range(100):
+                    if not path.exists():
+                        return {"status": "stopped"}
+                    await asyncio.sleep(0.1)
+                return {"error": "mcp_process_stop_failed"}
+            return result
         except (FileNotFoundError, ConnectionRefusedError):
             return {"status": "stopped"}
     try:
@@ -259,6 +266,8 @@ async def control(request: dict[str, Any]) -> dict[str, Any]:
         if current.get("status") == "failed":
             return {"error": "mcp_process_restart_required"}
     except (FileNotFoundError, ConnectionRefusedError):
+        home = Path(f"/workspace/mcp/{UUID(identifier)}")
+        (home / "tmp").mkdir(mode=0o700, parents=True, exist_ok=True)
         child = subprocess.Popen(
             [sys.executable, "-m", "opsmesh_runtime.mcp_process", "--serve", identifier],
             stdin=subprocess.PIPE,

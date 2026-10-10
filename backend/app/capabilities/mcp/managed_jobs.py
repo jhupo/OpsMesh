@@ -5,7 +5,11 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 
 from backend.app.capabilities.mcp.catalog.discovery import McpToolDiscoveryService
-from backend.app.capabilities.mcp.managed_runtime import deployment_runtime, process_request
+from backend.app.capabilities.mcp.managed_runtime import (
+    deployment_runtime,
+    process_request,
+    require_managed_host,
+)
 from backend.app.capabilities.mcp.managed_service import authorize_management
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpDeployment, McpServer
 from backend.app.capabilities.mcp.policy import require_mcp_server
@@ -23,11 +27,10 @@ from backend.app.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
-from backend.app.runtime.instances.manager import DockerRuntimeManagerProvider
+from backend.app.runtime.instances.allocations import RuntimeAllocationStore
 from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.instances.policies.safety import RuntimeSafetyPolicy
 from backend.app.runtime.instances.policies.templates import RuntimeTemplateGuard
-from backend.app.runtime.instances.service import RuntimeControlService
 from backend.app.runtime.queues.context import WorkerJobHandlerContext
 from backend.app.runtime.queues.contracts import JobPayload
 from backend.app.shared.errors import PolicyDeniedError
@@ -62,7 +65,7 @@ class ManagedMcpJobHandler:
             runtime = deployment_runtime(session, deployment)
             try:
                 if runtime is not None and runtime.docker_container_id:
-                    self._manager().require().stop_runtime(runtime)
+                    self._stop_process(deployment, runtime)
             except Exception:
                 deployment.last_error = "mcp_process_cleanup_failed"
             else:
@@ -77,12 +80,12 @@ class ManagedMcpJobHandler:
             # Do not put secret-bearing third-party exceptions in queue retry metadata.
             raise RuntimeError("Managed MCP lifecycle failed; inspect deployment status") from None
 
-    def _manager(self) -> DockerRuntimeManagerProvider:
-        return DockerRuntimeManagerProvider(
-            self.context.session,
-            self.context.require_settings(context="managed MCP"),
-            self.context.docker_client(),
-        )
+    def _stop_process(self, deployment: McpDeployment, runtime: WorkspaceRuntime) -> None:
+        docker = self.context.docker_client()
+        self.context.session.commit()
+        if runtime.docker_container_id and docker.container_running(runtime.docker_container_id):
+            process_request(docker, runtime, deployment.mcp_server_id, {"action": "stop"})
+        RuntimeAllocationStore(self.context.session).release(runtime, "mcp", deployment.id)
 
     def _handle(self, deployment: McpDeployment) -> None:
         session = self.context.session
@@ -104,7 +107,7 @@ class ManagedMcpJobHandler:
         runtime = deployment_runtime(session, deployment)
         if deployment.action == "stop":
             if runtime is not None and runtime.docker_container_id:
-                self._manager().require().stop_runtime(runtime)
+                self._stop_process(deployment, runtime)
             self._finish(deployment, server, "stopped", user.user_id)
             return
         if (
@@ -114,6 +117,15 @@ class ManagedMcpJobHandler:
         ):
             raise PolicyDeniedError("MCP project is not approved for execution")
         require_plugin_resource(session, deployment.workspace_id, "mcp_server", server.id)
+        runtime = require_managed_host(session, deployment.workspace_id, deployment.runtime_id)
+        if runtime.runtime_template_id is None:
+            raise PolicyDeniedError("Runtime host has no approved execution template")
+        ResourceAuthorizationService(session, user).require(
+            deployment.workspace_id,
+            ResourceKind.RUNTIME,
+            runtime.id,
+            ResourceAction.INVOKE,
+        )
         guard = RuntimeTemplateGuard(
             session,
             RuntimeSafetyPolicy(
@@ -124,10 +136,10 @@ class ManagedMcpJobHandler:
         if (
             guard.validated_template(
                 workspace_id=deployment.workspace_id,
-                template_id=deployment.template_id,
+                template_id=runtime.runtime_template_id,
                 limits=None,
-                network_disabled=deployment.network_disabled,
-                runtime_space_id=None,
+                network_disabled=runtime.network_policy.get("mode") == "none",
+                runtime_space_id=runtime.runtime_space_id,
             )
             is None
         ):
@@ -149,46 +161,19 @@ class ManagedMcpJobHandler:
                 raise PolicyDeniedError("MCP environment is not approved or was revoked")
         configuration_version = server.configuration_version
         credential_version = credential.configuration_version if credential else None
-        if runtime is None or runtime.status == "deleted":
-            runtime = WorkspaceRuntime(
-                workspace_id=deployment.workspace_id,
-                runtime_template_id=deployment.template_id,
-                name=f"mcp-{server.id}",
-                execution_mode="persistent",
-                status="queued",
-                capabilities={"managed_mcp_server_id": str(server.id)},
-                limits={},
-                network_policy={},
-            )
-            session.add(runtime)
-            session.flush()
-            deployment.runtime_id = runtime.id
-            session.commit()
-        if not runtime.docker_container_id:
-            runtime = RuntimeControlService(
-                session, settings, self._manager()
-            ).complete_queued_runtime_create(
-                workspace_id=deployment.workspace_id,
-                runtime_id=runtime.id,
-                template_id=deployment.template_id,
-                name=runtime.name,
-                limits=None,
-                network_disabled=deployment.network_disabled,
-                execution_mode="persistent",
-            )
-            if runtime is None:
-                raise ValueError("MCP runtime provisioning failed")
         changed = (
             deployment.server_version != configuration_version
             or deployment.credential_version != credential_version
         )
+        allocation = RuntimeAllocationStore(session).acquire(runtime, "mcp", deployment.id)
+        if allocation is None:
+            deployment.status = "waiting_capacity"
+            session.commit()
+            return
+        session.commit()
         if deployment.action == "restart" or changed:
-            # Stop clears the private socket, session and all child processes.
-            self._manager().require().stop_runtime(runtime)
-        if runtime.status != "running" or not self.context.docker_client().container_running(
-            runtime.docker_container_id or ""
-        ):
-            self._manager().require().start_runtime(runtime)
+            # Keep the service slot reserved until the replacement is ready.
+            process_request(self.context.docker_client(), runtime, server.id, {"action": "stop"})
         server_config = {
             key: value
             for key, value in server.connection.items()
@@ -198,12 +183,17 @@ class ManagedMcpJobHandler:
             [credential] if credential else [],
             secret_service=self.context.secret_service(context="MCP process"),
         )
+        home = f"/workspace/mcp/{server.id}"
         server_config["env"] = {
-            "HOME": "/workspace",
-            "UV_CACHE_DIR": "/workspace/.cache/uv",
-            "npm_config_cache": "/workspace/.cache/npm",
             **environment,
+            "HOME": home,
+            "TMPDIR": f"{home}/tmp",
+            "UV_CACHE_DIR": f"{home}/.cache/uv",
+            "npm_config_cache": f"{home}/.cache/npm",
         }
+        server_config.setdefault("cwd", home)
+        # Credential lookup is complete. No transaction spans process startup/discovery.
+        session.commit()
         process_request(
             self.context.docker_client(),
             runtime,

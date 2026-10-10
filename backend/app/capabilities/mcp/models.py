@@ -14,9 +14,7 @@ class McpDeployment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id"), index=True)
     mcp_server_id: Mapped[UUID] = mapped_column(ForeignKey("mcp_servers.id", ondelete="CASCADE"))
-    runtime_id: Mapped[UUID | None] = mapped_column(ForeignKey("workspace_runtimes.id"))
-    template_id: Mapped[UUID] = mapped_column(ForeignKey("runtime_templates.id"))
-    network_disabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    runtime_id: Mapped[UUID] = mapped_column(ForeignKey("workspace_runtimes.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="stopped")
     action: Mapped[str] = mapped_column(String(32), default="stop")
     generation: Mapped[int] = mapped_column(Integer, default=0)

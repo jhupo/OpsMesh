@@ -170,6 +170,11 @@ class RuntimeQuotaPolicy:
                 "runtime_output_quota_exceeded",
                 "Runtime output limit exceeds quota",
             )
+        if not 1 <= limits.max_concurrent_executions <= min(128, limits.max_processes):
+            raise RuntimeQuotaExceededError(
+                "runtime_execution_capacity_invalid",
+                "Runtime execution capacity must fit its process limit",
+            )
         if limits.max_processes <= 0:
             raise RuntimeQuotaExceededError(
                 "runtime_process_limit_invalid",

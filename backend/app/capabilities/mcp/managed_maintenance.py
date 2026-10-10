@@ -5,8 +5,10 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from backend.app.capabilities.mcp.managed_runtime import deployment_runtime
 from backend.app.capabilities.mcp.managed_service import deployment_job
 from backend.app.capabilities.mcp.models import McpDeployment
+from backend.app.runtime.instances.allocations import RuntimeAllocationStore
 from backend.app.runtime.queues.service import RedisQueue
 
 
@@ -16,7 +18,7 @@ def reconcile_managed_mcp(session: Session, queue: RedisQueue) -> None:
         select(McpDeployment)
         .where(
             or_(
-                McpDeployment.status == "queued",
+                McpDeployment.status.in_(["queued", "waiting_capacity"]),
                 (McpDeployment.status == "starting")
                 & (McpDeployment.checked_at < now - timedelta(minutes=5)),
                 (McpDeployment.status == "running")
@@ -32,6 +34,10 @@ def reconcile_managed_mcp(session: Session, queue: RedisQueue) -> None:
     ).all()
     jobs = []
     for row in rows:
+        if row.status == "waiting_capacity":
+            host = deployment_runtime(session, row)
+            if host is None or not RuntimeAllocationStore(session).available(host):
+                continue
         if row.status == "running":
             row.action = "refresh"
             row.generation += 1

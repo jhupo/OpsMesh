@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 from contextlib import suppress
+from pathlib import Path
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -19,6 +20,7 @@ from backend.app.agents.execution.errors import (
     AgentRuntimeProviderError,
 )
 from backend.app.runtime.agent_host.local_sandbox import LocalSandboxExecutor
+from backend.app.runtime.agent_host.processes import register
 from backend.app.runtime.agent_host.proxies import RpcCancellation, RpcSession, RpcTools
 from backend.app.runtime.agent_host.wire import (
     MAX_FRAME_BYTES,
@@ -103,8 +105,12 @@ async def execute(executor: AgentRuntimeExecutor) -> None:
     if first.type != "start":
         raise ValueError("SDK host requires its frozen run input")
     wire = RuntimeRunInput.model_validate(first.payload)
+    root = Path(wire.manifest.root)
+    (root / ".tmp").mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.environ.update({"HOME": str(root), "TMPDIR": str(root / ".tmp")})
     if os.getsid(0) != os.getpid():
         os.setsid()
+    process_lock = register(wire.context.run_id)
     rpc.send(
         RpcFrame(type="ready", payload={"pid": os.getpid(), "run_id": str(wire.context.run_id)})
     )
@@ -202,3 +208,4 @@ async def execute(executor: AgentRuntimeExecutor) -> None:
             await receiver
         with suppress(asyncio.CancelledError):
             await disconnected
+        process_lock.close()

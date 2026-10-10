@@ -112,10 +112,8 @@ class RuntimeProvisioningExecutor:
             )
         except Exception:
             self._reservations.release(runtime)
-            if process is None and not runtime.capabilities.get("managed_mcp_server_id"):
+            if process is None:
                 self._session.delete(runtime)
-            elif runtime.capabilities.get("managed_mcp_server_id"):
-                runtime.status = "failed"
             self._session.flush()
             raise
 

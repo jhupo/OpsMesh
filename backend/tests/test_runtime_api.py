@@ -22,7 +22,12 @@ from backend.app.runtime.instances.contracts import (
     RuntimeCreateRequest,
 )
 from backend.app.runtime.instances.dependencies import get_docker_runtime_client
-from backend.app.runtime.instances.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
+from backend.app.runtime.instances.models import (
+    RuntimeAllocation,
+    RuntimeEvent,
+    RuntimeTemplate,
+    WorkspaceRuntime,
+)
 from backend.app.runtime.queues.contracts import JobType
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.runtime.spaces.models import RuntimeSpace
@@ -34,6 +39,47 @@ from backend.app.workspaces.members.models import WorkspaceMember
 
 TOKEN = "test-token"
 PINNED_IMAGE = "python@sha256:" + "0" * 64
+
+
+def test_runtime_allocation_table_is_workspace_scoped():
+    client, session, _, _ = _client()
+    owner, workspace = _seed_workspace(session, role="owner")
+    _, other = _seed_workspace(
+        session, role="owner", email="other-allocation@test.com", slug="other-allocation"
+    )
+    host = WorkspaceRuntime(workspace_id=workspace.id, name="Shared", status="running")
+    session.add(host)
+    session.flush()
+    owner_id = uuid4()
+    session.add(
+        RuntimeAllocation(
+            workspace_id=workspace.id,
+            workspace_runtime_id=host.id,
+            owner_kind="run",
+            owner_id=owner_id,
+        )
+    )
+    session.commit()
+    endpoint = f"/api/v1/workspaces/{workspace.id}/runtimes/{host.id}/allocations"
+    response = client.get(endpoint, headers=_headers(owner.id))
+    assert response.status_code == 200
+    assert response.json()["total"] == 1 and response.json()["items"][0]["owner_id"] == str(
+        owner_id
+    )
+    assert (
+        client.get(
+            f"/api/v1/workspaces/{workspace.id}/runtimes/{uuid4()}/allocations",
+            headers=_headers(owner.id),
+        ).status_code
+        == 404
+    )
+    assert (
+        client.get(
+            f"/api/v1/workspaces/{other.id}/runtimes/{host.id}/allocations",
+            headers=_headers(owner.id),
+        ).status_code
+        == 403
+    )
 
 
 class FakeDockerClient(DockerRuntimeClient):

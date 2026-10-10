@@ -164,7 +164,7 @@ class RuntimeControlService:
         )
 
     def delete_runtime(self, workspace_id: UUID, runtime_id: UUID) -> bool:
-        runtime = self.get_runtime(workspace_id, runtime_id)
+        runtime = self._lock_runtime(workspace_id, runtime_id)
         if runtime is None:
             return False
         self._manager_factory.require().delete_runtime(runtime)

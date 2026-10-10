@@ -17,6 +17,7 @@ from backend.app.runtime.contracts import (
     RuntimeExecutionMode,
     validate_runtime_execution_mode,
 )
+from backend.app.runtime.instances.allocations import RuntimeAllocationStore
 from backend.app.runtime.instances.contracts import (
     DockerRuntimeClient,
     RuntimeCreateRequest,
@@ -35,10 +36,7 @@ from backend.app.runtime.instances.metadata import (
 )
 from backend.app.runtime.instances.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.instances.policies.safety import is_digest_pinned_image
-from backend.app.runtime.pools.leases import RuntimePoolLeaseStore
-from backend.app.runtime.pools.policy import pooled_isolation_metadata
-from backend.app.runtime.pools.reclaim import RuntimePoolReclaimer
-from backend.app.runtime.pools.reset import RuntimePoolResetService
+from backend.app.runtime.instances.process_cleanup import RunProcessCleanupService
 from backend.app.runtime.pools.service import MANAGED_RUNTIME_PROVIDER, RuntimePoolService
 
 _RUNTIME_WORKSPACE_ROOT = "/workspace"
@@ -67,9 +65,9 @@ class RunRuntimeEnvironmentService:
     """Bind a run to an isolated, pooled, or persistent managed runtime.
 
     A workspace runtime is a durable placement and policy anchor. Isolated mode creates a fresh
-    child container and volume. Pooled mode leases a pre-provisioned container and gives the run
-    a logical child binding with a private ``/workspace/runs/<run_id>`` tree. Persistent mode binds
-    the run directly to its dedicated runtime and intentionally retains its project tree.
+    child container and volume. Pooled and persistent modes acquire a bounded process slot on
+    an existing host. Each run has its own ``/workspace/runs/<run_id>`` tree. Persistent mode
+    retains that tree; pooled mode removes it when the run finishes.
     """
 
     def __init__(self, session: Session, docker_client: DockerRuntimeClient | None) -> None:
@@ -320,175 +318,72 @@ class RunRuntimeEnvironmentService:
         run: AgentRun,
         parent: WorkspaceRuntime,
     ) -> RunRuntimeEnvironmentResult:
-        was_active = (
-            _runtime_execution_mode(run) == "persistent"
-            and _runtime_execution_status(run) == "active"
-        )
-        lease = RuntimePoolLeaseStore(self._session).acquire(
-            parent,
-            run_id=run.id,
-            metadata={
-                "mode": "persistent",
-                "runtime_id": str(parent.id),
-                "parent_runtime_id": str(parent.id),
-            },
-        )
-        if lease is None:
+        allocation = RuntimeAllocationStore(self._session).acquire(parent, "run", run.id)
+        if allocation is None:
             raise RuntimeEnvironmentError(
-                "runtime_persistent_busy",
-                "The persistent runtime is already attached to another run",
+                "runtime_capacity_exhausted", "Runtime execution capacity is full"
             )
-        parent.last_heartbeat_at = datetime.now(UTC)
-        run.execution_runtime_id = None
-        _set_run_execution_metadata(
-            run,
-            status="active",
-            runtime_id=parent.id,
-            mode="persistent",
-        )
-        if not was_active:
-            RuntimeEventLog(self._session).append(
-                parent,
-                "runtime.run.persistent_attached",
-                "Persistent runtime attached to agent run",
-                metadata={"run_id": str(run.id)},
-            )
-            RunEventRecorder(self._session).append_event(
-                run,
-                "run.runtime_environment.attached",
-                "Persistent runtime attached to run",
-                {"runtime_id": str(parent.id), "mode": "persistent"},
-            )
-            AuditService(self._session).record_system_action(
-                workspace_id=run.workspace_id,
-                action="run.runtime_environment.attached",
-                target_type="agent_run",
-                target_id=run.id,
-                metadata={"runtime_id": str(parent.id), "mode": "persistent"},
-            )
-        self._session.flush([parent, run])
-        return RunRuntimeEnvironmentResult(runtime=parent, created=not was_active)
+        return self._bind_shared_host(run, parent, mode="persistent")
 
     def _ensure_pooled_for_run(
         self,
         run: AgentRun,
         parent: WorkspaceRuntime,
     ) -> RunRuntimeEnvironmentResult:
-        existing = self._existing_for_run(run, parent)
-        if existing is not None:
-            self._require_parent_binding(existing, parent, run)
-            if existing.execution_mode != "pooled":
-                raise RuntimeEnvironmentError(
-                    "runtime_execution_mode_mismatch",
-                    "The run is bound to a runtime with a different execution mode",
-                )
-            if existing.status in {"active", "running"} and existing.connection_status == "online":
-                run.execution_runtime_id = existing.id
-                return RunRuntimeEnvironmentResult(runtime=existing, created=False)
-            raise RuntimeEnvironmentError(
-                "runtime_execution_unavailable",
-                "The pooled execution runtime is not active and online",
-            )
-
         acquisition = RuntimePoolService(self._session).acquire(parent, run)
         if acquisition is None:
             raise RuntimeEnvironmentError(
-                "runtime_pool_exhausted",
-                "No available pooled runtime container matches the run policy",
+                "runtime_capacity_exhausted", "No matching Runtime host has capacity"
             )
-        member = acquisition.member
-        now = datetime.now(UTC)
-        isolation = pooled_isolation_metadata(parent, member, run)
-        identity = self._run_identity_metadata(run)
-        child = WorkspaceRuntime(
-            workspace_id=run.workspace_id,
-            runtime_template_id=member.runtime_template_id,
-            runtime_space_id=member.runtime_space_id,
-            runtime_provider=member.runtime_provider,
-            runtime_type=member.runtime_type,
-            execution_mode="pooled",
-            pool_key=member.pool_key,
-            name=f"run-{run.id}",
-            status="active",
-            connection_status="online",
-            parent_runtime_id=parent.id,
-            execution_run_id=run.id,
-            execution_pool_member_id=member.id,
-            docker_container_id=member.docker_container_id,
-            limits=dict(member.limits or {}),
-            network_policy=dict(member.network_policy or {}),
-            capabilities={
-                "isolation": isolation,
-                "hardening": _object_dict(member.capabilities.get("hardening")),
-                "execution": {
-                    "mode": "pooled",
-                    "run_id": str(run.id),
-                    "parent_runtime_id": str(parent.id),
-                    "pool_member_runtime_id": str(member.id),
-                    "cleanup_status": "pending",
-                    "identity": identity,
+        return self._bind_shared_host(run, acquisition.member, mode="pooled")
+
+    def _bind_shared_host(
+        self,
+        run: AgentRun,
+        host: WorkspaceRuntime,
+        *,
+        mode: RuntimeExecutionMode,
+    ) -> RunRuntimeEnvironmentResult:
+        was_active = _runtime_execution_status(run) == "active"
+        run.execution_runtime_id = host.id
+        _set_run_execution_metadata(run, status="active", runtime_id=host.id, mode=mode)
+        if not was_active:
+            execution = _object_dict(run.input.get("runtime_execution"))
+            run.input = {
+                **run.input,
+                "runtime_execution": {
+                    **execution,
+                    "active_since": datetime.now(UTC).isoformat(),
                 },
-                "managed_resources": {"docker_volumes": []},
-            },
-            last_heartbeat_at=now,
+            }
+        if not was_active:
+            RunEventRecorder(self._session).append_event(
+                run,
+                "run.runtime_environment.acquired",
+                "Runtime process slot acquired",
+                {"runtime_id": str(host.id), "mode": mode},
+            )
+            AuditService(self._session).record_system_action(
+                workspace_id=run.workspace_id,
+                action="run.runtime_environment.acquired",
+                target_type="agent_run",
+                target_id=run.id,
+                metadata={"runtime_id": str(host.id), "mode": mode},
+            )
+        # Persist the slot before creating directories or starting any SDK process.
+        self._session.commit()
+        docker = self._require_docker()
+        result = docker.exec_command(
+            host.docker_container_id or "",
+            ["mkdir", "-p", "--", f"/workspace/runs/{run.id}"],
+            30,
+            working_dir="/",
         )
-        self._session.add(child)
-        self._session.flush([child])
-        RuntimeLeaseStore(self._session).ensure(
-            child,
-            status="active",
-            metadata={
-                "scope": "pooled_run",
-                "mode": "pooled",
-                "run_id": str(run.id),
-                "parent_runtime_id": str(parent.id),
-                "pool_member_runtime_id": str(member.id),
-                "container_reused": True,
-            },
-        )
-        RuntimeEventLog(self._session).append(
-            child,
-            "runtime.run.acquired",
-            "Pre-provisioned pooled runtime container leased to run",
-            metadata={
-                "run_id": str(run.id),
-                "parent_runtime_id": str(parent.id),
-                "pool_member_runtime_id": str(member.id),
-            },
-        )
-        RunEventRecorder(self._session).append_event(
-            run,
-            "run.runtime_environment.acquired",
-            "Pooled runtime container leased to run",
-            {
-                "execution_runtime_id": str(child.id),
-                "parent_runtime_id": str(parent.id),
-                "pool_member_runtime_id": str(member.id),
-                "mode": "pooled",
-            },
-        )
-        AuditService(self._session).record_system_action(
-            workspace_id=run.workspace_id,
-            action="run.runtime_environment.acquired",
-            target_type="agent_run",
-            target_id=run.id,
-            metadata={
-                "execution_runtime_id": str(child.id),
-                "parent_runtime_id": str(parent.id),
-                "pool_member_runtime_id": str(member.id),
-                "mode": "pooled",
-            },
-        )
-        run.execution_runtime_id = child.id
-        _set_run_execution_metadata(
-            run,
-            status="active",
-            runtime_id=child.id,
-            mode="pooled",
-            pool_member_runtime_id=member.id,
-        )
-        self._session.flush([child, run])
-        return RunRuntimeEnvironmentResult(runtime=child, created=True)
+        if result.exit_code:
+            raise RuntimeEnvironmentError(
+                "runtime_workspace_failed", "Run workspace could not be prepared"
+            )
+        return RunRuntimeEnvironmentResult(runtime=host, created=not was_active)
 
     def _parent_for_run(self, run: AgentRun) -> WorkspaceRuntime | None:
         if run.runtime_id is None:
@@ -517,10 +412,7 @@ class RunRuntimeEnvironmentService:
         return self._docker
 
     def _run_identity_labels(self, run: AgentRun) -> dict[str, str]:
-        return {
-            f"opsmesh.{key}": value
-            for key, value in self._run_identity_metadata(run).items()
-        }
+        return {f"opsmesh.{key}": value for key, value in self._run_identity_metadata(run).items()}
 
     def _run_identity_metadata(self, run: AgentRun) -> dict[str, str]:
         labels: dict[str, str] = {}
@@ -544,202 +436,39 @@ class RunRuntimeEnvironmentService:
             labels["project_id"] = str(task.workspace_project_id)
         return labels
 
-    def cleanup_for_run(self, run: AgentRun) -> bool:
-        execution_runtime_id = run.execution_runtime_id
-        if execution_runtime_id is None:
-            if run.runtime_id is not None:
-                parent = self._runtime(run.workspace_id, run.runtime_id)
-                if _execution_mode(parent) == "persistent":
-                    return self._release_persistent_for_run(run, parent)
+    def cleanup_for_run(self, run: AgentRun, *, suspend: bool = False) -> bool:
+        if run.execution_runtime_id is None:
             return True
-        child = self._session.scalar(
-            select(WorkspaceRuntime).where(
-                WorkspaceRuntime.workspace_id == run.workspace_id,
-                WorkspaceRuntime.id == execution_runtime_id,
-                WorkspaceRuntime.execution_run_id == run.id,
-            )
-        )
-        if child is None:
-            _set_run_execution_metadata(run, status="not_required", runtime_id=execution_runtime_id)
-            self._record_cleanup(run, status="not_required", runtime_id=execution_runtime_id)
+        runtime = self._runtime(run.workspace_id, run.execution_runtime_id)
+        mode = _execution_mode(runtime)
+        if _runtime_execution_status(run) == "completed":
             return True
-        if child.status == "deleted":
-            if child.execution_mode == "pooled":
-                self._release_deleted_pooled_member(run, child)
-            _set_run_execution_metadata(run, status="completed", runtime_id=child.id)
-            return True
-        if self._docker is None:
-            _set_run_execution_metadata(run, status="failed", runtime_id=child.id)
-            self._record_cleanup(run, status="failed", runtime_id=child.id)
-            return False
-        if child.execution_mode == "pooled":
-            return self._release_pooled_for_run(run, child)
-        try:
-            RuntimeManager(self._session, self._docker).delete_runtime(child)
-        except Exception:
-            _set_run_execution_metadata(run, status="failed", runtime_id=child.id)
-            self._record_cleanup(run, status="failed", runtime_id=child.id)
-            return False
-        _set_run_execution_metadata(run, status="completed", runtime_id=child.id)
-        self._record_cleanup(run, status="completed", runtime_id=child.id)
+        if mode in {"pooled", "persistent"}:
+            self._session.commit()
+            try:
+                RunProcessCleanupService(self._docker).reset(
+                    runtime,
+                    run,
+                    retain_workspace=suspend or mode == "persistent",
+                )
+                RuntimeAllocationStore(self._session).release(runtime, "run", run.id)
+            except Exception:
+                _set_run_execution_metadata(run, status="failed", runtime_id=runtime.id, mode=mode)
+                self._record_cleanup(run, status="failed", runtime_id=runtime.id)
+                return False
+        elif runtime.status != "deleted":
+            if runtime.execution_run_id != run.id or self._docker is None:
+                return False
+            try:
+                RuntimeManager(self._session, self._docker).delete_runtime(runtime)
+            except Exception:
+                _set_run_execution_metadata(run, status="failed", runtime_id=runtime.id)
+                self._record_cleanup(run, status="failed", runtime_id=runtime.id)
+                return False
+        status = "suspended" if suspend else "completed"
+        _set_run_execution_metadata(run, status=status, runtime_id=runtime.id, mode=mode)
+        self._record_cleanup(run, status=status, runtime_id=runtime.id)
         return True
-
-    def _release_deleted_pooled_member(
-        self,
-        run: AgentRun,
-        child: WorkspaceRuntime,
-    ) -> None:
-        member_id = child.execution_pool_member_id
-        if member_id is None:
-            return
-        member = self._session.scalar(
-            select(WorkspaceRuntime).where(
-                WorkspaceRuntime.workspace_id == run.workspace_id,
-                WorkspaceRuntime.id == member_id,
-                WorkspaceRuntime.execution_mode == "pooled",
-                WorkspaceRuntime.execution_run_id.is_(None),
-                WorkspaceRuntime.execution_pool_member_id.is_(None),
-            )
-        )
-        if member is not None:
-            RuntimePoolService(self._session).release(member, run)
-
-    def reclaim_orphaned_pool_leases(
-        self,
-        *,
-        workspace_id: UUID | None = None,
-        stale_after_seconds: int = 600,
-        limit: int = 100,
-    ) -> tuple[int, int]:
-        return RuntimePoolReclaimer(
-            self._session,
-            self._docker,
-            cleanup_run=self.cleanup_for_run,
-            record_failed_run=self._record_failed_reclaimed_run,
-        ).reclaim(
-            workspace_id=workspace_id,
-            stale_after_seconds=stale_after_seconds,
-            limit=limit,
-        )
-
-    def _record_failed_reclaimed_run(
-        self,
-        run: AgentRun,
-        runtime_id: UUID,
-        member_id: UUID,
-    ) -> None:
-        _set_run_execution_metadata(
-            run,
-            status="failed",
-            runtime_id=runtime_id,
-            mode="pooled",
-            pool_member_runtime_id=member_id,
-        )
-        self._record_cleanup(run, status="failed", runtime_id=runtime_id)
-
-    def _release_persistent_for_run(
-        self,
-        run: AgentRun,
-        parent: WorkspaceRuntime,
-    ) -> bool:
-        try:
-            RuntimePoolService(self._session).release(parent, run)
-        except Exception:
-            _set_run_execution_metadata(
-                run,
-                status="failed",
-                runtime_id=parent.id,
-                mode="persistent",
-            )
-            self._record_cleanup(run, status="failed", runtime_id=parent.id)
-            return False
-        _set_run_execution_metadata(
-            run,
-            status="completed",
-            runtime_id=parent.id,
-            mode="persistent",
-        )
-        self._record_cleanup(run, status="completed", runtime_id=parent.id)
-        return True
-
-    def _release_pooled_for_run(self, run: AgentRun, child: WorkspaceRuntime) -> bool:
-        member_id = child.execution_pool_member_id
-        if member_id is None:
-            _set_run_execution_metadata(
-                run,
-                status="failed",
-                runtime_id=child.id,
-                mode="pooled",
-            )
-            self._record_cleanup(run, status="failed", runtime_id=child.id)
-            return False
-        member = self._session.scalar(
-            select(WorkspaceRuntime).where(
-                WorkspaceRuntime.workspace_id == run.workspace_id,
-                WorkspaceRuntime.id == member_id,
-                WorkspaceRuntime.execution_mode == "pooled",
-                WorkspaceRuntime.execution_run_id.is_(None),
-                WorkspaceRuntime.execution_pool_member_id.is_(None),
-            )
-        )
-        if member is None or not member.docker_container_id or self._docker is None:
-            _set_run_execution_metadata(run, status="failed", runtime_id=child.id, mode="pooled")
-            self._record_cleanup(run, status="failed", runtime_id=child.id)
-            return False
-        try:
-            RuntimePoolResetService(self._session, self._docker).reset(member, run)
-        except Exception:
-            self._destroy_failed_pool_member(member, child, run)
-            return False
-        now = datetime.now(UTC)
-        child.status = "deleted"
-        child.connection_status = "offline"
-        child.last_heartbeat_at = now
-        RuntimeLeaseStore(self._session).set_status(
-            child,
-            "released",
-            released_at=now,
-        )
-        RuntimePoolService(self._session).release(member, run)
-        RuntimeEventLog(self._session).append(
-            child,
-            "runtime.run.released",
-            "Pooled runtime container returned to the pool",
-            metadata={"run_id": str(run.id), "pool_member_runtime_id": str(member.id)},
-        )
-        self._session.flush([child, member])
-        _set_run_execution_metadata(
-            run,
-            status="completed",
-            runtime_id=child.id,
-            mode="pooled",
-            pool_member_runtime_id=member.id,
-        )
-        self._record_cleanup(run, status="completed", runtime_id=child.id)
-        return True
-
-    def _destroy_failed_pool_member(
-        self,
-        member: WorkspaceRuntime,
-        child: WorkspaceRuntime,
-        run: AgentRun,
-    ) -> None:
-        deleted = RuntimePoolResetService(
-            self._session,
-            self._docker,
-        ).destroy_failed_member(member, child)
-        _set_run_execution_metadata(
-            run,
-            status="completed" if deleted else "failed",
-            runtime_id=child.id,
-            mode="pooled",
-            pool_member_runtime_id=member.id,
-        )
-        self._record_cleanup(
-            run,
-            status="completed" if deleted else "failed",
-            runtime_id=child.id,
-        )
 
     def _record_cleanup(self, run: AgentRun, *, status: str, runtime_id: UUID) -> None:
         mode = _runtime_execution_mode(run) or "isolated"
@@ -748,7 +477,9 @@ class RunRuntimeEnvironmentService:
             "cleanup_status": status,
             "mode": mode,
         }
-        if status in {"completed", "not_required"}:
+        if status == "suspended":
+            event_type = "run.runtime_environment.suspended"
+        elif status in {"completed", "not_required"}:
             event_type = {
                 "pooled": "run.runtime_environment.released",
                 "persistent": "run.runtime_environment.persistent_released",
@@ -769,8 +500,8 @@ class RunRuntimeEnvironmentService:
         RunEventRecorder(self._session).append_event(
             run,
             event_type,
-            "Runtime execution environment cleanup completed"
-            if status in {"completed", "not_required"}
+            "Runtime process slot released"
+            if status in {"completed", "not_required", "suspended"}
             else "Per-run execution runtime cleanup failed",
             metadata,
         )
@@ -898,6 +629,7 @@ def _runtime_limits(raw: dict[str, object]) -> RuntimeLimits:
         timeout_seconds=timeout_seconds,
         max_output_bytes=max_output_bytes,
         max_processes=max_processes,
+        max_concurrent_executions=_positive_runtime_limit(raw, "max_concurrent_executions"),
     )
 
 
@@ -1016,13 +748,10 @@ def _set_run_execution_metadata(
     status: str,
     runtime_id: UUID,
     mode: RuntimeExecutionMode = "isolated",
-    pool_member_runtime_id: UUID | None = None,
 ) -> None:
     run_input = dict(run.input or {})
     execution_value = run_input.get("runtime_execution")
     execution = dict(execution_value) if isinstance(execution_value, dict) else {}
     execution.update({"runtime_id": str(runtime_id), "status": status, "mode": mode})
-    if pool_member_runtime_id is not None:
-        execution["pool_member_runtime_id"] = str(pool_member_runtime_id)
     run_input["runtime_execution"] = execution
     run.input = run_input

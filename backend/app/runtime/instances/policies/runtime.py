@@ -46,6 +46,7 @@ class RuntimePolicyResolver:
             timeout_seconds=as_int(default_limits.get("timeout_seconds"), 60),
             max_output_bytes=as_int(default_limits.get("max_output_bytes"), 256_000),
             max_processes=as_int(default_limits.get("max_processes"), 256),
+            max_concurrent_executions=as_int(default_limits.get("max_concurrent_executions"), 16),
         )
 
     def resolve_runtime_policy(
@@ -241,6 +242,7 @@ def apply_limit_caps(
         "timeout_seconds": limits.timeout_seconds,
         "max_output_bytes": limits.max_output_bytes,
         "max_processes": limits.max_processes,
+        "max_concurrent_executions": limits.max_concurrent_executions,
     }
     reductions: list[dict[str, object]] = []
     for key, cap in caps.items():
@@ -264,6 +266,7 @@ def apply_limit_caps(
             timeout_seconds=int(values["timeout_seconds"]),
             max_output_bytes=int(values["max_output_bytes"]),
             max_processes=int(values["max_processes"]),
+            max_concurrent_executions=int(values["max_concurrent_executions"]),
         ),
         reductions,
     )
@@ -279,6 +282,7 @@ def limit_caps(policy: dict[str, object]) -> dict[str, int | float]:
         "timeout_seconds",
         "max_output_bytes",
         "max_processes",
+        "max_concurrent_executions",
     ):
         value = positive_number(source.get(target))
         if value is not None:
@@ -309,6 +313,7 @@ def limits_metadata(limits: RuntimeLimits) -> dict[str, object]:
         "timeout_seconds": limits.timeout_seconds,
         "max_output_bytes": limits.max_output_bytes,
         "max_processes": limits.max_processes,
+        "max_concurrent_executions": limits.max_concurrent_executions,
     }
 
 

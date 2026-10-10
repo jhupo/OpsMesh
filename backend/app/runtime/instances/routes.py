@@ -10,7 +10,9 @@ from backend.app.runtime.instances.contracts import RuntimeLimits
 from backend.app.runtime.instances.manager import DockerRuntimeManagerProvider
 from backend.app.runtime.instances.policies.quotas import RuntimeQuotaExceededError
 from backend.app.runtime.instances.policies.safety import RuntimeSafetyError
+from backend.app.runtime.instances.queries import RuntimeControlQueryService
 from backend.app.runtime.instances.schemas import (
+    RuntimeAllocationResponse,
     RuntimeCommandRequest,
     RuntimeCommandResponse,
     RuntimeCreateRequest,
@@ -28,6 +30,30 @@ from backend.app.shared.db.session import get_db_session
 from backend.app.shared.http.pagination import PageResponse
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["runtimes"])
+
+
+@router.get(
+    "/runtimes/{runtime_id}/allocations", response_model=PageResponse[RuntimeAllocationResponse]
+)
+def list_runtime_allocations(
+    runtime_id: UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[RuntimeAllocationResponse]:
+    items, total = RuntimeControlQueryService(session).list_allocations(
+        context.workspace.id,
+        runtime_id,
+        limit=limit,
+        offset=offset,
+    )
+    return PageResponse(
+        items=[RuntimeAllocationResponse.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/runtime-templates", response_model=list[RuntimeTemplateResponse])
@@ -314,6 +340,7 @@ def _to_runtime_limits(request: RuntimeLimitsRequest | None) -> RuntimeLimits | 
         timeout_seconds=request.timeout_seconds,
         max_output_bytes=request.max_output_bytes,
         max_processes=request.max_processes,
+        max_concurrent_executions=request.max_concurrent_executions,
     )
 
 
@@ -341,6 +368,7 @@ def _limits_routing(limits: RuntimeLimits | None) -> dict[str, object] | None:
         "timeout_seconds": limits.timeout_seconds,
         "max_output_bytes": limits.max_output_bytes,
         "max_processes": limits.max_processes,
+        "max_concurrent_executions": limits.max_concurrent_executions,
     }
 
 

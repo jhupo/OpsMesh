@@ -77,6 +77,7 @@ def test_chat_request_uses_the_leased_execution_runtime_and_releases_it(mode: st
             "timeout_seconds": 30,
             "max_output_bytes": 256000,
             "max_processes": 64,
+            "max_concurrent_executions": 2,
         },
         capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
     )
@@ -153,6 +154,42 @@ def test_chat_request_uses_the_leased_execution_runtime_and_releases_it(mode: st
     assert request.context.metadata["runtime_execution"]["execution_runtime_id"] == str(
         result.runtime.id
     )
+    if mode in {"pooled", "persistent"}:
+        from backend.app.orchestration.runs.async_execution import AsyncAgentRunExecutor
+        from backend.app.orchestration.runs.control import stale_recovery_anchor
+        from backend.app.runtime.instances.models import RuntimeAllocation
+
+        parent.limits = {**parent.limits, "max_concurrent_executions": 1}
+        waiting = AgentRun(
+            workspace_id=workspace.id, runtime_id=parent.id, status="queued", input={}
+        )
+        session.add(waiting)
+        session.commit()
+        queue = client.app.dependency_overrides[get_worker_queue]()
+        executor = AsyncAgentRunExecutor(
+            lambda: session, queue, client.app.state.settings, docker_client=docker
+        )
+        execution = executor._service(session)
+        waiting_job = JobPayload(
+            workspace_id=workspace.id,
+            job_type=JobType.AGENT_RUN,
+            resource_id=waiting.id,
+            idempotency_key="capacity-wait",
+        )
+        assert execution.prepare_run(waiting, waiting_job) is None
+        assert waiting.status == "waiting_runtime" and waiting.started_at is None
+        assert stale_recovery_anchor(waiting) is None
+        assert QueueRehydrationService(session, queue).rehydrate_queued_runs().requeued_runs == 0
+        assert environment.cleanup_for_run(run)
+        session.commit()
+        assert (
+            session.scalar(select(RuntimeAllocation).where(RuntimeAllocation.owner_id == run.id))
+            is None
+        )
+        assert QueueRehydrationService(session, queue).rehydrate_queued_runs().requeued_runs == 1
+        assert waiting.status == "queued" and "runtime_capacity_waiting" not in waiting.input
+        assert environment.ensure_for_run(waiting).runtime.id == parent.id
+        assert environment.cleanup_for_run(waiting)
     assert environment.cleanup_for_run(run)
     if mode == "persistent":
         assert docker.created == docker.removed == docker.removed_volumes == []
@@ -160,7 +197,7 @@ def test_chat_request_uses_the_leased_execution_runtime_and_releases_it(mode: st
             RunRequestBuilder(
                 session, client.app.state.settings, docker_client=docker, runtime_backends=backends
             ).build_agent_request(run, job, model_provider_override={})
-        assert error.value.code == "runtime_execution_lease_invalid"
+        assert error.value.code == "runtime_execution_binding_invalid"
 
 
 def test_conversation_failure_exposes_redacted_run_evidence_only_to_owner() -> None:

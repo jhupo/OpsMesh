@@ -249,7 +249,7 @@ class AsyncAgentRunExecutor:
         self, service: RunExecutionService, run: AgentRun, job: JobPayload
     ) -> DirectToolCall | AgentRuntimeToolResult | None:
         service.prepare_run(run, job)
-        if run.status in {"completed", "failed", "cancelled"}:
+        if run.status in {"completed", "failed", "cancelled", "waiting_runtime"}:
             return None
         return DirectWorkflowExecutor(service).prepare_node(run, job, None, service.node_type(run))
 

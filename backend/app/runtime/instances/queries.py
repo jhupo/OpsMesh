@@ -5,12 +5,33 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.runtime.instances.models import RuntimeCommand, RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime.instances.models import (
+    RuntimeAllocation,
+    RuntimeCommand,
+    RuntimeEvent,
+    WorkspaceRuntime,
+)
+from backend.app.shared.errors import NotFoundError
 
 
 class RuntimeControlQueryService:
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def list_allocations(
+        self, workspace_id: UUID, runtime_id: UUID, *, limit: int, offset: int
+    ) -> tuple[list[RuntimeAllocation], int]:
+        if self.get_runtime(workspace_id, runtime_id) is None:
+            raise NotFoundError("Runtime not found")
+        statement = select(RuntimeAllocation).where(
+            RuntimeAllocation.workspace_id == workspace_id,
+            RuntimeAllocation.workspace_runtime_id == runtime_id,
+        )
+        total = self._session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        items = self._session.scalars(
+            statement.order_by(RuntimeAllocation.created_at).limit(limit).offset(offset)
+        ).all()
+        return list(items), total
 
     def list_runtimes(
         self,
@@ -38,9 +59,7 @@ class RuntimeControlQueryService:
         total = int(self._session.scalar(count_query) or 0)
         items = list(
             self._session.scalars(
-                statement.order_by(WorkspaceRuntime.created_at.desc())
-                .limit(limit)
-                .offset(offset)
+                statement.order_by(WorkspaceRuntime.created_at.desc()).limit(limit).offset(offset)
             )
         )
         return items, total

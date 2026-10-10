@@ -14,6 +14,7 @@ from backend.app.resources.artifacts.models import Artifact
 from backend.app.resources.files.models import FileAccessEvent
 from backend.app.resources.storage.storage import ObjectStorage, create_storage
 from backend.app.runtime.backends.registry import RuntimeBackendRegistry
+from backend.app.runtime.instances.allocations import RuntimeAllocationStore
 from backend.app.runtime.instances.contracts import RuntimeProjectFilesystem
 from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.shared.config import Settings
@@ -386,9 +387,16 @@ class RunProjectIOService:
                 stage=stage,
                 retryable=True,
             )
-        if run.execution_runtime_id is not None and (
-            runtime.parent_runtime_id != run.runtime_id
-            or runtime.execution_run_id != run.id
+        if run.execution_runtime_id is not None and not (
+            (
+                runtime.execution_mode == "isolated"
+                and runtime.parent_runtime_id == run.runtime_id
+                and runtime.execution_run_id == run.id
+            )
+            or (
+                runtime.execution_mode in {"pooled", "persistent"}
+                and RuntimeAllocationStore(self._session).get(runtime, "run", run.id) is not None
+            )
         ):
             raise ProjectRunIOError(
                 code="project_runtime_execution_binding_invalid",

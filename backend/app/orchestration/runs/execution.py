@@ -38,6 +38,7 @@ from backend.app.resources.storage.storage import ObjectStorage
 from backend.app.runtime.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.contracts import RuntimeEnvironmentError
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.instances.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtime.queues.contracts import JobPayload
 from backend.app.runtime.queues.execution_control import current_execution_control
@@ -115,6 +116,23 @@ class RunExecutionService:
                 actor_user_id=job.requested_by_user_id,
             )
         except (ProjectRunIOError, RuntimeEnvironmentError) as exc:
+            if (
+                isinstance(exc, RuntimeEnvironmentError)
+                and exc.code == "runtime_capacity_exhausted"
+            ):
+                self.session.rollback()
+                self.session.refresh(run)
+                run.input = {**run.input, "runtime_capacity_waiting": True}
+                run.started_at = None
+                self._lifecycle().mark_run_waiting_runtime(run)
+                self._events().append_event(
+                    run,
+                    "runtime.capacity.waiting",
+                    "Waiting for a Runtime process slot",
+                    {"runtime_id": str(run.runtime_id)},
+                )
+                self.commit_and_refresh(run)
+                return None
             self._lifecycle().mark_run_failed(run, exc)
             self.commit_and_refresh(run)
             return None
@@ -251,6 +269,8 @@ class RunExecutionService:
             return True
         if status in TERMINAL_RUN_STATUSES:
             return True
+        if status == RunStatus.WAITING_RUNTIME and run.input.get("runtime_capacity_waiting"):
+            return True
         if not self._linked_task_cancelled(run):
             return False
         self._lifecycle().mark_run_cancelled(run, completed_at=datetime.now(UTC))
@@ -292,8 +312,6 @@ class RunExecutionService:
     def runtime_timeout_seconds(self, run: AgentRun) -> int | None:
         if run.runtime_id is None:
             return None
-        from backend.app.runtime.instances.models import WorkspaceRuntime
-
         runtime = self.session.scalar(
             select(WorkspaceRuntime).where(
                 WorkspaceRuntime.workspace_id == run.workspace_id,
@@ -387,6 +405,19 @@ class RunExecutionService:
         if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
             self._project_io().cleanup_runtime_workspace(run, reason="run_terminal")
             self._runtime_environment().cleanup_for_run(run)
+        elif run.status in {
+            RunStatus.WAITING_APPROVAL,
+            RunStatus.WAITING_RUNTIME,
+        } and not run.input.get("runtime_capacity_waiting"):
+            if run.execution_runtime_id is not None:
+                runtime = self.session.scalar(
+                    select(WorkspaceRuntime).where(
+                        WorkspaceRuntime.workspace_id == run.workspace_id,
+                        WorkspaceRuntime.id == run.execution_runtime_id,
+                    )
+                )
+                if runtime is not None and runtime.execution_mode in {"pooled", "persistent"}:
+                    self._runtime_environment().cleanup_for_run(run, suspend=True)
         self.session.commit()
         self.session.refresh(run)
 

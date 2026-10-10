@@ -68,17 +68,6 @@ class RuntimeCleanupJobHandler:
                 context=RUNTIME_CLEANUP_JOB,
             ),
         )
-        cleanup.cleanup_orphaned_pool_leases(
-            docker_client=self._context.runtime_docker_client,
-            workspace_id=job.workspace_id,
-            stale_after_seconds=stale_after_seconds,
-            limit=positive_int(
-                routing.get("limit"),
-                default=100,
-                key="limit",
-                context=RUNTIME_CLEANUP_JOB,
-            ),
-        )
         WorkerLeaseMaintenanceService(self._context.session).expire_stale_worker_leases(
             workspace_id=job.workspace_id,
             stale_after_seconds=stale_lease_after_seconds,
@@ -214,6 +203,12 @@ def _runtime_limits(value: object) -> RuntimeLimits | None:
             value.get("max_output_bytes"),
             default=256_000,
             key="max_output_bytes",
+            context=RUNTIME_CONTROL_JOB,
+        ),
+        max_concurrent_executions=positive_int(
+            value.get("max_concurrent_executions"),
+            default=16,
+            key="max_concurrent_executions",
             context=RUNTIME_CONTROL_JOB,
         ),
         max_processes=positive_int(

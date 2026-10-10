@@ -35,6 +35,8 @@ def normalized_stale_run_statuses(statuses: list[str] | None) -> set[RunStatus]:
 
 
 def stale_run_age_anchor(run: AgentRun) -> datetime | None:
+    if run.status == RunStatus.WAITING_RUNTIME.value and run.input.get("runtime_capacity_waiting"):
+        return None
     if run.status == RunStatus.RUNNING.value:
         anchor = run.started_at or run.updated_at or run.created_at
     elif run.status == RunStatus.WAITING_RUNTIME.value:
