@@ -1,7 +1,7 @@
 # 后端对话与 Manager 委派
 
 对话接口位于 `/api/v1/workspaces/{workspace_id}/conversations`，接口前缀仍由
-`OPSMESH_API_PREFIX` 决定。此功能不依赖前端菜单。
+`OPSMESH_API_PREFIX` 决定。客户端只依赖此 API 合同。
 
 ## 使用前准备
 
@@ -9,7 +9,7 @@
 能力授权及有效 Runtime 绑定的 Agent。对话 Run 缺少 active/running 的 isolated、pooled
 或 persistent 执行 Runtime 时会失败，不能以无 Runtime 模式执行。
 
-自动模式需要一个已配置的 Manager Agent。它的 `tool_policy.allowed_tools` 至少包含：
+自动模式需要一个已配置的入口 Agent。需要发现并委派专家或团队时，由用户在该 Agent 的 `tool_policy.allowed_tools` 中授权：
 
 ```json
 {
@@ -25,7 +25,7 @@ Agent 配置安装与授权；创建对话不会自动授予任何能力。专�
 说明擅长的工作、输入要求与交付内容，供 Manager 检索和选择。
 
 创建自动对话时显式提供 Manager 的 `agent_profile_id`，或者在工作空间设置中配置
-`conversations.manager_agent_profile_id`。缺少有效 Manager 或委派工具时返回 409。
+`conversations.manager_agent_profile_id`。缺少有效入口 Agent 时返回 409。平台不要求入口 Agent 必须拥有委派工具，也不注入业务路由指令。
 
 ```json
 {
@@ -38,7 +38,7 @@ Agent 配置安装与授权；创建对话不会自动授予任何能力。专�
 ```
 
 省略不使用的可选字段，不要提交占位符。`agent` 模式要求 `agent_profile_id`；`team`
-模式要求 `agent_team_id`，不能同时指定二者。自动模式中的 Agent 是协调者。
+模式要求 `agent_team_id`，不能同时指定二者。自动模式中的 Agent 使用自己的指令处理请求。team 模式可以显式选择已发布的 orchestration_definition_id 和 orchestration_version；单独指定版本被拒绝，工作流授权在创建和执行时均检查。
 
 ## API 合同
 

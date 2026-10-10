@@ -1,0 +1,224 @@
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
+from sqlalchemy.orm import Session
+
+from opsmesh.identity.auth.dependencies import workspace_dependency
+from opsmesh.identity.authorization.context import WorkspaceContext
+from opsmesh.identity.authorization.permissions import WorkspaceAction
+from opsmesh.resources.files.schemas import (
+    ArtifactHistoryResponse,
+    ArtifactResponse,
+    FinalOutputArtifactHistoryResponse,
+    WorkspaceFileResponse,
+    WorkspaceFileRuntimePolicyRequest,
+)
+from opsmesh.resources.files.security import content_disposition_attachment
+from opsmesh.resources.files.service import WorkspaceFileService
+from opsmesh.resources.memory.indexing import enqueue_workspace_memory_index_job
+from opsmesh.resources.storage.storage import create_storage
+from opsmesh.runtime.queues.dependencies import get_worker_queue
+from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.shared.config import Settings, get_settings
+from opsmesh.shared.db.session import get_db_session
+from opsmesh.shared.http.pagination import PageResponse, pagination_params
+from opsmesh.shared.pagination import PageParams
+
+router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["files"])
+
+
+def file_service(
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+) -> WorkspaceFileService:
+    return WorkspaceFileService(
+        session=session,
+        storage=create_storage(settings),
+        max_upload_bytes=settings.max_upload_bytes,
+    )
+
+
+@router.get("/files", response_model=PageResponse[WorkspaceFileResponse])
+def list_files(
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    service: WorkspaceFileService = Depends(file_service),
+) -> PageResponse[WorkspaceFileResponse]:
+    items, total = service.list_files(context.workspace.id, page)
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.post("/files", response_model=WorkspaceFileResponse, status_code=status.HTTP_201_CREATED)
+async def upload_file(
+    file: UploadFile = File(...),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    service: WorkspaceFileService = Depends(file_service),
+    queue: RedisQueue = Depends(get_worker_queue),
+) -> WorkspaceFileResponse:
+    content = await file.read()
+    try:
+        stored_file = service.upload_file(
+            workspace_id=context.workspace.id,
+            uploaded_by_user_id=context.user.user_id,
+            filename=file.filename or "upload.bin",
+            content_type=file.content_type or "application/octet-stream",
+            content=content,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
+    enqueue_workspace_memory_index_job(
+        queue=queue,
+        workspace_id=context.workspace.id,
+        source_type="workspace_file",
+        source_id=stored_file.id,
+        requested_by_user_id=context.user.user_id,
+        routing={"source": "workspace_file_upload"},
+    )
+    return WorkspaceFileResponse.model_validate(stored_file)
+
+
+@router.get(
+    "/files/{file_id}/download",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "File bytes; Content-Type is the stored file content type",
+            "content": {
+                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+            },
+        }
+    },
+)
+def download_file(
+    file_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    service: WorkspaceFileService = Depends(file_service),
+) -> Response:
+    try:
+        file, content = service.read_file(context.workspace.id, file_id, context.user.user_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(
+        content=content,
+        media_type=file.content_type,
+        headers={"Content-Disposition": content_disposition_attachment(file.filename)},
+    )
+
+
+@router.put("/files/{file_id}/runtime-policy", response_model=WorkspaceFileResponse)
+def update_file_runtime_policy(
+    file_id: UUID,
+    request: WorkspaceFileRuntimePolicyRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    service: WorkspaceFileService = Depends(file_service),
+) -> WorkspaceFileResponse:
+    try:
+        file = service.update_runtime_policy(
+            workspace_id=context.workspace.id,
+            file_id=file_id,
+            user_id=context.user.user_id,
+            sensitivity=request.sensitivity,
+            runtime_access=request.runtime_access,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return WorkspaceFileResponse.model_validate(file)
+
+
+@router.get("/artifacts", response_model=PageResponse[ArtifactResponse])
+def list_artifacts(
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    service: WorkspaceFileService = Depends(file_service),
+) -> PageResponse[ArtifactResponse]:
+    items, total = service.list_artifacts(context.workspace.id, page)
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get("/artifacts/history", response_model=ArtifactHistoryResponse)
+def get_artifact_history(
+    task_id: UUID = Query(),
+    work_package_id: str = Query(min_length=1, max_length=120),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    service: WorkspaceFileService = Depends(file_service),
+) -> ArtifactHistoryResponse:
+    items = service.list_artifact_history(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        work_package_id=work_package_id,
+    )
+    latest = items[0] if items else None
+    return ArtifactHistoryResponse(
+        task_id=task_id,
+        work_package_id=work_package_id,
+        items=[ArtifactResponse.model_validate(item) for item in items],
+        total=len(items),
+        latest_artifact_id=latest.id if latest is not None else None,
+        latest_version=latest.version if latest is not None else None,
+    )
+
+
+@router.get(
+    "/artifacts/final-output/history",
+    response_model=FinalOutputArtifactHistoryResponse,
+)
+def get_final_output_artifact_history(
+    task_id: UUID = Query(),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    service: WorkspaceFileService = Depends(file_service),
+) -> FinalOutputArtifactHistoryResponse:
+    task, work_package_ids, items = service.list_final_output_artifact_history(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+    )
+    latest = items[0] if items else None
+    return FinalOutputArtifactHistoryResponse(
+        task_id=task_id,
+        final_output=task.final_output if task is not None else None,
+        final_work_package_ids=work_package_ids,
+        items=[ArtifactResponse.model_validate(item) for item in items],
+        total=len(items),
+        latest_artifact_id=latest.id if latest is not None else None,
+        latest_version=latest.version if latest is not None else None,
+    )
+
+
+@router.get(
+    "/artifacts/{artifact_id}/download",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Artifact bytes; Content-Type is the stored artifact content type",
+            "content": {
+                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+            },
+        }
+    },
+)
+def download_artifact(
+    artifact_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    service: WorkspaceFileService = Depends(file_service),
+) -> Response:
+    try:
+        artifact, content = service.read_artifact(
+            context.workspace.id,
+            artifact_id,
+            context.user.user_id,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return Response(
+        content=content,
+        media_type=artifact.content_type,
+        headers={"Content-Disposition": content_disposition_attachment(artifact.filename)},
+    )

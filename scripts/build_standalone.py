@@ -47,8 +47,8 @@ def copy_server_assets(target: Path) -> None:
     for name in ("README.md", "alembic.ini"):
         shutil.copy2(ROOT / name, target / name)
     shutil.copytree(
-        ROOT / "backend/migrations",
-        target / "backend/migrations",
+        ROOT / "migrations",
+        target / "migrations",
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
     )
     shutil.copytree(ROOT / "deploy/server", target / "deploy/server")

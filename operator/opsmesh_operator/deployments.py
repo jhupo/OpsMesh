@@ -194,7 +194,7 @@ class ComposeDeployment(Deployment):
                 "python",
                 "api",
                 "-m",
-                "backend.app.delivery",
+                "opsmesh.delivery",
                 "--directory",
                 "/app",
                 command,

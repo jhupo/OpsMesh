@@ -1,0 +1,78 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from opsmesh.identity.auth.dependencies import workspace_dependency
+from opsmesh.identity.authorization.context import WorkspaceContext
+from opsmesh.identity.authorization.permissions import WorkspaceAction
+from opsmesh.shared.db.session import get_db_session
+from opsmesh.shared.http.pagination import PageResponse, pagination_params
+from opsmesh.shared.pagination import PageParams
+from opsmesh.workspaces.management.service import WorkspaceService
+from opsmesh.workspaces.quotas.schemas import (
+    WorkspaceExecutionSlotSummaryResponse,
+    WorkspaceQuotaResponse,
+    WorkspaceQuotaUpsertRequest,
+)
+from opsmesh.workspaces.quotas.service import WorkspaceQuotaService
+
+router = APIRouter(prefix="/workspaces", tags=["workspaces"])
+
+
+@router.get("/{workspace_id}/quotas", response_model=PageResponse[WorkspaceQuotaResponse])
+def list_workspace_quotas(
+    page: PageParams = Depends(pagination_params),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[WorkspaceQuotaResponse]:
+    items, total = WorkspaceService(session).list_quotas(context.workspace.id, page)
+    return PageResponse(
+        items=[WorkspaceQuotaResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get(
+    "/{workspace_id}/quotas/execution-summary",
+    response_model=WorkspaceExecutionSlotSummaryResponse,
+)
+def get_workspace_execution_slot_summary(
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceExecutionSlotSummaryResponse:
+    summary = WorkspaceQuotaService(session).execution_slot_summary(context.workspace.id)
+    return WorkspaceExecutionSlotSummaryResponse.model_validate(summary)
+
+
+@router.put("/{workspace_id}/quotas", response_model=list[WorkspaceQuotaResponse])
+def upsert_workspace_quotas(
+    request: WorkspaceQuotaUpsertRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> list[WorkspaceQuotaResponse]:
+    quotas = WorkspaceQuotaService(session).upsert_quotas(
+        context.workspace.id,
+        request,
+        actor_user_id=context.user.user_id,
+    )
+    return [WorkspaceQuotaResponse.model_validate(quota) for quota in quotas]
+
+
+@router.delete("/{workspace_id}/quotas/{quota_key}", response_model=WorkspaceQuotaResponse)
+def disable_workspace_quota(
+    quota_key: str,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
+    session: Session = Depends(get_db_session),
+) -> WorkspaceQuotaResponse:
+    quota = WorkspaceQuotaService(session).disable_quota(
+        context.workspace.id,
+        quota_key,
+        actor_user_id=context.user.user_id,
+    )
+    if quota is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace quota not found",
+        )
+    return WorkspaceQuotaResponse.model_validate(quota)

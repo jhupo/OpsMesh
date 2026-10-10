@@ -1,10 +1,12 @@
 # OpsMesh Repository Instructions
 
-OpsMesh 是企业级 Agent 控制面。后端负责身份、工作空间、Agent、编排、能力、隔离 Runtime、审批、审计和运维；前端通过稳定 API 合同访问这些能力。以当前代码、schema、migration 和受影响产品流程的验证结果为准。
+OpsMesh 是企业级 Agent 控制面。后端负责身份、工作空间、Agent、编排、能力、隔离 Runtime、审批、审计和运维；独立客户端项目通过稳定 API 合同访问这些能力；本仓库不包含前端。以当前代码、schema、migration 和受影响产品流程的验证结果为准。
 
 ## 后端结构与请求任务流
 
-- 默认 API 前缀为 `/api/v1`，由 `OPSMESH_API_PREFIX` 覆盖。总路由入口为 `backend/app/bootstrap/routers.py`，平台管理员入口为 `backend/app/bootstrap/platform_routes.py`。
+运行包为 `src/opsmesh`，统一使用 `opsmesh.*` 导入。测试位于 `tests`，Alembic 迁移位于 `migrations`。禁止恢复旧包名或路径兼容层。详细接口参考由当前应用路由和 schema 生成，见 `docs/api.md`；接口变更必须重新导出并通过一致性检查。
+
+- 默认 API 前缀为 `/api/v1`，由 `OPSMESH_API_PREFIX` 覆盖。总路由入口为 `src/opsmesh/bootstrap/routers.py`，平台管理员入口为 `src/opsmesh/bootstrap/platform_routes.py`。
 - 保持 feature-first 结构：identity、workspaces、agents、teams、capabilities、resources、orchestration、runtime、platform、messaging、governance、shared 和 bootstrap。功能模块就近放置 routes/schema/service/model，由 bootstrap 显式注册；不要改成全局按技术层分目录。
 - 依赖方向为 `routes -> service/domain -> infrastructure`。Route 负责 HTTP 参数、分页、响应和错误映射；业务策略、授权、持久化和长流程由服务层负责。模块依赖遵守 `pyproject.toml` 的 import-linter 合同。
 
@@ -16,11 +18,13 @@ OpsMesh 是企业级 Agent 控制面。后端负责身份、工作空间、Agent
 4. Agent SDK 和工具只在批准的 isolated、pooled 或 persistent Runtime 中执行；API 和 Worker 主进程不能运行用户或 Agent 控制的代码。
    - Runtime 宿主与任务/MCP 进程的生命周期必须分开。共享宿主按工作空间、可信权限范围和网络策略分组，以持久执行槽限制并发；禁止按 Agent 或 MCP 数量自动创建容器。
    - 取消、重启和回收只作用于对应进程组与私有目录；禁止清空共享宿主的进程或临时目录。容量等待不得视为执行超时，审批暂停必须释放共享执行槽。
-5. Run、Task、事件、审计、成本和 Artifact 写回 PostgreSQL；前端通过查询或流式接口读取状态与结果。失败进入明确的重试、暂停、取消或恢复状态，并留下审计证据。
+5. Run、Task、事件、审计、成本和 Artifact 写回 PostgreSQL；客户端通过查询或流式接口读取状态与结果。失败进入明确的重试、暂停、取消或恢复状态，并留下审计证据。
 
 ## 后端技能任务流
 
 技能位于 `.agents/skills`。按任务触发技能，先读对应 `SKILL.md`，再按其要求读取相关 `references`；不要只按名称推断用法。上游来源、固定版本和文件范围见 `.agents/skills/README.md`。
+
+本仓库仅保留后端技能与文档徽章技能，不维护 UI 技能、Node 项目或页面验收规则。独立客户端只依赖已发布 API 合同，不依赖 Python 包内部实现。
 
 | 技能 | 何时使用 | 用法与输出 |
 | --- | --- | --- |
@@ -40,27 +44,6 @@ OpsMesh 是企业级 Agent 控制面。后端负责身份、工作空间、Agent
 - PostgreSQL 事务、锁、并发或队列交互使用相关真实基础设施验证；SQLite、内存 Repository 和 mock 不能证明 PostgreSQL 或完整任务流正确。
 - 复核覆盖受影响的完整调用链：API、服务、事务事件、队列、Worker、Runtime 与结果回写；检查工作空间隔离、领取时重新授权、取消、续接、审批恢复、幂等和密钥脱敏。
 - 静态检查、代码复核与运行验收分别提供证据。检查通过只证明其覆盖范围；最后一次相关修改后的结果才能支持完成声明。
-
-## 前端技能任务流
-
-| 技能 | 何时使用 | 用法 |
-| --- | --- | --- |
-| `frontend-design` | 新建 UI 或调整布局、视觉层级、字体、间距、响应式行为 | 先确定页面目标、信息层级和布局；不替代组件库，不增加未经需求授权的页面或路由。 |
-| `radix-colors` | 配色、状态色或明暗主题变更 | 选择 Radix 色阶并映射到现有 shadcn 语义变量，不把原始颜色散落在组件中。 |
-| `shadcn` | 新增、组合、修复或调整 UI 控件 | 先查询并复用现有组件，遵循 `frontend/components.json` 和 Lucide 图标；不引入第二套运行时组件库或手写替代控件。 |
-| `web-design-guidelines` | UI 完成后的可访问性、交互与视觉验收 | 检查真实页面的键盘操作、焦点、主题、桌面和移动布局，遵守下面的截图规则。 |
-| `markdown-badges` | README 或 Markdown 徽章变更 | 仅用于 Markdown，不用于 Web UI 或引入运行时图片组件。 |
-
-UI 任务依次进行设计、按需配色、组件复用、API 接入和真实页面验收。请求封装放在 `frontend/src/api`，产品组合放在 `frontend/src/features`，路由保持轻量，用户可见文案放在 `frontend/src/i18n`。
-
-### UI 真实截图验收
-
-- 任何布局、样式、视觉层级、字体、间距、颜色、图标、响应式或组件组合改动，都必须在真实运行页面逐个检查受影响组件；Story、静态 HTML、源码、lint、类型检查和构建不能代替验收。
-- 每个受影响组件截图默认状态及本次涉及的弹窗、菜单、展开、选择、加载、空态、错误态或交互后状态。一张截图仅在组件布局清晰可辨时可覆盖多个组件。
-- 每个组件至少检查桌面和移动宽度；涉及主题、颜色或阴影时还要检查浅色和深色主题。检查溢出、遮挡、错位、截断、留白、滚动、层级、焦点、文案和点击区域。
-- 执行者实际打开并逐张查看截图；发现问题后修复、重新截图并查看。只有截图文件存在不算验证。
-- 完成报告列出已截图检查的组件、视口、主题和状态，区分已验证与未验证项。缺少任何受影响组件的真实截图证据时，不得宣称 UI 改动完成。
-- 页面标题和主内容区域不添加解释功能、用途或操作方式的可见段落；只保留必要标题、字段、状态、动作、空态和错误信息。弹窗或组件的无障碍描述使用 `sr-only`。
 
 ## 工程边界
 
@@ -86,18 +69,11 @@ uv run ruff check .
 uv run lint-imports --no-cache
 uv run python scripts/audit_app_layout.py --architecture-check
 uv run mypy
-uv run pytest backend/tests/<受影响的流程测试文件>.py
+uv run python scripts/export_api_docs.py --check
+uv run pytest tests/<受影响的流程测试文件>.py
 ```
 
-`backend/tests/test_health.py` 只验证健康接口，不能作为通用后端验收。事务、锁和并发场景按相关测试要求配置真实 PostgreSQL；外部 SDK 和长时间运行验证按现有 opt-in marker 执行，不将跳过项报告为已验证。
+`tests/test_health.py` 只验证健康接口，不能作为通用后端验收。事务、锁和并发场景按相关测试要求配置真实 PostgreSQL；外部 SDK 和长时间运行验证按现有 opt-in marker 执行，不将跳过项报告为已验证。
 
-前端：
-
-```bash
-cd frontend
-pnpm lint
-pnpm typecheck
-pnpm build
-```
 
 功能变更还需受影响产品流程的运行证据；仅文档或组织调整不重复运行无关完整测试套件。

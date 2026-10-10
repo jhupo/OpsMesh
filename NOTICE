@@ -9,7 +9,7 @@ The original copyright and permission notice is retained in LICENSE-MIT.
 This change does not revoke licenses already granted for earlier versions.
 Third-party dependencies retain their respective licenses.
 
-The repository-scoped skills under `.agents/skills` include unmodified material from
-openvetta/open-vetta commit `bcfc8699014267a841b16d05eedf08c3ab8c3586`, licensed under the
-Apache License 2.0. The retained license text is
-`.agents/skills/frontend-design/LICENSE.txt`.
+The backend skills under `.agents/skills` retain MIT-licensed material from
+wshobson/agents, Jallen64/python-code-review-skill and obra/superpowers.
+Pinned sources are recorded in `.agents/skills/README.md`; each skill directory
+retains its upstream LICENSE file. License trailing whitespace is normalized.

@@ -1,105 +1,114 @@
-# OpsMesh API
+# OpsMesh API 使用说明
 
-> 当前接口索引基于 `backend/app/bootstrap/routers.py` 和当前路由实现。默认前缀为 `/api/v1`；精确请求和响应 schema 以运行中的 OpenAPI 为准。
+接口来自 `src/opsmesh/bootstrap/routers.py` 与实际注册路由。完整参数和返回字段见 [逐接口参考](api/README.md)、[数据模型](api/schemas.md) 和 [OpenAPI JSON](openapi.json)，覆盖全部 550 个接口，而非接口族示例。
 
-## 发现接口
+## 地址与发现
 
-开发环境默认地址为 `http://localhost:8000`：
+默认前缀 `/api/v1`，可由 `OPSMESH_API_PREFIX` 配置。以下示例使用 `BASE=http://localhost:8000/api/v1`。开发环境的 `/docs`、`/redoc`、`/openapi.json` 位于服务根路径；生产环境关闭在线文档时，使用仓库导出的合同。
 
-- OpenAPI JSON：`GET /openapi.json`（由 FastAPI 应用配置提供）
-- Swagger UI：`GET /docs`
-- 健康检查：`GET /api/v1/health`
-- 就绪检查：`GET /api/v1/health/ready`
-- 指标：`GET /api/v1/metrics`
+内容通常为 `application/json`。上传按接口声明使用 `multipart/form-data`；文件、头像和流式响应使用各自媒体类型，不能统一调用 `response.json()`。
 
-生产环境可以通过 `OPSMESH_API_PREFIX` 覆盖 `/api/v1`。
+## 认证与权限
 
-## 认证
+| 调用身份 | 凭据与校验 |
+| --- | --- |
+| 普通用户 | `Authorization: Bearer <user-token>`；登录或创建 Token 后获取，权限为角色、Token scope 和资源授权的交集 |
+| 平台管理员 | 管理员用户的未限制 scope 的 Token，或配置型平台管理员 Token；部分写接口要求可归属到用户的管理员凭据 |
+| 内部联调 | 内部 Token 加 `X-User-ID`；只用于受信任后端联调，不向客户端公开内部 Token |
+| 自托管 Worker | `X-Runtime-Authorization: Bearer <runtime-credential>`；由注册流程签发，普通用户 Token 不能替代 |
+| 插件运行时 | `Authorization: Bearer <plugin-credential>`；限定 URL 的 workspace/install，不认证为普通用户 |
+| Worker 心跳 | 对应接口同时检查工作空间运维权限和 `X-Worker-Heartbeat-Token` |
 
-用户认证接口位于 `/api/v1/auth`：
+注册、登录、邀请接受、Worker 注册、Webhook 等入口有各自配置、签名或令牌要求。参考页列出实际依赖和作用域；没有用户认证依赖不等于可无条件调用。Header 在参数表中标为“非必填”可能仅代表语法层允许省略，认证依赖仍会拒绝缺失凭据。
 
-| 方法 | 路径 | 作用 |
-| --- | --- | --- |
-| POST | `/auth/register` | 注册用户 |
-| POST | `/auth/login` | 密码登录并返回 API Token |
-| POST | `/auth/logout` | 撤销当前 Token |
-| GET | `/auth/me` | 查询当前用户 |
-| PATCH | `/auth/me` | 更新当前用户资料或密码相关资料 |
-| PUT | `/auth/password` | 修改密码并按策略撤销活动 Token |
-| GET/POST/DELETE | `/auth/tokens` | 查询、创建和撤销当前用户 Token |
+工作空间是租户边界。资源 ID 不授予跨空间读取权限；URL 中的 `workspace_id` 必须与资源和执行身份一致。管理员身份也不自动绕过普通工作空间接口的成员要求。客户端可调用 `GET /workspaces/{workspace_id}/access/context` 获取工作空间动作上限，资源级授权、审批和当前状态仍在每次操作及执行前重新检查。
 
-登录成功后使用 `Authorization: Bearer <token>` 访问受保护接口。平台管理员接口还会检查平台管理员权限。
+登录示例：
 
-## 工作空间接口
+```bash
+curl -X POST "$BASE/auth/login" -H 'Content-Type: application/json' \
+  --data '{"email":"user@example.com","password":"<your-password>"}'
+curl "$BASE/auth/me" -H "Authorization: Bearer $TOKEN"
+```
 
-工作空间接口使用 `/api/v1/workspaces`：
+使用登录返回的 `token` 字段；不要把真实凭据写入命令历史、代码或文档。账号注册策略与 Token 的期限、限制字段见 [auth](api/auth.md)。
 
-- 工作空间、成员、邀请和配额：`/workspaces` 及其子路径
-- 项目：`/workspaces/{workspace_id}/projects`
-- 文件与 Artifact：`/workspaces/{workspace_id}/files`、`/workspaces/{workspace_id}/exports`
-- 知识与记忆：`/workspaces/{workspace_id}/knowledge/sources`、`/workspaces/{workspace_id}/memories`
-- 团队、Team Session、Team Runtime 和执行：`/workspaces/{workspace_id}/...`
-- 域任务和导入导出：`/workspaces/{workspace_id}/...`
+## 分页与模型
 
-所有工作空间资源都必须同时校验认证用户、工作空间成员关系和具体操作权限。请求体不能覆盖 URL 中的 `workspace_id`。
+通用分页使用 `limit`（默认 50，1–100）和 `offset`（默认 0，≥0），返回 `items`、`total`、`limit`、`offset`。部分接口采用数组、持久事件游标、Redis 游标或专用分页格式，应以该接口 schema 为准。
 
-## Agent 与执行接口
+UUID 使用字符串；日期时间使用 schema 声明的 date-time 格式。字段的必填、nullable、默认值、枚举、字符串长度、数值边界和嵌套模型均在 [模型参考](api/schemas.md) 中给出。`PATCH` 的省略与显式 null 是否等价由该 schema 和实现决定，不统一假定 null 表示删除。
 
-- Agent Profile：`/workspaces/{workspace_id}/agents`
-- Agent Session：`/workspaces/{workspace_id}/agents/{agent_id}/sessions`
-- Agent 消息：工作空间 Agent 消息路由
-- 编排定义：`/workspaces/{workspace_id}/orchestrations`
-- Task、计划、事件、流式状态和操作：`/workspaces/{workspace_id}/...`
-- Run：`/workspaces/{workspace_id}/runs` 及事件和流式子路径
-- 审批：`/workspaces/{workspace_id}/approvals`
+## 错误与追踪
 
-创建长任务时，接口只创建持久状态并入队；执行由 Worker 在授权 Runtime 中完成。客户端通过任务、Run、事件或流式接口读取进度和结果。
+HTTP/领域错误采用以下结构；参数校验失败的 `details` 是仅保留 type、loc、msg 的脱敏错误数组：
 
-## 能力与 Marketplace
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "Request validation failed",
+    "request_id": "client-request-id",
+    "details": [{"type":"missing","loc":["body","email"],"msg":"Field required"}]
+  }
+}
+```
 
-- 工作空间能力：`/workspaces/{workspace_id}/capabilities`
-- 工作空间插件：`/workspaces/{workspace_id}/plugins`
-- Marketplace：`/marketplace`
-- Talent catalog：`/talent-market`
-- MCP 凭据、Server、Tool allowlist 和观测接口都挂在能力路由下。
+| HTTP | 常见含义 |
+| --- | --- |
+| 400 | 无效业务参数 |
+| 401 | 缺少或无效认证 |
+| 403 | 工作空间、Token scope、资源授权或策略拒绝 |
+| 404 | 资源不存在或不可见 |
+| 409 | 状态、版本、幂等键或执行前置条件冲突 |
+| 413 | 请求内容过大 |
+| 422 | 参数校验失败 |
+| 429 | 限流或配额限制 |
+| 503 | 依赖不可用或维护准入拒绝 |
 
-能力的创建、安装、发布、审核和撤销都要经过工作空间或平台治理权限；公开 Marketplace 资源不能绕过审核。
+具体领域 `error.code` 以实际返回为准；不能仅凭 HTTP 状态判断可自动重试。未处理的内部异常不保证使用这个公开错误模型。参考页的响应表来自路由声明，不是所有可能运行错误的穷举。
 
-## 运行与运维
+可发送 `X-Request-ID` 与 W3C `traceparent`，在响应的 `X-Request-ID`、`X-Trace-ID`、`traceparent`、`X-Process-Time-Ms` 中关联请求。`X-Request-ID` 是追踪标识，不能代替业务幂等键。
 
-- 工作空间运行状态：`/workspaces/{workspace_id}/operations`
-- Runtime 与 Runtime Space：`/workspaces/{workspace_id}/runtimes` 及相关子路径
-- 成本：`/workspaces/{workspace_id}/costs`
-- 通知：`/workspaces/{workspace_id}/notifications`
-- 定时任务：`/workspaces/{workspace_id}/scheduled-jobs`
-- Webhook：`/workspaces/{workspace_id}/webhook-subscriptions`
-- Automation：`/workspaces/{workspace_id}/automations`
+## Chat 与长任务接入
 
-## 平台管理员
+先配置工作空间、模型凭据、Agent 指令和工具权限，绑定有效的 Runtime。意图路由属于用户配置的 Manager；平台不自动选择知识库、订单工具或专家。
 
-平台管理员接口统一位于 `/api/v1/admin`，所有路由都经过平台管理员依赖：
+1. `POST /workspaces/{workspace_id}/conversations` 创建对话。`mode=agent` 指定 `agent_profile_id`；`mode=auto` 指定 Manager 或使用工作空间配置；`mode=team` 指定 `agent_team_id`。
+2. `POST /workspaces/{workspace_id}/conversations/{conversation_id}/messages`，发送 `{"body":"用户问题"}` 和 `Idempotency-Key`。返回 HTTP 202 与 Turn，不代表模型已完成。
+3. 查询 `.../messages`、`.../events?after_id=0&limit=100`、`.../executions` 获取状态、回复、任务和 Run。相同对话按轮次串行，不同请求在 Worker 活动槽与 Runtime 容量内并发。
+4. Task 的 `GET /workspaces/{workspace_id}/tasks/{task_id}/events/stream` 提供 SSE；Run 的事件、审批和 Artifact 接口提供持久执行证据。
+5. 使用 `.../turns/{turn_id}/cancel` 取消，或显式 `.../turns/{turn_id}/retry` 重试符合条件的失败轮次。不要在超时后自动重新发送具有副作用的业务请求。
 
-- `/admin/overview`：平台总览和工作空间摘要
-- `/admin/users`：用户列表、创建、状态、Token、成员关系等管理
-- `/admin/workspaces`：跨工作空间摘要和管理
-- `/admin/announcements`：公告发布和撤回
-- `/admin/capabilities`、`/admin/plugins`：能力和插件治理
-- `/admin/workers`、`/admin/runtimes`、`/admin/queues`、`/admin/leases`：运行控制面
-- `/admin/policies`、`/admin/security-events`、`/admin/system`、`/admin/updates`：策略、安全、系统和更新
+```bash
+curl -X POST "$BASE/workspaces/$WORKSPACE_ID/conversations" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  --data '{"title":"分析","mode":"agent","agent_profile_id":"<agent-uuid>"}'
+curl -X POST "$BASE/workspaces/$WORKSPACE_ID/conversations/$CONVERSATION_ID/messages" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $REQUEST_KEY" --data '{"body":"分析我提供的日志"}'
+```
 
-管理员接口不得被普通工作空间角色调用；跨工作空间读取必须通过平台服务完成范围控制和审计。
+重复提交同一幂等键及相同输入返回原 Turn；同一键使用不同输入返回冲突。取消不能撤销已经发生的外部副作用。审批使用独立 API，自然语言“同意”不自动授权。原生 SDK Session 管理历史，客户端每轮只发新增输入。详见 [对话](conversations.md)、[完整 conversation 合同](api/conversations.md) 和 `scripts/conversation_client.py`。
 
-## 自托管 Worker 与插件 Runtime
+## 流式与文件
 
-自托管 Worker 路由由 `backend/app/runtime/self_hosted/routes.py` 提供，插件 Runtime 路由使用 `/api/v1/plugin-runtime/{workspace_id}/{install_id}`。这些接口使用独立的 Worker、Runtime 或安装凭据，不能被普通用户 Token 代替。
+| 接口 | 编码与消费方式 |
+| --- | --- |
+| `/workspaces/{workspace_id}/tasks/{task_id}/events/stream` | `text/event-stream`；按 event/data 帧读取 snapshot、消息、工具事件、心跳与终止事件；参数支持 after_sequence、event_cursor、once |
+| `/workspaces/{workspace_id}/automations/{automation_id}/events/{event_id}/stream` | `application/x-ndjson`；逐行 JSON，cursor 为 Redis stream 游标 |
+| `/plugin-runtime/{workspace_id}/{install_id}/automations/{automation_id}/events/{event_id}/stream` | 插件凭据下的同类 NDJSON 流 |
+| `/auth/me/avatar` | `image/webp` 二进制 |
+| 文件与 Artifact 的 `/download` | 文件原始字节，Content-Type 使用存储元数据，Content-Disposition 提供下载文件名 |
+| `/metrics` | Prometheus 文本格式 |
 
-## 通用约定
+流建立后的失败可能以流事件或连接关闭表现，不能再依赖初始 HTTP 状态。客户端重连应使用对应游标，结合持久事件查询确认状态；对话 events 接口本身是游标轮询，不能当作 SSE。
 
-- 列表接口使用分页参数和 `PageResponse`，具体字段以 OpenAPI schema 为准。
-- 资源查询必须带工作空间范围，不能仅凭资源 ID 加载 workspace-owned 数据。
-- API 只负责输入校验、授权上下文和持久化意图；长时间执行不在请求线程中完成。
-- 错误使用 HTTP 状态码和响应模型返回；服务层错误由 Route 映射为稳定的公开错误信息。
-- 认证信息、Provider Key、MCP Credential、签名材料和完整授权 URL 不得出现在响应、日志或审计详情中。
-- 对需要审批的动作，接口返回持久化的审批或 Run 状态，Worker 在执行前再次检查当前授权和策略。
+## 更新文档
 
-接口源代码按功能模块就近放在 `backend/app/<feature>/.../routes.py`；应用路由汇总：`backend/app/bootstrap/routers.py`。
+```bash
+uv run python scripts/export_api_docs.py
+uv run python scripts/export_api_docs.py --check
+```
+
+导出不启动 API lifespan、不执行任务、不连接业务 MCP 或调用模型。输出固定使用 `/api/v1`；部署采用其他前缀时替换路径前缀。生成内容不读取数据库资源或导出运行密钥。

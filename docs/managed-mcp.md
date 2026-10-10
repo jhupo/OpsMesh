@@ -97,5 +97,5 @@ Runtime 内每五秒进行空闲 ping；传输故障采用有界退避，最多�
 
 聚焦流程覆盖标准项目多次调用共享 PID 与内存状态、进程崩溃恢复、重复启动、停止与重启、
 配置加密、跨工作空间拒绝、Worker 审批重检、队列丢失恢复和凭据轮换。
-`backend/tests/test_managed_mcp_linux.py` 还可以作为独立脚本在受限 Linux 容器内执行，
+`tests/test_managed_mcp_linux.py` 还可以作为独立脚本在受限 Linux 容器内执行，
 检查后台启动、私有 Socket、环境注入和停止清理。

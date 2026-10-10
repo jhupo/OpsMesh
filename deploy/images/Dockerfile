@@ -6,7 +6,7 @@ COPY pyproject.toml uv.lock README.md alembic.ini ./
 COPY LICENSE COPYING LICENSE-MIT NOTICE ./
 COPY operator ./operator
 COPY runtime ./runtime
-COPY backend ./backend
+COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable --package opsmesh
 
 FROM python:3.14-slim
@@ -17,7 +17,7 @@ WORKDIR /app
 RUN addgroup --system --gid 10001 opsmesh && adduser --system --uid 10001 --ingroup opsmesh opsmesh \
     && mkdir -p /app/.opsmesh-storage && chown opsmesh:opsmesh /app/.opsmesh-storage
 COPY --from=builder /app/.venv /app/.venv
-COPY backend/migrations ./backend/migrations
+COPY migrations ./migrations
 COPY alembic.ini ./
 COPY scripts/docker-entrypoint.sh /usr/local/bin/opsmesh-entrypoint
 RUN sed -i 's/\r$//' /usr/local/bin/opsmesh-entrypoint \
@@ -25,4 +25,4 @@ RUN sed -i 's/\r$//' /usr/local/bin/opsmesh-entrypoint \
 USER opsmesh
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/opsmesh-entrypoint"]
-CMD ["uvicorn", "backend.app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "opsmesh.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,144 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from opsmesh.capabilities.mcp.models import McpServer
+from opsmesh.orchestration.runs.models import AgentRun
+from opsmesh.runtime.instances.models import WorkspaceRuntime
+from opsmesh.runtime.self_hosted.contracts import AuthenticatedWorker, McpJobCompletePayload
+from opsmesh.runtime.self_hosted.dispatch.jobs import SelfHostedJobFinalizer
+from opsmesh.runtime.self_hosted.models import SelfHostedMcpJob
+from opsmesh.runtime.self_hosted.worker.events import SelfHostedEventRecorder
+
+
+class SelfHostedMcpJobService:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._events = SelfHostedEventRecorder(session)
+        self._jobs = SelfHostedJobFinalizer(session, self._events)
+
+    def create_mcp_job(
+        self,
+        *,
+        workspace_id: UUID,
+        runtime_id: UUID,
+        agent_run_id: UUID,
+        mcp_server_id: UUID,
+        tool_name: str,
+        request_payload: dict[str, object],
+        tool_call_id: str | None = None,
+    ) -> SelfHostedMcpJob:
+        run = self._session.get(AgentRun, agent_run_id)
+        server = self._session.get(McpServer, mcp_server_id)
+        runtime = self._session.get(WorkspaceRuntime, runtime_id)
+        if (
+            run is None
+            or server is None
+            or runtime is None
+            or run.workspace_id != workspace_id
+            or server.workspace_id != workspace_id
+            or runtime.workspace_id != workspace_id
+            or run.runtime_id != runtime_id
+        ):
+            raise ValueError("Self-hosted MCP job scope is invalid")
+        existing = self._session.scalar(
+            select(SelfHostedMcpJob).where(
+                SelfHostedMcpJob.workspace_id == workspace_id,
+                SelfHostedMcpJob.agent_run_id == agent_run_id,
+                SelfHostedMcpJob.tool_call_id == tool_call_id,
+                SelfHostedMcpJob.tool_name == tool_name,
+                SelfHostedMcpJob.mcp_server_id == mcp_server_id,
+            )
+        )
+        if existing is not None and tool_call_id is not None:
+            if existing.request_payload != request_payload:
+                raise ValueError("Runtime RPC tool call was reused with a different request")
+            return existing
+        job = SelfHostedMcpJob(
+            workspace_id=workspace_id,
+            workspace_runtime_id=runtime_id,
+            agent_run_id=agent_run_id,
+            mcp_server_id=mcp_server_id,
+            tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            request_payload=request_payload,
+        )
+        self._session.add(job)
+        self._session.flush()
+        self._events.append_run_event(
+            run,
+            "self_hosted.mcp_job_queued",
+            tool_name,
+            {"mcp_job_id": str(job.id), "mcp_server_id": str(mcp_server_id)},
+        )
+        self._session.commit()
+        self._session.refresh(job)
+        return job
+
+    def complete_mcp_job(
+        self,
+        auth: AuthenticatedWorker,
+        mcp_job_id: UUID,
+        data: McpJobCompletePayload,
+    ) -> SelfHostedMcpJob:
+        job = self._locked_mcp_job(auth, mcp_job_id)
+        if job.status in {"completed", "failed"}:
+            if (
+                job.status != data.status
+                or job.response_payload != data.response_payload
+                or job.error_payload != data.error_payload
+            ):
+                raise ValueError("Self-hosted MCP job was already completed differently")
+            return job
+        if job.status != "claimed" or job.worker_id != auth.worker.id:
+            raise ValueError("Self-hosted MCP job is not claimed by this worker")
+        job.status = data.status
+        job.response_payload = data.response_payload
+        job.error_payload = data.error_payload
+        job.completed_at = datetime.now(UTC)
+        run = self._session.get(AgentRun, job.agent_run_id)
+        if run is not None:
+            self._jobs.record_mcp_job_completion_for_run(run, job)
+            self._events.append_run_event(
+                run,
+                f"self_hosted.mcp_job_{data.status}",
+                job.tool_name,
+                {
+                    "mcp_job_id": str(job.id),
+                    "mcp_server_id": str(job.mcp_server_id),
+                    "response_present": data.response_payload is not None,
+                    "error_present": data.error_payload is not None,
+                },
+            )
+        self._session.commit()
+        self._session.refresh(job)
+        return job
+
+    def cancellation_requested(self, auth: AuthenticatedWorker, mcp_job_id: UUID) -> bool:
+        job = self._locked_mcp_job(auth, mcp_job_id)
+        if job.worker_id != auth.worker.id or job.status != "claimed":
+            raise ValueError("MCP cancellation status requires this worker's active claim")
+        return job.cancel_requested_at is not None
+
+    def _locked_mcp_job(
+        self,
+        auth: AuthenticatedWorker,
+        mcp_job_id: UUID,
+    ) -> SelfHostedMcpJob:
+        job = self._session.scalar(
+            select(SelfHostedMcpJob)
+            .where(
+                SelfHostedMcpJob.id == mcp_job_id,
+                SelfHostedMcpJob.workspace_id == auth.worker.workspace_id,
+                SelfHostedMcpJob.workspace_runtime_id == auth.runtime.id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if job is None:
+            raise ValueError("Self-hosted MCP job not found")
+        return job

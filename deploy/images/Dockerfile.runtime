@@ -5,7 +5,7 @@ COPY pyproject.toml uv.lock README.md alembic.ini ./
 COPY LICENSE COPYING LICENSE-MIT NOTICE ./
 COPY operator ./operator
 COPY runtime ./runtime
-COPY backend ./backend
+COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable --package opsmesh-runtime --package opsmesh
 
 FROM python:3.14-slim

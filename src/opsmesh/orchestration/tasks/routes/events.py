@@ -1,0 +1,264 @@
+import asyncio
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
+from redis import Redis
+from sqlalchemy.orm import Session
+
+from opsmesh.identity.auth.dependencies import workspace_dependency
+from opsmesh.identity.authorization.context import WorkspaceContext
+from opsmesh.identity.authorization.permissions import WorkspaceAction
+from opsmesh.identity.authorization.resources import (
+    ResourceAccessDenied,
+    ResourceAction,
+    ResourceAuthorizationService,
+    ResourceKind,
+)
+from opsmesh.orchestration.tasks.events import TaskEventBus
+from opsmesh.orchestration.tasks.feedback import TaskFeedbackService
+from opsmesh.orchestration.tasks.observation.live_status import TaskLiveStatusService
+from opsmesh.orchestration.tasks.queries import TaskQueryService
+from opsmesh.orchestration.tasks.routes.streaming import (
+    _message_sequence,
+    _read_task_bus_events,
+    _snapshot_messages,
+    _sse_event,
+    _task_event_stream_payload,
+    _task_stream_complete,
+    get_task_event_bus,
+)
+from opsmesh.orchestration.tasks.schemas.core import (
+    TaskFeedbackRequest,
+    TaskMessageResponse,
+    TaskPlanningAttemptResponse,
+)
+from opsmesh.orchestration.tasks.schemas.status import TaskLiveStatusResponse
+from opsmesh.shared.db.session import get_db_session
+from opsmesh.shared.http.pagination import PageResponse, pagination_params
+from opsmesh.shared.pagination import PageParams
+from opsmesh.shared.telemetry.trace_context import current_trace_metadata
+
+if TYPE_CHECKING:
+    RedisClient = Redis[str]
+else:
+    RedisClient = Redis
+
+router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
+
+
+@router.post(
+    "/tasks/{task_id}/feedback",
+    response_model=TaskMessageResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def record_task_feedback(
+    task_id: UUID,
+    request: TaskFeedbackRequest,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
+    session: Session = Depends(get_db_session),
+) -> TaskMessageResponse:
+    message = TaskFeedbackService(session).record(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        actor_user_id=context.user.user_id,
+        body=request.body,
+        feedback_kind=request.feedback_kind,
+        metadata=request.metadata,
+    )
+    if message is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskMessageResponse.model_validate(message)
+
+
+@router.get("/tasks/{task_id}/messages", response_model=PageResponse[TaskMessageResponse])
+def list_task_messages(
+    task_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    message_type: str | None = Query(default=None),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[TaskMessageResponse]:
+    try:
+        items, total = TaskQueryService(session).list_messages(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            page=page,
+            message_type=message_type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get("/tasks/{task_id}/live-status", response_model=TaskLiveStatusResponse)
+def get_task_live_status(
+    task_id: UUID,
+    after_sequence: int = Query(default=0, ge=0),
+    message_limit: int = Query(default=50, ge=1, le=200),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> TaskLiveStatusResponse:
+    status_snapshot = TaskLiveStatusService(session).get_status(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        after_sequence=after_sequence,
+        message_limit=message_limit,
+    )
+    if status_snapshot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return TaskLiveStatusResponse.model_validate(status_snapshot)
+
+
+@router.get(
+    "/tasks/{task_id}/events/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}}},
+)
+async def stream_task_events(
+    task_id: UUID,
+    after_sequence: int = Query(default=0, ge=0),
+    event_cursor: str = Query(default="$", min_length=1, max_length=64),
+    message_limit: int = Query(default=50, ge=1, le=200),
+    poll_seconds: float = Query(default=1.0, ge=0.25, le=10.0),
+    heartbeat_seconds: float = Query(default=15.0, ge=1.0, le=60.0),
+    once: bool = Query(default=False),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+    task_event_bus: TaskEventBus = Depends(get_task_event_bus),
+) -> StreamingResponse:
+    service = TaskLiveStatusService(session)
+    initial = service.get_status(
+        workspace_id=context.workspace.id,
+        task_id=task_id,
+        after_sequence=after_sequence,
+        message_limit=message_limit,
+    )
+    if initial is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    stream_trace_metadata = current_trace_metadata()
+
+    async def event_stream() -> AsyncIterator[str]:
+        cursor = after_sequence
+        bus_cursor = event_cursor
+        last_emit_at = asyncio.get_running_loop().time()
+        snapshot = initial
+        while True:
+            try:
+                ResourceAuthorizationService(session, context.user).require(
+                    context.workspace.id,
+                    ResourceKind.TASK,
+                    task_id,
+                    ResourceAction.READ,
+                )
+            except ResourceAccessDenied:
+                session.rollback()
+                yield _sse_event("stream.revoked", {})
+                return
+            messages = _snapshot_messages(snapshot)
+            if messages:
+                cursor = max(_message_sequence(message, cursor) for message in messages)
+            yield _sse_event(
+                "task.snapshot",
+                {
+                    **snapshot,
+                    "stream": {
+                        "cursor": cursor,
+                        "event_cursor": bus_cursor,
+                        "message_count": len(messages),
+                        "complete": _task_stream_complete(snapshot),
+                    },
+                },
+            )
+            last_emit_at = asyncio.get_running_loop().time()
+
+            complete = _task_stream_complete(snapshot)
+            stop_after_bus_drain = once or complete
+
+            bus_events = await _read_task_bus_events(
+                task_event_bus,
+                workspace_id=context.workspace.id,
+                task_id=task_id,
+                after_id=bus_cursor,
+                wait_seconds=0 if stop_after_bus_drain else poll_seconds,
+            )
+            for task_event in bus_events:
+                try:
+                    ResourceAuthorizationService(session, context.user).require(
+                        context.workspace.id,
+                        ResourceKind.TASK,
+                        task_id,
+                        ResourceAction.READ,
+                    )
+                except ResourceAccessDenied:
+                    session.rollback()
+                    yield _sse_event("stream.revoked", {})
+                    return
+                bus_cursor = task_event.id
+                yield _sse_event("task.event", _task_event_stream_payload(task_event, cursor))
+                last_emit_at = asyncio.get_running_loop().time()
+
+            if stop_after_bus_drain:
+                break
+
+            session.expire_all()
+            next_snapshot = service.get_status(
+                workspace_id=context.workspace.id,
+                task_id=task_id,
+                after_sequence=cursor,
+                message_limit=message_limit,
+            )
+            if next_snapshot is None:
+                yield _sse_event("task.missing", {"task_id": str(task_id), "cursor": cursor})
+                break
+            snapshot = next_snapshot
+            if not _snapshot_messages(snapshot):
+                now = asyncio.get_running_loop().time()
+                if now - last_emit_at >= heartbeat_seconds:
+                    yield _sse_event(
+                        "heartbeat",
+                        {
+                            "workspace_id": str(context.workspace.id),
+                            "task_id": str(task_id),
+                            "cursor": cursor,
+                            "event_cursor": bus_cursor,
+                            **stream_trace_metadata,
+                        },
+                    )
+                    last_emit_at = now
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@router.get(
+    "/tasks/{task_id}/planning-attempts",
+    response_model=PageResponse[TaskPlanningAttemptResponse],
+)
+def list_task_planning_attempts(
+    task_id: UUID,
+    page: PageParams = Depends(pagination_params),
+    status_filter: str | None = Query(default=None, alias="status"),
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
+    session: Session = Depends(get_db_session),
+) -> PageResponse[TaskPlanningAttemptResponse]:
+    try:
+        items, total = TaskQueryService(session).list_planning_attempts(
+            workspace_id=context.workspace.id,
+            task_id=task_id,
+            page=page,
+            status=status_filter,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return PageResponse(
+        items=[TaskPlanningAttemptResponse.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
