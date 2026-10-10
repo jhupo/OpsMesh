@@ -175,6 +175,7 @@ class RunRuntimeEnvironmentService:
         )
         identity = self._run_identity_metadata(run)
         child.capabilities = {
+            "node_id": self._require_docker().node_identity(),
             "isolation": isolation,
             "hardening": hardening_metadata,
             "execution": {
@@ -305,7 +306,9 @@ class RunRuntimeEnvironmentService:
         run: AgentRun,
         parent: WorkspaceRuntime,
     ) -> RunRuntimeEnvironmentResult:
-        acquisition = RuntimePoolService(self._session).acquire(parent, run)
+        acquisition = RuntimePoolService(
+            self._session, node_id=self._require_docker().node_identity()
+        ).acquire(parent, run)
         if acquisition is None:
             raise RuntimeEnvironmentError(
                 "runtime_capacity_exhausted", "Runtime execution capacity is full"
@@ -376,7 +379,12 @@ class RunRuntimeEnvironmentService:
                 "runtime_isolation_unverified",
                 "Managed runtime has no platform isolation evidence",
             )
-        self._require_docker()
+        if parent.execution_mode == "isolated" and (
+            parent.capabilities.get("node_id") != self._require_docker().node_identity()
+        ):
+            raise RuntimeEnvironmentError(
+                "runtime_node_mismatch", "Runtime belongs to another execution node"
+            )
 
     def _require_docker(self) -> DockerRuntimeClient:
         if self._docker is None:
@@ -415,6 +423,11 @@ class RunRuntimeEnvironmentService:
         if run.execution_runtime_id is None:
             return True
         runtime = self._runtime(run.workspace_id, run.execution_runtime_id)
+        if (
+            self._docker is None
+            or runtime.capabilities.get("node_id") != self._docker.node_identity()
+        ):
+            return False
         mode = _execution_mode(runtime)
         if _runtime_execution_status(run) == "completed":
             return True

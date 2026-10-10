@@ -23,6 +23,9 @@ from opsmesh.workspaces.management.models import Workspace
 
 
 class FakeDockerClient:
+    def node_identity(self) -> str:
+        return "test-node"
+
     def create_container(self, request: RuntimeCreateRequest) -> str:
         _ = request
         return "container"
@@ -159,6 +162,7 @@ def _runtime() -> tuple[Session, WorkspaceRuntime]:
         status="active",
         connection_status="online",
         docker_container_id="container",
+        capabilities={"node_id": "test-node"},
         limits={"timeout_seconds": 10},
         network_policy={"mode": "none", "disabled": True},
     )

@@ -16,6 +16,9 @@ from opsmesh.workspaces.management.models import Workspace
 
 
 class FakeDockerClient:
+    def node_identity(self) -> str:
+        return "test-node"
+
     def __init__(self) -> None:
         self.created = []
         self.started: list[str] = []
@@ -102,7 +105,10 @@ def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> Non
             "max_concurrent_executions": 1,
         },
         network_policy={"mode": "none", "disabled": True},
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace"}},
+        },
     )
     session.add(parent)
     session.flush()
@@ -178,6 +184,7 @@ def test_shared_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
         },
         network_policy={"mode": "none", "disabled": True},
         capabilities={
+            "node_id": "test-node",
             "isolation": {
                 "workspace_mount": {
                     "type": "volume",
@@ -241,6 +248,7 @@ def test_shared_runs_use_distinct_hosts_until_a_slot_is_released() -> None:
         "max_concurrent_executions": 1,
     }
     capabilities = {
+        "node_id": "test-node",
         "isolation": {
             "workspace_mount": {
                 "type": "volume",
@@ -318,7 +326,10 @@ def test_shared_run_binds_parent_without_child_or_container_cleanup() -> None:
         docker_container_id="shared-container",
         limits={"timeout_seconds": 30, "max_concurrent_executions": 2},
         network_policy={"mode": "none", "disabled": True},
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace"}},
+        },
     )
     session.add(parent)
     session.flush()
@@ -362,7 +373,10 @@ def test_shared_runtime_shares_capacity_and_releases_only_one_run() -> None:
         docker_container_id="shared-container",
         limits={"timeout_seconds": 30, "max_concurrent_executions": 2},
         network_policy={"mode": "none", "disabled": True},
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace"}},
+        },
     )
     session.add(parent)
     session.flush()

@@ -9,6 +9,7 @@ import tarfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import PurePosixPath
 from subprocess import TimeoutExpired
 from typing import Any, BinaryIO
@@ -157,6 +158,17 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
     ) -> None:
         self._control_timeout = control_timeout
         self._client_factory = client_factory or _create_docker_client
+
+    def node_identity(self) -> str:
+        return self._node_identity
+
+    @cached_property
+    def _node_identity(self) -> str:
+        with self._client(self._control_timeout()) as client:
+            identity = client.info().get("ID")
+        if not isinstance(identity, str) or not identity:
+            raise RuntimeError("Docker execution node identity is unavailable")
+        return identity
 
     def open_agent_channel(self, container_id: str, *, working_dir: str) -> DockerAgentChannel:
         return self._open_channel(container_id, "opsmesh.bootstrap.agent_host", working_dir)

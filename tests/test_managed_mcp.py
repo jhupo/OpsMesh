@@ -127,7 +127,10 @@ def managed(monkeypatch):
         docker_container_id="shared-container",
         limits={"max_concurrent_executions": 4},
         network_policy={"mode": "none"},
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace"}},
+        },
     )
     session.add(host)
     session.commit()

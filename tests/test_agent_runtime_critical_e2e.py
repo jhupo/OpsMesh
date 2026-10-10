@@ -81,6 +81,9 @@ def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @dataclass
 class CriticalDocker:
+    def node_identity(self) -> str:
+        return "test-node"
+
     staged_files: dict[str, bytes] = field(default_factory=dict)
     output_files: dict[str, bytes] = field(default_factory=dict)
     commands: list[list[str]] = field(default_factory=list)
@@ -228,7 +231,10 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
             "max_concurrent_executions": 4,
         },
         network_policy={"mode": "none"},
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace", "mode": "rw"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace", "mode": "rw"}},
+        },
     )
     content = b"project input"
     source_file = WorkspaceFile(

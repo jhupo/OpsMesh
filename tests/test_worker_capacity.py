@@ -65,3 +65,18 @@ def test_worker_capacity_enforces_region_resources_and_mcp_slots() -> None:
         _job(JobType.AGENT_RUN, routing | {"regions": ["cn-west"]}), capacity
     )
     assert not worker_can_run_job(_job(JobType.MCP_PROCESS_CONTROL, routing), capacity)
+
+
+def test_resource_admission_deducts_running_reservations() -> None:
+    capacity = {
+        "cpu_count": 4,
+        "memory_mb": 8192,
+        "reserved_resources": {"cpu_count": 3, "memory_mb": 4096},
+    }
+    assert not worker_can_run_job(
+        _job(JobType.AGENT_RUN, {"resource_requirements": {"cpu_count": 2}}), capacity
+    )
+    assert worker_can_run_job(
+        _job(JobType.AGENT_RUN, {"resource_requirements": {"cpu_count": 1, "memory_mb": 4096}}),
+        capacity,
+    )

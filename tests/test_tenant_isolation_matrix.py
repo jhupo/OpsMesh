@@ -892,6 +892,9 @@ def _patch_portable_types_for_sqlite() -> None:
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def node_identity(self) -> str:
+        return "test-node"
+
     def create_container(self, request: RuntimeCreateRequest) -> str:
         return "container"
 

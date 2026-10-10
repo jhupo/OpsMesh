@@ -122,6 +122,10 @@ class RuntimeManagerProvider(Protocol):
 
 
 class DockerRuntimeClient(Protocol):
+    def node_identity(self) -> str:
+        """Return the stable identity of the Docker execution node."""
+        ...
+
     def open_agent_channel(
         self, container_id: str, *, working_dir: str
     ) -> "DockerAgentChannel": ...

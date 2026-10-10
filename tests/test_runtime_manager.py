@@ -49,6 +49,9 @@ from opsmesh.workspaces.management.models import Workspace
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def node_identity(self) -> str:
+        return "test-node"
+
     def __init__(self) -> None:
         self.created_requests: list[RuntimeCreateRequest] = []
         self.started: list[str] = []
@@ -392,6 +395,9 @@ def test_runtime_manager_reserves_and_releases_runtime_space_docker_usage() -> N
 
 def test_runtime_manager_releases_runtime_space_reservation_when_docker_create_fails() -> None:
     class FailingCreateDockerClient(FakeDockerClient):
+        def node_identity(self) -> str:
+            return "test-node"
+
         def create_container(self, request: RuntimeCreateRequest) -> str:
             self.created_requests.append(request)
             raise RuntimeError("docker create failed")
@@ -1300,6 +1306,7 @@ def test_managed_runtime_cleanup_probes_live_container_instead_of_heartbeat() ->
         connection_status="online",
         runtime_provider="cloud_docker",
         docker_container_id="live-container",
+        capabilities={"node_id": "test-node"},
         last_heartbeat_at=old,
     )
     hosted = WorkspaceRuntime(

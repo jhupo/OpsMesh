@@ -201,27 +201,6 @@ class RunProjectIOService:
         state = self._states.begin_cleanup(run)
         if state is None or state.cleanup_status in {"completed", "not_required"}:
             return True
-        shared_runtime = None
-        if run.runtime_id is not None:
-            shared_runtime = self._session.scalar(
-                select(WorkspaceRuntime).where(
-                    WorkspaceRuntime.workspace_id == run.workspace_id,
-                    WorkspaceRuntime.id == run.runtime_id,
-                    WorkspaceRuntime.execution_mode == "shared",
-                )
-            )
-        if shared_runtime is not None:
-            self._states.mark_cleanup_completed(
-                run,
-                state,
-                status="not_required",
-                error={
-                    "code": "shared_runtime_retained",
-                    "reason": reason,
-                },
-            )
-            self._session.commit()
-            return True
         runtime = self._session.scalar(
             select(WorkspaceRuntime).where(
                 WorkspaceRuntime.workspace_id == run.workspace_id,

@@ -6,8 +6,8 @@ This project ships as a backend control plane with two long-running process type
 - Worker process: pulls queued agent runs from Redis and records durable run state in Postgres.
 
 Workers advertise region, capabilities, Runtime modes and separate task/MCP slots in their
-heartbeats. The queue keeps priority ordering and applies workspace fair-share rotation within a
-priority, so adding workers across machines increases distributed capacity without creating a
+heartbeats. The queue rotates bounded candidate windows and applies priority and workspace
+rotation within each window, so adding workers across machines increases distributed capacity without creating a
 Runtime container per Agent or MCP.
 
 Packaged production deployment supports Compose or direct systemd services. Systemd is the

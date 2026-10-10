@@ -100,6 +100,17 @@ def approve_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+async def _immediate_sleep(_: float) -> None:
+    pass
+
+
+def _stop_on_sleep(stop_event):
+    async def sleep(_: float) -> None:
+        stop_event.set()
+
+    return sleep
+
+
 class DeterministicAgentRunner:
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         return AgentRunResult(final_output="deterministic_run_completed")
@@ -173,6 +184,9 @@ class MustNotRunAgentRunner:
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def node_identity(self) -> str:
+        return "test-node"
+
     def __init__(self) -> None:
         self.created_requests: list[RuntimeCreateRequest] = []
         self.started: list[str] = []
@@ -306,7 +320,7 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
             idle_sleep_seconds=0,
         ),
         agent_runner=DeterministicAgentRunner(),
-        sleep=lambda _: None,
+        sleep=_immediate_sleep,
     )
 
     summary = runner.run(max_jobs=1)
@@ -1496,7 +1510,7 @@ def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime() -> N
             docker_container_id="offline-container",
             limits={},
             network_policy={},
-            capabilities={},
+            capabilities={"node_id": "test-node"},
         )
         session.add(stale_runtime)
         session.flush()
@@ -1769,7 +1783,7 @@ def test_worker_runner_continues_after_job_failure() -> None:
             idle_sleep_seconds=0,
         ),
         agent_runner=DeterministicAgentRunner(),
-        sleep=lambda _: None,
+        sleep=_immediate_sleep,
     )
 
     summary = runner.run(max_jobs=2)
@@ -2695,7 +2709,7 @@ def test_worker_runner_summary_includes_maintenance_recovery() -> None:
             run_lease_seconds=60,
             idle_sleep_seconds=0,
         ),
-        sleep=lambda _: stop_event.set(),
+        sleep=_stop_on_sleep(stop_event),
     )
 
     summary = runner.run(stop_event=stop_event)
@@ -2733,7 +2747,7 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
             maintenance_interval_seconds=0,
             idle_sleep_seconds=0,
         ),
-        sleep=lambda _: stop_event.set(),
+        sleep=_stop_on_sleep(stop_event),
     )
     runner.run_maintenance = lambda: WorkerMaintenanceSummary(  # type: ignore[method-assign]
         recovered_runs=1,
@@ -2919,7 +2933,6 @@ def test_agent_run_jobs_include_runtime_space_routing_requirements() -> None:
         "capabilities": ["image.generate"],
         "worker_types": ["cloud"],
         "resource_requirements": {"memory_mb": 4096, "cpu": 2.0},
-        "fairness_key": str(workspace_id),
     }
 
 

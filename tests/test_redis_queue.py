@@ -191,9 +191,10 @@ def test_blocking_dequeue_matching_does_not_fallback_to_incompatible_job() -> No
 def test_dequeue_selects_highest_priority_job_and_preserves_fifo_ties() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = _queue(redis)
-    low = _job(priority=1)
-    first_high = _job(priority=42)
-    second_high = _job(priority=42)
+    workspace_id = uuid4()
+    low = _job(priority=1, workspace_id=workspace_id)
+    first_high = _job(priority=42, workspace_id=workspace_id)
+    second_high = _job(priority=42, workspace_id=workspace_id)
 
     assert queue.enqueue(low) is True
     assert queue.enqueue(first_high) is True
@@ -238,7 +239,7 @@ def test_dequeue_matching_selects_highest_priority_compatible_job() -> None:
     assert queue.dequeue() == low
 
 
-def test_dequeue_round_robins_fairness_keys_within_priority() -> None:
+def test_dequeue_round_robins_workspaces_within_priority() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = _queue(redis)
     first_workspace = uuid4()
@@ -246,21 +247,18 @@ def test_dequeue_round_robins_fairness_keys_within_priority() -> None:
     first = _job(
         workspace_id=first_workspace,
         priority=5,
-        routing={"fairness_key": str(first_workspace)},
     )
     second = _job(
         workspace_id=second_workspace,
         priority=5,
-        routing={"fairness_key": str(second_workspace)},
     )
     third = _job(
         workspace_id=first_workspace,
         priority=5,
-        routing={"fairness_key": str(first_workspace)},
     )
     queue.enqueue(first)
-    queue.enqueue(second)
     queue.enqueue(third)
+    queue.enqueue(second)
 
     assert queue.dequeue() == first
     assert queue.dequeue() == second
@@ -442,6 +440,19 @@ def test_run_lock_renews_while_long_execution_is_active() -> None:
             assert not duplicate
     with queue.run_lock("long-workspace", "long-run", ttl_seconds=1) as next_owner:
         assert next_owner
+
+
+def test_bounded_scan_rotates_past_an_ineligible_tenant_backlog() -> None:
+    queue = _queue(fakeredis.FakeRedis(decode_responses=True), blocking_timeout_seconds=0)
+    for _ in range(5):
+        queue.enqueue(_job(routing={"regions": ["east"]}))
+    target = _job(routing={"regions": ["west"]})
+    queue.enqueue(target)
+    def predicate(job: JobPayload) -> bool:
+        return job.routing.get("regions") == ["west"]
+    assert queue.dequeue_matching(predicate, scan_limit=3) is None
+    assert queue.dequeue_matching(predicate, scan_limit=3) == target
+    assert queue.count_queued() == 5
 
 
 def test_lost_run_lock_rejects_result_and_preserves_replacement_token() -> None:

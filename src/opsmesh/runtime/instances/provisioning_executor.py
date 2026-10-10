@@ -76,6 +76,7 @@ class RuntimeProvisioningExecutor:
         )
         runtime.capabilities = {
             **dict(runtime.capabilities or {}),
+            "node_id": self._docker.node_identity(),
             "isolation": isolation_metadata,
             "hardening": hardening_metadata,
             "execution": {

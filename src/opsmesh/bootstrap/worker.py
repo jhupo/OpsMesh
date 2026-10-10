@@ -1,9 +1,11 @@
 """Compose business job handlers and maintenance into the generic worker loop."""
 
+import asyncio
 import logging
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 
 from sqlalchemy.orm import Session
 
@@ -28,6 +30,7 @@ from opsmesh.runtime.workers.maintenance_contracts import (
     WorkerMaintenanceSummary,
 )
 from opsmesh.runtime.workers.models import WorkerRunnerConfig
+from opsmesh.runtime.workers.placement import worker_owns_runtime_job
 from opsmesh.runtime.workers.runner import WorkerRunner
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.teams.execution.worker_failures import TeamWorkerFailureReporter
@@ -42,8 +45,10 @@ def build_worker_runner(
     settings: Settings | None = None,
     runtime_docker_client: DockerRuntimeClient | None = None,
     monotonic: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> WorkerRunner:
+    if runtime_docker_client is not None:
+        config = replace(config, node_id=runtime_docker_client.node_identity())
     @contextmanager
     def failure_session_scope() -> Iterator[Session]:
         session = session_factory()
@@ -126,6 +131,9 @@ def build_worker_runner(
         maintenance=maintenance,
         dispatch_events=dispatch_events,
         admission_blocked=maintenance_enabled,
+        can_claim=lambda session, job: config.node_id is None or worker_owns_runtime_job(
+            session, job, config.node_id
+        ),
         on_job_failure=failure_reporter.record_failure,
         settings=settings,
         monotonic=monotonic,

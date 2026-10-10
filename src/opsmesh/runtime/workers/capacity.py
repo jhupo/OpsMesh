@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.runtime.queues.contracts import JobPayload
 from opsmesh.runtime.workers.leases import WorkerLeaseQueryService
-from opsmesh.runtime.workers.models import WorkerNode
+from opsmesh.runtime.workers.models import WorkerLease, WorkerNode
 from opsmesh.shared.utils import dict_or_empty, positive_int_or_default
 
 
@@ -33,6 +33,7 @@ class WorkerCapacitySnapshotService:
         worker_id: str,
         *,
         default_max_jobs: int = 1,
+        node_id: str | None = None,
     ) -> WorkerCapacitySnapshot:
         node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
         if node is not None and worker_status_blocks_claims(node):
@@ -62,6 +63,20 @@ class WorkerCapacitySnapshotService:
         )
         node_capacity["running_jobs"] = running_jobs
         node_capacity["running_jobs_by_type"] = running_jobs_by_type
+        leases_statement = select(WorkerLease).where(WorkerLease.status == "running")
+        node_id = node_id or capacity_string(node_capacity, "node_id")
+        if isinstance(node_id, str) and node_id:
+            leases_statement = leases_statement.where(
+                WorkerLease.lease_metadata["node_id"].as_string() == node_id
+            )
+        else:
+            leases_statement = leases_statement.where(WorkerLease.worker_id == worker_id)
+        reserved: dict[str, float] = {}
+        for lease in self._session.scalars(leases_statement):
+            routing = dict_or_empty(lease.lease_metadata.get("routing"))
+            for key, value in dict_or_empty(routing.get("resource_requirements")).items():
+                reserved[key] = reserved.get(key, 0) + positive_number(value)
+        node_capacity["reserved_resources"] = reserved
         return WorkerCapacitySnapshot(
             worker_id=worker_id,
             max_jobs=max_jobs,
@@ -157,7 +172,9 @@ def worker_can_run_job(job: JobPayload, capacity: dict[str, object]) -> bool:
         return False
     resource_requirements = dict_or_empty(routing.get("resource_requirements"))
     for key, required_value in resource_requirements.items():
-        if positive_number(capacity.get(key)) < positive_number(required_value):
+        reserved = dict_or_empty(capacity.get("reserved_resources"))
+        available = positive_number(capacity.get(key)) - positive_number(reserved.get(key))
+        if available < positive_number(required_value):
             return False
     return True
 

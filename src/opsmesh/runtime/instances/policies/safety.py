@@ -64,7 +64,7 @@ class RuntimeSafetyPolicy:
         return
 
 
-_DIGEST_PINNED_IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
+_DIGEST_PINNED_IMAGE = re.compile(r"^(?:[^\s]+@)?sha256:[0-9a-f]{64}$")
 
 
 def is_digest_pinned_image(image: str) -> bool:

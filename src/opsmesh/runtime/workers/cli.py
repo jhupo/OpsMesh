@@ -116,15 +116,22 @@ def _default_worker_id() -> str:
     return f"worker-{socket.gethostname()}"
 
 
+def _positive_capacity(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("Capacity must be positive")
+    return parsed
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run an OpsMesh background worker.")
     parser.add_argument("--worker-id", default=None)
     parser.add_argument("--worker-type", default="cloud")
     parser.add_argument("--queue-name", default=None)
-    parser.add_argument("--concurrency", type=int, default=None)
-    parser.add_argument("--task-concurrency", type=int, default=None)
-    parser.add_argument("--mcp-concurrency", type=int, default=None)
-    parser.add_argument("--blocking-io-concurrency", type=int, default=None)
+    parser.add_argument("--concurrency", type=_positive_capacity, default=None)
+    parser.add_argument("--task-concurrency", type=_positive_capacity, default=None)
+    parser.add_argument("--mcp-concurrency", type=_positive_capacity, default=None)
+    parser.add_argument("--blocking-io-concurrency", type=_positive_capacity, default=None)
     parser.add_argument("--region", default=None)
     parser.add_argument("--capability", action="append", default=[])
     parser.add_argument(
@@ -133,8 +140,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         choices=["isolated", "shared"],
         default=None,
     )
-    parser.add_argument("--cpu-count", type=int, default=None)
-    parser.add_argument("--memory-mb", type=int, default=None)
+    parser.add_argument("--cpu-count", type=_positive_capacity, default=None)
+    parser.add_argument("--memory-mb", type=_positive_capacity, default=None)
     parser.add_argument("--once", action="store_true", help="Consume at most one job and exit.")
     parser.add_argument(
         "--max-jobs",

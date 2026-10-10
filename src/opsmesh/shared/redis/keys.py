@@ -20,6 +20,9 @@ class RedisKeyBuilder:
     def queue_fairness_sequence(self, queue_name: str) -> str:
         return self._join("queue", queue_name, "fairness", "sequence")
 
+    def queue_scan_sequence(self, queue_name: str) -> str:
+        return self._join("queue", queue_name, "scan", "sequence")
+
     def run_lock(self, workspace_id: str, run_id: str) -> str:
         return self._join("lock", workspace_id, "run", run_id)
 

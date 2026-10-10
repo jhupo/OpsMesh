@@ -189,7 +189,10 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
         docker_container_id="network-denied-container",
         limits={"max_concurrent_executions": 1},
         network_policy={"mode": "internet"},
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace"}},
+        },
     )
     session.add(runtime)
     session.flush()

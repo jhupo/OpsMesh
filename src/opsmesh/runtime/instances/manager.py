@@ -346,6 +346,8 @@ class RuntimeManager:
         )
 
     def _require_host_idle(self, runtime: WorkspaceRuntime) -> None:
+        if runtime.capabilities.get("node_id") != self._docker.node_identity():
+            raise ValueError("Runtime belongs to another execution node")
         RuntimeAllocationStore(self._session).require_idle(runtime)
 
 

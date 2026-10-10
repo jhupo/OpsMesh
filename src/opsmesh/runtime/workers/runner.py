@@ -10,6 +10,7 @@ from functools import partial
 from threading import Event, Lock
 
 from opentelemetry.trace import SpanKind
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from opsmesh.runtime.queues.contracts import JobPayload, JobType
@@ -26,7 +27,7 @@ from opsmesh.runtime.workers.dispatch_contracts import WorkerEventDispatchSummar
 from opsmesh.runtime.workers.maintenance_contracts import (
     WorkerMaintenanceSummary,
 )
-from opsmesh.runtime.workers.models import WorkerRunnerConfig, WorkerRunSummary
+from opsmesh.runtime.workers.models import WorkerNode, WorkerRunnerConfig, WorkerRunSummary
 from opsmesh.runtime.workers.nodes import WorkerHeartbeatOperationsService
 from opsmesh.runtime.workers.reporting import WorkerLeaseReporter
 from opsmesh.runtime.workers.state import WorkerRunState
@@ -67,6 +68,7 @@ class WorkerRunner:
         maintenance: Callable[[], WorkerMaintenanceSummary],
         dispatch_events: Callable[[], WorkerEventDispatchSummary],
         admission_blocked: Callable[[Session], bool],
+        can_claim: Callable[[Session, JobPayload], bool],
         on_job_failure: WorkerFailureHandler,
         settings: Settings | None = None,
         async_handlers: dict[
@@ -74,7 +76,7 @@ class WorkerRunner:
         ]
         | None = None,
         monotonic: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._async_handlers = async_handlers or {}
         self._queue = queue
@@ -86,6 +88,7 @@ class WorkerRunner:
         self._event_counts = WorkerEventDispatchSummary()
         self._event_counts_lock = Lock()
         self._admission_blocked = admission_blocked
+        self._can_claim = can_claim
         self._on_job_failure = on_job_failure
         self._settings = settings
         self._monotonic = monotonic
@@ -100,16 +103,33 @@ class WorkerRunner:
         with self._session_scope() as session:
             if self._admission_blocked(session):
                 return None
+            # Serializes admission across processes on the same execution node.
+            # The transaction ends after recording the durable lease, before execution.
+            if session.get_bind().dialect.name == "postgresql":
+                session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:identity, 0))"),
+                    {"identity": self._config.node_id or self._config.worker_id},
+                )
+            session.scalar(
+                select(WorkerNode)
+                .where(WorkerNode.worker_id == self._config.worker_id)
+                .with_for_update()
+            )
             capacity = WorkerCapacitySnapshotService(session).worker_capacity_snapshot(
                 self._config.worker_id,
                 default_max_jobs=self._config.concurrency,
+                node_id=self._config.node_id,
             )
             if not capacity.accepting:
                 return None
-            worker_capacity = capacity.capacity or {}
+            worker_capacity = self._config.capacity() | (capacity.capacity or {})
             lease = self._queue.dequeue_matching_with_lease(
-                lambda candidate: worker_can_run_job(candidate, worker_capacity),
+                lambda candidate: (
+                    worker_can_run_job(candidate, worker_capacity)
+                    and self._can_claim(session, candidate)
+                ),
                 scan_limit=self._config.job_scan_limit,
+                wait=False,
             )
             if lease is None:
                 return None
@@ -399,9 +419,7 @@ class WorkerRunner:
                                 state.failed += 1
                                 state.last_error = str(exc)
                                 health_status = "degraded"
-                                await io.run(
-                                    lambda: self._sleep(max(self._config.idle_sleep_seconds, 0.01))
-                                )
+                                await self._sleep(max(self._config.idle_sleep_seconds, 0.01))
                                 continue
                             if candidate is not None:
                                 claimed += 1
@@ -418,9 +436,7 @@ class WorkerRunner:
                                 continue
                             state.idle_polls += 1
                             if not active:
-                                await io.run(
-                                    lambda: self._sleep(max(0.01, self._config.idle_sleep_seconds))
-                                )
+                                await self._sleep(max(0.01, self._config.idle_sleep_seconds))
                     timeout = min(0.1, max(0.01, self._config.idle_sleep_seconds))
                     waiting: set[asyncio.Task[None] | asyncio.Task[WorkerMaintenanceSummary]] = set(
                         active

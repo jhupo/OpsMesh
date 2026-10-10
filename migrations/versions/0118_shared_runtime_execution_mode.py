@@ -10,6 +10,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.drop_constraint(
+        "workspace_runtime_execution_mode_valid",
+        "workspace_runtimes",
+        type_="check",
+    )
     op.execute(
         """
         UPDATE workspace_runtimes
@@ -17,11 +22,7 @@ def upgrade() -> None:
         WHERE execution_mode IN ('pooled', 'persistent', 'none')
         """
     )
-    op.drop_constraint(
-        "workspace_runtime_execution_mode_valid",
-        "workspace_runtimes",
-        type_="check",
-    )
+    op.alter_column("workspace_runtimes", "execution_mode", server_default="shared")
     op.create_check_constraint(
         "workspace_runtime_execution_mode_valid",
         "workspace_runtimes",
@@ -47,6 +48,7 @@ def downgrade() -> None:
         type_="check",
     )
     op.execute("UPDATE workspace_runtimes SET execution_mode = 'pooled' WHERE execution_mode = 'shared'")
+    op.alter_column("workspace_runtimes", "execution_mode", server_default="none")
     op.create_check_constraint(
         "workspace_runtime_execution_mode_valid",
         "workspace_runtimes",

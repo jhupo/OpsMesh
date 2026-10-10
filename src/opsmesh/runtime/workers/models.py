@@ -15,6 +15,7 @@ from opsmesh.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 class WorkerRunnerConfig:
     worker_id: str
     worker_type: str = "cloud"
+    node_id: str | None = None
     queue_name: str = "agent_runs"
     concurrency: int = 32
     task_concurrency: int | None = None
@@ -42,9 +43,7 @@ class WorkerRunnerConfig:
         task_concurrency = (
             self.concurrency if self.task_concurrency is None else self.task_concurrency
         )
-        mcp_concurrency = (
-            self.concurrency if self.mcp_concurrency is None else self.mcp_concurrency
-        )
+        mcp_concurrency = self.concurrency if self.mcp_concurrency is None else self.mcp_concurrency
         if task_concurrency < 1:
             raise ValueError("Worker task concurrency must be positive")
         if mcp_concurrency < 1:
@@ -70,6 +69,8 @@ class WorkerRunnerConfig:
         }
         if self.region is not None:
             capacity["region"] = self.region.strip()
+        if self.node_id is not None:
+            capacity["node_id"] = self.node_id
         if self.cpu_count is not None:
             capacity["cpu_count"] = self.cpu_count
         if self.memory_mb is not None:

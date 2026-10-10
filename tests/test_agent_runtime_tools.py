@@ -1237,6 +1237,9 @@ class StaticMcpAdapter:
 
 
 class RecordingDockerClient:
+    def node_identity(self) -> str:
+        return "test-node"
+
     def __init__(self, command_results: list[RuntimeCommandResult]) -> None:
         self._command_results = command_results
         self.exec_calls: list[dict[str, object]] = []

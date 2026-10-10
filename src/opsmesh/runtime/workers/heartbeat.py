@@ -42,19 +42,6 @@ def worker_heartbeat_details(
     queue_rehydrated_runs: int = 0,
     queue_recovery_failures: int = 0,
 ) -> dict[str, object]:
-    capacity: dict[str, object] = {
-        "max_jobs": config.concurrency,
-        "task_slots": config.task_concurrency,
-        "mcp_slots": config.mcp_concurrency,
-        "capabilities": list(config.capabilities),
-        "runtime_modes": list(config.runtime_modes),
-    }
-    if config.region is not None:
-        capacity["region"] = config.region.strip()
-    if config.cpu_count is not None:
-        capacity["cpu_count"] = config.cpu_count
-    if config.memory_mb is not None:
-        capacity["memory_mb"] = config.memory_mb
     details: dict[str, object] = {
         "processed": processed,
         "failed": failed,
@@ -96,7 +83,7 @@ def worker_heartbeat_details(
         "workspace_health_snapshots_disabled": workspace_health_snapshots_disabled,
         "queue_rehydrated_runs": queue_rehydrated_runs,
         "queue_recovery_failures": queue_recovery_failures,
-        "capacity": capacity,
+        "capacity": config.capacity(),
     }
     if last_error is not None:
         details["last_error"] = last_error

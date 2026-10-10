@@ -107,6 +107,9 @@ TOKEN = "test-token"
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def node_identity(self) -> str:
+        return "test-node"
+
     def __init__(self) -> None:
         self.created_requests: list[RuntimeCreateRequest] = []
         self.started: list[str] = []

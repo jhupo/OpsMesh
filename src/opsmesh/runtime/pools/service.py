@@ -20,8 +20,9 @@ class RuntimePoolAcquisition:
 class RuntimePoolService:
     """Select a shared host with a free process slot and matching policy."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, node_id: str | None = None) -> None:
         self._session = session
+        self._node_id = node_id
         self._allocations = RuntimeAllocationStore(session)
 
     def acquire(
@@ -63,6 +64,10 @@ class RuntimePoolService:
             )
             .order_by(WorkspaceRuntime.updated_at.asc(), WorkspaceRuntime.created_at.asc())
         )
+        if self._node_id is not None:
+            statement = statement.where(
+                WorkspaceRuntime.capabilities["node_id"].as_string() == self._node_id
+            )
         return [
             member
             for member in self._session.scalars(statement)

@@ -83,6 +83,9 @@ def test_runtime_allocation_table_is_workspace_scoped():
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def node_identity(self) -> str:
+        return "test-node"
+
     def __init__(self) -> None:
         self.created_requests: list[RuntimeCreateRequest] = []
         self.started: list[str] = []
