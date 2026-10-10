@@ -1,9 +1,7 @@
-import asyncio
 from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
-import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -21,8 +19,6 @@ from backend.app.agents.profiles.models import AgentProfile
 from backend.app.capabilities.catalog.effective import EffectiveCapabilityCatalogService
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer
 from backend.app.capabilities.references.models import CapabilityResource
-from backend.app.governance.reviews.models import ResourceReview
-from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.governance.security_events.models import SecurityEvent
 from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.authorization.execution import ExecutionIdentityService
@@ -39,23 +35,7 @@ from backend.app.shared.config import Settings
 from backend.app.shared.db.base import Base
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
-
-
-@pytest.fixture(autouse=True)
-def _approve_semantic_tool_execution_review(monkeypatch: pytest.MonkeyPatch) -> None:
-    def approved_review(self: ResourcePolicyReviewBuilder, **_: object) -> ResourceReview:
-        return ResourceReview(
-            required=False,
-            risk_level="low",
-            reasons=["llm_review.approved"],
-            signals={"reviewer": "test"},
-        )
-
-    monkeypatch.setattr(
-        ResourcePolicyReviewBuilder,
-        "review_tool_execution",
-        approved_review,
-    )
+from backend.tests.fixtures.tools import execute_tool
 
 
 def test_effective_catalog_hides_product_tool_without_required_resource() -> None:
@@ -264,33 +244,29 @@ def test_backend_tool_executor_reads_scoped_file_and_records_denial_evidence(
         storage=storage,
     )
 
-    listed = asyncio.run(
-        executor.execute_tool(
-            context=context,
-            tool_name="list_workspace_files",
-            arguments={},
-        )
+    listed = execute_tool(
+        executor,
+        context=context,
+        tool_name="list_workspace_files",
+        arguments={},
     )
-    read = asyncio.run(
-        executor.execute_tool(
-            context=context,
-            tool_name="read_workspace_file",
-            arguments={"file_id": str(allowed_file.id)},
-        )
+    read = execute_tool(
+        executor,
+        context=context,
+        tool_name="read_workspace_file",
+        arguments={"file_id": str(allowed_file.id)},
     )
-    denied = asyncio.run(
-        executor.execute_tool(
-            context=context,
-            tool_name="read_workspace_file",
-            arguments={"file_id": str(blocked_file.id)},
-        )
+    denied = execute_tool(
+        executor,
+        context=context,
+        tool_name="read_workspace_file",
+        arguments={"file_id": str(blocked_file.id)},
     )
-    oversized = asyncio.run(
-        executor.execute_tool(
-            context=context,
-            tool_name="read_workspace_file",
-            arguments={"file_id": str(oversized_file.id)},
-        )
+    oversized = execute_tool(
+        executor,
+        context=context,
+        tool_name="read_workspace_file",
+        arguments={"file_id": str(oversized_file.id)},
     )
 
     assert listed.status == "completed"

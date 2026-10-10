@@ -18,7 +18,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.get("/queues/{queue_name}/metrics", response_model=QueueMetricsResponse)
-async def admin_queue_metrics(
+def admin_queue_metrics(
     queue_name: str,
     service: AdminQueueOperationsService = Depends(admin_queue_operations_service),
 ) -> QueueMetricsResponse:
@@ -27,7 +27,7 @@ async def admin_queue_metrics(
 
 
 @router.get("/operations/summary", response_model=AdminOperationsSummaryResponse)
-async def admin_operations_summary(
+def admin_operations_summary(
     queue_name: str = Query(default="agent_runs"),
     service: AdminOperationsSummaryService = Depends(admin_operations_summary_service),
 ) -> AdminOperationsSummaryResponse:
@@ -35,7 +35,7 @@ async def admin_operations_summary(
 
 
 @router.get("/queues/{queue_name}/dead-letter-jobs", response_model=AdminDeadLetterJobsResponse)
-async def list_admin_dead_letter_jobs(
+def list_admin_dead_letter_jobs(
     queue_name: str,
     limit: int = Query(default=50, ge=1, le=200),
     service: AdminQueueOperationsService = Depends(admin_queue_operations_service),
@@ -48,7 +48,7 @@ async def list_admin_dead_letter_jobs(
     "/queues/{queue_name}/dead-letter-jobs/{job_id}/requeue",
     response_model=AdminRequeueDeadLetterResponse,
 )
-async def requeue_admin_dead_letter_job(
+def requeue_admin_dead_letter_job(
     queue_name: str,
     job_id: UUID,
     service: AdminQueueOperationsService = Depends(admin_queue_operations_service),

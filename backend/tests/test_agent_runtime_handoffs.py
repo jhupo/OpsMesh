@@ -4,6 +4,7 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+from agents import RunContextWrapper
 from agents.handoffs import HandoffInputData
 
 import backend.app.agents.execution.providers.openai.runner as openai_runtime
@@ -187,7 +188,17 @@ def test_openai_runner_returns_handoff_result_and_durable_event(
                 "target_agent": target,
             },
         )()
-        return type("Result", (), {"final_output": "reviewed", "new_items": [item]})()
+        return type(
+            "Result",
+            (),
+            {
+                "final_output": "reviewed",
+                "new_items": [item],
+                "context_wrapper": RunContextWrapper(None),
+                "last_agent": agent,
+                "interruptions": [],
+            },
+        )()
 
     monkeypatch.setattr(openai_runtime.Runner, "run", fake_runner_run)
     result = asyncio.run(OpenAIAgentsRunner().run(request))

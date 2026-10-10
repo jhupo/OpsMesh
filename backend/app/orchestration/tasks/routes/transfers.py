@@ -29,7 +29,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
     response_model=TaskTransferResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def request_task_transfer(
+def request_task_transfer(
     task_id: UUID,
     request: TaskTransferCreateRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
@@ -56,7 +56,7 @@ async def request_task_transfer(
 
 
 @router.get("/tasks/{task_id}/transfers", response_model=list[TaskTransferResponse])
-async def list_task_transfers(
+def list_task_transfers(
     task_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -74,7 +74,7 @@ async def list_task_transfers(
     "/tasks/{task_id}/transfers/{transfer_id}/accept",
     response_model=TaskTransferResponse,
 )
-async def accept_task_transfer(
+def accept_task_transfer(
     task_id: UUID,
     transfer_id: UUID,
     request: TaskTransferDecisionRequest,
@@ -102,7 +102,7 @@ async def accept_task_transfer(
     "/tasks/{task_id}/transfers/{transfer_id}/reject",
     response_model=TaskTransferResponse,
 )
-async def reject_task_transfer(
+def reject_task_transfer(
     task_id: UUID,
     transfer_id: UUID,
     request: TaskTransferDecisionRequest,

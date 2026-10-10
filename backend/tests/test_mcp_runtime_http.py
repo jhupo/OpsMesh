@@ -1,5 +1,4 @@
 import asyncio
-import json
 import socket
 from threading import Thread
 from time import monotonic, sleep
@@ -10,10 +9,10 @@ from mcp.server.fastmcp import FastMCP
 
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer
 from backend.app.capabilities.mcp.transport.runtime_http import DockerRuntimeHttpMcpToolAdapter
-from backend.app.runtime.instances.contracts import RuntimeCommandResult
 from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.shared.concurrency import BlockingIO
 from backend.app.shared.security.secrets import SecretEncryptionService
-from backend.tests.test_mcp_adapters import RecordingRuntimeManager
+from backend.tests.test_mcp_adapters import RuntimeChannel, RuntimeDocker
 from runtime.opsmesh_runtime.mcp_http_client import execute_request
 
 
@@ -83,7 +82,19 @@ def test_remote_mcp_runs_in_runtime_with_transient_credentials_and_native_result
         "structuredContent": {"evidence": "preserved"},
         "isError": False,
     }
-    manager = RecordingRuntimeManager([RuntimeCommandResult(0, json.dumps(payload), "")])
+    channel = RuntimeChannel()
+    original_receive = channel.receive
+
+    async def receive():
+        if channel.frames == 1:
+            channel.frames += 1
+            from backend.app.runtime.agent_host.wire import RpcFrame
+
+            return RpcFrame(type="result", payload=payload).encoded()
+        return await original_receive()
+
+    channel.receive = receive
+    docker = RuntimeDocker(channel)
     server = McpServer(
         workspace_id=workspace_id,
         name="Hosted SSE",
@@ -94,19 +105,22 @@ def test_remote_mcp_runs_in_runtime_with_transient_credentials_and_native_result
             "auth_method": "bearer_token",
         },
     )
-    result = asyncio.run(
-        DockerRuntimeHttpMcpToolAdapter(manager, runtime, secrets).call(
-            server=server,
-            tool_name="inspect",
-            arguments={},
-            credential_refs=[credential],
-            timeout_seconds=5,
-        )
+    operation = DockerRuntimeHttpMcpToolAdapter(docker, runtime, secrets).prepare(
+        server=server,
+        tool_name="inspect",
+        arguments={},
+        credential_refs=[credential],
+        timeout_seconds=5,
     )
+
+    async def invoke():
+        with BlockingIO(1, name="http-mcp-test") as io:
+            return await operation.execute(io)
+
+    result = asyncio.run(invoke())
     assert result == payload
-    call = manager.calls[0]
-    assert call["command"] == ["python", "-m", "opsmesh_runtime.mcp_http_client"]
-    assert "runtime-http-secret" not in str(call["command"])
-    request = json.loads(call["input_file"].content)
+    assert channel.closed
+    assert "runtime-http-secret" not in repr(operation)
+    request = channel.request["request"]
     assert request["transport"] == "sse"
     assert request["server"]["headers"]["authorization"] == "Bearer runtime-http-secret"

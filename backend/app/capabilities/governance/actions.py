@@ -12,12 +12,12 @@ from backend.app.capabilities.governance.rules import (
     governance_result,
     governance_skipped,
     skill_install_should_be_disabled,
-    string_list,
 )
 from backend.app.capabilities.skills.diagnostics import SkillToolDiagnosticsService
 from backend.app.capabilities.skills.models import WorkspaceSkillInstall
 from backend.app.governance.audit.service import AuditService
 from backend.app.shared.config import Settings, get_settings
+from backend.app.shared.utils import string_list
 
 
 class CapabilityGovernanceActionService:

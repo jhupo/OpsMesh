@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from mcp.types import CallToolResult
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -13,7 +14,9 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.capabilities.catalog.effective import effective_catalog_fingerprint
-from backend.app.capabilities.mcp.execution.contracts import McpExecutionError, McpExecutionRequest
+from backend.app.capabilities.mcp.execution.contracts import McpExecutionRequest
+from backend.app.capabilities.mcp.execution.invocation import McpToolInvoker
+from backend.app.capabilities.mcp.execution.prepared import PreparedMcpExecution
 from backend.app.capabilities.mcp.execution.service import McpToolExecutionService
 from backend.app.capabilities.mcp.models import (
     McpCredentialReference,
@@ -21,14 +24,11 @@ from backend.app.capabilities.mcp.models import (
     McpToolAllowlist,
     McpToolCallLog,
 )
-from backend.app.capabilities.mcp.transport.remote import SseMcpToolAdapter
-from backend.app.capabilities.mcp.transport.resolver import McpAdapterResolver
+from backend.app.capabilities.mcp.transport.runtime_operation import CompletedMcpOperation
 from backend.app.capabilities.tools.contracts import ToolPermissionError, ToolResourceNotFoundError
 from backend.app.governance.audit.models import AuditEvent
 from backend.app.governance.policies.models import PlatformPolicy
 from backend.app.governance.policies.risky_values import RISKY_EXECUTION_POLICY_KEY
-from backend.app.governance.reviews.models import ResourceReview
-from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 from backend.app.governance.security_events.models import SecurityEvent
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.users.models import User
@@ -40,28 +40,12 @@ from backend.app.orchestration.runs.models import (
 )
 from backend.app.orchestration.runs.state import RunStatus
 from backend.app.orchestration.tasks.models import Task, TaskMessage, TaskStep
+from backend.app.shared.concurrency import BlockingIO
 from backend.app.shared.config import Settings
 from backend.app.shared.db.base import Base
-from backend.app.shared.security.secrets import SecretEncryptionService
+from backend.app.shared.utils import payload_hash
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
-
-
-@pytest.fixture(autouse=True)
-def _approve_semantic_tool_execution_review(monkeypatch: pytest.MonkeyPatch) -> None:
-    def approved_review(self: ResourcePolicyReviewBuilder, **_: object) -> ResourceReview:
-        return ResourceReview(
-            required=False,
-            risk_level="low",
-            reasons=["llm_review.approved"],
-            signals={"reviewer": "codex-auto-review"},
-        )
-
-    monkeypatch.setattr(
-        ResourcePolicyReviewBuilder,
-        "review_tool_execution",
-        approved_review,
-    )
 
 
 def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -> None:
@@ -85,14 +69,15 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     adapter = RecordingAdapter({"asset_id": "img_123", "status": "created"})
 
     result = asyncio.run(
-        McpToolExecutionService(session, adapter).execute(
+        _execute_mcp(
+            McpToolExecutionService(session, adapter),
             McpExecutionRequest(
                 workspace_id=workspace.id,
                 agent_run_id=run.id,
                 mcp_server_id=server.id,
                 tool_name="generate_image",
                 arguments={"prompt": "mountain"},
-            )
+            ),
         )
     )
 
@@ -128,7 +113,7 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     assert "prompt" not in str(logs[0].request)
     assert "mountain" not in str(logs[0].request)
     assert logs[0].response is not None
-    assert logs[0].response["result"] == {"asset_id": "img_123", "status": "created"}
+    assert logs[0].response == {"asset_id": "img_123", "status": "created"}
     assert [event.event_type for event in events] == ["tool.called", "tool.completed"]
     assert events[0].event_metadata["request_sha256"]
     assert events[0].event_metadata["authorization_snapshot_version"] == 3
@@ -168,14 +153,15 @@ def test_mcp_execution_uses_only_frozen_credentials_and_blocks_changes() -> None
     adapter = RecordingAdapter({"ok": True})
 
     result = asyncio.run(
-        McpToolExecutionService(session, adapter).execute(
+        _execute_mcp(
+            McpToolExecutionService(session, adapter),
             McpExecutionRequest(
                 workspace_id=workspace.id,
                 agent_run_id=run.id,
                 mcp_server_id=server.id,
                 tool_name="generate_image",
                 arguments={"prompt": "mountain"},
-            )
+            ),
         )
     )
 
@@ -187,14 +173,15 @@ def test_mcp_execution_uses_only_frozen_credentials_and_blocks_changes() -> None
     session.commit()
     with pytest.raises(ToolPermissionError, match="mcp_credential_binding_stale"):
         asyncio.run(
-            McpToolExecutionService(session, adapter).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, adapter),
                 McpExecutionRequest(
                     workspace_id=workspace.id,
                     agent_run_id=run.id,
                     mcp_server_id=server.id,
                     tool_name="generate_image",
                     arguments={"prompt": "mountain"},
-                )
+                ),
             )
         )
 
@@ -231,26 +218,28 @@ def test_mcp_execution_enforces_frozen_schema_defaults_and_locked_parameters() -
 
     with pytest.raises(ToolPermissionError, match="mcp_tool_parameter_locked"):
         asyncio.run(
-            McpToolExecutionService(session, adapter).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, adapter),
                 McpExecutionRequest(
                     workspace_id=workspace.id,
                     agent_run_id=run.id,
                     mcp_server_id=server.id,
                     tool_name="generate_image",
                     arguments={"prompt": "mountain", "style": "creative"},
-                )
+                ),
             )
         )
 
     result = asyncio.run(
-        McpToolExecutionService(session, adapter).execute(
+        _execute_mcp(
+            McpToolExecutionService(session, adapter),
             McpExecutionRequest(
                 workspace_id=workspace.id,
                 agent_run_id=run.id,
                 mcp_server_id=server.id,
                 tool_name="generate_image",
                 arguments={"prompt": "mountain"},
-            )
+            ),
         )
     )
 
@@ -268,14 +257,15 @@ def test_mcp_execution_rejects_disabled_server_or_tool_allowlist() -> None:
 
     try:
         asyncio.run(
-            McpToolExecutionService(session, adapter).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, adapter),
                 McpExecutionRequest(
                     workspace_id=workspace.id,
                     agent_run_id=run.id,
                     mcp_server_id=server.id,
                     tool_name="generate_image",
                     arguments={},
-                )
+                ),
             )
         )
     except ToolPermissionError as exc:
@@ -293,14 +283,15 @@ def test_mcp_execution_rejects_disabled_server_or_tool_allowlist() -> None:
 
     try:
         asyncio.run(
-            McpToolExecutionService(session, adapter).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, adapter),
                 McpExecutionRequest(
                     workspace_id=workspace.id,
                     agent_run_id=run.id,
                     mcp_server_id=server.id,
                     tool_name="generate_image",
                     arguments={},
-                )
+                ),
             )
         )
     except ToolPermissionError as exc:
@@ -321,14 +312,15 @@ def test_mcp_execution_blocks_tool_not_in_run_snapshot_and_records_security_even
 
     try:
         asyncio.run(
-            McpToolExecutionService(session, RecordingAdapter({})).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, RecordingAdapter({})),
                 McpExecutionRequest(
                     workspace_id=workspace.id,
                     agent_run_id=run.id,
                     mcp_server_id=server.id,
                     tool_name="delete_image",
                     arguments={"id": "img_123"},
-                )
+                ),
             )
         )
     except ToolPermissionError as exc:
@@ -367,7 +359,8 @@ def test_mcp_execution_blocks_tool_not_in_runtime_context() -> None:
 
     try:
         asyncio.run(
-            McpToolExecutionService(session, RecordingAdapter({})).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, RecordingAdapter({})),
                 McpExecutionRequest(
                     workspace_id=workspace.id,
                     agent_run_id=run.id,
@@ -375,7 +368,7 @@ def test_mcp_execution_blocks_tool_not_in_runtime_context() -> None:
                     tool_name="generate_image",
                     arguments={"prompt": "mountain"},
                     runtime_allowed_tools=("search_web",),
-                )
+                ),
             )
         )
     except ToolPermissionError as exc:
@@ -406,14 +399,15 @@ def test_mcp_execution_blocks_unhealthy_server_before_adapter_call() -> None:
 
     try:
         asyncio.run(
-            McpToolExecutionService(session, adapter).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, adapter),
                 McpExecutionRequest(
                     workspace_id=workspace.id,
                     agent_run_id=run.id,
                     mcp_server_id=server.id,
                     tool_name="generate_image",
                     arguments={"prompt": "mountain"},
-                )
+                ),
             )
         )
     except ToolPermissionError as exc:
@@ -449,14 +443,15 @@ def test_mcp_execution_blocks_stale_health_check_before_adapter_call() -> None:
 
     try:
         asyncio.run(
-            McpToolExecutionService(session, adapter).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, adapter),
                 McpExecutionRequest(
                     workspace_id=workspace.id,
                     agent_run_id=run.id,
                     mcp_server_id=server.id,
                     tool_name="generate_image",
                     arguments={"prompt": "mountain"},
-                )
+                ),
             )
         )
     except ToolPermissionError as exc:
@@ -487,18 +482,19 @@ def test_mcp_execution_uses_configured_health_check_stale_window() -> None:
     adapter = RecordingAdapter({"ok": True})
 
     result = asyncio.run(
-        McpToolExecutionService(
-            session,
-            adapter,
-            settings=Settings(mcp_health_check_stale_after_seconds=26 * 60 * 60),
-        ).execute(
+        _execute_mcp(
+            McpToolExecutionService(
+                session,
+                adapter,
+                settings=Settings(mcp_health_check_stale_after_seconds=26 * 60 * 60),
+            ),
             McpExecutionRequest(
                 workspace_id=workspace.id,
                 agent_run_id=run.id,
                 mcp_server_id=server.id,
                 tool_name="generate_image",
                 arguments={"prompt": "mountain"},
-            )
+            ),
         )
     )
 
@@ -510,6 +506,32 @@ def test_mcp_execution_uses_configured_health_check_stale_window() -> None:
     assert log.status == "completed"
 
 
+def test_mcp_error_preserves_native_response_and_records_failure() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace)
+    response = CallToolResult(
+        content=[{"type": "text", "text": "No matching record"}], isError=True
+    ).model_dump(mode="json", by_alias=True, exclude_none=True)
+    result = asyncio.run(
+        _execute_mcp(
+            McpToolExecutionService(session, RecordingAdapter(response)),
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={},
+            ),
+        )
+    )
+    assert result.status == "failed"
+    assert result.response == response
+    log = session.scalar(select(McpToolCallLog))
+    assert log.status == "failed"
+    assert log.response_sha256 == payload_hash(response)
+
+
 def test_mcp_execution_rejects_cross_workspace_run_context() -> None:
     session = _session()
     _, workspace = _seed_workspace(session, email="owner@example.com", slug="owner")
@@ -519,14 +541,15 @@ def test_mcp_execution_rejects_cross_workspace_run_context() -> None:
 
     try:
         asyncio.run(
-            McpToolExecutionService(session, adapter).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, adapter),
                 McpExecutionRequest(
                     workspace_id=other_workspace.id,
                     agent_run_id=run.id,
                     mcp_server_id=server.id,
                     tool_name="generate_image",
                     arguments={"prompt": "mountain"},
-                )
+                ),
             )
         )
     except ToolResourceNotFoundError as exc:
@@ -553,14 +576,15 @@ def test_mcp_execution_rejects_foreign_mcp_server_for_same_tool_name() -> None:
 
     try:
         asyncio.run(
-            McpToolExecutionService(session, adapter).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, adapter),
                 McpExecutionRequest(
                     workspace_id=workspace.id,
                     agent_run_id=run.id,
                     mcp_server_id=foreign_server.id,
                     tool_name="generate_image",
                     arguments={"prompt": "mountain"},
-                )
+                ),
             )
         )
     except ToolPermissionError as exc:
@@ -593,14 +617,15 @@ def test_mcp_execution_rejects_oversized_payload_and_logs_failure() -> None:
     )
 
     result = asyncio.run(
-        McpToolExecutionService(session, RecordingAdapter({})).execute(
+        _execute_mcp(
+            McpToolExecutionService(session, RecordingAdapter({})),
             McpExecutionRequest(
                 workspace_id=workspace.id,
                 agent_run_id=run.id,
                 mcp_server_id=server.id,
                 tool_name="generate_image",
                 arguments={"prompt": "this payload is too large"},
-            )
+            ),
         )
     )
 
@@ -619,23 +644,23 @@ def test_mcp_execution_rejects_oversized_payload_and_logs_failure() -> None:
     assert [event.event_type for event in events] == ["tool.called", "tool.failed"]
 
 
-def test_mcp_execution_raises_unknown_adapter_errors_after_logging() -> None:
+def test_mcp_preparation_records_sanitized_adapter_failure() -> None:
     session = _session()
     _, workspace = _seed_workspace(session)
     run, server = _seed_run_with_mcp_tool(session, workspace)
 
-    with pytest.raises(RuntimeError):
-        asyncio.run(
-            McpToolExecutionService(session, FailingAdapter()).execute(
-                McpExecutionRequest(
-                    workspace_id=workspace.id,
-                    agent_run_id=run.id,
-                    mcp_server_id=server.id,
-                    tool_name="generate_image",
-                    arguments={"prompt": "mountain"},
-                )
-            )
+    asyncio.run(
+        _execute_mcp(
+            McpToolExecutionService(session, FailingAdapter()),
+            McpExecutionRequest(
+                workspace_id=workspace.id,
+                agent_run_id=run.id,
+                mcp_server_id=server.id,
+                tool_name="generate_image",
+                arguments={"prompt": "mountain"},
+            ),
         )
+    )
 
     log = session.scalar(select(McpToolCallLog))
     event = session.scalar(
@@ -647,15 +672,42 @@ def test_mcp_execution_raises_unknown_adapter_errors_after_logging() -> None:
     assert log is not None
     assert log.status == "failed"
     assert log.error is not None
-    assert log.error["code"] == "mcp_adapter_crashed"
+    assert log.error["code"] == "mcp_adapter_failed"
     assert log.error["message"] == "RuntimeError"
     assert event is not None
     assert event.event_metadata["error"] == {
-        "code": "mcp_adapter_crashed",
+        "code": "mcp_adapter_failed",
         "message": "RuntimeError",
     }
     assert "sk-secret" not in str(log.error)
     assert "sk-secret" not in str(event.event_metadata)
+
+
+def test_mcp_admission_counts_inflight_calls_and_completes_the_same_record() -> None:
+    session = _session()
+    _, workspace = _seed_workspace(session)
+    run, server = _seed_run_with_mcp_tool(session, workspace, allow_policy={"max_calls_per_run": 1})
+    service = McpToolExecutionService(session, RecordingAdapter({"content": [], "isError": False}))
+    request = McpExecutionRequest(
+        workspace_id=workspace.id,
+        agent_run_id=run.id,
+        mcp_server_id=server.id,
+        tool_name="generate_image",
+        arguments={"prompt": "test"},
+    )
+    prepared = service.prepare(request)
+    assert isinstance(prepared, PreparedMcpExecution)
+    session.commit()
+    assert session.get(McpToolCallLog, prepared.log_id).status == "running"
+    with pytest.raises(ToolPermissionError, match="mcp_tool_run_call_limit_exceeded"):
+        service.prepare(request)
+    session.commit()
+    completed = McpToolInvoker(session, None).complete(
+        prepared, {"content": [], "isError": False}, None
+    )
+    session.commit()
+    assert completed.log_id == prepared.log_id
+    assert session.get(McpToolCallLog, prepared.log_id).status == "completed"
 
 
 def test_mcp_execution_sends_high_risk_tool_to_approval_when_configured() -> None:
@@ -667,14 +719,15 @@ def test_mcp_execution_sends_high_risk_tool_to_approval_when_configured() -> Non
     adapter = RecordingAdapter({"deleted": True})
 
     result = asyncio.run(
-        McpToolExecutionService(session, adapter).execute(
+        _execute_mcp(
+            McpToolExecutionService(session, adapter),
             McpExecutionRequest(
                 workspace_id=workspace.id,
                 agent_run_id=run.id,
                 mcp_server_id=server.id,
                 tool_name="generate_image",
                 arguments={"prompt": "mountain"},
-            )
+            ),
         )
     )
 
@@ -699,14 +752,15 @@ def test_mcp_execution_sends_explicit_approval_tool_to_approval() -> None:
     adapter = RecordingAdapter({"ok": True})
 
     result = asyncio.run(
-        McpToolExecutionService(session, adapter).execute(
+        _execute_mcp(
+            McpToolExecutionService(session, adapter),
             McpExecutionRequest(
                 workspace_id=workspace.id,
                 agent_run_id=run.id,
                 mcp_server_id=server.id,
                 tool_name="generate_image",
                 arguments={"prompt": "mountain"},
-            )
+            ),
         )
     )
 
@@ -771,9 +825,9 @@ def test_configured_model_controls_real_mcp_execution_and_history(monkeypatch, v
     )
     if verdict == "reject":
         with pytest.raises(ToolPermissionError):
-            asyncio.run(service.execute(request))
+            asyncio.run(_execute_mcp(service, request))
     else:
-        result = asyncio.run(service.execute(request))
+        result = asyncio.run(_execute_mcp(service, request))
         assert result.status == ("completed" if verdict == "approve" else "waiting_approval")
     assert len(adapter.calls) == (1 if verdict == "approve" else 0)
     approvals = session.scalars(select(Approval)).all()
@@ -804,7 +858,8 @@ def test_mcp_execution_review_configured_approval_preserves_argument_redaction()
     adapter = RecordingAdapter({"ok": True})
 
     result = asyncio.run(
-        McpToolExecutionService(session, adapter).execute(
+        _execute_mcp(
+            McpToolExecutionService(session, adapter),
             McpExecutionRequest(
                 workspace_id=workspace.id,
                 agent_run_id=run.id,
@@ -814,7 +869,7 @@ def test_mcp_execution_review_configured_approval_preserves_argument_redaction()
                     "prompt": "write production token to artifact",
                     "api_key": "sk-secret",
                 },
-            )
+            ),
         )
     )
 
@@ -843,14 +898,15 @@ def test_mcp_risk_annotation_does_not_override_explicit_allow() -> None:
     adapter = RecordingAdapter({"ok": True})
 
     result = asyncio.run(
-        McpToolExecutionService(session, adapter).execute(
+        _execute_mcp(
+            McpToolExecutionService(session, adapter),
             McpExecutionRequest(
                 workspace_id=workspace.id,
                 agent_run_id=run.id,
                 mcp_server_id=server.id,
                 tool_name="generate_image",
                 arguments={"prompt": "mountain"},
-            )
+            ),
         )
     )
 
@@ -869,14 +925,15 @@ def test_mcp_execution_blocks_high_risk_tool_when_platform_policy_blocks_it() ->
 
     try:
         asyncio.run(
-            McpToolExecutionService(session, RecordingAdapter({})).execute(
+            _execute_mcp(
+                McpToolExecutionService(session, RecordingAdapter({})),
                 McpExecutionRequest(
                     workspace_id=workspace.id,
                     agent_run_id=run.id,
                     mcp_server_id=server.id,
                     tool_name="generate_image",
                     arguments={"prompt": "mountain"},
-                )
+                ),
             )
         )
     except ToolPermissionError as exc:
@@ -895,121 +952,14 @@ def test_mcp_execution_blocks_high_risk_tool_when_platform_policy_blocks_it() ->
     assert security_event.reason == "mcp_high_risk_tool_globally_disabled"
 
 
-def test_mcp_execution_uses_sse_adapter_with_credential_headers(monkeypatch) -> None:
-    session = _session()
-    _, workspace = _seed_workspace(session)
-    run, server = _seed_run_with_mcp_tool(session, workspace)
-    server.server_type = "sse"
-    server.connection = {
-        "url": "https://mcp.example.test/sse",
-        "headers": {"x-client": "opsmesh"},
-    }
-    credential = McpCredentialReference(
-        workspace_id=workspace.id,
-        mcp_server_id=server.id,
-        name="api-key",
-        provider="hosted",
-        external_ref="",
-        encrypted_secret_payload=SecretEncryptionService(
-            secret="test-credential-secret", key_id="test"
-        )
-        .encrypt_payload({"headers": {"x-api-key": "test-secret"}})
-        .ciphertext,
-        encryption_key_id="test",
-        scopes=["images.write"],
-    )
-    session.add(credential)
-    session.commit()
-    _bind_credential_to_run_snapshot(session, run, credential)
-    sdk = _FakeSseSdk(_FakeSdkCallToolResult(structured_content={"status": "created"}))
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.sse_client",
-        sdk.sse_client,
-    )
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
-        sdk.client_session,
-    )
-
-    result = asyncio.run(
-        McpToolExecutionService(
-            session,
-            McpAdapterResolver(
-                secret_service=SecretEncryptionService(
-                    secret="test-credential-secret", key_id="test"
-                )
-            ),
-        ).execute(
-            McpExecutionRequest(
-                workspace_id=workspace.id,
-                agent_run_id=run.id,
-                mcp_server_id=server.id,
-                tool_name="generate_image",
-                arguments={"prompt": "mountain"},
-            )
-        )
-    )
-
-    assert result.status == "completed"
-    assert result.response == {"status": "created"}
-    assert sdk.transport_call == {
-        "url": "https://mcp.example.test/sse",
-        "timeout": 15,
-        "sse_read_timeout": 15,
-        "headers": {"x-client": "opsmesh", "x-api-key": "test-secret"},
-    }
-    assert sdk.initialize_calls == 1
-    assert sdk.tool_call == {
-        "name": "generate_image",
-        "arguments": {"prompt": "mountain"},
-        "timeout_seconds": 15,
-    }
-
-
-def test_mcp_sse_adapter_normalizes_remote_errors(monkeypatch) -> None:
-    server = McpServer(
-        name="image-tools",
-        server_type="sse",
-        connection={"url": "https://mcp.example.test/sse"},
-    )
-
-    sdk = _FakeSseSdk(_FakeSdkCallToolResult(is_error=True))
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.sse_client",
-        sdk.sse_client,
-    )
-    monkeypatch.setattr(
-        "backend.app.capabilities.mcp.transport.remote.ClientSession",
-        sdk.client_session,
-    )
-
-    try:
-        asyncio.run(
-            SseMcpToolAdapter().call(
-                server=server,
-                tool_name="generate_image",
-                arguments={"prompt": "mountain"},
-                credential_refs=[],
-                timeout_seconds=15,
-            )
-        )
-    except McpExecutionError as exc:
-        assert exc.code == "mcp_remote_error"
-        assert "sk-secret" not in str(exc)
-    else:
-        raise AssertionError("Expected SSE remote errors to be normalized")
-
-
-class _FakeSdkCallToolResult:
+class _FakeSdkCallToolResult(CallToolResult):
     def __init__(
         self,
         *,
         structured_content: dict[str, object] | None = None,
         is_error: bool = False,
     ) -> None:
-        self.content: list[object] = []
-        self.structuredContent = structured_content
-        self.isError = is_error
+        super().__init__(content=[], structuredContent=structured_content, isError=is_error)
 
 
 class _FakeSseTransport:
@@ -1036,14 +986,14 @@ class _FakeSseClientSession:
     async def call_tool(
         self,
         name: str,
-        *,
         arguments: dict[str, object],
-        read_timeout_seconds: timedelta,
+        *,
+        read_timeout_seconds: timedelta | None = None,
     ) -> _FakeSdkCallToolResult:
         self._sdk.tool_call = {
             "name": name,
             "arguments": arguments,
-            "timeout_seconds": read_timeout_seconds.total_seconds(),
+            "timeout_seconds": read_timeout_seconds.total_seconds() if read_timeout_seconds else 15,
         }
         return self._sdk.result
 
@@ -1071,7 +1021,14 @@ class _FakeSseSdk:
         }
         return _FakeSseTransport()
 
-    def client_session(self, read_stream: object, write_stream: object) -> _FakeSseClientSession:
+    def client_session(
+        self,
+        read_stream: object,
+        write_stream: object,
+        read_timeout: timedelta | None = None,
+        *,
+        message_handler: object = None,
+    ) -> _FakeSseClientSession:
         return _FakeSseClientSession(self)
 
 
@@ -1080,7 +1037,7 @@ class RecordingAdapter:
         self._response = response
         self.calls: list[dict[str, object]] = []
 
-    async def call(
+    def prepare(
         self,
         *,
         server: McpServer,
@@ -1088,7 +1045,7 @@ class RecordingAdapter:
         arguments: dict[str, object],
         credential_refs: list[McpCredentialReference],
         timeout_seconds: int,
-    ) -> dict[str, object]:
+    ) -> CompletedMcpOperation:
         self.calls.append(
             {
                 "server_id": str(server.id),
@@ -1101,11 +1058,11 @@ class RecordingAdapter:
                 "timeout_seconds": timeout_seconds,
             }
         )
-        return self._response
+        return CompletedMcpOperation(self._response)
 
 
 class FailingAdapter:
-    async def call(
+    def prepare(
         self,
         *,
         server: McpServer,
@@ -1312,3 +1269,19 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
+
+
+async def _execute_mcp(service: McpToolExecutionService, request: McpExecutionRequest):
+    prepared = service.prepare(request)
+    service._session.commit()
+    if not isinstance(prepared, PreparedMcpExecution):
+        return prepared
+    with BlockingIO(1, name="test-mcp-control") as io:
+        response, error = None, None
+        try:
+            response = await prepared.operation.execute(io)
+        except BaseException as failure:
+            error = failure
+        result = McpToolInvoker(service._session, None).complete(prepared, response, error)
+        service._session.commit()
+        return result

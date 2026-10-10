@@ -33,7 +33,7 @@ router = APIRouter()
 
 
 @router.get("/self-hosted/jobs/next", response_model=SelfHostedJobResponse | None)
-async def poll_job(
+def poll_job(
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
     service: SelfHostedDispatchService = Depends(self_hosted_dispatch_service),
 ) -> SelfHostedJobResponse | None:
@@ -53,7 +53,7 @@ async def poll_job(
 
 
 @router.post("/self-hosted/jobs/{agent_run_id}/claim", response_model=JobClaimResponse)
-async def claim_job(
+def claim_job(
     agent_run_id: UUID,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
     service: SelfHostedDispatchService = Depends(self_hosted_dispatch_service),
@@ -82,7 +82,7 @@ async def claim_job(
 
 
 @router.get("/self-hosted/jobs/{agent_run_id}/project/archive")
-async def download_project_archive(
+def download_project_archive(
     agent_run_id: UUID,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
     service: SelfHostedProjectFileService = Depends(self_hosted_project_file_service),
@@ -138,7 +138,7 @@ async def upload_project_output(
 
 
 @router.post("/self-hosted/jobs/{agent_run_id}/complete", response_model=JobCompleteResponse)
-async def complete_job(
+def complete_job(
     agent_run_id: UUID,
     request: JobCompleteRequest,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
@@ -162,7 +162,7 @@ async def complete_job(
 
 
 @router.post("/self-hosted/progress", response_model=RunEventResponse)
-async def upload_progress(
+def upload_progress(
     request: ProgressEventRequest,
     auth: AuthenticatedWorker = Depends(get_authenticated_worker),
     service: SelfHostedProgressService = Depends(self_hosted_progress_service),

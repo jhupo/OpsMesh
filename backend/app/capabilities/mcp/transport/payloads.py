@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-import json
-
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionError
 
 MCP_PYTHON_SDK_PACKAGE = "openai-agents"
 MCP_PYTHON_SDK_STDIO_ENTRYPOINT = "agents.mcp.MCPServerStdio"
 MCP_STDIO_CONTRACT_VERSION = 2
-
-
-def string_setting(payload: dict[str, object], key: str) -> str | None:
-    value = payload.get(key)
-    return value if isinstance(value, str) else None
 
 
 def string_dict_setting(payload: dict[str, object], key: str) -> dict[str, str]:
@@ -61,70 +54,17 @@ def stdio_sdk_request(
 
 def stdio_command(connection: dict[str, object]) -> list[str]:
     raw_command = connection.get("command")
-    if isinstance(raw_command, list) and raw_command:
-        command = [item for item in raw_command if isinstance(item, str) and item]
-        if command:
-            return command
     if isinstance(raw_command, str) and raw_command.strip():
         command = [raw_command.strip()]
         args = connection.get("args")
+        if args is not None and (
+            not isinstance(args, list) or not all(isinstance(item, str) for item in args)
+        ):
+            raise McpExecutionError("MCP args must be strings", code="mcp_stdio_args_invalid")
         if isinstance(args, list):
-            command.extend(item for item in args if isinstance(item, str) and item)
+            command.extend(args)
         return command
     raise McpExecutionError(
         "Stdio MCP server is missing command",
         code="mcp_stdio_command_missing",
     )
-
-
-def result_from_sdk_output(raw_body: bytes | str) -> dict[str, object]:
-    if isinstance(raw_body, bytes):
-        try:
-            raw_body = raw_body.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise McpExecutionError(
-                "MCP stdio SDK client returned invalid UTF-8",
-                code="mcp_stdio_invalid_encoding",
-            ) from exc
-    try:
-        body = json.loads(raw_body)
-    except json.JSONDecodeError as exc:
-        raise McpExecutionError(
-            "MCP stdio SDK client returned invalid JSON",
-            code="mcp_stdio_invalid_output",
-        ) from exc
-    if not isinstance(body, dict):
-        raise McpExecutionError(
-            "MCP stdio SDK client returned an invalid result",
-            code="mcp_stdio_invalid_output",
-        )
-    if body.get("isError") is True:
-        raise McpExecutionError(
-            "MCP stdio tool failed",
-            code="mcp_remote_error",
-        )
-    return body
-
-
-def capability_report_from_sdk_output(raw_body: bytes | str) -> dict[str, object]:
-    if isinstance(raw_body, bytes):
-        try:
-            raw_body = raw_body.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise McpExecutionError(
-                "MCP stdio SDK capability probe returned invalid UTF-8",
-                code="mcp_stdio_runtime_not_ready",
-            ) from exc
-    try:
-        body = json.loads(raw_body)
-    except json.JSONDecodeError as exc:
-        raise McpExecutionError(
-            "MCP stdio SDK capability probe returned invalid JSON",
-            code="mcp_stdio_runtime_not_ready",
-        ) from exc
-    if not isinstance(body, dict):
-        raise McpExecutionError(
-            "MCP stdio SDK capability probe returned an invalid report",
-            code="mcp_stdio_runtime_not_ready",
-        )
-    return body

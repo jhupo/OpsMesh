@@ -6,6 +6,7 @@ from backend.app.orchestration.tasks.control.queue_actions import (
     append_unique_uuid,
 )
 from backend.app.orchestration.tasks.models import Task
+from backend.app.shared.utils import string_list
 
 
 def handoff_queue_item(
@@ -37,8 +38,8 @@ def handoff_queue_item(
         "downstream_step_ids": uuid_values(handoff.get("downstream_step_ids")),
         "runnable_downstream_step_ids": uuid_values(handoff.get("runnable_downstream_step_ids")),
         "blocked_downstream_step_ids": uuid_values(handoff.get("blocked_downstream_step_ids")),
-        "blocked_reasons": string_values(step_payload.get("blocked_reasons")),
-        "recommended_actions": string_values(handoff.get("recommended_actions")),
+        "blocked_reasons": string_list(step_payload.get("blocked_reasons")),
+        "recommended_actions": string_list(handoff.get("recommended_actions")),
         "last_activity_at": task.updated_at,
     }
 
@@ -55,7 +56,7 @@ def handoff_needs_attention(item: dict[str, object]) -> bool:
 def handoff_queue_summary(items: list[dict[str, object]]) -> dict[str, object]:
     status_counts = Counter(str(item["handoff_status"]) for item in items)
     action_counts = Counter(
-        action for item in items for action in string_values(item["recommended_actions"])
+        action for item in items for action in string_list(item["recommended_actions"])
     )
     task_ids = {task_id for item in items if isinstance((task_id := item.get("task_id")), UUID)}
     return {
@@ -78,7 +79,7 @@ def handoff_queue_team_action_plan(items: list[dict[str, object]]) -> list[dict[
         task_step_id = item.get("task_step_id")
         if not isinstance(team_id, UUID) or not isinstance(task_id, UUID):
             continue
-        for action in string_values(item.get("recommended_actions")):
+        for action in string_list(item.get("recommended_actions")):
             if action not in {"request_manager_review", "schedule_downstream_steps"}:
                 continue
             plan = grouped.setdefault(
@@ -121,9 +122,3 @@ def uuid_values(value: object) -> list[UUID]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, UUID)]
-
-
-def string_values(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]

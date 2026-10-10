@@ -365,9 +365,5 @@ def _network_policy_from_metadata(
     effective = policy_metadata.get("effective") if isinstance(policy_metadata, dict) else None
     egress = effective.get("egress") if isinstance(effective, dict) else None
     if isinstance(egress, dict):
-        return {"disabled": network_disabled, **egress}
-    return {
-        "disabled": network_disabled,
-        "mode": "none" if network_disabled else "internet",
-        "enforcement": "docker_network_none" if network_disabled else "docker_bridge",
-    }
+        return dict(egress)
+    return {"mode": "none" if network_disabled else "internet"}

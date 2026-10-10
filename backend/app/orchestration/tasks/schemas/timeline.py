@@ -46,20 +46,3 @@ class TaskTimelineResponse(BaseModel):
     @field_serializer("summary")
     def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
         return redact_sensitive_payload(value)
-
-
-class TaskEventFeedEvent(TaskTimelineEvent):
-    cursor: int
-    event_id: str
-
-
-class TaskEventFeedResponse(BaseModel):
-    workspace_id: UUID
-    task_id: UUID
-    generated_at: datetime
-    summary: dict[str, object]
-    events: list[TaskEventFeedEvent]
-
-    @field_serializer("summary")
-    def _serialize_summary(self, value: dict[str, object]) -> dict[str, object]:
-        return redact_sensitive_payload(value)

@@ -25,7 +25,7 @@ router = APIRouter()
 
 
 @router.get("/marketplace", response_model=PageResponse[MarketplaceListingResponse])
-async def list_public_marketplace_listings(
+def list_public_marketplace_listings(
     listing_type: MarketplaceListingType = Query(),
     page: PageParams = Depends(pagination_params),
     query: str | None = Query(default=None),
@@ -44,7 +44,7 @@ async def list_public_marketplace_listings(
     response_model=MarketplaceListingResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_workspace_marketplace_listing(
+def create_workspace_marketplace_listing(
     request: MarketplaceListingCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -68,7 +68,7 @@ async def create_workspace_marketplace_listing(
     response_model=WorkspaceMarketplaceInstallResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def install_marketplace_listing(
+def install_marketplace_listing(
     listing_id: UUID,
     request: MarketplaceInstallRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -92,7 +92,7 @@ async def install_marketplace_listing(
     "/workspaces/{workspace_id}/marketplace-installs",
     response_model=PageResponse[WorkspaceMarketplaceInstallResponse],
 )
-async def list_workspace_marketplace_installs(
+def list_workspace_marketplace_installs(
     page: PageParams = Depends(pagination_params),
     listing_type: MarketplaceListingType | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),

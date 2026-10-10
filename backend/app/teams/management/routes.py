@@ -58,7 +58,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
 
 
 @router.get("/teams", response_model=PageResponse[AgentTeamResponse])
-async def list_teams(
+def list_teams(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -68,7 +68,7 @@ async def list_teams(
 
 
 @router.post("/teams", response_model=AgentTeamResponse, status_code=status.HTTP_201_CREATED)
-async def create_team(
+def create_team(
     request: AgentTeamCreateRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -111,7 +111,7 @@ async def create_team(
 
 
 @router.patch("/teams/{team_id}", response_model=AgentTeamResponse)
-async def update_team(
+def update_team(
     team_id: UUID,
     request: AgentTeamUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -136,7 +136,7 @@ async def update_team(
 
 
 @router.get("/teams/{team_id}/org-chart", response_model=AgentTeamOrgChartResponse)
-async def get_team_org_chart(
+def get_team_org_chart(
     team_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -154,7 +154,7 @@ async def get_team_org_chart(
     "/teams/command-center",
     response_model=WorkspaceTeamCommandCenterResponse,
 )
-async def get_workspace_team_command_center(
+def get_workspace_team_command_center(
     include_completed: bool = Query(default=False),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -170,7 +170,7 @@ async def get_workspace_team_command_center(
     "/teams/{team_id}/execution-overview",
     response_model=AgentTeamExecutionOverviewResponse,
 )
-async def get_team_execution_overview(
+def get_team_execution_overview(
     team_id: UUID,
     include_completed: bool = Query(default=False),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -190,7 +190,7 @@ async def get_team_execution_overview(
     "/teams/{team_id}/command-center",
     response_model=AgentTeamCommandCenterResponse,
 )
-async def get_team_command_center(
+def get_team_command_center(
     team_id: UUID,
     include_completed: bool = Query(default=False),
     queue_limit: int = Query(default=50, ge=1, le=200),
@@ -212,7 +212,7 @@ async def get_team_command_center(
     "/teams/{team_id}/project-space",
     response_model=AgentTeamProjectSpaceResponse,
 )
-async def get_team_project_space(
+def get_team_project_space(
     team_id: UUID,
     include_completed: bool = Query(default=False),
     limit: int = Query(default=200, ge=1, le=500),
@@ -234,7 +234,7 @@ async def get_team_project_space(
     "/teams/{team_id}/operations-console",
     response_model=AgentTeamOperationsConsoleResponse,
 )
-async def get_team_operations_console(
+def get_team_operations_console(
     team_id: UUID,
     include_completed: bool = Query(default=False),
     queue_limit: int = Query(default=50, ge=1, le=200),
@@ -262,7 +262,7 @@ async def get_team_operations_console(
     "/teams/{team_id}/project-dashboard",
     response_model=AgentTeamProjectDashboardResponse,
 )
-async def get_team_project_dashboard(
+def get_team_project_dashboard(
     team_id: UUID,
     include_completed: bool = Query(default=False),
     limit: int = Query(default=100, ge=1, le=500),

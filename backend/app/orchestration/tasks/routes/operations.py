@@ -73,7 +73,7 @@ STREAM_TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
     response_model=TaskCorrectionResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_task_correction(
+def create_task_correction(
     task_id: UUID,
     request: TaskCorrectionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -98,7 +98,7 @@ async def create_task_correction(
     "/tasks/{task_id}/control",
     response_model=TaskControlActionResponse,
 )
-async def apply_task_control_action(
+def apply_task_control_action(
     task_id: UUID,
     request: TaskControlActionRequest,
     context: WorkspaceContext = Depends(
@@ -125,7 +125,7 @@ async def apply_task_control_action(
     "/tasks/{task_id}/control-diagnostics",
     response_model=TaskControlDiagnosticsResponse,
 )
-async def get_task_control_diagnostics(
+def get_task_control_diagnostics(
     task_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -143,7 +143,7 @@ async def get_task_control_diagnostics(
     "/tasks/{task_id}/delivery-review",
     response_model=TaskDeliveryReviewResponse,
 )
-async def get_task_delivery_review(
+def get_task_delivery_review(
     task_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -161,7 +161,7 @@ async def get_task_delivery_review(
     "/tasks/{task_id}/delivery-decision",
     response_model=TaskDeliveryDecisionResponse,
 )
-async def apply_task_delivery_decision(
+def apply_task_delivery_decision(
     task_id: UUID,
     request: TaskDeliveryDecisionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),
@@ -186,7 +186,7 @@ async def apply_task_delivery_decision(
     "/tasks/{task_id}/corrections/diagnostics",
     response_model=TaskCorrectionDiagnosticsResponse,
 )
-async def get_task_correction_diagnostics(
+def get_task_correction_diagnostics(
     task_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -201,7 +201,7 @@ async def get_task_correction_diagnostics(
 
 
 @router.get("/tasks/{task_id}/observation", response_model=TaskObservationResponse)
-async def get_task_observation(
+def get_task_observation(
     task_id: UUID,
     view_type: str | None = Query(default="auto"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -221,7 +221,7 @@ async def get_task_observation(
 
 
 @router.get("/tasks/{task_id}/timeline", response_model=TaskTimelineResponse)
-async def get_task_timeline(
+def get_task_timeline(
     task_id: UUID,
     limit: int = Query(default=200, ge=1, le=500),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -238,7 +238,7 @@ async def get_task_timeline(
 
 
 @router.post("/tasks/{task_id}/operator-actions", response_model=TaskOperatorActionResponse)
-async def apply_task_operator_action(
+def apply_task_operator_action(
     task_id: UUID,
     request: TaskOperatorActionRequest,
     context: WorkspaceContext = Depends(
@@ -275,7 +275,7 @@ async def apply_task_operator_action(
     "/tasks/{task_id}/execution-diagnostics",
     response_model=TaskExecutionDiagnosticsResponse,
 )
-async def get_task_execution_diagnostics(
+def get_task_execution_diagnostics(
     task_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -293,7 +293,7 @@ async def get_task_execution_diagnostics(
     "/tasks/{task_id}/manager-diagnostics",
     response_model=TaskManagerDiagnosticsResponse,
 )
-async def get_task_manager_diagnostics(
+def get_task_manager_diagnostics(
     task_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -311,7 +311,7 @@ async def get_task_manager_diagnostics(
     "/tasks/{task_id}/execution-status",
     response_model=TaskExecutionStatusResponse,
 )
-async def get_task_execution_status(
+def get_task_execution_status(
     task_id: UUID,
     message_limit: int = Query(default=20, ge=1, le=100),
     event_limit: int = Query(default=30, ge=1, le=200),
@@ -333,7 +333,7 @@ async def get_task_execution_status(
     "/tasks/{task_id}/interaction-transcript",
     response_model=TaskInteractionTranscriptResponse,
 )
-async def get_task_interaction_transcript(
+def get_task_interaction_transcript(
     task_id: UUID,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -357,7 +357,7 @@ async def get_task_interaction_transcript(
     "/tasks/{task_id}/collaboration-recovery",
     response_model=TaskCollaborationRecoveryPlanResponse,
 )
-async def get_task_collaboration_recovery_plan(
+def get_task_collaboration_recovery_plan(
     task_id: UUID,
     max_actions: int = Query(default=10, ge=1, le=50),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -377,7 +377,7 @@ async def get_task_collaboration_recovery_plan(
     "/tasks/{task_id}/collaboration-recovery",
     response_model=TaskCollaborationRecoveryApplyResponse,
 )
-async def apply_task_collaboration_recovery_plan(
+def apply_task_collaboration_recovery_plan(
     task_id: UUID,
     request: TaskCollaborationRecoveryApplyRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.APPROVE)),

@@ -49,7 +49,7 @@ class RuntimeSafetyPolicy:
                 "runtime_network_globally_disabled",
                 "Runtime network access is disabled by platform safety policy",
             )
-        if template.default_network_policy.get("allow_network") is not True:
+        if template.default_network_policy.get("mode", "none") == "none":
             raise RuntimeSafetyError(
                 "runtime_network_not_allowed",
                 "Runtime network access is disabled by default for personal safety",

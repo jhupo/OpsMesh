@@ -86,7 +86,7 @@ class McpToolCallLogQueryService:
             workspace_id=workspace_id,
             latency_ms=_latency_ms_from_payload(response_payload, error_payload),
             argument_sha256=hash_from_payload(request_payload, "arguments_sha256"),
-            response_sha256=response_hash_from_payload(response_payload),
+            response_sha256=response_hash_from_payload(data.response),
             error_code=error_code(error_payload),
             request_id=evidence.get("request_id"),
             worker_id=evidence.get("worker_id"),
@@ -197,14 +197,12 @@ class McpToolCallLogService:
                 McpToolCallLog.workspace_id == workspace_id,
                 McpToolCallLog.agent_run_id == run_id,
                 McpToolCallLog.status == "waiting_self_hosted",
-                McpToolCallLog.response["result"]["mcp_job_id"].as_string() == str(job_id),
+                McpToolCallLog.response["mcp_job_id"].as_string() == str(job_id),
             )
         ).all()
         for log in logs:
             log.status = "completed" if status == "completed" else "failed"
-            log.response = (
-                redact_sensitive_payload({"result": response}) if response is not None else None
-            )
+            log.response = redact_sensitive_payload(response) if response is not None else None
             log.response_sha256 = payload_hash(response) if response is not None else None
             log.error = redact_sensitive_payload(error) if error is not None else None
             log.error_code = error_code(error)
@@ -221,13 +219,14 @@ class McpToolCallLogService:
         snapshot: dict[str, object] | None = None,
         run: AgentRun | None = None,
         latency_ms: int | None = None,
+        log_id: UUID | None = None,
     ) -> McpToolCallLog:
         argument_sha256 = payload_hash(request.arguments)
-        response_sha256 = mcp_response_hash(response)
+        response_sha256 = mcp_response_hash(response) if status in {"completed", "failed"} else None
         redacted_response = redact_sensitive_payload(response) if response is not None else None
         redacted_error = redact_sensitive_payload(error) if error is not None else None
         evidence = current_evidence_context()
-        log = McpToolCallLog(
+        values = dict(
             workspace_id=request.workspace_id,
             mcp_server_id=server_id,
             agent_run_id=request.agent_run_id,
@@ -261,7 +260,33 @@ class McpToolCallLogService:
             error=redacted_error,
             created_at=datetime.now(UTC),
         )
-        self.session.add(log)
+        if log_id is None:
+            log = McpToolCallLog(**values)
+            self.session.add(log)
+        else:
+            existing_log = self.session.scalar(
+                select(McpToolCallLog)
+                .where(
+                    McpToolCallLog.id == log_id,
+                    McpToolCallLog.workspace_id == request.workspace_id,
+                    McpToolCallLog.agent_run_id == request.agent_run_id,
+                    McpToolCallLog.mcp_server_id == server_id,
+                    McpToolCallLog.tool_name == request.tool_name,
+                )
+                .with_for_update()
+            )
+            if existing_log is None or existing_log.status != "running":
+                raise ValueError("MCP completion has no active admission record")
+            log = existing_log
+            for key in (
+                "status",
+                "latency_ms",
+                "response_sha256",
+                "error_code",
+                "response",
+                "error",
+            ):
+                setattr(log, key, values[key])
         self.session.flush()
         return log
 

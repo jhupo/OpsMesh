@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.post("/metadata", status_code=status.HTTP_200_OK)
-async def export_workspace_metadata(
+def export_workspace_metadata(
     request: WorkspaceExportRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -40,7 +40,7 @@ async def export_workspace_metadata(
 
 
 @router.post("/metadata/import", response_model=WorkspaceImportResponse)
-async def import_workspace_metadata(
+def import_workspace_metadata(
     request: WorkspaceImportRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -53,7 +53,7 @@ async def import_workspace_metadata(
 
 
 @router.post("/metadata/import/preview", response_model=WorkspaceImportResponse)
-async def preview_workspace_metadata_import(
+def preview_workspace_metadata_import(
     request: WorkspaceImportRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),

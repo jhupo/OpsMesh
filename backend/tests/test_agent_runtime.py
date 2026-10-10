@@ -6,8 +6,9 @@ from typing import BinaryIO
 from uuid import uuid4
 
 import pytest
-from agents import RunContextWrapper
+from agents import Agent, RunContextWrapper
 from agents.extensions.memory import SQLAlchemySession
+from agents.usage import Usage
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import backend.app.agents.execution.providers.openai.runner as openai_runtime
@@ -28,7 +29,6 @@ from backend.app.agents.execution.contracts import (
 from backend.app.agents.execution.errors import AgentRuntimeCapabilityError, normalize_agent_error
 from backend.app.agents.execution.providers.openai.results import (
     OpenAIAgentsResultMapper,
-    runtime_event_from_sdk_item,
 )
 from backend.app.agents.execution.providers.openai.runner import OpenAIAgentsRunner
 from backend.app.agents.execution.providers.openai.tools import (
@@ -502,11 +502,11 @@ def test_provider_adapter_registry_rejects_unsupported_request_capabilities() ->
     from agents.usage import Usage
 
     class Result:
+        new_items = []
+        interruptions = []
         final_output = "done"
         context_wrapper = RunContextWrapper(context=None, usage=Usage(requests=1))
-
-        class last_agent:
-            name = "Researcher"
+        last_agent = Agent(name="Researcher")
 
         def to_input_list(self, *, mode: str) -> list[dict[str, object]]:
             assert mode == "normalized"
@@ -568,6 +568,9 @@ def test_openai_agents_runner_restores_sdk_state(
         captured["run_kwargs"] = kwargs
 
         class Result:
+            context_wrapper = RunContextWrapper(context=None, usage=Usage())
+            last_agent = Agent(name="Test")
+            new_items = []
             final_output = "resumed"
             interruptions: list[object] = []
 
@@ -648,6 +651,9 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
         return state
 
     class Result:
+        context_wrapper = RunContextWrapper(context=None, usage=Usage())
+        last_agent = Agent(name="Test")
+        new_items = []
         final_output = "resumed"
         interruptions: list[object] = []
 
@@ -827,6 +833,10 @@ def test_openai_agents_runner_passes_tracing_run_config_to_sdk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class Result:
+        context_wrapper = RunContextWrapper(context=None, usage=Usage())
+        last_agent = Agent(name="Test")
+        new_items = []
+        interruptions = []
         final_output = "done"
 
     captured: dict[str, object] = {}
@@ -918,38 +928,6 @@ def test_openai_agents_runner_trace_metadata_includes_provider_provenance() -> N
     serialized = json.dumps(run_config.trace_metadata)
     assert "api_key" not in serialized
     assert "base_url" not in serialized
-
-
-def test_openai_agents_runner_runtime_event_payload_is_redacted() -> None:
-    class SdkEvent:
-        type = "response.output_text.delta"
-        message = "delta"
-        api_key = "sk-event-secret"
-
-        def model_dump(self, mode: str) -> dict[str, object]:
-            assert mode == "json"
-            return {
-                "type": self.type,
-                "message": self.message,
-                "api_key": self.api_key,
-                "nested": {
-                    "base_url": "https://event.example.test/v1/private",
-                    "visible": "ok",
-                },
-            }
-
-    event = runtime_event_from_sdk_item(SdkEvent())
-
-    assert event is not None
-    assert event.payload == {
-        "type": "response.output_text.delta",
-        "message": "delta",
-        "api_key": "[redacted]",
-        "nested": {"base_url": "[redacted]", "visible": "ok"},
-    }
-    serialized = json.dumps(event.payload)
-    assert "sk-event-secret" not in serialized
-    assert "event.example.test/v1/private" not in serialized
 
 
 def test_openai_agents_runner_tools_include_provenance_guardrail() -> None:

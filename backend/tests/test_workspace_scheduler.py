@@ -18,7 +18,10 @@ from backend.app.orchestration.runs.eligibility import RunEligibilityService
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.runs.resources import RunResourceReservationService
+from backend.app.orchestration.runs.resources import (
+    RunResourceReservationService,
+    release_run_reservations,
+)
 from backend.app.orchestration.runs.scheduling.service import WorkspaceScheduler
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.runs.state import RunStatus
@@ -1315,9 +1318,9 @@ def _run_lifecycle(session: Session) -> RunLifecycleService:
         session,
         RunLifecycleCallbacks(
             append_event=RunEventRecorder(session).append_event,
-            release_reservations=lambda run, released_at: _run_reservations(
-                session
-            ).release_for_run(run, released_at=released_at),
+            release_reservations=lambda run, released_at: release_run_reservations(
+                session, run, released_at=released_at
+            ),
             create_next_runs=lambda task, user_id: orchestration._create_and_enqueue_next_step_runs(
                 task,
                 requested_by_user_id=user_id,

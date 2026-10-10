@@ -30,6 +30,7 @@ from backend.app.runtime.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.instances.contracts import RuntimeCommandResult
 from backend.app.runtime.instances.models import RuntimeTemplate
 from backend.app.runtime.queues.context import WorkerJobHandlerContext
+from backend.app.shared.concurrency import BlockingIO
 from backend.app.shared.config import Settings
 from backend.app.shared.db.errors import DatabaseConflictError
 from backend.app.shared.errors import NotFoundError
@@ -50,6 +51,23 @@ class Docker(FakeDockerClient):
     def __init__(self):
         super().__init__()
         self.requests = []
+
+    def open_mcp_channel(self, container_id, *, working_dir):
+        from backend.app.runtime.agent_host.wire import RpcFrame
+        from backend.tests.test_mcp_adapters import RuntimeChannel
+
+        class Channel(RuntimeChannel):
+            async def receive(self):
+                if self.frames == 0:
+                    return await super().receive()
+                return RpcFrame(
+                    type="result", payload={"structuredContent": {"calls": 1}}
+                ).encoded()
+
+        return Channel()
+
+    def terminate_agent_process(self, container_id, pid):
+        pass
 
     def container_running(self, container_id):
         return container_id in self.started and container_id not in self.stopped
@@ -81,7 +99,7 @@ def managed(monkeypatch):
         name="managed",
         image="python@sha256:" + "0" * 64,
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add(template)
@@ -144,27 +162,29 @@ def test_import_start_reuse_stop_restart_and_secret_boundary(managed):
     handler.handle(queue.jobs[-1])
     assert len(docker.created_requests) == 1
     adapter = ManagedMcpToolAdapter(session, docker)
-    assert asyncio.run(
-        adapter.call(
+    operation = adapter.prepare(
+        server=server,
+        tool_name="count",
+        arguments={},
+        credential_refs=[credential],
+        timeout_seconds=10,
+    )
+
+    async def execute():
+        with BlockingIO(1, name="managed-mcp-test") as io:
+            return await operation.execute(io)
+
+    assert asyncio.run(execute()) == {"structuredContent": {"calls": 1}}
+    service.control(workspace.id, server.id, auth, "stop")
+    handler.handle(queue.jobs[-1])
+    assert deployment.status == "stopped"
+    with pytest.raises(McpExecutionError):
+        adapter.prepare(
             server=server,
             tool_name="count",
             arguments={},
             credential_refs=[credential],
             timeout_seconds=10,
-        )
-    ) == {"structuredContent": {"calls": 1}}
-    service.control(workspace.id, server.id, auth, "stop")
-    handler.handle(queue.jobs[-1])
-    assert deployment.status == "stopped"
-    with pytest.raises(McpExecutionError):
-        asyncio.run(
-            adapter.call(
-                server=server,
-                tool_name="count",
-                arguments={},
-                credential_refs=[credential],
-                timeout_seconds=10,
-            )
         )
     service.control(workspace.id, server.id, auth, "start")
     handler.handle(queue.jobs[-1])
@@ -200,14 +220,12 @@ def test_recovery_after_queue_loss_and_rotated_credentials(managed):
     session.commit()
     server = session.get(McpServer, deployment.mcp_server_id)
     with pytest.raises(McpExecutionError, match="credential rotation"):
-        asyncio.run(
-            ManagedMcpToolAdapter(session, docker).call(
-                server=server,
-                tool_name="count",
-                arguments={},
-                credential_refs=[credential],
-                timeout_seconds=10,
-            )
+        ManagedMcpToolAdapter(session, docker).prepare(
+            server=server,
+            tool_name="count",
+            arguments={},
+            credential_refs=[credential],
+            timeout_seconds=10,
         )
     deployment.checked_at = datetime.now(UTC) - timedelta(minutes=2)
     session.commit()

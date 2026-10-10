@@ -5,7 +5,9 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from agents import RunContextWrapper
 from agents.tool_context import ToolContext
+from agents.usage import Usage
 
 import backend.app.agents.execution.providers.openai.runner as openai_runtime
 from backend.app.agents.execution.contracts import (
@@ -125,6 +127,10 @@ def test_openai_agent_tool_uses_sdk_and_scoped_runtime_context(
             context = kwargs["context"]
             return SimpleNamespace(
                 final_output="research complete",
+                context_wrapper=RunContextWrapper(
+                    context, usage=Usage(requests=1, input_tokens=3, output_tokens=2)
+                ),
+                last_agent=agent,
                 interruptions=[],
                 usage={"input_tokens": 3, "output_tokens": 2},
                 agent_tool_invocation=SimpleNamespace(
@@ -147,6 +153,9 @@ def test_openai_agent_tool_uses_sdk_and_scoped_runtime_context(
         assert output == "research complete"
         return SimpleNamespace(
             final_output="manager complete",
+            context_wrapper=RunContextWrapper(kwargs["context"]),
+            last_agent=agent,
+            interruptions=[],
             new_items=[],
             events=[],
             usage=None,

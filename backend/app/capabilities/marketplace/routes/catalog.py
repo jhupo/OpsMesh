@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.get("/talent-market", response_model=PageResponse[TalentListingResponse])
-async def list_talent_market(
+def list_talent_market(
     page: PageParams = Depends(pagination_params),
     query: str | None = Query(default=None),
     role: str | None = Query(default=None),
@@ -39,7 +39,7 @@ async def list_talent_market(
     "/talent-market/{listing_id}/metrics",
     response_model=TalentListingMetricsResponse,
 )
-async def get_talent_listing_metrics(
+def get_talent_listing_metrics(
     listing_id: UUID,
     session: Session = Depends(get_db_session),
 ) -> TalentListingMetricsResponse:
@@ -56,7 +56,7 @@ async def get_talent_listing_metrics(
     "/talent-market/{listing_id}/reviews",
     response_model=PageResponse[TalentListingReviewResponse],
 )
-async def list_talent_listing_reviews(
+def list_talent_listing_reviews(
     listing_id: UUID,
     page: PageParams = Depends(pagination_params),
     session: Session = Depends(get_db_session),

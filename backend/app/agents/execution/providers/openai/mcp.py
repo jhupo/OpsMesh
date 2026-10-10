@@ -94,6 +94,12 @@ class RuntimeMCPServer(MCPServer):
             approval_granted=True,
         )
         await raise_if_cancelled(self.request.cancellation)
+        if (
+            result.status == "failed"
+            and result.output is not None
+            and result.output.get("isError") is True
+        ):
+            return CallToolResult.model_validate(result.output)
         if result.status != "completed":
             raise RuntimeError("MCP Runtime execution failed")
         return CallToolResult.model_validate(result.output)

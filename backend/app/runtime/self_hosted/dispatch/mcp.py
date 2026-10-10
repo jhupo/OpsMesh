@@ -118,6 +118,12 @@ class SelfHostedMcpJobService:
         self._session.refresh(job)
         return job
 
+    def cancellation_requested(self, auth: AuthenticatedWorker, mcp_job_id: UUID) -> bool:
+        job = self._locked_mcp_job(auth, mcp_job_id)
+        if job.worker_id != auth.worker.id or job.status != "claimed":
+            raise ValueError("MCP cancellation status requires this worker's active claim")
+        return job.cancel_requested_at is not None
+
     def _locked_mcp_job(
         self,
         auth: AuthenticatedWorker,

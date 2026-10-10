@@ -13,14 +13,12 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeProfile,
     AgentRuntimeResourceGrant,
     AgentRuntimeToolDefinition,
-    AgentRuntimeToolExecutor,
     AgentRunTracing,
     AgentSessionBinding,
 )
 from backend.app.agents.execution.errors import AgentRuntimePolicyError
 from backend.app.agents.execution.guardrails import runtime_controls_from_snapshot
 from backend.app.agents.execution.state import AgentRunStateStore
-from backend.app.agents.execution.tools.executor import BackendToolExecutor
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.agents.sessions.models import PersistentAgentSessionRef
 from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
@@ -493,7 +491,7 @@ class RunRequestBuilder:
             api_key=inputs.model_provider["api_key"],
             model_api=inputs.model_provider["model_api"],
             model_provider_credential_id=inputs.model_provider["model_provider_credential_id"],
-            tool_executor=self.build_tool_executor() if inputs.allowed_tools else None,
+            tool_executor=None,
             session=memory.persistent_session,
             tracing=context.tracing,
             sandbox=runtime.sandbox,
@@ -523,7 +521,7 @@ class RunRequestBuilder:
         self,
         run: AgentRun,
         job: JobPayload,
-    ) -> tuple[AgentRuntimeContext, AgentRuntimeToolExecutor]:
+    ) -> AgentRuntimeContext:
         """Build frozen authorization for direct workflow tools without a model call."""
         self.validate_job_scope(run, job)
         task = authorized_task_for_run(self.session, run)
@@ -571,15 +569,7 @@ class RunRequestBuilder:
             runtime_binding=runtime_binding.as_runtime_context(),
             metadata=metadata,
         )
-        return context, self.build_tool_executor()
-
-    def build_tool_executor(self) -> AgentRuntimeToolExecutor:
-        return BackendToolExecutor(
-            self.session,
-            settings=self.settings,
-            docker_client=self.docker_client,
-            secret_service=self.mcp_secret_service(),
-        )
+        return context
 
     def _runtime_backends(self) -> RuntimeBackendRegistry:
         if self.runtime_backends is None:

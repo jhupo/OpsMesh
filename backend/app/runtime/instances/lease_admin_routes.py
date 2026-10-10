@@ -17,7 +17,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.get("/worker-leases", response_model=PageResponse[WorkerLeaseResponse])
-async def list_admin_worker_leases(
+def list_admin_worker_leases(
     page: PageParams = Depends(pagination_params),
     status: str | None = Query(default=None),
     workspace_id: UUID | None = Query(default=None),
@@ -34,7 +34,7 @@ async def list_admin_worker_leases(
 
 
 @router.get("/runtime-leases", response_model=PageResponse[AdminRuntimeLeaseResponse])
-async def list_admin_runtime_leases(
+def list_admin_runtime_leases(
     page: PageParams = Depends(pagination_params),
     status: str | None = Query(default=None),
     workspace_id: UUID | None = Query(default=None),

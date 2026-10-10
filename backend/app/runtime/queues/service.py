@@ -472,12 +472,6 @@ class RedisQueue:
             for raw_job in self.redis.lrange(self.keys.queue(self.queue_name), 0, limit - 1)
         ]
 
-    def queued_job_ids(self) -> set[UUID]:
-        return {
-            self._deserialize(raw_job).job_id
-            for raw_job in self.redis.lrange(self.keys.queue(self.queue_name), 0, -1)
-        }
-
     def queued_job_resource_ids(self, *, job_type: JobType | None = None) -> set[UUID]:
         return self._resource_ids_from_jobs(
             self.redis.lrange(self.keys.queue(self.queue_name), 0, -1),
@@ -738,17 +732,3 @@ class RedisQueue:
             "payload": payload,
             "job": self._deserialize(payload),
         }
-
-
-def consume_once(queue: RedisQueue, handler: JobHandler) -> bool:
-    lease = queue.dequeue_with_lease()
-    if lease is None:
-        return False
-    job = lease.job
-    try:
-        handler(job)
-    except Exception:
-        queue.retry_or_dead_letter(job, lease_token=lease.lease_token)
-        raise
-    queue.ack(job, lease_token=lease.lease_token)
-    return True

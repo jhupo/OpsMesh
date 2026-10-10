@@ -17,9 +17,16 @@ from backend.app.agents.execution.tools.mcp import ContextualMcpAdapterResolver
 from backend.app.agents.execution.tools.metadata import product_review_context, tool_metadata
 from backend.app.agents.execution.tools.product import PRODUCT_TOOL_NAMES, ProductToolExecutor
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionRequest
+from backend.app.capabilities.mcp.execution.invocation import McpToolInvoker
+from backend.app.capabilities.mcp.execution.prepared import (
+    PreparedMcpExecution,
+    PreparedMcpTool,
+    ToolPreparation,
+)
 from backend.app.capabilities.mcp.execution.service import McpToolExecutionService
 from backend.app.capabilities.mcp.models import McpToolAllowlist
 from backend.app.capabilities.tools.contracts import ToolPermissionError
+from backend.app.orchestration.approvals.models import PendingToolInvocation
 from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
 from backend.app.orchestration.approvals.policy import ApprovalPolicyEngine
 from backend.app.resources.storage.storage import ObjectStorage
@@ -49,7 +56,7 @@ class BackendToolExecutor:
         self._secret_service = secret_service
         self._storage = storage
 
-    async def execute_tool(
+    def prepare_tool(
         self,
         *,
         context: AgentRuntimeContext,
@@ -57,9 +64,9 @@ class BackendToolExecutor:
         arguments: dict[str, object],
         tool_call_id: str | None = None,
         approval_granted: bool = False,
-    ) -> AgentRuntimeToolResult:
+    ) -> ToolPreparation:
         try:
-            result = await self._execute_tool(
+            result = self._prepare_tool(
                 context=context,
                 tool_name=tool_name,
                 arguments=arguments,
@@ -81,7 +88,7 @@ class BackendToolExecutor:
             self._session.rollback()
             raise
 
-    async def _execute_tool(
+    def _prepare_tool(
         self,
         *,
         context: AgentRuntimeContext,
@@ -89,7 +96,7 @@ class BackendToolExecutor:
         arguments: dict[str, object],
         tool_call_id: str | None = None,
         approval_granted: bool = False,
-    ) -> AgentRuntimeToolResult:
+    ) -> ToolPreparation:
         control = current_execution_control()
         if control is not None:
             control.check_ownership()
@@ -115,12 +122,12 @@ class BackendToolExecutor:
             existing = self._runtime_rpc_result(context, prepared, tool_name, tool_call_id)
             if existing is not None:
                 return existing
-            return await self._execute_prepared(
+            return self._execute_prepared(
                 context=context,
                 tool_name=tool_name,
                 prepared=prepared,
                 tool_call_id=tool_call_id,
-                approval_granted=approval_granted,
+                approval_granted=False,
             )
         if tool_call_id is None:
             raise ValueError("Approved tool execution requires a provider tool call ID")
@@ -134,12 +141,12 @@ class BackendToolExecutor:
             existing = self._runtime_rpc_result(context, prepared, tool_name, tool_call_id)
             if existing is not None:
                 return existing
-            return await self._execute_prepared(
+            return self._execute_prepared(
                 context=context,
                 tool_name=tool_name,
                 prepared=prepared,
                 tool_call_id=tool_call_id,
-                approval_granted=True,
+                approval_granted=False,
             )
         try:
             invocation, stored = pending.claim_execution(
@@ -164,7 +171,7 @@ class BackendToolExecutor:
                 pending.complete_execution(invocation, tool_result_payload(rpc_result))
             return rpc_result
         try:
-            result = await self._execute_prepared(
+            result = self._execute_prepared(
                 context=context,
                 tool_name=tool_name,
                 prepared=prepared,
@@ -182,6 +189,8 @@ class BackendToolExecutor:
         control = current_execution_control()
         if control is not None:
             control.check_ownership()
+        if isinstance(result, PreparedMcpTool):
+            return replace(result, pending_invocation_id=invocation.id)
         if result.status != "waiting_self_hosted":
             pending.complete_execution(invocation, tool_result_payload(result))
         return result
@@ -225,7 +234,7 @@ class BackendToolExecutor:
             error=rpc.error_payload,
         )
 
-    async def review_tool_call(
+    def review_tool_call(
         self,
         *,
         context: AgentRuntimeContext,
@@ -275,7 +284,7 @@ class BackendToolExecutor:
             )
         return decision.approval_payload()
 
-    async def _execute_prepared(
+    def _execute_prepared(
         self,
         *,
         context: AgentRuntimeContext,
@@ -283,7 +292,7 @@ class BackendToolExecutor:
         prepared: PreparedToolCall,
         tool_call_id: str | None,
         approval_granted: bool,
-    ) -> AgentRuntimeToolResult:
+    ) -> ToolPreparation:
         if prepared.definition.source == "product" and tool_name in PRODUCT_TOOL_NAMES:
             result = ProductToolExecutor(
                 self._session,
@@ -321,11 +330,11 @@ class BackendToolExecutor:
             docker_client=self._docker_client,
             secret_service=self._secret_service,
         )
-        mcp_result = await McpToolExecutionService(
+        mcp_result = McpToolExecutionService(
             self._session,
             resolver,
             settings=self._settings,
-        ).execute(
+        ).prepare(
             McpExecutionRequest(
                 workspace_id=context.workspace_id,
                 agent_run_id=context.run_id,
@@ -336,6 +345,10 @@ class BackendToolExecutor:
                 approval_granted=approval_granted,
             )
         )
+        if isinstance(mcp_result, PreparedMcpExecution):
+            return PreparedMcpTool(
+                mcp_result, tool_metadata(context=context, tool_name=tool_name, tool_kind="mcp")
+            )
         tool_result = AgentRuntimeToolResult(
             status=mcp_result.status,
             output=mcp_result.response,
@@ -351,6 +364,38 @@ class BackendToolExecutor:
             ),
         )
         return tool_result
+
+    def complete_tool(
+        self,
+        prepared: PreparedMcpTool,
+        response: dict[str, object] | None,
+        error: BaseException | None,
+    ) -> AgentRuntimeToolResult:
+        mcp = McpToolInvoker(self._session, None).complete(prepared.execution, response, error)
+        result = AgentRuntimeToolResult(
+            status=mcp.status,
+            output=mcp.response,
+            error=mcp.error,
+            metadata={
+                **prepared.metadata,
+                "mcp_tool_call_log_id": str(mcp.log_id),
+                "latency_ms": mcp.latency_ms,
+            },
+        )
+        if prepared.pending_invocation_id is not None:
+            invocation = self._session.get(PendingToolInvocation, prepared.pending_invocation_id)
+            if (
+                invocation is None
+                or invocation.workspace_id != prepared.execution.request.workspace_id
+                or invocation.agent_run_id != prepared.execution.request.agent_run_id
+            ):
+                raise ValueError("Pending tool completion is outside its workspace")
+            if self._secret_service is None:
+                raise ValueError("Tool completion requires its secret service")
+            PendingToolInvocationService(self._session, self._secret_service).complete_execution(
+                invocation, tool_result_payload(result)
+            )
+        return result
 
     def _mcp_allowlist(self, prepared: PreparedToolCall, *, workspace_id: UUID) -> McpToolAllowlist:
         allowlist_id = prepared.definition.mcp_tool_allowlist_id
@@ -374,6 +419,10 @@ class BackendToolExecutor:
 
 
 class DisabledToolExecutor:
+    async def cancel_active_tools(self, *, context: AgentRuntimeContext) -> None:
+        # This executor cannot start an operation; cancellation has nothing to stop.
+        return None
+
     async def review_tool_call(
         self,
         *,

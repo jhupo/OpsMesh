@@ -2,7 +2,6 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from types import TracebackType
 from uuid import UUID
 
 from sqlalchemy import select
@@ -135,7 +134,7 @@ class RunLifecycleService:
             )
             return
         try:
-            self._step_completion().validate_step_output(run, final_output)
+            self._step_completion().validate_step_output(run, result)
         except ValueError as exc:
             self.mark_run_failed(run, exc)
             return
@@ -163,7 +162,7 @@ class RunLifecycleService:
         self._task_progress().apply_from_agent_output(
             task,
             run=run,
-            final_output=final_output,
+            structured_output=result.structured_output,
         )
         if run.task_step_id is not None:
             self.mark_step_completed(run, final_output)
@@ -180,7 +179,7 @@ class RunLifecycleService:
                 return
 
         pm_acceptance_service = PmAcceptanceService(self.session)
-        pm_acceptance = pm_acceptance_service.acceptance_for_completed_run(run, final_output)
+        pm_acceptance = pm_acceptance_service.acceptance_for_completed_run(run)
         task_output = PmFinalOutputService(self.session).final_output_for_task(
             task,
             fallback=run.output,
@@ -457,16 +456,3 @@ class RunLifecycleService:
                 parent_run,
                 ValueError(str(error.get("message", "Subworkflow child task failed"))),
             )
-
-
-class NoopLifecycleContext:
-    def __enter__(self) -> bool:
-        return True
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        return None

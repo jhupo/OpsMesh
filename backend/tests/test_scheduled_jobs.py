@@ -39,6 +39,7 @@ from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.shared.security.secrets import SecretEncryptionService
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
+from backend.tests.fixtures.database import flow_database_url
 
 TOKEN = "test-token"
 
@@ -214,9 +215,7 @@ def test_worker_maintenance_scans_due_scheduled_jobs() -> None:
                 created_by_user_id=owner.id,
                 name="Worker maintenance due",
                 schedule_type="one_shot",
-                schedule_config={
-                    "run_at": (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
-                },
+                schedule_config={"run_at": (datetime.now(UTC) - timedelta(minutes=5)).isoformat()},
                 status="active",
                 action_type="record_due_action",
                 routing={},
@@ -237,9 +236,7 @@ def test_worker_maintenance_scans_due_scheduled_jobs() -> None:
 
     assert summary.scheduled_job_actions_recorded == 1
     assert summary.scheduled_job_actions_enqueued == 0
-    assert summary.scheduled_job_actions_recorded_by_job_type == {
-        "record_due_action": 1
-    }
+    assert summary.scheduled_job_actions_recorded_by_job_type == {"record_due_action": 1}
     assert summary.scheduled_job_actions_enqueued_by_job_type == {}
     with session_factory() as session:
         event = session.scalar(
@@ -343,9 +340,7 @@ def test_scheduled_model_provider_health_check_is_scoped_and_redacted() -> None:
     queued = queue.dequeue()
 
     assert summary.enqueued == 1
-    assert summary.enqueued_by_job_type == {
-        JobType.MODEL_PROVIDER_HEALTH_CHECK.value: 1
-    }
+    assert summary.enqueued_by_job_type == {JobType.MODEL_PROVIDER_HEALTH_CHECK.value: 1}
     assert queued is not None
     assert queued.job_type == JobType.MODEL_PROVIDER_HEALTH_CHECK
     assert queued.resource_id == credential.id
@@ -448,7 +443,7 @@ def test_worker_runs_model_provider_health_check_job(monkeypatch) -> None:
 def _client() -> tuple[TestClient, Session, RedisQueue]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
+        flow_database_url(),
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
@@ -468,7 +463,7 @@ def _client() -> tuple[TestClient, Session, RedisQueue]:
             environment="test",
             log_format="text",
             internal_api_token=TOKEN,
-            database_url="sqlite+pysqlite:///:memory:",
+            database_url=flow_database_url(),
         )
     )
 
@@ -488,7 +483,9 @@ def _client() -> tuple[TestClient, Session, RedisQueue]:
 
 def _session_factory() -> sessionmaker[Session]:
     _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = create_engine(
+        flow_database_url(), future=True, connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)
 

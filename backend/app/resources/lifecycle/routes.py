@@ -23,7 +23,7 @@ router = APIRouter()
 
 
 @router.get("/lifecycle-diagnostics", response_model=WorkspaceDataLifecycleResponse)
-async def get_workspace_data_lifecycle_diagnostics(
+def get_workspace_data_lifecycle_diagnostics(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceDataLifecycleResponse:
@@ -36,7 +36,7 @@ async def get_workspace_data_lifecycle_diagnostics(
 
 
 @router.get("/recovery-readiness", response_model=WorkspaceRecoveryReadinessResponse)
-async def get_workspace_recovery_readiness(
+def get_workspace_recovery_readiness(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceRecoveryReadinessResponse:
@@ -52,7 +52,7 @@ async def get_workspace_recovery_readiness(
     "/recovery-readiness/actions/apply",
     response_model=WorkspaceRecoveryReadinessActionResponse,
 )
-async def apply_workspace_recovery_readiness_actions(
+def apply_workspace_recovery_readiness_actions(
     request: WorkspaceRecoveryReadinessActionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -78,7 +78,7 @@ async def apply_workspace_recovery_readiness_actions(
 
 
 @router.post("/retention/preview", response_model=WorkspaceRetentionResponse)
-async def preview_workspace_retention(
+def preview_workspace_retention(
     request: WorkspaceRetentionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -98,7 +98,7 @@ async def preview_workspace_retention(
 
 
 @router.post("/retention/apply", response_model=WorkspaceRetentionResponse)
-async def apply_workspace_retention(
+def apply_workspace_retention(
     request: WorkspaceRetentionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),

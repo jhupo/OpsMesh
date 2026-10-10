@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 from uuid import UUID
 
 if TYPE_CHECKING:
+    from backend.app.runtime.agent_host.channel import DockerAgentChannel
     from backend.app.runtime.instances.manager import RuntimeManager
     from backend.app.runtime.instances.models import WorkspaceRuntime
 
@@ -110,13 +111,9 @@ class RuntimeLifecycleControl(Protocol):
         runtime_space_id: UUID | None = None,
     ) -> "WorkspaceRuntime | None": ...
 
-    def start_runtime(
-        self, workspace_id: UUID, runtime_id: UUID
-    ) -> "WorkspaceRuntime | None": ...
+    def start_runtime(self, workspace_id: UUID, runtime_id: UUID) -> "WorkspaceRuntime | None": ...
 
-    def stop_runtime(
-        self, workspace_id: UUID, runtime_id: UUID
-    ) -> "WorkspaceRuntime | None": ...
+    def stop_runtime(self, workspace_id: UUID, runtime_id: UUID) -> "WorkspaceRuntime | None": ...
 
 
 class RuntimeManagerProvider(Protocol):
@@ -124,6 +121,16 @@ class RuntimeManagerProvider(Protocol):
 
 
 class DockerRuntimeClient(Protocol):
+    def open_agent_channel(
+        self, container_id: str, *, working_dir: str
+    ) -> "DockerAgentChannel": ...
+
+    def open_mcp_channel(self, container_id: str, *, working_dir: str) -> "DockerAgentChannel":
+        """Open a private execution channel to the isolated MCP host."""
+        ...
+
+    def terminate_agent_process(self, container_id: str, pid: int) -> None: ...
+
     def create_container(self, request: RuntimeCreateRequest) -> str: ...
 
     def start_container(self, container_id: str) -> None: ...

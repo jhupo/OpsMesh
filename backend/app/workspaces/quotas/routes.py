@@ -19,7 +19,7 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
 @router.get("/{workspace_id}/quotas", response_model=PageResponse[WorkspaceQuotaResponse])
-async def list_workspace_quotas(
+def list_workspace_quotas(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -37,7 +37,7 @@ async def list_workspace_quotas(
     "/{workspace_id}/quotas/execution-summary",
     response_model=WorkspaceExecutionSlotSummaryResponse,
 )
-async def get_workspace_execution_slot_summary(
+def get_workspace_execution_slot_summary(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceExecutionSlotSummaryResponse:
@@ -46,7 +46,7 @@ async def get_workspace_execution_slot_summary(
 
 
 @router.put("/{workspace_id}/quotas", response_model=list[WorkspaceQuotaResponse])
-async def upsert_workspace_quotas(
+def upsert_workspace_quotas(
     request: WorkspaceQuotaUpsertRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -60,7 +60,7 @@ async def upsert_workspace_quotas(
 
 
 @router.delete("/{workspace_id}/quotas/{quota_key}", response_model=WorkspaceQuotaResponse)
-async def disable_workspace_quota(
+def disable_workspace_quota(
     quota_key: str,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),

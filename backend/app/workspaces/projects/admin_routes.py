@@ -21,14 +21,11 @@ from backend.app.workspaces.quotas.service import WorkspaceQuotaService
 router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
-
-
-
 @router.get(
     "/workspaces/{workspace_id}/projects",
     response_model=PageResponse[AdminProjectResponse],
 )
-async def list_admin_workspace_projects(
+def list_admin_workspace_projects(
     workspace_id: UUID,
     page: PageParams = Depends(pagination_params),
     project_status: str | None = Query(default=None, alias="status"),
@@ -45,7 +42,7 @@ async def list_admin_workspace_projects(
     "/workspaces/{workspace_id}/projects/{project_id}",
     response_model=AdminProjectResponse,
 )
-async def get_admin_project(
+def get_admin_project(
     workspace_id: UUID,
     project_id: UUID,
     session: Session = Depends(get_db_session),
@@ -60,7 +57,7 @@ async def get_admin_project(
     "/workspaces/{workspace_id}/projects/{project_id}/status",
     response_model=AdminProjectResponse,
 )
-async def update_admin_project_status(
+def update_admin_project_status(
     workspace_id: UUID,
     project_id: UUID,
     request: AdminProjectStatusUpdateRequest,
@@ -81,7 +78,7 @@ async def update_admin_project_status(
     "/workspaces/{workspace_id}/projects/{project_id}/quotas",
     response_model=list[AdminProjectQuotaResponse],
 )
-async def list_admin_project_quotas(
+def list_admin_project_quotas(
     workspace_id: UUID,
     project_id: UUID,
     session: Session = Depends(get_db_session),
@@ -97,7 +94,7 @@ async def list_admin_project_quotas(
     "/workspaces/{workspace_id}/projects/{project_id}/quotas",
     response_model=list[AdminProjectQuotaResponse],
 )
-async def upsert_admin_project_quotas(
+def upsert_admin_project_quotas(
     workspace_id: UUID,
     project_id: UUID,
     request: AdminProjectQuotaUpsertRequest,
@@ -117,7 +114,7 @@ async def upsert_admin_project_quotas(
     "/workspaces/{workspace_id}/projects/{project_id}/quotas/{quota_key}",
     response_model=AdminProjectQuotaResponse,
 )
-async def disable_admin_project_quota(
+def disable_admin_project_quota(
     workspace_id: UUID,
     project_id: UUID,
     quota_key: str,

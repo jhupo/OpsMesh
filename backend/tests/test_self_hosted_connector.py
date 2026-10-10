@@ -343,6 +343,9 @@ class _RecordingApi:
         self._job = None
         return job
 
+    def cancellation_requested(self, job_id: UUID) -> bool:
+        return False
+
     def claim_mcp_job(self, job_id: UUID) -> None:
         self.claimed.append(job_id)
 

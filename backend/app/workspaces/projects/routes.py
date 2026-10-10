@@ -40,7 +40,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/projects", tags=["projects
 
 
 @router.get("", response_model=PageResponse[WorkspaceProjectResponse])
-async def list_projects(
+def list_projects(
     page: PageParams = Depends(pagination_params),
     include_archived: bool = Query(default=False),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -56,7 +56,7 @@ async def list_projects(
 
 
 @router.post("", response_model=WorkspaceProjectResponse, status_code=status.HTTP_201_CREATED)
-async def create_project(
+def create_project(
     request: WorkspaceProjectCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -75,7 +75,7 @@ async def create_project(
 
 
 @router.get("/{project_id}", response_model=WorkspaceProjectDetailResponse)
-async def get_project(
+def get_project(
     project_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -98,7 +98,7 @@ async def get_project(
 
 
 @router.patch("/{project_id}", response_model=WorkspaceProjectResponse)
-async def update_project(
+def update_project(
     project_id: UUID,
     request: WorkspaceProjectUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -119,7 +119,7 @@ async def update_project(
 
 
 @router.post("/{project_id}/archive", response_model=WorkspaceProjectResponse)
-async def archive_project(
+def archive_project(
     project_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -139,7 +139,7 @@ async def archive_project(
     response_model=WorkspaceProjectFileResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def add_project_input_file(
+def add_project_input_file(
     project_id: UUID,
     request: WorkspaceProjectFileCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -169,7 +169,7 @@ async def add_project_input_file(
 @router.delete(
     "/{project_id}/input-files/{project_file_id}", status_code=status.HTTP_204_NO_CONTENT
 )
-async def remove_project_input_file(
+def remove_project_input_file(
     project_id: UUID,
     project_file_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -193,7 +193,7 @@ async def remove_project_input_file(
     response_model=WorkspaceProjectFileResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def replace_project_input_file(
+def replace_project_input_file(
     project_id: UUID,
     project_file_id: UUID,
     request: WorkspaceProjectFileReplacementRequest,
@@ -226,7 +226,7 @@ async def replace_project_input_file(
     "/{project_id}/configuration/versions",
     response_model=list[WorkspaceProjectConfigurationVersionResponse],
 )
-async def list_project_configuration_versions(
+def list_project_configuration_versions(
     project_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -244,7 +244,7 @@ async def list_project_configuration_versions(
     "/{project_id}/configuration/diff",
     response_model=list[WorkspaceProjectDiffEntryResponse],
 )
-async def diff_project_configuration_versions(
+def diff_project_configuration_versions(
     project_id: UUID,
     from_version: int = Query(ge=1),
     to_version: int = Query(ge=1),
@@ -269,7 +269,7 @@ async def diff_project_configuration_versions(
     "/{project_id}/input-files/history",
     response_model=list[WorkspaceProjectFileVersionResponse],
 )
-async def list_project_input_file_versions(
+def list_project_input_file_versions(
     project_id: UUID,
     project_path: str = Query(min_length=1, max_length=512),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -292,7 +292,7 @@ async def list_project_input_file_versions(
     "/{project_id}/input-files/diff",
     response_model=list[WorkspaceProjectDiffEntryResponse],
 )
-async def diff_project_input_file_versions(
+def diff_project_input_file_versions(
     project_id: UUID,
     project_path: str = Query(min_length=1, max_length=512),
     from_version: int = Query(ge=1),
@@ -326,7 +326,7 @@ async def diff_project_input_file_versions(
     response_model=WorkspaceProjectOutputResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def add_project_output(
+def add_project_output(
     project_id: UUID,
     request: WorkspaceProjectOutputCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -349,7 +349,7 @@ async def add_project_output(
 
 
 @router.delete("/{project_id}/outputs/{project_output_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove_project_output(
+def remove_project_output(
     project_id: UUID,
     project_output_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),

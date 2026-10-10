@@ -87,20 +87,13 @@ def snapshot_file_scope_ids(snapshot: dict[str, object]) -> set[UUID]:
 
 
 def runtime_policy_disables_network(policy: dict[str, object]) -> bool:
-    network = policy.get("network")
-    if isinstance(network, str) and network.lower() in {"none", "disabled", "off"}:
-        return True
     if policy_disables_network(policy):
         return True
     mcp_policy = policy.get("mcp")
     if not isinstance(mcp_policy, dict):
         return False
-    network_mode = mcp_policy.get("network_mode")
-    return isinstance(network_mode, str) and network_mode.lower() in {
-        "none",
-        "disabled",
-        "off",
-    }
+    network = mcp_policy.get("network_policy")
+    return policy_disables_network({"network": network})
 
 
 def _catalog_resources(catalog: dict[str, object] | None) -> tuple[dict[str, object], ...]:

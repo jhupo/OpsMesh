@@ -1,20 +1,15 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Any, cast
-
 import httpx
-from agents.mcp import MCPServerSse, MCPServerStreamableHttp
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
-from mcp.types import CallToolResult, PaginatedRequestParams
+from mcp.types import PaginatedRequestParams
 
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionError
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpServer
-from backend.app.capabilities.mcp.transport.payloads import string_dict_setting, string_setting
+from backend.app.capabilities.mcp.transport.payloads import string_dict_setting
 from backend.app.shared.security.egress import (
-    MCP_EGRESS_URL_POLICY,
     EgressUrlPolicy,
     EgressUrlValidationError,
     validate_egress_url,
@@ -22,88 +17,32 @@ from backend.app.shared.security.egress import (
 from backend.app.shared.security.secrets import SecretEncryptionService
 
 
-class BaseRemoteMcpToolAdapter(ABC):
-    @property
-    @abstractmethod
-    def transport(self) -> str: ...
-
-    def __init__(
-        self,
-        *,
-        secret_service: SecretEncryptionService | None = None,
-        egress_policy: EgressUrlPolicy = MCP_EGRESS_URL_POLICY,
-    ) -> None:
-        self._secret_service = secret_service
-        self._egress_policy = egress_policy
-
-    async def call(
-        self,
-        *,
-        server: McpServer,
-        tool_name: str,
-        arguments: dict[str, object],
-        credential_refs: list[McpCredentialReference],
-        timeout_seconds: int,
-    ) -> dict[str, object]:
-        url = string_setting(server.connection, "url") or string_setting(
-            server.connection,
-            "endpoint",
-        )
-        if not url:
-            raise McpExecutionError("HTTP MCP server is missing url", code="mcp_server_url_missing")
-        validate_mcp_url(url, egress_policy=self._egress_policy, transport=self.transport)
-        resolved_credentials = self._credential_headers(credential_refs)
-        validate_mcp_auth_headers(server, resolved_credentials)
-        headers = {
-            **string_dict_setting(server.connection, "headers"),
-            **resolved_credentials,
-        }
-        return await call_remote_mcp_async(
-            url=url,
-            headers=headers,
-            tool_name=tool_name,
-            arguments=arguments,
-            timeout_seconds=timeout_seconds,
-            transport=self.transport,
-        )
-
-    def _credential_headers(self, credential_refs: list[McpCredentialReference]) -> dict[str, str]:
-        headers: dict[str, str] = {}
-        for credential in credential_refs:
-            if credential.provider == "hosted":
-                headers.update(self._hosted_credential_headers(credential))
-        return headers
-
-    def _hosted_credential_headers(self, credential: McpCredentialReference) -> dict[str, str]:
-        if credential.encrypted_secret_payload is None:
-            return {}
-        if self._secret_service is None:
-            raise McpExecutionError(
-                "Hosted MCP credential decryption is not configured",
-                code="mcp_hosted_credential_unavailable",
-            )
-        payload = self._secret_service.decrypt_payload(credential.encrypted_secret_payload)
-        headers = string_dict_setting(payload, "headers")
-        bearer_token = payload.get("bearer_token")
-        if isinstance(bearer_token, str) and bearer_token:
-            headers["authorization"] = f"Bearer {bearer_token}"
-        api_key = payload.get("api_key")
-        if isinstance(api_key, str) and api_key:
-            header_name = payload.get("api_key_header")
-            headers[str(header_name) if isinstance(header_name, str) else "x-api-key"] = api_key
-        return headers
-
-
 def credential_headers(
     credential_refs: list[McpCredentialReference],
     *,
     secret_service: SecretEncryptionService | None = None,
 ) -> dict[str, str]:
-    """Resolve discovery-time headers using the same credential rules as execution."""
-
-    return StreamableHttpMcpToolAdapter(secret_service=secret_service)._credential_headers(
-        credential_refs
-    )
+    headers: dict[str, str] = {}
+    for credential in credential_refs:
+        if credential.provider != "hosted" or credential.encrypted_secret_payload is None:
+            continue
+        if secret_service is None:
+            raise McpExecutionError(
+                "Hosted MCP credential decryption is not configured",
+                code="mcp_hosted_credential_unavailable",
+            )
+        payload = secret_service.decrypt_payload(credential.encrypted_secret_payload)
+        headers.update(string_dict_setting(payload, "headers"))
+        token = payload.get("bearer_token")
+        if isinstance(token, str) and token:
+            headers["authorization"] = f"Bearer {token}"
+        key = payload.get("api_key")
+        if isinstance(key, str) and key:
+            name = payload.get("api_key_header", "x-api-key")
+            if not isinstance(name, str) or not name:
+                raise McpExecutionError("Invalid API key header", code="mcp_credential_invalid")
+            headers[name] = key
+    return headers
 
 
 def validate_mcp_auth_headers(server: McpServer, headers: dict[str, str]) -> None:
@@ -119,66 +58,6 @@ def validate_mcp_auth_headers(server: McpServer, headers: dict[str, str]) -> Non
         raise McpExecutionError("MCP bearer credential is missing", code="mcp_bearer_missing")
 
 
-class StreamableHttpMcpToolAdapter(BaseRemoteMcpToolAdapter):
-    @property
-    def transport(self) -> str:
-        return "http"
-
-
-class SseMcpToolAdapter(BaseRemoteMcpToolAdapter):
-    @property
-    def transport(self) -> str:
-        return "sse"
-
-
-class HostedMcpToolAdapter:
-    def __init__(
-        self,
-        *,
-        secret_service: SecretEncryptionService | None = None,
-        egress_policy: EgressUrlPolicy = MCP_EGRESS_URL_POLICY,
-    ) -> None:
-        self._http_adapter = StreamableHttpMcpToolAdapter(
-            secret_service=secret_service,
-            egress_policy=egress_policy,
-        )
-        self._sse_adapter = SseMcpToolAdapter(
-            secret_service=secret_service,
-            egress_policy=egress_policy,
-        )
-
-    async def call(
-        self,
-        *,
-        server: McpServer,
-        tool_name: str,
-        arguments: dict[str, object],
-        credential_refs: list[McpCredentialReference],
-        timeout_seconds: int,
-    ) -> dict[str, object]:
-        transport = (string_setting(server.connection, "transport") or "").lower().strip()
-        if transport == "streamable_http":
-            return await self._http_adapter.call(
-                server=server,
-                tool_name=tool_name,
-                arguments=arguments,
-                credential_refs=credential_refs,
-                timeout_seconds=timeout_seconds,
-            )
-        if transport == "sse":
-            return await self._sse_adapter.call(
-                server=server,
-                tool_name=tool_name,
-                arguments=arguments,
-                credential_refs=credential_refs,
-                timeout_seconds=timeout_seconds,
-            )
-        raise McpExecutionError(
-            "Hosted MCP server must declare a supported remote transport",
-            code="mcp_hosted_transport_unsupported",
-        )
-
-
 def validate_mcp_url(url: str, *, egress_policy: EgressUrlPolicy, transport: str) -> None:
     try:
         validate_egress_url(url, policy=egress_policy)
@@ -187,36 +66,6 @@ def validate_mcp_url(url: str, *, egress_policy: EgressUrlPolicy, transport: str
             f"{transport.upper()} MCP server url is invalid",
             code="mcp_server_url_invalid",
         ) from exc
-
-
-async def call_remote_mcp_async(
-    *,
-    url: str,
-    headers: dict[str, str],
-    tool_name: str,
-    arguments: dict[str, object],
-    timeout_seconds: int,
-    transport: str,
-) -> dict[str, object]:
-    params = {
-        "url": url,
-        "headers": headers,
-        "timeout": float(timeout_seconds),
-        "sse_read_timeout": float(timeout_seconds),
-    }
-    try:
-        server = (MCPServerStreamableHttp if transport == "http" else MCPServerSse)(
-            params=cast(Any, params),
-            name="opsmesh-remote-mcp",
-            client_session_timeout_seconds=timeout_seconds,
-            max_retry_attempts=0,
-        )
-        async with server:
-            return _result_payload(await server.call_tool(tool_name, arguments))
-    except McpExecutionError:
-        raise
-    except Exception as exc:
-        raise _normalize_remote_exception(exc, transport=transport) from exc
 
 
 async def list_remote_mcp_tools_async(
@@ -276,12 +125,6 @@ async def _list_tools(read_stream: object, write_stream: object) -> list[dict[st
                 )
             seen_cursors.add(cursor)
     raise McpExecutionError("MCP tool pagination exceeds limit", code="mcp_pagination_limit")
-
-
-def _result_payload(result: CallToolResult) -> dict[str, object]:
-    if result.isError:
-        raise McpExecutionError("Remote MCP tool failed", code="mcp_remote_error")
-    return result.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
 def _normalize_remote_exception(exc: Exception, *, transport: str) -> McpExecutionError:

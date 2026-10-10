@@ -41,7 +41,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operat
 
 
 @router.get("/queue-metrics", response_model=QueueMetricsResponse)
-async def queue_metrics(
+def queue_metrics(
     queue_name: str = Query(default="agent_runs"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
@@ -55,7 +55,7 @@ async def queue_metrics(
 
 
 @router.get("/queue-insights", response_model=OperationsQueueInsightsResponse)
-async def queue_insights(
+def queue_insights(
     queue_name: str = Query(default="agent_runs"),
     scan_limit: int = Query(default=500, ge=1, le=5_000),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
@@ -74,7 +74,7 @@ async def queue_insights(
 
 
 @router.get("/queue-governance", response_model=QueueGovernanceDiagnosticsResponse)
-async def queue_governance(
+def queue_governance(
     queue_name: str = Query(default="agent_runs"),
     scan_limit: int = Query(default=500, ge=1, le=5_000),
     stale_after_seconds: int = Query(default=900, ge=60, le=86_400),
@@ -99,7 +99,7 @@ async def queue_governance(
     "/queue-governance/reconcile",
     response_model=QueueGovernanceReconcileResponse,
 )
-async def reconcile_queue_governance(
+def reconcile_queue_governance(
     request: QueueGovernanceReconcileRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -123,7 +123,7 @@ async def reconcile_queue_governance(
 
 
 @router.get("/dead-letter-jobs", response_model=DeadLetterJobsResponse)
-async def list_dead_letter_jobs(
+def list_dead_letter_jobs(
     queue_name: str = Query(default="agent_runs"),
     limit: int = Query(default=50, ge=1, le=200),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
@@ -138,7 +138,7 @@ async def list_dead_letter_jobs(
 
 
 @router.post("/dead-letter-jobs/{job_id}/requeue", response_model=RequeueDeadLetterResponse)
-async def requeue_dead_letter_job(
+def requeue_dead_letter_job(
     job_id: UUID,
     queue_name: str = Query(default="agent_runs"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),

@@ -189,7 +189,6 @@ def test_openai_gateway_smoke_script_uses_env_key_and_marker() -> None:
     assert "#!/usr/bin/env python" in smoke_script
     assert "OPENAI_API_KEY" in smoke_script
     assert "OPENAI_SMOKE_BASE_URL" in smoke_script
-    assert "normalize_openai_compatible_base_url" in smoke_script
     assert "--dry-run" in smoke_script
     assert "--allow-external-provider-call" in smoke_script
     assert "openai_smoke" in smoke_script

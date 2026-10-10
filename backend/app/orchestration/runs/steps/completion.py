@@ -1,14 +1,15 @@
-import json
 from collections.abc import Callable
-from contextlib import suppress
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.contracts import AgentRunResult
 from backend.app.capabilities.references.schema import validate_json_value
+from backend.app.orchestration.definitions.graph import is_pm_summary_step
 from backend.app.orchestration.planning.pm_acceptance import PmAcceptanceService
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
+from backend.app.orchestration.runs.result_payloads import run_output_payload
 from backend.app.orchestration.tasks.message_append import TaskMessageAppendService
 from backend.app.orchestration.tasks.models import TaskMessage, TaskStep
 from backend.app.orchestration.tasks.steps import (
@@ -38,6 +39,7 @@ class TaskStepCompletionService:
             result_payload=result_payload,
             result_summary=PmAcceptanceService(self._session).step_result_summary(
                 step,
+                run,
                 final_output,
             ),
         )
@@ -58,24 +60,22 @@ class TaskStepCompletionService:
         if step.work_package_id == "manager-planning":
             self.append_manager_planning_completed_message(step, run)
 
-    def validate_step_output(self, run: AgentRun, final_output: str) -> None:
+    def validate_step_output(self, run: AgentRun, result: AgentRunResult) -> None:
         if run.task_step_id is None:
             return
         step = self._session.get(TaskStep, run.task_step_id)
         if step is None or step.workspace_id != run.workspace_id:
             return
+        structured = result.structured_output
+        if is_pm_summary_step(step):
+            PmAcceptanceService.validated_acceptance(run_output_payload(result))
         dependencies = step.dependencies if isinstance(step.dependencies, dict) else {}
         schema = dependencies.get("output_schema")
         if not isinstance(schema, dict):
             return
-        payload = result_payload_for_step(run, final_output)
-        value = payload.get("structured_output", payload.get("final_output"))
-        if isinstance(value, dict) and "value" in value:
-            value = value["value"]
-        elif isinstance(value, str):
-            with suppress(json.JSONDecodeError):
-                value = json.loads(value)
-        validate_json_value(value, schema, label="workflow step output")
+        if structured is None:
+            raise ValueError("Workflow step requires structured output")
+        validate_json_value(structured.value, schema, label="workflow step output")
 
     def append_manager_planning_completed_message(
         self,

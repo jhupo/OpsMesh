@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from typing import TextIO
 
-from backend.app.agents.providers.policy import normalize_openai_compatible_base_url
+from backend.app.shared.security.egress import validate_url_shape
 
 
 @dataclass(frozen=True)
@@ -62,9 +62,9 @@ def config_from_env(argv: list[str]) -> OpenAIGatewaySmokeConfig:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise SystemExit("OPENAI_API_KEY is required")
-    base_url = normalize_openai_compatible_base_url(
-        os.environ.get("OPENAI_SMOKE_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
-    )
+    base_url = os.environ.get("OPENAI_SMOKE_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
+    if base_url is not None:
+        validate_url_shape(base_url, allowed_schemes=frozenset({"https", "http"}))
     model = os.environ.get("OPENAI_SMOKE_MODEL", "gpt-4.1-nano")
     model_api = os.environ.get("OPENAI_SMOKE_MODEL_API")
     return OpenAIGatewaySmokeConfig(

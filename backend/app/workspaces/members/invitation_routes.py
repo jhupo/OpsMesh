@@ -37,7 +37,7 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
 @router.post("/invites/accept", response_model=WorkspaceInviteAcceptResponse)
-async def accept_workspace_invite(
+def accept_workspace_invite(
     request: WorkspaceInviteAcceptRequest,
     http_request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
@@ -78,7 +78,7 @@ async def accept_workspace_invite(
 
 
 @router.get("/{workspace_id}/invites", response_model=PageResponse[WorkspaceInviteResponse])
-async def list_workspace_invites(
+def list_workspace_invites(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_MEMBERS)),
     session: Session = Depends(get_db_session),
@@ -92,7 +92,7 @@ async def list_workspace_invites(
     response_model=WorkspaceInviteCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_workspace_invite(
+def create_workspace_invite(
     request: WorkspaceInviteCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_MEMBERS)),
     session: Session = Depends(get_db_session),
@@ -117,7 +117,7 @@ async def create_workspace_invite(
 
 
 @router.delete("/{workspace_id}/invites/{invite_id}", response_model=WorkspaceInviteResponse)
-async def revoke_workspace_invite(
+def revoke_workspace_invite(
     invite_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_MEMBERS)),
     session: Session = Depends(get_db_session),

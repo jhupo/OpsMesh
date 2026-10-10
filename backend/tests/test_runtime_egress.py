@@ -41,14 +41,12 @@ def test_restricted_egress_requires_gateway_and_normalizes_allowlist() -> None:
 
     assert policy.as_dict() == {
         "mode": "restricted",
-        "disabled": False,
         "allowed_domains": ["api.example.com"],
         "allowed_cidrs": ["203.0.113.0/24"],
         "allowed_ports": [443],
         "allowed_protocols": ["tcp"],
         "gateway_network": "opsmesh-egress",
         "proxy_url": "http://egress-gateway:3128",
-        "enforcement": "docker_network_gateway",
     }
     request = _request(policy.as_dict())
     assert _docker_network_mode(request) == "opsmesh-egress"
@@ -68,7 +66,7 @@ def test_restricted_egress_fails_closed_without_gateway() -> None:
 
 def test_forced_network_disable_overrides_requested_egress() -> None:
     policy = resolve_egress_policy(
-        {"mode": "internet", "allow_network": True},
+        {"mode": "internet"},
         forced_disabled=True,
     )
     assert policy.mode == "none"

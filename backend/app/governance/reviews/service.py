@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from backend.app.governance.reviews.configured import ConfiguredApprovalService
 from backend.app.governance.reviews.models import ResourceReview
 from backend.app.shared.config import Settings
-from backend.app.shared.security.redaction import redact_sensitive_payload
 
 
 class ResourcePolicyReviewBuilder:
@@ -164,28 +163,6 @@ class ResourcePolicyReviewBuilder:
             resource={"visibility": visibility, "name": name, "manifest": manifest},
         )
 
-    def review_tool_execution(
-        self,
-        *,
-        workspace_id: UUID | None,
-        tool_kind: str,
-        tool_name: str,
-        arguments: dict[str, object],
-        static_signals: dict[str, object],
-        context: dict[str, object],
-    ) -> ResourceReview:
-        return self._review(
-            workspace_id=workspace_id,
-            resource_type="tool_execution",
-            visibility="public",
-            resource={
-                "tool_kind": tool_kind,
-                "tool_name": tool_name,
-                "arguments": redact_sensitive_payload(arguments),
-                "context": redact_sensitive_payload(context),
-                "static_signals": redact_sensitive_payload(static_signals),
-            },
-        )
 
     def _review(
         self,

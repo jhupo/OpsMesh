@@ -192,6 +192,11 @@ class JobCompleteResponse(BaseModel):
     completed_at: datetime
 
 
+class McpJobCancellationResponse(BaseModel):
+    id: UUID
+    cancel_requested: bool
+
+
 class McpJobClaimResponse(BaseModel):
     id: UUID
     status: str

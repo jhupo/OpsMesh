@@ -40,6 +40,8 @@ def test_openai_responses_reviewer_uses_sdk_structured_output() -> None:
         resource={"name": "Research", "api_key": "sk-secret"},
         static_signals={"risk": "low"},
         timeout_seconds=7,
+        instructions="Assess this resource against its declared permissions.",
+        max_output_tokens=1200,
     )
 
     call = client.responses.calls[0]
@@ -66,6 +68,8 @@ def test_openai_compatible_default_reviewer_uses_chat_completions_sdk() -> None:
         resource_type="mcp_server",
         resource={"server_type": "streamable_http"},
         static_signals={},
+        instructions="Assess this resource against its declared permissions.",
+        max_output_tokens=1200,
     )
 
     call = client.chat.completions.calls[0]
@@ -90,6 +94,8 @@ def test_explicit_openai_chat_reviewer_uses_configured_protocol() -> None:
         resource_type="agent_profile",
         resource={"name": "Planner"},
         static_signals={},
+        instructions="Assess this resource against its declared permissions.",
+        max_output_tokens=1200,
     )
 
     assert len(client.chat.completions.calls) == 1
@@ -97,7 +103,7 @@ def test_explicit_openai_chat_reviewer_uses_configured_protocol() -> None:
 
 
 def test_anthropic_reviewer_uses_messages_parse_structured_output() -> None:
-    client = _FakeAnthropicClient(_decision(verdict="needs_admin_review"))
+    client = _FakeAnthropicClient(_decision(verdict="needs_human"))
     factory = _RecordingFactory(client)
     reviewer = LlmResourceReviewer(
         adapters={
@@ -111,6 +117,8 @@ def test_anthropic_reviewer_uses_messages_parse_structured_output() -> None:
         resource={"tool_name": "deploy"},
         static_signals={"execution": "write"},
         timeout_seconds=9,
+        instructions="Assess this resource against its declared permissions.",
+        max_output_tokens=1200,
     )
 
     call = client.messages.calls[0]
@@ -137,6 +145,8 @@ def test_reviewer_fails_closed_when_sdk_returns_no_structured_output() -> None:
             resource_type="skill",
             resource={"name": "Research"},
             static_signals={},
+            instructions="Assess this resource against its declared permissions.",
+            max_output_tokens=1200,
         )
 
 
@@ -149,6 +159,8 @@ def test_reviewer_rejects_unsupported_provider_without_request() -> None:
             resource_type="skill",
             resource={},
             static_signals={},
+            instructions="Assess this resource against its declared permissions.",
+            max_output_tokens=1200,
         )
 
 

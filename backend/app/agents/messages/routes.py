@@ -28,7 +28,7 @@ router = APIRouter(
 
 
 @router.get("", response_model=PageResponse[AgentMessageThreadResponse])
-async def list_agent_message_threads(
+def list_agent_message_threads(
     page: PageParams = Depends(pagination_params),
     task_id: UUID | None = Query(default=None),
     agent_team_id: UUID | None = Query(default=None),
@@ -52,7 +52,7 @@ async def list_agent_message_threads(
 
 
 @router.get("/summary", response_model=AgentMailboxSummaryResponse)
-async def get_agent_mailbox_summary(
+def get_agent_mailbox_summary(
     latest_limit: int = Query(default=20, ge=0, le=100),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -65,7 +65,7 @@ async def get_agent_mailbox_summary(
 
 
 @router.get("/agents/{agent_profile_id}/inbox", response_model=AgentInboxSummaryResponse)
-async def get_agent_inbox(
+def get_agent_inbox(
     agent_profile_id: UUID,
     latest_limit: int = Query(default=20, ge=0, le=100),
     unread_only: bool = Query(default=False),
@@ -89,7 +89,7 @@ async def get_agent_inbox(
     response_model=AgentMessageThreadResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_agent_message_thread(
+def create_agent_message_thread(
     request: AgentMessageThreadCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -112,7 +112,7 @@ async def create_agent_message_thread(
 
 
 @router.post("/{thread_id}/status", response_model=AgentMessageThreadResponse)
-async def set_agent_message_thread_status(
+def set_agent_message_thread_status(
     thread_id: UUID,
     request: AgentMessageThreadStatusRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -133,7 +133,7 @@ async def set_agent_message_thread_status(
 
 
 @router.get("/{thread_id}/messages", response_model=PageResponse[AgentMessageResponse])
-async def list_agent_messages(
+def list_agent_messages(
     thread_id: UUID,
     page: PageParams = Depends(pagination_params),
     recipient_agent_profile_id: UUID | None = Query(default=None),
@@ -159,7 +159,7 @@ async def list_agent_messages(
     response_model=AgentMessageResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_agent_message(
+def create_agent_message(
     thread_id: UUID,
     request: AgentMessageCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -184,7 +184,7 @@ async def create_agent_message(
 
 
 @router.post("/messages/{message_id}/read", response_model=AgentMessageResponse)
-async def mark_agent_message_read(
+def mark_agent_message_read(
     message_id: UUID,
     request: AgentMessageMarkReadRequest | None = None,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),

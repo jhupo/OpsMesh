@@ -30,7 +30,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
 
 
 @router.get("/runs", response_model=PageResponse[AgentRunResponse])
-async def list_runs(
+def list_runs(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -45,7 +45,7 @@ async def list_runs(
 
 
 @router.get("/runs/{agent_run_id}/events", response_model=PageResponse[RunEventResponse])
-async def list_run_events(
+def list_run_events(
     agent_run_id: UUID,
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -63,7 +63,7 @@ async def list_run_events(
     "/runs/{agent_run_id}/project-snapshot",
     response_model=AgentRunProjectSnapshotResponse,
 )
-async def get_run_project_snapshot(
+def get_run_project_snapshot(
     agent_run_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -84,7 +84,7 @@ async def get_run_project_snapshot(
     "/runs/{agent_run_id}/project-io",
     response_model=AgentRunProjectIOStateResponse,
 )
-async def get_run_project_io_state(
+def get_run_project_io_state(
     agent_run_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -102,7 +102,7 @@ async def get_run_project_io_state(
 
 
 @router.post("/runs/{agent_run_id}/cancel", response_model=AgentRunResponse)
-async def cancel_run(
+def cancel_run(
     agent_run_id: UUID,
     context: WorkspaceContext = Depends(
         workspace_dependency(
@@ -133,7 +133,7 @@ async def cancel_run(
     response_model=AgentRunResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def retry_run(
+def retry_run(
     agent_run_id: UUID,
     context: WorkspaceContext = Depends(
         workspace_dependency(
@@ -162,7 +162,7 @@ async def retry_run(
 
 
 @router.get("/audit-events", response_model=PageResponse[AuditEventResponse])
-async def list_audit_events(
+def list_audit_events(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),

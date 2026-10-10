@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.agents.providers.capabilities import resolve_model_capability
 from backend.app.agents.providers.model_api import model_api_options_for_provider
 from backend.app.agents.providers.models import ModelProviderCredential
 
@@ -17,15 +16,6 @@ def _selected_model(
     if agent.model == "workspace-default":
         return credential.default_model
     return agent.model or credential.default_model
-
-
-def _model_capability_payload(
-    provider: str | None,
-    model: str | None,
-    catalog: object,
-) -> dict[str, object] | None:
-    capability = resolve_model_capability(provider, model, catalog)
-    return capability.as_dict() if capability is not None else None
 
 
 def _capability_provider(

@@ -2,8 +2,6 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from backend.app.agents.execution.contracts import AgentRuntimeExecutor
-from backend.app.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from backend.app.runtime.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
 from backend.app.runtime.queues.service import RedisQueue
@@ -16,9 +14,7 @@ class WorkerJobHandlerContext:
     session: Session
     runtime_backends: RuntimeBackendRegistry
     queue: RedisQueue | None = None
-    agent_runner: AgentRuntimeExecutor | None = None
     settings: Settings | None = None
-    mcp_adapter: McpToolAdapter | McpToolAdapterResolver | None = None
     runtime_docker_client: DockerRuntimeClient | None = None
 
     def require_settings(self, *, context: str) -> Settings:

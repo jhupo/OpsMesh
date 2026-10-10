@@ -326,6 +326,8 @@ class AgentRuntimeInterruption:
 
 
 class AgentRuntimeToolExecutor(Protocol):
+    async def cancel_active_tools(self, *, context: AgentRuntimeContext) -> None: ...
+
     async def review_tool_call(
         self,
         *,

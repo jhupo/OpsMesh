@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.contracts import AgentRunResult, AgentRuntimeStructuredOutput
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.governance.costs.models import WorkspaceCostBudget
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.orchestration.planning.attempt_models import TaskPlanningAttempt
@@ -28,11 +27,12 @@ from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.runtime.queues.contracts import JobPayload, JobType
-from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
 from backend.app.workspaces.quotas.models import WorkspaceQuota
+from backend.tests.fixtures.worker import WorkerFlow
 from backend.tests.test_worker_run_execution import (
     _build_agent_request,
     _seed_workspace,
@@ -655,8 +655,8 @@ def test_worker_consumes_plan_then_enqueues_work_once(planning) -> None:
     )
     RunOrchestrationService(session, queue).enqueue_run(run, task.created_by_user_id)
     session.commit()
-    handler = WorkerJobHandler(session, queue, agent_runner=runner)
-    assert consume_once(queue, handler.handle)
+    handler = WorkerFlow(session, queue, agent_runner=runner)
+    assert handler.process_next()
     assert run.status == "completed"
     assert task.project_plan["strategy"] == "agent_sdk"
     assert queue.count_queued(workspace_id=task.workspace_id) == 1

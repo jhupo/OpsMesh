@@ -178,18 +178,6 @@ class RunResourceReservationService:
                 released_at=released_at,
             )
 
-    def release_for_run(self, run: AgentRun, *, released_at: datetime) -> None:
-        RuntimeSpaceReservationReleaseService(self.session).release_reservations_for_run(
-            workspace_id=run.workspace_id,
-            agent_run_id=run.id,
-            released_at=released_at,
-        )
-        WorkspaceQuotaService(self.session).release_reservations_for_run(
-            workspace_id=run.workspace_id,
-            agent_run_id=run.id,
-            released_at=released_at,
-        )
-
     def _reserve_workspace_quota(
         self,
         task: Task,
@@ -332,3 +320,16 @@ class RunResourceReservationService:
 
     def _profiles(self) -> RunProfileLookup:
         return RunProfileLookup(self.session)
+
+
+def release_run_reservations(session: Session, run: AgentRun, *, released_at: datetime) -> None:
+    RuntimeSpaceReservationReleaseService(session).release_reservations_for_run(
+        workspace_id=run.workspace_id,
+        agent_run_id=run.id,
+        released_at=released_at,
+    )
+    WorkspaceQuotaService(session).release_reservations_for_run(
+        workspace_id=run.workspace_id,
+        agent_run_id=run.id,
+        released_at=released_at,
+    )

@@ -14,7 +14,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import backend.app.agents.providers.health as model_provider_health_service_module
-from backend.app.agents.execution.contracts import AgentRunRequest, AgentRunResult
+from backend.app.agents.execution.contracts import (
+    AgentRunRequest,
+    AgentRunResult,
+    AgentRuntimeStructuredOutput,
+)
 from backend.app.agents.messages.models import AgentMessage, AgentMessageThread
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.agents.providers.credentials import ModelProviderCredentialCommandService
@@ -28,7 +32,6 @@ from backend.app.agents.sessions.models import (
     SDKAgentMessage,
     SDKAgentSession,
 )
-from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.governance.audit.models import AuditEvent
 from backend.app.governance.reviews.model_request import ModelRequestReview
 from backend.app.governance.security_events.models import SecurityEvent
@@ -77,7 +80,7 @@ from backend.app.runtime.operations.timeline.service import (
 )
 from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.queues.dependencies import get_worker_queue
-from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.runtime.spaces.models import (
     RuntimeSpace,
     RuntimeSpaceQuota,
@@ -95,7 +98,9 @@ from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceInvite, WorkspaceMember
 from backend.app.workspaces.quotas.models import WorkspaceQuota
 from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
+from backend.tests.fixtures.database import flow_database_url
 from backend.tests.fixtures.execution import test_agent_id
+from backend.tests.fixtures.worker import WorkerFlow
 from backend.tests.test_worker_run_execution import _seed_default_model_provider
 
 TOKEN = "test-token"
@@ -149,7 +154,16 @@ class DeterministicAgentRunner:
                         "summary": "deterministic_run_completed",
                         "reasons": [],
                     }
-                )
+                ),
+                structured_output=AgentRuntimeStructuredOutput(
+                    value={
+                        "decision": "approved",
+                        "summary": "deterministic_run_completed",
+                        "reasons": [],
+                    },
+                    schema_name="pm_acceptance",
+                    validated=True,
+                ),
             )
         return AgentRunResult(final_output="deterministic_run_completed")
 
@@ -1885,7 +1899,7 @@ def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
         status="running",
         connection_status="online",
         docker_container_id="quota-test-container",
-        network_policy={"disabled": True},
+        network_policy={"mode": "none"},
     )
     session.add(runtime)
     session.flush()
@@ -2410,7 +2424,7 @@ def test_team_runtime_controls_create_sessions_mailbox_and_workspace_runtime() -
             "disk_mb": 1024,
             "timeout_seconds": 60,
         },
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([manager, developer, template])
@@ -2727,7 +2741,7 @@ def test_team_runtime_actions_require_manage_runtime_for_write_only_user(
             "disk_mb": 1024,
             "timeout_seconds": 60,
         },
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     team = AgentTeam(
@@ -4909,7 +4923,7 @@ def test_team_runtime_state_recovers_last_iteration_and_continue_context() -> No
             "disk_mb": 1024,
             "timeout_seconds": 60,
         },
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([manager, template])
@@ -5231,7 +5245,7 @@ def test_team_execution_loop_run_advances_actions_runs_and_finalization() -> Non
             "disk_mb": 1024,
             "timeout_seconds": 60,
         },
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([manager, developer, template])
@@ -6618,9 +6632,9 @@ def test_api_team_task_e2e_runs_workers_and_accepts_delivery(
     assert created_task.json()["status"] == TaskStatus.QUEUED.value
     assert queue.count_queued(workspace_id=workspace.id) == 1
 
-    handler = WorkerJobHandler(session, queue, agent_runner=DeterministicAgentRunner())
+    handler = WorkerFlow(session, queue, agent_runner=DeterministicAgentRunner())
     handled_jobs = 0
-    while consume_once(queue, handler.handle):
+    while handler.process_next():
         handled_jobs += 1
         assert handled_jobs < 20
 
@@ -12221,7 +12235,7 @@ def _client(
 ) -> tuple[TestClient, Session] | tuple[TestClient, Session, FakeDockerClient]:
     _patch_portable_types_for_sqlite()
     engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
+        flow_database_url(),
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
@@ -12237,7 +12251,7 @@ def _client(
             environment="test",
             log_format="text",
             internal_api_token=TOKEN,
-            database_url="sqlite+pysqlite:///:memory:",
+            database_url=flow_database_url(),
             runtime_allowed_images=["python@sha256:" + "0" * 64],
         )
     )
@@ -12272,7 +12286,7 @@ def _consume_runtime_control_jobs(
     docker: FakeDockerClient,
     settings: Settings,
 ) -> None:
-    handler = WorkerJobHandler(
+    handler = WorkerFlow(
         session,
         queue,
         settings=settings,

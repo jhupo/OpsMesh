@@ -100,7 +100,8 @@ def test_every_admin_endpoint_rejects_an_authenticated_workspace_owner() -> None
             if method not in {"get", "post", "put", "patch", "delete"}:
                 continue
             response = client.request(
-                method.upper(), path,
+                method.upper(),
+                path,
                 headers={"Authorization": f"Bearer {created.token}"},
             )
             assert response.status_code == 401, (method, template, response.text)
@@ -577,9 +578,7 @@ def test_admin_plugin_governance_blocks_execution_and_tenant_reenable() -> None:
     assert deployment.desired_state == "stopped"
     assert deployment.next_check_at is not None
     with raises(ResourceAccessDenied):
-        PluginServices(session).require(
-            PluginPrincipal(workspace.id, install.id, credential.id)
-        )
+        PluginServices(session).require(PluginPrincipal(workspace.id, install.id, credential.id))
     with raises(PolicyDeniedError):
         PluginService(session).action(
             workspace.id,
@@ -699,9 +698,7 @@ def test_admin_global_capability_block_removes_tenant_access_and_restores_it() -
         json={},
     )
     assert refused_install.status_code == 404
-    detail = client.get(
-        f"/api/v1/admin/catalog/skill/{skill.id}", headers=_admin_headers()
-    )
+    detail = client.get(f"/api/v1/admin/catalog/skill/{skill.id}", headers=_admin_headers())
     assert detail.status_code == 200
     assert detail.json()["metadata"]["platform_blocked"] is True
     assert (
@@ -725,9 +722,7 @@ def test_admin_global_capability_block_removes_tenant_access_and_restores_it() -
         assert released.json()["status"] == "active"
         assert released.json()["platform_blocked"] is False
     assert client.get(f"{base}/skills", headers=member_headers).json()["total"] == 1
-    installed = client.post(
-        f"{base}/skills/{skill.id}/install", headers=member_headers, json={}
-    )
+    installed = client.post(f"{base}/skills/{skill.id}/install", headers=member_headers, json={})
     assert installed.status_code == 201
 
 
@@ -738,30 +733,41 @@ def test_admin_workspace_capability_block_enforces_scope_and_live_availability()
         session, email="foreign-capability@example.com", slug="foreign-capability"
     )
     skill = Skill(
-        key="private-research", name="Private research", version="1.0.0",
-        owner_workspace_id=workspace.id, visibility="private",
+        key="private-research",
+        name="Private research",
+        version="1.0.0",
+        owner_workspace_id=workspace.id,
+        visibility="private",
     )
     session.add(skill)
     session.flush()
     listing = MarketplaceListing(
-        workspace_id=workspace.id, owner_user_id=owner.id,
-        source_resource_id=skill.id, listing_type="skill", visibility="public",
-        status="public", name="Research skill", version="1.0.0",
+        workspace_id=workspace.id,
+        owner_user_id=owner.id,
+        source_resource_id=skill.id,
+        listing_type="skill",
+        visibility="public",
+        status="public",
+        name="Research skill",
+        version="1.0.0",
     )
     install = WorkspaceSkillInstall(
-        workspace_id=workspace.id, skill_id=skill.id, installed_key=skill.key,
-        installed_name=skill.name, installed_version=skill.version,
+        workspace_id=workspace.id,
+        skill_id=skill.id,
+        installed_key=skill.key,
+        installed_name=skill.name,
+        installed_version=skill.version,
     )
     resource = CapabilityResource(
-        workspace_id=workspace.id, key="knowledge", name="Knowledge",
+        workspace_id=workspace.id,
+        key="knowledge",
+        name="Knowledge",
         resource_type="file_collection",
     )
     server = McpServer(workspace_id=workspace.id, name="research-mcp", server_type="stdio")
     session.add_all([install, resource, server, listing])
     session.flush()
-    tool = McpToolAllowlist(
-        workspace_id=workspace.id, mcp_server_id=server.id, tool_name="search"
-    )
+    tool = McpToolAllowlist(workspace_id=workspace.id, mcp_server_id=server.id, tool_name="search")
     session.add(tool)
     session.commit()
     base = f"/api/v1/workspaces/{workspace.id}/capabilities"
@@ -772,13 +778,14 @@ def test_admin_workspace_capability_block_enforces_scope_and_live_availability()
     assert client.get("/api/v1/marketplace?listing_type=skill").json()["total"] == 1
 
     wrong_scope = client.post(
-        f"/api/v1/admin/catalog/mcp_server/{server.id}/block"
-        f"?workspace_id={foreign_workspace.id}",
-        headers=_admin_headers(), json={"reason": "Review"},
+        f"/api/v1/admin/catalog/mcp_server/{server.id}/block?workspace_id={foreign_workspace.id}",
+        headers=_admin_headers(),
+        json={"reason": "Review"},
     )
     missing_scope = client.post(
         f"/api/v1/admin/catalog/mcp_server/{server.id}/block",
-        headers=_admin_headers(), json={"reason": "Review"},
+        headers=_admin_headers(),
+        json={"reason": "Review"},
     )
     assert wrong_scope.status_code == 404
     assert missing_scope.status_code == 422
@@ -792,9 +799,9 @@ def test_admin_workspace_capability_block_enforces_scope_and_live_availability()
         ("marketplace_listing", listing.id),
     ):
         blocked = client.post(
-            f"/api/v1/admin/catalog/{kind}/{resource_id}/block"
-            f"?workspace_id={workspace.id}",
-            headers=_admin_headers(), json={"reason": "Security review"},
+            f"/api/v1/admin/catalog/{kind}/{resource_id}/block?workspace_id={workspace.id}",
+            headers=_admin_headers(),
+            json={"reason": "Security review"},
         )
         assert blocked.status_code == 200
         assert blocked.json()["platform_blocked"] is True
@@ -820,7 +827,8 @@ def test_admin_workspace_capability_block_enforces_scope_and_live_availability()
     assert tenant_disable_tool.status_code == 403
     refused_listing_install = client.post(
         f"/api/v1/workspaces/{workspace.id}/marketplace-listings/{listing.id}/install",
-        headers=member_headers, json={},
+        headers=member_headers,
+        json={},
     )
     assert refused_listing_install.status_code == 404
     availability = client.get(
@@ -845,9 +853,9 @@ def test_admin_workspace_capability_block_enforces_scope_and_live_availability()
         ("marketplace_listing", listing.id),
     ):
         released = client.post(
-            f"/api/v1/admin/catalog/{kind}/{resource_id}/release"
-            f"?workspace_id={workspace.id}",
-            headers=_admin_headers(), json={"reason": "Review passed"},
+            f"/api/v1/admin/catalog/{kind}/{resource_id}/release?workspace_id={workspace.id}",
+            headers=_admin_headers(),
+            json={"reason": "Review passed"},
         )
         assert released.status_code == 200
         assert released.json()["status"] == (
@@ -1192,7 +1200,7 @@ def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> N
         connection_status="online",
         docker_container_id="container-123",
         limits={"cpu_count": 1, "memory_mb": 512},
-        network_policy={"disabled": True},
+        network_policy={"mode": "none"},
         capabilities={},
     )
     session.add(runtime)

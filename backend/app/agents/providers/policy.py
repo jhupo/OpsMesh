@@ -63,12 +63,6 @@ class ModelProviderDefaultService:
 OPENAI_COMPATIBLE_PROVIDERS = {"openai", "openai-compatible"}
 ANTHROPIC_PROVIDERS = {"anthropic"}
 
-_PROVIDER_ALIASES = {
-    "openai": "openai",
-    "openai-compatible": "openai-compatible",
-    "anthropic": "anthropic",
-}
-
 
 def model_provider_key(provider: str | None) -> str:
     key = re.sub(r"[^a-z0-9]+", "-", (provider or "").strip().lower())
@@ -76,8 +70,7 @@ def model_provider_key(provider: str | None) -> str:
 
 
 def canonical_model_provider(provider: str | None) -> str:
-    key = model_provider_key(provider)
-    return _PROVIDER_ALIASES.get(key, key)
+    return model_provider_key(provider)
 
 
 def is_openai_compatible_provider(provider: str | None) -> bool:

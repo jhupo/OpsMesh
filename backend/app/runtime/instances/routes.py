@@ -31,7 +31,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["runtimes"])
 
 
 @router.get("/runtime-templates", response_model=list[RuntimeTemplateResponse])
-async def list_runtime_templates(
+def list_runtime_templates(
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
@@ -45,7 +45,7 @@ async def list_runtime_templates(
     response_model=WorkspaceRuntimeResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_runtime(
+def create_runtime(
     request: RuntimeCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -108,7 +108,7 @@ async def create_runtime(
 
 
 @router.get("/runtimes", response_model=PageResponse[WorkspaceRuntimeResponse])
-async def list_runtimes(
+def list_runtimes(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     runtime_status: str | None = Query(default=None, alias="status"),
@@ -131,7 +131,7 @@ async def list_runtimes(
 
 
 @router.post("/runtimes/{runtime_id}/start", response_model=WorkspaceRuntimeResponse)
-async def start_runtime(
+def start_runtime(
     runtime_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -155,7 +155,7 @@ async def start_runtime(
 
 
 @router.post("/runtimes/{runtime_id}/stop", response_model=WorkspaceRuntimeResponse)
-async def stop_runtime(
+def stop_runtime(
     runtime_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -179,7 +179,7 @@ async def stop_runtime(
 
 
 @router.delete("/runtimes/{runtime_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_runtime(
+def delete_runtime(
     runtime_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -211,7 +211,7 @@ async def delete_runtime(
     response_model=RuntimeCommandResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def execute_runtime_command(
+def execute_runtime_command(
     runtime_id: UUID,
     request: RuntimeCommandRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -253,7 +253,7 @@ async def execute_runtime_command(
     "/runtimes/{runtime_id}/commands",
     response_model=PageResponse[RuntimeCommandResponse],
 )
-async def list_runtime_commands(
+def list_runtime_commands(
     runtime_id: UUID,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -279,7 +279,7 @@ async def list_runtime_commands(
 
 
 @router.get("/runtimes/{runtime_id}/events", response_model=PageResponse[RuntimeEventResponse])
-async def list_runtime_events(
+def list_runtime_events(
     runtime_id: UUID,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),

@@ -23,7 +23,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.get("/system/configuration", response_model=AdminSystemConfigurationResponse)
-async def admin_system_configuration(
+def admin_system_configuration(
     settings: Settings = Depends(get_settings),
     redis: RedisClient = Depends(get_redis_client),
 ) -> AdminSystemConfigurationResponse:

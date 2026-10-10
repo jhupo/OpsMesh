@@ -116,27 +116,6 @@ class PersistentSessionRepository:
             ).all()
         )
 
-    def all_items(
-        self,
-        *,
-        workspace_id: UUID,
-        session_id: UUID,
-    ) -> list[SDKAgentMessage]:
-        return list(
-            self._db_session.scalars(
-                select(SDKAgentMessage)
-                .join(
-                    PersistentAgentSession,
-                    SDKAgentMessage.session_id == PersistentAgentSession.session_key,
-                )
-                .where(
-                    PersistentAgentSession.workspace_id == workspace_id,
-                    PersistentAgentSession.id == session_id,
-                )
-                .order_by(SDKAgentMessage.id.asc())
-            ).all()
-        )
-
     def item_count(self, workspace_id: UUID, session_id: UUID) -> int:
         return int(
             self._db_session.scalar(

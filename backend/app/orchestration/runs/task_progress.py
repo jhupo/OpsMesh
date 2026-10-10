@@ -3,8 +3,8 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
+from backend.app.agents.execution.contracts import AgentRuntimeStructuredOutput
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.runs.result_payloads import json_object_from_text
 from backend.app.orchestration.tasks.models import Task, TaskMessage
 
 AppendTaskMessage = Callable[..., TaskMessage]
@@ -19,23 +19,23 @@ class TaskProgressUpdate:
     summary: str | None = None
 
 
-def task_progress_from_output(final_output: str) -> TaskProgressUpdate | None:
-    payload = json_object_from_text(final_output)
-    if payload is None:
+def task_progress_from_output(
+    structured_output: AgentRuntimeStructuredOutput | None,
+) -> TaskProgressUpdate | None:
+    if structured_output is None or not structured_output.validated:
         return None
-    progress_payload = payload.get("task_progress")
-    if isinstance(progress_payload, dict):
-        payload = progress_payload
+    value = structured_output.value
+    if not isinstance(value, dict):
+        return None
+    payload = value.get("task_progress")
+    if not isinstance(payload, dict):
+        return None
 
-    generic_state = _progress_state_dict(payload.get("generic_state") or payload.get("state"))
-    domain_state = _progress_state_dict(
-        payload.get("domain_state") or payload.get("domain_progress")
-    )
-    task_input = _progress_state_dict(payload.get("input") or payload.get("task_input"))
+    generic_state = _progress_state_dict(payload.get("generic_state"))
+    domain_state = _progress_state_dict(payload.get("domain_state"))
+    task_input = _progress_state_dict(payload.get("task_input"))
     progress = payload.get("progress")
     summary = payload.get("summary")
-    if not isinstance(summary, str):
-        summary = payload.get("progress_summary")
     if not isinstance(summary, str):
         summary = None
 
@@ -98,9 +98,9 @@ class RunTaskProgressService:
         task: Task,
         *,
         run: AgentRun,
-        final_output: str,
+        structured_output: AgentRuntimeStructuredOutput | None,
     ) -> None:
-        progress = task_progress_from_output(final_output)
+        progress = task_progress_from_output(structured_output)
         if progress is None:
             return
         changed_fields: list[str] = []

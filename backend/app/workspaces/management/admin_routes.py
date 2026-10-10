@@ -15,9 +15,6 @@ from backend.app.workspaces.management.models import Workspace
 router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
-
-
-
 def _workspace_response(
     workspace: Workspace,
     *,
@@ -42,7 +39,7 @@ def _workspace_response(
     "/workspaces/{workspace_id}",
     response_model=AdminWorkspaceResponse,
 )
-async def get_admin_workspace(
+def get_admin_workspace(
     workspace_id: UUID,
     session: Session = Depends(get_db_session),
 ) -> AdminWorkspaceResponse:
@@ -62,7 +59,7 @@ async def get_admin_workspace(
     "/workspaces/{workspace_id}/status",
     response_model=AdminWorkspaceResponse,
 )
-async def update_admin_workspace_status(
+def update_admin_workspace_status(
     workspace_id: UUID,
     request: AdminWorkspaceStatusUpdateRequest,
     session: Session = Depends(get_db_session),

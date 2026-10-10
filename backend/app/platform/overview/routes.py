@@ -14,14 +14,14 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.get("/overview", response_model=AdminOverviewResponse)
-async def admin_overview(
+def admin_overview(
     service: AdminOverviewService = Depends(admin_overview_service),
 ) -> AdminOverviewResponse:
     return AdminOverviewResponse(**service.overview())
 
 
 @router.get("/workspaces", response_model=PageResponse[AdminWorkspaceResponse])
-async def list_admin_workspaces(
+def list_admin_workspaces(
     page: PageParams = Depends(pagination_params),
     status: str | None = Query(default=None),
     service: AdminWorkspaceManagementService = Depends(admin_workspace_management_service),

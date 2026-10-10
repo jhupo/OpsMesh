@@ -18,6 +18,7 @@ from backend.app.agents.execution.contracts import (
     AgentRunResult,
     AgentRuntimeExecutor,
     AgentRuntimeSession,
+    AgentRuntimeToolResult,
     AgentSessionBinding,
 )
 from backend.app.agents.execution.errors import (
@@ -31,6 +32,7 @@ from backend.app.governance.costs.service import CostBudgetDecision, CostBudgetE
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resource_queries import execution_resource_queries
 from backend.app.identity.authorization.resources import ResourceAccessDenied
+from backend.app.orchestration.runs.direct_execution import DirectToolCall, DirectWorkflowExecutor
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.execution import (
     TERMINAL_RUN_STATUSES,
@@ -43,6 +45,7 @@ from backend.app.orchestration.runs.scoped_cancellation import ScopedRunCancella
 from backend.app.orchestration.runs.service import RunOrchestrationService
 from backend.app.orchestration.runs.state import RunStatus
 from backend.app.platform.settings.policy import operational_configuration
+from backend.app.runtime.agent_host.executor import RuntimeAgentExecutor
 from backend.app.runtime.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
 from backend.app.runtime.queues.async_run_lock import async_run_lock
@@ -93,7 +96,6 @@ class AsyncAgentRunExecutor:
                 ),
             ),
             queue=self.queue,
-            agent_runner=self.agent_runner,
             settings=self.settings,
             docker_client=self.docker_client,
         )
@@ -144,7 +146,11 @@ class AsyncAgentRunExecutor:
             if storage is not None
             else None,
             tool_executor=ScopedToolExecutor(database, self.settings, self.docker_client)
-            if request.tool_executor is not None
+            if (
+                request.context.allowed_tools
+                or request.context.tool_definitions
+                or request.agent_tools
+            )
             else None,
             cancellation=ScopedRunCancellation(controls, job.workspace_id, job.resource_id),
         )
@@ -160,11 +166,6 @@ class AsyncAgentRunExecutor:
         )
         if terminal:
             return
-        if direct:
-            # Direct workflow nodes contain blocking product/Runtime adapters, no model
-            # loop. Their Session is created and closed within the bounded adapter lane.
-            await database.run(lambda session: self._execute_direct(session, job))
-            return
         async with async_run_lock(
             self.queue, str(job.workspace_id), str(job.resource_id), control_io
         ) as acquired:
@@ -172,6 +173,35 @@ class AsyncAgentRunExecutor:
                 raise RuntimeError("Agent run is already locked")
             prepared: PreparedAgentRun | None = None
             try:
+                if direct:
+                    direct_result = await self._phase(database, job, self._prepare_direct)
+                    if isinstance(direct_result, DirectToolCall):
+                        call = direct_result
+                        tool_result = await ScopedToolExecutor(
+                            database, self.settings, self.docker_client
+                        ).execute_tool(
+                            context=call.context,
+                            tool_name=call.tool_name,
+                            arguments=call.arguments,
+                            tool_call_id=call.tool_call_id,
+                            approval_granted=call.approval_granted,
+                        )
+                        await self._phase(
+                            database,
+                            job,
+                            lambda service, run, authorized_job: DirectWorkflowExecutor(
+                                service
+                            ).complete_call(run, authorized_job, call, tool_result),
+                        )
+                    elif direct_result is not None:
+                        await self._phase(
+                            database,
+                            job,
+                            lambda service, run, authorized_job: DirectWorkflowExecutor(
+                                service
+                            )._complete_direct_result(run, direct_result, authorized_job),
+                        )
+                    return
                 prepared = await self._phase(
                     database,
                     job,
@@ -197,8 +227,12 @@ class AsyncAgentRunExecutor:
             except ResourceAccessDenied as exc:
                 await database.run(partial(self._reject, job=job, error=exc))
             except AgentRuntimeCancelledError:
-                assert prepared is not None and prepared.request is not None
-                await database.run(partial(self._cancel, job=job, request=prepared.request))
+                provider = (
+                    prepared.request.provider
+                    if prepared is not None and prepared.request is not None
+                    else None
+                )
+                await database.run(partial(self._cancel, job=job, provider=provider))
             except TimeoutError:
                 await database.run(partial(self._timeout, job=job))
             except Exception as exc:
@@ -211,8 +245,13 @@ class AsyncAgentRunExecutor:
                     if isinstance(native_session, AuthorizedSDKSession):
                         await native_session.close()
 
-    def _execute_direct(self, session: Session, job: JobPayload) -> None:
-        self._service(session).run_agent_sync(job)
+    def _prepare_direct(
+        self, service: RunExecutionService, run: AgentRun, job: JobPayload
+    ) -> DirectToolCall | AgentRuntimeToolResult | None:
+        service.prepare_run(run, job)
+        if run.status in {"completed", "failed", "cancelled"}:
+            return None
+        return DirectWorkflowExecutor(service).prepare_node(run, job, None, service.node_type(run))
 
     def _prepared_request(
         self,
@@ -241,8 +280,11 @@ class AsyncAgentRunExecutor:
                 return None
             request, budget = attempt
             try:
-                if self.agent_runner is None:
-                    raise ValueError("Agent SDK executor is not configured")
+                runner = self.agent_runner
+                if runner is None:
+                    if self.docker_client is None:
+                        raise ValueError("Runtime SDK transport is not configured")
+                    runner = RuntimeAgentExecutor(self.docker_client, controls.io)
                 with telemetry_span(
                     "opsmesh.model.request",
                     parent=current_trace_context(),
@@ -256,7 +298,7 @@ class AsyncAgentRunExecutor:
                     },
                 ):
                     async with buffered_live_events(request, database.io):
-                        result = await self.agent_runner.run(request)
+                        result = await runner.run(request)
                 control = current_execution_control()
                 if control is not None:
                     control.check_ownership()
@@ -409,8 +451,8 @@ class AsyncAgentRunExecutor:
     def _reject(self, session: Session, job: JobPayload, error: ResourceAccessDenied) -> None:
         self._service(session).reject_authorization(self._run(session, job), error)
 
-    def _cancel(self, session: Session, job: JobPayload, request: AgentRunRequest) -> None:
-        self._service(session).complete_cancellation(self._run(session, job), request)
+    def _cancel(self, session: Session, job: JobPayload, provider: str | None) -> None:
+        self._service(session).complete_cancellation(self._run(session, job), provider=provider)
 
     def _timeout(self, session: Session, job: JobPayload) -> None:
         self._service(session).complete_timeout(self._run(session, job))

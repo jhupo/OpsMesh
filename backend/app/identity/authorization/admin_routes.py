@@ -18,9 +18,6 @@ from backend.app.shared.db.session import get_db_session
 router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
-
-
-
 def _admin_resource_authorization_response(
     workspace_id: UUID,
     kind: ResourceKind,
@@ -44,7 +41,7 @@ def _admin_resource_authorization_response(
     "/workspaces/{workspace_id}/resources/{kind}/{resource_id}/authorization",
     response_model=AdminResourceAuthorizationResponse,
 )
-async def get_admin_resource_authorization(
+def get_admin_resource_authorization(
     workspace_id: UUID,
     kind: ResourceKind,
     resource_id: UUID,
@@ -58,16 +55,14 @@ async def get_admin_resource_authorization(
     if authorization is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found")
     resource, grants = authorization
-    return _admin_resource_authorization_response(
-        workspace_id, kind, resource_id, resource, grants
-    )
+    return _admin_resource_authorization_response(workspace_id, kind, resource_id, resource, grants)
 
 
 @router.put(
     "/workspaces/{workspace_id}/resources/{kind}/{resource_id}/owner",
     response_model=AdminResourceAuthorizationResponse,
 )
-async def assign_admin_resource_owner(
+def assign_admin_resource_owner(
     workspace_id: UUID,
     kind: ResourceKind,
     resource_id: UUID,
@@ -84,16 +79,14 @@ async def assign_admin_resource_owner(
     authorization = service.get_authorization(workspace_id, kind, resource_id)
     assert authorization is not None
     current, grants = authorization
-    return _admin_resource_authorization_response(
-        workspace_id, kind, resource_id, current, grants
-    )
+    return _admin_resource_authorization_response(workspace_id, kind, resource_id, current, grants)
 
 
 @router.put(
     "/workspaces/{workspace_id}/resources/{kind}/{resource_id}/grants",
     response_model=AdminResourceAuthorizationResponse,
 )
-async def replace_admin_resource_grants(
+def replace_admin_resource_grants(
     workspace_id: UUID,
     kind: ResourceKind,
     resource_id: UUID,
@@ -116,6 +109,4 @@ async def replace_admin_resource_grants(
     authorization = service.get_authorization(workspace_id, kind, resource_id)
     assert authorization is not None
     resource, grants = authorization
-    return _admin_resource_authorization_response(
-        workspace_id, kind, resource_id, resource, grants
-    )
+    return _admin_resource_authorization_response(workspace_id, kind, resource_id, resource, grants)

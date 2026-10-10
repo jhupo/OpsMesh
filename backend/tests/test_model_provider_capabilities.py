@@ -1,37 +1,37 @@
 from backend.app.agents.providers.capabilities import (
+    ModelCapability,
     list_model_capabilities,
     resolve_model_capability,
 )
 
 
-def test_model_capability_registry_filters_by_provider_and_capability() -> None:
-    anthropic_tools = list_model_capabilities(provider="anthropic", capability="tools")
-
-    assert anthropic_tools
-    assert {item.provider for item in anthropic_tools} == {"anthropic"}
-    assert all("tools" in item.capabilities for item in anthropic_tools)
-
-
-def test_model_capability_registry_resolves_wildcard_provider_model() -> None:
-    capability = resolve_model_capability(
-        "openai-compatible",
-        "provider/custom-model",
-    )
-
-    assert capability is not None
-    assert capability.model == "*"
-    assert capability.supports_tools is True
-    assert capability.notes is not None
+def catalog():
+    return [
+        ModelCapability(
+            provider=provider,
+            model=model,
+            display_name=model,
+            supports_tools=True,
+            supports_vision=False,
+            supports_json_mode=True,
+            supports_streaming=True,
+        ).model_dump()
+        for provider, model in (
+            ("anthropic", "claude-company-model"),
+            ("openai-compatible", "provider/custom-model"),
+        )
+    ]
 
 
-def test_model_capability_registry_resolves_anthropic_wildcard_model() -> None:
-    capability = resolve_model_capability(
-        "anthropic",
-        "claude-custom-company-model",
-    )
+def test_model_capability_catalog_is_scoped_by_provider_and_capability():
+    tools = list_model_capabilities(catalog(), provider="anthropic", capability="tools")
+    assert len(tools) == 1
+    assert tools[0].model == "claude-company-model"
+    assert list_model_capabilities(catalog(), capability="vision") == []
 
-    assert capability is not None
-    assert capability.provider == "anthropic"
-    assert capability.model == "*"
-    assert capability.supports_tools is True
-    assert capability.supports_streaming is True
+
+def test_model_capability_resolution_requires_an_explicit_catalog_entry():
+    supported = resolve_model_capability("openai-compatible", "provider/custom-model", catalog())
+    assert supported is not None and supported.supports_tools
+    assert resolve_model_capability("anthropic", "unknown-model", catalog()) is None
+    assert resolve_model_capability("anthropic", "provider/custom-model", catalog()) is None

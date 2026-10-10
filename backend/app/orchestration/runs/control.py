@@ -11,6 +11,9 @@ from backend.app.orchestration.approvals.lifecycle import AgentToolApprovalLifec
 from backend.app.orchestration.approvals.models import PendingToolInvocation
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.resources import (
+    release_run_reservations,
+)
 from backend.app.orchestration.runs.state import RunStateService, RunStatus
 from backend.app.orchestration.runs.statuses import (
     ACTIVE_RUN_STATUS_VALUES,
@@ -24,9 +27,7 @@ from backend.app.orchestration.tasks.state import (
     TaskStatus,
 )
 from backend.app.runtime.instances.models import WorkspaceRuntime
-from backend.app.runtime.spaces.reservations import RuntimeSpaceReservationReleaseService
 from backend.app.workspaces.projects.snapshots.service import RunProjectSnapshotService
-from backend.app.workspaces.quotas.reservations import WorkspaceQuotaService
 
 EnqueueRun = Callable[[AgentRun, UUID | None], bool]
 
@@ -418,16 +419,7 @@ class RunControlService:
         )
 
     def release_reservations(self, run: AgentRun, *, released_at: datetime) -> None:
-        RuntimeSpaceReservationReleaseService(self.session).release_reservations_for_run(
-            workspace_id=run.workspace_id,
-            agent_run_id=run.id,
-            released_at=released_at,
-        )
-        WorkspaceQuotaService(self.session).release_reservations_for_run(
-            workspace_id=run.workspace_id,
-            agent_run_id=run.id,
-            released_at=released_at,
-        )
+        release_run_reservations(self.session, run, released_at=released_at)
 
     def terminal_states(self) -> RunTerminalStateService:
         return RunTerminalStateService(

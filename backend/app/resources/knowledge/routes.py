@@ -41,7 +41,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/knowledge/sources", tags=[
 
 
 @router.get("", response_model=PageResponse[KnowledgeSourceResponse])
-async def list_sources(
+def list_sources(
     page: PageParams = Depends(pagination_params),
     include_archived: bool = Query(default=False),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -62,7 +62,7 @@ async def list_sources(
 
 
 @router.post("", response_model=KnowledgeSourceResponse, status_code=status.HTTP_201_CREATED)
-async def create_source(
+def create_source(
     request: KnowledgeSourceCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -81,7 +81,7 @@ async def create_source(
 
 
 @router.get("/{source_id}", response_model=KnowledgeSourceResponse)
-async def get_source(
+def get_source(
     source_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -96,7 +96,7 @@ async def get_source(
 
 
 @router.patch("/{source_id}", response_model=KnowledgeSourceResponse)
-async def update_source(
+def update_source(
     source_id: UUID,
     request: KnowledgeSourceUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -158,7 +158,7 @@ async def archive_source(
     response_model=KnowledgeSourceIngestionResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def ingest_source(
+def ingest_source(
     source_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -191,7 +191,7 @@ async def ingest_source(
     "/{source_id}/ingestions",
     response_model=PageResponse[KnowledgeSourceIngestionResponse],
 )
-async def list_ingestions(
+def list_ingestions(
     source_id: UUID,
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -215,7 +215,7 @@ async def list_ingestions(
     "/{source_id}/ingestions/{ingestion_id}",
     response_model=KnowledgeSourceIngestionResponse,
 )
-async def get_ingestion(
+def get_ingestion(
     source_id: UUID,
     ingestion_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -238,7 +238,7 @@ async def get_ingestion(
     "/{source_id}/ingestions/{ingestion_id}/citations",
     response_model=PageResponse[KnowledgeCitationResponse],
 )
-async def list_citations(
+def list_citations(
     source_id: UUID,
     ingestion_id: UUID,
     page: PageParams = Depends(pagination_params),
@@ -270,7 +270,7 @@ async def list_citations(
     "/{source_id}/revisions",
     response_model=PageResponse[KnowledgeSourceRevisionResponse],
 )
-async def list_source_revisions(
+def list_source_revisions(
     source_id: UUID,
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -294,7 +294,7 @@ async def list_source_revisions(
     "/{source_id}/revisions/{version}",
     response_model=KnowledgeSourceRevisionResponse,
 )
-async def get_source_revision(
+def get_source_revision(
     source_id: UUID,
     version: int,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),

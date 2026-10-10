@@ -28,7 +28,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/capabilities", tags=["capa
 
 
 @router.get("", response_model=PageResponse[CapabilityResponse])
-async def list_capabilities(
+def list_capabilities(
     page: PageParams = Depends(pagination_params),
     category: str | None = Query(default=None),
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -39,7 +39,7 @@ async def list_capabilities(
 
 
 @router.post("", response_model=CapabilityResponse, status_code=status.HTTP_201_CREATED)
-async def create_capability(
+def create_capability(
     request: CapabilityCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
@@ -57,7 +57,7 @@ async def create_capability(
 
 
 @router.get("/skills", response_model=PageResponse[SkillResponse])
-async def list_skills(
+def list_skills(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -67,7 +67,7 @@ async def list_skills(
 
 
 @router.post("/skills", response_model=SkillResponse, status_code=status.HTTP_201_CREATED)
-async def create_skill(
+def create_skill(
     request: SkillCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
@@ -85,7 +85,7 @@ async def create_skill(
 
 
 @router.get("/tool-groups", response_model=PageResponse[ToolGroupResponse])
-async def list_tool_groups(
+def list_tool_groups(
     page: PageParams = Depends(pagination_params),
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -95,7 +95,7 @@ async def list_tool_groups(
 
 
 @router.post("/tool-groups", response_model=ToolGroupResponse, status_code=status.HTTP_201_CREATED)
-async def create_tool_group(
+def create_tool_group(
     request: ToolGroupCreateRequest,
     _: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
     session: Session = Depends(get_db_session),
@@ -108,7 +108,7 @@ async def create_tool_group(
 
 
 @router.patch("/{capability_id}", response_model=CapabilityResponse)
-async def update_capability(
+def update_capability(
     capability_id: UUID,
     request: CapabilityUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -135,7 +135,7 @@ async def update_capability(
 
 
 @router.patch("/skills/{skill_id}", response_model=SkillResponse)
-async def update_skill(
+def update_skill(
     skill_id: UUID,
     request: SkillUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),
@@ -160,7 +160,7 @@ async def update_skill(
 
 
 @router.patch("/tool-groups/{group_id}", response_model=ToolGroupResponse)
-async def update_tool_group(
+def update_tool_group(
     group_id: UUID,
     request: ToolGroupUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_CAPABILITY)),

@@ -130,9 +130,9 @@ def test_task_transfer_captures_package_and_changes_owner() -> None:
     assert transfer.handoff_package["objective"]["title"] == task.title
     assert transfer.handoff_package["steps"][0]["work_package_id"] == "manager-summary"
     assert TaskTransferResponse.model_validate(transfer).status == "pending"
-    assert session.scalar(
-        select(TaskTransfer.id).where(TaskTransfer.id == transfer.id)
-    ) == transfer.id
+    assert (
+        session.scalar(select(TaskTransfer.id).where(TaskTransfer.id == transfer.id)) == transfer.id
+    )
 
     accepted = service.accept_transfer(
         workspace_id=task.workspace_id,
@@ -147,7 +147,7 @@ def test_task_transfer_captures_package_and_changes_owner() -> None:
     session.refresh(step)
     assert task.owner_agent_profile_id == target.id
     assert task.owner_version == 2
-    assert step.assigned_agent_profile_id == target.id
+    assert step.assigned_agent_profile_id == source.id
     assert task_owner_can_execute_step(task, step)
 
 

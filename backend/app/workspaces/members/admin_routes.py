@@ -21,14 +21,11 @@ from backend.app.workspaces.members.models import WorkspaceMember
 router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
-
-
-
 @router.get(
     "/workspaces/{workspace_id}/members",
     response_model=PageResponse[AdminWorkspaceMemberResponse],
 )
-async def list_admin_workspace_members(
+def list_admin_workspace_members(
     workspace_id: UUID,
     page: PageParams = Depends(pagination_params),
     member_status: str | None = Query(default=None, alias="status"),
@@ -60,7 +57,7 @@ async def list_admin_workspace_members(
     response_model=AdminWorkspaceMemberResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def add_admin_workspace_member(
+def add_admin_workspace_member(
     workspace_id: UUID,
     request: AdminWorkspaceMemberCreateRequest,
     session: Session = Depends(get_db_session),
@@ -100,7 +97,7 @@ async def add_admin_workspace_member(
     "/workspaces/{workspace_id}/members/{member_id}",
     response_model=AdminWorkspaceMemberResponse,
 )
-async def update_admin_workspace_member(
+def update_admin_workspace_member(
     workspace_id: UUID,
     member_id: UUID,
     request: AdminWorkspaceMemberUpdateRequest,
@@ -142,7 +139,7 @@ async def update_admin_workspace_member(
     "/workspaces/{workspace_id}/members/{member_id}",
     response_model=AdminWorkspaceMemberResponse,
 )
-async def remove_admin_workspace_member(
+def remove_admin_workspace_member(
     workspace_id: UUID,
     member_id: UUID,
     session: Session = Depends(get_db_session),

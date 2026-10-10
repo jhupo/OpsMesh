@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.app.identity.authorization.admin_dependencies import require_platform_admin
@@ -12,20 +11,15 @@ from backend.app.shared.config import Settings, get_settings
 router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
-
-
-
 @router.get("/system/version", response_model=AdminReleaseVersionResponse)
-async def admin_system_version(
+def admin_system_version(
     settings: Settings = Depends(get_settings),
 ) -> AdminReleaseVersionResponse:
-    return AdminReleaseVersionResponse(
-        **ReleaseUpdateService(settings).current_version().__dict__
-    )
+    return AdminReleaseVersionResponse(**ReleaseUpdateService(settings).current_version().__dict__)
 
 
 @router.get("/system/check-updates", response_model=AdminReleaseUpdateCheckResponse)
-async def admin_check_updates(
+def admin_check_updates(
     force: bool = Query(default=False),
     settings: Settings = Depends(get_settings),
 ) -> AdminReleaseUpdateCheckResponse:

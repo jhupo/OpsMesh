@@ -54,7 +54,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
     "/teams/{team_id}/command-center/actions/apply",
     response_model=AgentTeamCommandCenterApplyResponse,
 )
-async def apply_team_command_center_actions(
+def apply_team_command_center_actions(
     team_id: UUID,
     request: AgentTeamCommandCenterApplyRequest,
     context: WorkspaceContext = Depends(
@@ -135,7 +135,7 @@ def _require_command_center_action_permissions(
     "/teams/{team_id}/execution-loop/enqueue",
     response_model=AgentTeamExecutionLoopEnqueueResponse,
 )
-async def enqueue_team_execution_loop(
+def enqueue_team_execution_loop(
     team_id: UUID,
     request: AgentTeamExecutionLoopEnqueueRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
@@ -174,7 +174,7 @@ async def enqueue_team_execution_loop(
     "/teams/{team_id}/execution-loop/run",
     response_model=AgentTeamExecutionLoopRunResponse,
 )
-async def run_team_execution_loop_iteration(
+def run_team_execution_loop_iteration(
     team_id: UUID,
     request: AgentTeamExecutionLoopRunRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
@@ -240,7 +240,7 @@ def _require_execution_loop_runtime_permission(
     "/teams/{team_id}/execution-loop/finalize",
     response_model=AgentTeamExecutionLoopFinalizeResponse,
 )
-async def finalize_team_execution_loop_tasks(
+def finalize_team_execution_loop_tasks(
     team_id: UUID,
     request: AgentTeamExecutionLoopFinalizeRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
@@ -262,7 +262,7 @@ async def finalize_team_execution_loop_tasks(
     "/teams/{team_id}/operator-actions",
     response_model=AgentTeamOperatorActionResponse,
 )
-async def apply_team_operator_action(
+def apply_team_operator_action(
     team_id: UUID,
     request: AgentTeamOperatorActionRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),

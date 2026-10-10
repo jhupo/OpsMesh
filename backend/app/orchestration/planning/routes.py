@@ -47,7 +47,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resourc
 
 
 @router.post("/tasks/{task_id}/plan/apply-orchestration", response_model=TaskResponse)
-async def apply_orchestration_to_task(
+def apply_orchestration_to_task(
     task_id: UUID,
     request: OrchestrationApplyRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -95,7 +95,7 @@ async def apply_orchestration_to_task(
 
 
 @router.post("/tasks/{task_id}/plan/retry", response_model=TaskResponse)
-async def retry_task_plan(
+def retry_task_plan(
     task_id: UUID,
     request: TaskPlanRetryRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -128,7 +128,7 @@ async def retry_task_plan(
 
 
 @router.post("/tasks/{task_id}/plan/regenerate", response_model=TaskResponse)
-async def regenerate_task_plan(
+def regenerate_task_plan(
     task_id: UUID,
     request: TaskPlanRegenerateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -161,7 +161,7 @@ async def regenerate_task_plan(
 
 
 @router.post("/tasks/{task_id}/plan/mutate", response_model=TaskResponse)
-async def mutate_task_plan(
+def mutate_task_plan(
     task_id: UUID,
     request: TaskPlanMutationRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -204,7 +204,7 @@ async def mutate_task_plan(
 
 
 @router.get("/tasks/{task_id}/plan/diagnostics", response_model=TaskPlanDiagnosticsResponse)
-async def get_task_plan_diagnostics(
+def get_task_plan_diagnostics(
     task_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),

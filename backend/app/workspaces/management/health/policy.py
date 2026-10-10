@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
-from backend.app.shared.utils import dict_or_empty
+from backend.app.shared.utils import dict_or_empty, ensure_aware_utc
 
 
 @dataclass(frozen=True)
@@ -43,10 +43,4 @@ def snapshot_due(
     now: datetime,
     interval: timedelta,
 ) -> bool:
-    return aware_datetime(latest_created_at) <= now - interval
-
-
-def aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
+    return ensure_aware_utc(latest_created_at) <= now - interval

@@ -21,7 +21,7 @@ router = APIRouter()
     response_model=TalentListingResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def publish_agent_to_talent_market(
+def publish_agent_to_talent_market(
     request: TalentListingCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),

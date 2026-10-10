@@ -1,7 +1,7 @@
 """Blocking product/MCP adapters own a Session only for one tool operation."""
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from sqlalchemy import select
@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.agents.execution.contracts import AgentRuntimeContext, AgentRuntimeToolResult
 from backend.app.agents.execution.errors import AgentRuntimeCancelledError
+from backend.app.agents.execution.tools.cancellation import request_tool_cancellation
 from backend.app.agents.execution.tools.executor import BackendToolExecutor, tool_result_payload
+from backend.app.capabilities.mcp.execution.prepared import PreparedMcpTool, ToolPreparation
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.resource_queries import execution_resource_queries
 from backend.app.orchestration.approvals.pending_tools import PendingToolInvocationService
@@ -26,6 +28,17 @@ class ScopedToolExecutor:
     database: DatabaseOperations
     settings: Settings
     docker_client: DockerRuntimeClient | None
+    active: set[asyncio.Task[object]] = field(default_factory=set, compare=False, repr=False)
+
+    async def cancel_active_tools(self, *, context: AgentRuntimeContext) -> None:
+        await self.database.run(lambda session: request_tool_cancellation(session, context))
+        current = asyncio.current_task()
+        for task in tuple(self.active):
+            if task is not current:
+                task.cancel()
+        await asyncio.gather(
+            *(task for task in tuple(self.active) if task is not current), return_exceptions=True
+        )
 
     def _authorize(self, session: Session, context: AgentRuntimeContext) -> None:
         status = session.scalar(
@@ -56,10 +69,8 @@ class ScopedToolExecutor:
             self._authorize(session, context)
             user = ExecutionIdentityService(session).for_run(context.workspace_id, context.run_id)
             with execution_resource_queries(session, context.workspace_id, user):
-                return asyncio.run(
-                    self._executor(session).review_tool_call(
-                        context=context, tool_name=tool_name, arguments=arguments
-                    )
+                return self._executor(session).review_tool_call(
+                    context=context, tool_name=tool_name, arguments=arguments
                 )
 
         return await self.database.run(operation)
@@ -73,21 +84,41 @@ class ScopedToolExecutor:
         tool_call_id: str | None = None,
         approval_granted: bool = False,
     ) -> AgentRuntimeToolResult:
-        def operation(session: Session) -> AgentRuntimeToolResult:
+        def operation(session: Session) -> ToolPreparation:
             self._authorize(session, context)
             user = ExecutionIdentityService(session).for_run(context.workspace_id, context.run_id)
             with execution_resource_queries(session, context.workspace_id, user):
-                return asyncio.run(
-                    self._executor(session).execute_tool(
-                        context=context,
-                        tool_name=tool_name,
-                        arguments=arguments,
-                        tool_call_id=tool_call_id,
-                        approval_granted=approval_granted,
-                    )
+                return self._executor(session).prepare_tool(
+                    context=context,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    tool_call_id=tool_call_id,
+                    approval_granted=approval_granted,
                 )
 
         result = await self.database.run(operation)
+        if isinstance(result, PreparedMcpTool):
+            prepared = result
+            response, error = None, None
+            try:
+                operation_task = asyncio.create_task(
+                    prepared.execution.operation.execute(self.database.io)
+                )
+                self.active.add(operation_task)
+                try:
+                    response = await operation_task
+                finally:
+                    self.active.discard(operation_task)
+            except BaseException as failure:
+                error = failure
+
+            def settle(session: Session) -> AgentRuntimeToolResult:
+                ExecutionIdentityService(session).for_run(context.workspace_id, context.run_id)
+                return self._executor(session).complete_tool(prepared, response, error)
+
+            result = await self.database.run(settle)
+            if error is not None and not isinstance(error, Exception):
+                raise error
         if result.status != "waiting_self_hosted":
             return result
         job_id = (result.output or {}).get("mcp_job_id")
@@ -131,7 +162,7 @@ class ScopedToolExecutor:
 
         # Waiting for remote RPC holds a Task, no DB connection or adapter thread.
         while True:
-            response = await self.database.run(completed)
-            if response is not None:
-                return response
+            completion = await self.database.run(completed)
+            if completion is not None:
+                return completion
             await asyncio.sleep(0.5)

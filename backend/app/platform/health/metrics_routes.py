@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 @router.get("/metrics", response_class=PlainTextResponse)
-async def metrics(
+def metrics(
     session: Session = Depends(get_db_session),
     redis: RedisClient = Depends(get_redis_client),
     settings: Settings = Depends(get_settings),

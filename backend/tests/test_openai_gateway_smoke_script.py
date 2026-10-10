@@ -19,7 +19,7 @@ def test_openai_gateway_smoke_config_requires_api_key(
         script.config_from_env([])
 
 
-def test_openai_gateway_smoke_config_normalizes_root_base_url(
+def test_openai_gateway_smoke_config_preserves_explicit_base_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     script = _load_script()
@@ -28,7 +28,7 @@ def test_openai_gateway_smoke_config_normalizes_root_base_url(
 
     config = script.config_from_env(["-k", "uses_tool"])
 
-    assert config.base_url == "https://dash.ovload.com/v1"
+    assert config.base_url == "https://dash.ovload.com/"
     assert config.model == "gpt-4.1-nano"
     assert config.model_api is None
     assert config.pytest_args == ("-k", "uses_tool")
@@ -106,7 +106,7 @@ def test_openai_gateway_smoke_external_call_flag_runs_pytest(
 
     assert exit_code == 0
     assert len(calls) == 1
-    assert calls[0].base_url == "https://dash.ovload.com/v1"
+    assert calls[0].base_url == "https://dash.ovload.com/"
     assert calls[0].model_api == "chat_completions"
     assert calls[0].pytest_args == ("-k", "uses_tool")
 

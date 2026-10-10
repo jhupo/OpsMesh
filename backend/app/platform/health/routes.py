@@ -39,12 +39,12 @@ class ReadinessResponse(HealthResponse):
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check(request: Request) -> HealthResponse:
+def health_check(request: Request) -> HealthResponse:
     return _health_response(request)
 
 
 @router.get("/health/live", response_model=HealthResponse)
-async def liveness_check(request: Request) -> HealthResponse:
+def liveness_check(request: Request) -> HealthResponse:
     return _health_response(request)
 
 

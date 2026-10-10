@@ -12,6 +12,7 @@ import fakeredis
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.execution.contracts import (
     AgentRunRequest,
@@ -21,7 +22,6 @@ from backend.app.agents.execution.contracts import (
     AgentRuntimeStructuredOutput,
 )
 from backend.app.agents.profiles.models import AgentProfile
-from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.governance.audit.models import AuditEvent
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.orchestration.approvals.decisions import ApprovalDecisionService
@@ -44,7 +44,7 @@ from backend.app.resources.files.models import WorkspaceFile
 from backend.app.resources.storage.storage import LocalStorage
 from backend.app.runtime.instances.contracts import RuntimeCommandResult
 from backend.app.runtime.instances.models import RuntimeTemplate, WorkspaceRuntime
-from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.shared.config import Settings
 from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.shared.security.secrets import SecretEncryptionService
@@ -56,6 +56,8 @@ from backend.app.workspaces.projects.models import (
     WorkspaceProjectOutput,
 )
 from backend.app.workspaces.projects.snapshots.format import sha256_json
+from backend.tests.fixtures.database import flow_database_url
+from backend.tests.fixtures.worker import WorkerFlow
 from backend.tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
     _seed_workspace,
@@ -65,19 +67,7 @@ from backend.tests.test_worker_run_execution import (
 @pytest.fixture(autouse=True)
 def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.app.governance.reviews.model_request import ModelRequestReview
-    from backend.app.governance.reviews.models import ResourceReview
-    from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 
-    monkeypatch.setattr(
-        ResourcePolicyReviewBuilder,
-        "review_tool_execution",
-        lambda self, **kwargs: ResourceReview(
-            required=False,
-            risk_level="low",
-            reasons=["llm_review.approved"],
-            signals={"reviewer": "llm", "verdict": "approve"},
-        ),
-    )
     monkeypatch.setattr(
         "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         lambda self, **kwargs: ModelRequestReview(
@@ -236,7 +226,7 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
             "max_output_bytes": 256_000,
             "max_processes": 64,
         },
-        network_policy={"disabled": True},
+        network_policy={"mode": "none"},
         capabilities={"isolation": {"workspace_mount": {"target": "/workspace", "mode": "rw"}}},
     )
     content = b"project input"
@@ -386,14 +376,14 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
                 ),
             )
 
-    handler = WorkerJobHandler(
+    handler = WorkerFlow(
         session,
         queue,
         agent_runner=PlannerRunner(),
         settings=settings,
         runtime_docker_client=docker,
     )
-    assert consume_once(queue, handler.handle)
+    assert handler.process_next()
     session.refresh(task)
     assert task.project_plan is not None
     planning_attempt = session.scalar(
@@ -450,20 +440,22 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
                 ),
             )
 
-    assert consume_once(
+    assert WorkerFlow(
+        session,
         queue,
-        WorkerJobHandler(
-            session,
-            queue,
-            agent_runner=InterruptingBuilder(),
-            settings=settings,
-            runtime_docker_client=docker,
-        ).handle,
-    )
+        agent_runner=InterruptingBuilder(),
+        settings=settings,
+        runtime_docker_client=docker,
+    ).process_next()
     assert build_run.status == RunStatus.WAITING_APPROVAL.value
     summary_step.status = "blocked"
     session.commit()
     bind = session.get_bind()
+    # Capture immutable identities before the old unit of work is discarded.
+    detached_owner_id, detached_build_run_id = owner.id, build_run.id
+    detached_planner_id = planner.id
+    detached_workspace_id, detached_task_id = workspace.id, task.id
+    detached_handoff_target_id = handoff_target.id
     session.close()
     restarted = sessionmaker(bind=bind, expire_on_commit=False)()
     restart_queue = RedisQueue(
@@ -472,7 +464,9 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
         queue_name="agent_runs",
         blocking_timeout_seconds=0,
     )
-    approval = restarted.scalar(select(Approval).where(Approval.agent_run_id == build_run.id))
+    approval = restarted.scalar(
+        select(Approval).where(Approval.agent_run_id == detached_build_run_id)
+    )
     assert approval is not None
     ApprovalDecisionService(
         restarted,
@@ -481,7 +475,7 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
             secret=settings.credential_encryption_secret,
             key_id=settings.credential_encryption_key_id,
         ),
-    ).approve(approval, owner.id, "approved after worker restart")
+    ).approve(approval, detached_owner_id, "approved after worker restart")
 
     class ResumingBuilder:
         calls = 0
@@ -515,24 +509,25 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
             return AgentRunResult(final_output="builder completed")
 
     resuming_builder = ResumingBuilder()
-    assert consume_once(
+    assert WorkerFlow(
+        restarted,
         restart_queue,
-        WorkerJobHandler(
-            restarted,
-            restart_queue,
-            agent_runner=resuming_builder,
-            settings=settings,
-            runtime_docker_client=docker,
-        ).handle,
-    )
-    restarted_build_run = restarted.get(AgentRun, build_run.id)
+        agent_runner=resuming_builder,
+        settings=settings,
+        runtime_docker_client=docker,
+    ).process_next()
+    restarted_build_run = restarted.get(AgentRun, detached_build_run_id)
     assert restarted_build_run is not None
     assert restarted_build_run.status == RunStatus.COMPLETED.value
     invocation = restarted.scalar(
-        select(PendingToolInvocation).where(PendingToolInvocation.agent_run_id == build_run.id)
+        select(PendingToolInvocation).where(
+            PendingToolInvocation.agent_run_id == detached_build_run_id
+        )
     )
     state = restarted.scalar(
-        select(AgentRunStateSnapshot).where(AgentRunStateSnapshot.agent_run_id == build_run.id)
+        select(AgentRunStateSnapshot).where(
+            AgentRunStateSnapshot.agent_run_id == detached_build_run_id
+        )
     )
     assert invocation is not None and invocation.status == "completed"
     assert invocation.attempt_count == 1
@@ -541,56 +536,56 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
 
     transfer_service = TaskTransferService(restarted)
     first_transfer = transfer_service.request_transfer(
-        workspace_id=workspace.id,
-        task_id=task.id,
-        actor_user_id=owner.id,
+        workspace_id=detached_workspace_id,
+        task_id=detached_task_id,
+        actor_user_id=detached_owner_id,
         command=TaskTransferCommand(
-            target_agent_profile_id=handoff_target.id,
-            source_agent_profile_id=planner.id,
+            target_agent_profile_id=detached_handoff_target_id,
+            source_agent_profile_id=detached_planner_id,
             reason="Reviewer takes ownership for final handoff.",
             idempotency_key="critical-handoff-to-reviewer",
         ),
     )
     assert first_transfer is not None
     first_transfer = transfer_service.accept_transfer(
-        workspace_id=workspace.id,
-        task_id=task.id,
+        workspace_id=detached_workspace_id,
+        task_id=detached_task_id,
         transfer_id=first_transfer.id,
-        actor_user_id=owner.id,
+        actor_user_id=detached_owner_id,
         decision=TaskTransferDecision(reason="Reviewer accepted the handoff."),
     )
     assert first_transfer is not None and first_transfer.status == "accepted"
     second_transfer = transfer_service.request_transfer(
-        workspace_id=workspace.id,
-        task_id=task.id,
-        actor_user_id=owner.id,
+        workspace_id=detached_workspace_id,
+        task_id=detached_task_id,
+        actor_user_id=detached_owner_id,
         command=TaskTransferCommand(
-            target_agent_profile_id=planner.id,
-            source_agent_profile_id=handoff_target.id,
+            target_agent_profile_id=detached_planner_id,
+            source_agent_profile_id=detached_handoff_target_id,
             reason="Return ownership to the project manager for acceptance.",
             idempotency_key="critical-handoff-back-to-manager",
         ),
     )
     assert second_transfer is not None
     second_transfer = transfer_service.accept_transfer(
-        workspace_id=workspace.id,
-        task_id=task.id,
+        workspace_id=detached_workspace_id,
+        task_id=detached_task_id,
         transfer_id=second_transfer.id,
-        actor_user_id=owner.id,
+        actor_user_id=detached_owner_id,
         decision=TaskTransferDecision(reason="Manager resumed final acceptance."),
     )
     assert second_transfer is not None and second_transfer.status == "accepted"
-    restarted_task = restarted.get(Task, task.id)
+    restarted_task = restarted.get(Task, detached_task_id)
     assert restarted_task is not None
-    assert restarted_task.owner_agent_profile_id == planner.id
+    assert restarted_task.owner_agent_profile_id == detached_planner_id
 
     summary_step = restarted.get(TaskStep, summary_step.id)
     assert summary_step is not None
     summary_step.status = "queued"
     restarted.commit()
     scheduled = RunOrchestrationService(restarted, restart_queue).schedule_workspace_steps(
-        workspace_id=workspace.id,
-        requested_by_user_id=owner.id,
+        workspace_id=detached_workspace_id,
+        requested_by_user_id=detached_owner_id,
     )
     assert len(scheduled) == 1
     restarted.commit()
@@ -607,25 +602,31 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
                         "summary": "Manager integrated the reviewed report.",
                         "reasons": [],
                     }
-                )
+                ),
+                structured_output=AgentRuntimeStructuredOutput(
+                    value={
+                        "decision": "approved",
+                        "summary": "Manager integrated the reviewed report.",
+                        "reasons": [],
+                    },
+                    schema_name="pm_acceptance",
+                    validated=True,
+                ),
             )
 
-    assert consume_once(
+    assert WorkerFlow(
+        restarted,
         restart_queue,
-        WorkerJobHandler(
-            restarted,
-            restart_queue,
-            agent_runner=ManagerRunner(),
-            settings=settings,
-            runtime_docker_client=docker,
-        ).handle,
-    )
-    restarted_task = restarted.get(Task, task.id)
+        agent_runner=ManagerRunner(),
+        settings=settings,
+        runtime_docker_client=docker,
+    ).process_next()
+    restarted_task = restarted.get(Task, detached_task_id)
     assert restarted_task is not None
     delivery = TaskDeliveryDecisionService(restarted, queue=restart_queue).apply_decision(
-        workspace_id=workspace.id,
-        task_id=task.id,
-        actor_user_id=owner.id,
+        workspace_id=detached_workspace_id,
+        task_id=detached_task_id,
+        actor_user_id=detached_owner_id,
         request=TaskDeliveryDecisionRequest(
             action="approve",
             summary="User accepted the complete delivery.",
@@ -641,7 +642,9 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
     assert restarted_task.status == TaskStatus.COMPLETED.value
     assert restarted_task.final_output is not None
     artifacts = restarted.scalars(
-        select(Artifact).where(Artifact.workspace_id == workspace.id, Artifact.task_id == task.id)
+        select(Artifact).where(
+            Artifact.workspace_id == detached_workspace_id, Artifact.task_id == detached_task_id
+        )
     ).all()
     assert {artifact.artifact_type for artifact in artifacts} >= {"file", "report"}
     assert {event.action for event in restarted.scalars(select(AuditEvent)).all()} >= {
@@ -654,7 +657,12 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
 def _session() -> Session:
     from sqlalchemy import create_engine
 
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = create_engine(
+        flow_database_url(),
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     from backend.app.shared.db.base import Base
 
     Base.metadata.create_all(engine)

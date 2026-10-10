@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from uuid import UUID
-
 from sqlalchemy.orm import Session
 
 from backend.app.teams.management.models import AgentTeam, AgentTeamMember
@@ -15,16 +13,6 @@ class TeamOperatingContextService:
 
     def __init__(self, session: Session) -> None:
         self._repo = TeamOperatingContextRepository(session)
-
-    def get_context(self, *, workspace_id: UUID, team_id: UUID) -> dict[str, object] | None:
-        team = self._repo.team(workspace_id=workspace_id, team_id=team_id)
-        if team is None:
-            return None
-        members = self._repo.team_members(team)
-        return {
-            "operating_policy": self.operating_policy(team=team, members=members),
-            "memory_summary": self.memory_summary(team=team),
-        }
 
     def operating_policy(
         self,

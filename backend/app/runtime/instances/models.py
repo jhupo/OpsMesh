@@ -95,7 +95,9 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     connection_status: Mapped[str] = mapped_column(String(32), nullable=False, default="offline")
     docker_container_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     limits: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
-    network_policy: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
+    network_policy: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=lambda: {"mode": "none"}
+    )
     capabilities: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(nullable=True)
 

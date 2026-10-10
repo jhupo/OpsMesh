@@ -245,17 +245,6 @@ class SelfHostedClaimLockRepository:
             .execution_options(populate_existing=True)
         )
 
-    def locked_job_claim_for_run(self, run: AgentRun) -> SelfHostedJobClaim | None:
-        return self._session.scalar(
-            select(SelfHostedJobClaim)
-            .where(
-                SelfHostedJobClaim.workspace_id == run.workspace_id,
-                SelfHostedJobClaim.agent_run_id == run.id,
-            )
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-
 
 class SelfHostedRunReservationService:
     def __init__(self, session: Session) -> None:

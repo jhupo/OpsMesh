@@ -21,7 +21,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.get("/platform-policies", response_model=PageResponse[AdminPlatformPolicyResponse])
-async def list_admin_platform_policies(
+def list_admin_platform_policies(
     page: PageParams = Depends(pagination_params),
     status: str | None = Query(default=None),
     service: AdminPolicyService = Depends(admin_policy_service),
@@ -34,7 +34,7 @@ async def list_admin_platform_policies(
     "/platform-policies/{policy_key}/events",
     response_model=PageResponse[AdminPlatformPolicyEventResponse],
 )
-async def list_admin_platform_policy_events(
+def list_admin_platform_policy_events(
     policy_key: str,
     page: PageParams = Depends(pagination_params),
     event_type: str | None = Query(default=None),
@@ -51,7 +51,7 @@ async def list_admin_platform_policy_events(
     "/platform-policies/risky-execution",
     response_model=AdminPlatformPolicyResponse,
 )
-async def get_admin_risky_execution_policy(
+def get_admin_risky_execution_policy(
     service: AdminPolicyService = Depends(admin_policy_service),
 ) -> AdminPlatformPolicyResponse:
     policy = service.get_or_create_risky_execution_policy()
@@ -62,7 +62,7 @@ async def get_admin_risky_execution_policy(
     "/platform-policies/risky-execution",
     response_model=AdminPlatformPolicyResponse,
 )
-async def update_admin_risky_execution_policy(
+def update_admin_risky_execution_policy(
     request: AdminRiskyExecutionPolicyUpdateRequest,
     service: AdminPolicyService = Depends(admin_policy_service),
 ) -> AdminPlatformPolicyResponse:
@@ -78,7 +78,7 @@ async def update_admin_risky_execution_policy(
     "/platform-policies/worker-control",
     response_model=AdminPlatformPolicyResponse,
 )
-async def get_admin_worker_control_policy(
+def get_admin_worker_control_policy(
     service: AdminWorkerPolicyControlService = Depends(admin_worker_policy_service),
 ) -> AdminPlatformPolicyResponse:
     policy = service.get_or_create_worker_control_policy()
@@ -89,7 +89,7 @@ async def get_admin_worker_control_policy(
     "/platform-policies/worker-control",
     response_model=AdminPlatformPolicyResponse,
 )
-async def update_admin_worker_control_policy(
+def update_admin_worker_control_policy(
     request: AdminWorkerControlPolicyUpdateRequest,
     service: AdminWorkerPolicyControlService = Depends(admin_worker_policy_service),
 ) -> AdminPlatformPolicyResponse:

@@ -40,7 +40,7 @@ def file_service(
 
 
 @router.get("/files", response_model=PageResponse[WorkspaceFileResponse])
-async def list_files(
+def list_files(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     service: WorkspaceFileService = Depends(file_service),
@@ -82,7 +82,7 @@ async def upload_file(
 
 
 @router.get("/files/{file_id}/download")
-async def download_file(
+def download_file(
     file_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     service: WorkspaceFileService = Depends(file_service),
@@ -99,7 +99,7 @@ async def download_file(
 
 
 @router.put("/files/{file_id}/runtime-policy", response_model=WorkspaceFileResponse)
-async def update_file_runtime_policy(
+def update_file_runtime_policy(
     file_id: UUID,
     request: WorkspaceFileRuntimePolicyRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -124,7 +124,7 @@ async def update_file_runtime_policy(
 
 
 @router.get("/artifacts", response_model=PageResponse[ArtifactResponse])
-async def list_artifacts(
+def list_artifacts(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     service: WorkspaceFileService = Depends(file_service),
@@ -134,7 +134,7 @@ async def list_artifacts(
 
 
 @router.get("/artifacts/history", response_model=ArtifactHistoryResponse)
-async def get_artifact_history(
+def get_artifact_history(
     task_id: UUID = Query(),
     work_package_id: str = Query(min_length=1, max_length=120),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -160,7 +160,7 @@ async def get_artifact_history(
     "/artifacts/final-output/history",
     response_model=FinalOutputArtifactHistoryResponse,
 )
-async def get_final_output_artifact_history(
+def get_final_output_artifact_history(
     task_id: UUID = Query(),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     service: WorkspaceFileService = Depends(file_service),
@@ -182,7 +182,7 @@ async def get_final_output_artifact_history(
 
 
 @router.get("/artifacts/{artifact_id}/download")
-async def download_artifact(
+def download_artifact(
     artifact_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     service: WorkspaceFileService = Depends(file_service),

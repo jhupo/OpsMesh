@@ -30,11 +30,12 @@ else:
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workspace-resources"])
 
+
 @router.get(
     "/teams/{team_id}/sessions",
     response_model=PageResponse[AgentSessionSummaryResponse],
 )
-async def list_team_sessions(
+def list_team_sessions(
     team_id: UUID,
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
@@ -65,7 +66,7 @@ async def list_team_sessions(
     "/teams/{team_id}/sessions/{session_id}",
     response_model=AgentSessionDetailResponse,
 )
-async def get_team_session(
+def get_team_session(
     team_id: UUID,
     session_id: UUID,
     item_limit: int = Query(default=50, ge=1, le=500),
@@ -89,7 +90,7 @@ async def get_team_session(
     "/teams/{team_id}/sessions/{session_id}/archive",
     response_model=AgentSessionSummaryResponse,
 )
-async def archive_team_session(
+def archive_team_session(
     team_id: UUID,
     session_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -108,7 +109,7 @@ async def archive_team_session(
     "/teams/{team_id}/sessions/{session_id}/freeze",
     response_model=AgentSessionSummaryResponse,
 )
-async def freeze_team_session(
+def freeze_team_session(
     team_id: UUID,
     session_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -127,7 +128,7 @@ async def freeze_team_session(
     "/teams/{team_id}/sessions/{session_id}/activate",
     response_model=AgentSessionSummaryResponse,
 )
-async def activate_team_session(
+def activate_team_session(
     team_id: UUID,
     session_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -146,7 +147,7 @@ async def activate_team_session(
     "/teams/{team_id}/sessions/{session_id}/items",
     response_model=AgentSessionClearResponse,
 )
-async def clear_team_session_items(
+def clear_team_session_items(
     team_id: UUID,
     session_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),

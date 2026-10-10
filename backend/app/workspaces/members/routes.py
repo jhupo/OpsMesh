@@ -26,7 +26,7 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
 @router.get("/{workspace_id}/members", response_model=PageResponse[WorkspaceMemberResponse])
-async def list_workspace_members(
+def list_workspace_members(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_MEMBERS)),
     session: Session = Depends(get_db_session),
@@ -40,7 +40,7 @@ async def list_workspace_members(
     response_model=WorkspaceMemberResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_workspace_member(
+def create_workspace_member(
     request: WorkspaceMemberCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_MEMBERS)),
     session: Session = Depends(get_db_session),
@@ -65,7 +65,7 @@ async def create_workspace_member(
     "/{workspace_id}/members/{member_id}",
     response_model=WorkspaceMemberResponse,
 )
-async def update_workspace_member(
+def update_workspace_member(
     member_id: UUID,
     request: WorkspaceMemberUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_MEMBERS)),
@@ -92,7 +92,7 @@ async def update_workspace_member(
     "/{workspace_id}/members/{member_id}",
     response_model=WorkspaceMemberResponse,
 )
-async def disable_workspace_member(
+def disable_workspace_member(
     member_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_MEMBERS)),
     session: Session = Depends(get_db_session),

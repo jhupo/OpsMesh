@@ -3,8 +3,10 @@ from uuid import uuid4
 
 import pytest
 from agents import RunContextWrapper
+from agents.stream_events import RawResponsesStreamEvent
 from agents.usage import Usage
 from claude_agent_sdk import ResultMessage, StreamEvent
+from openai.types.responses import ResponseTextDeltaEvent
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -97,21 +99,17 @@ def test_openai_streaming_maps_ordered_events_lifecycle_and_usage(
         async def stream_events(self):
             await self.hooks.on_agent_start(None, self.agent)
             await self.hooks.on_llm_start(None, self.agent, None, [])
-            yield type(
-                "RawEvent",
-                (),
-                {
-                    "type": "raw_response_event",
-                    "data": type(
-                        "TextDelta",
-                        (),
-                        {
-                            "type": "response.output_text.delta",
-                            "delta": "api_key=sk-stream-secret",
-                        },
-                    )(),
-                },
-            )()
+            yield RawResponsesStreamEvent(
+                data=ResponseTextDeltaEvent(
+                    type="response.output_text.delta",
+                    delta="api_key=sk-stream-secret",
+                    content_index=0,
+                    output_index=0,
+                    sequence_number=0,
+                    item_id="offline",
+                    logprobs=[],
+                )
+            )
             await self.hooks.on_llm_end(None, self.agent, object())
             await self.hooks.on_agent_end(None, self.agent, "done")
 

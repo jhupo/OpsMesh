@@ -19,6 +19,8 @@ from backend.app.capabilities.catalog.effective import (
 )
 from backend.app.governance.reviews.approval_config import approval_configuration
 from backend.app.identity.authorization.execution import ExecutionIdentityService
+from backend.app.orchestration.definitions.graph import is_pm_summary_step
+from backend.app.orchestration.planning.acceptance_contract import acceptance_output_schema
 from backend.app.orchestration.planning.agent_plan import (
     is_agent_planning_step,
     planner_output_schema,
@@ -152,6 +154,8 @@ class RunAuthorizationSnapshotService:
         )
         if is_agent_planning_step(step):
             controls["output_schema"] = asdict(planner_output_schema())
+        elif step is not None and is_pm_summary_step(step):
+            controls["output_schema"] = asdict(acceptance_output_schema())
         return controls
 
     def _agent_tools(
@@ -479,12 +483,14 @@ def runtime_policy_snapshot(value: object) -> dict[str, object]:
     policy = dict_or_empty(value)
     raw_mcp = policy.get("mcp")
     mcp_policy = dict_or_empty(raw_mcp)
-    network_mode = mcp_policy.get("network_mode")
-    if not isinstance(network_mode, str) or not network_mode:
-        network = policy.get("network")
-        network_mode = network if isinstance(network, str) and network else "restricted"
+    if "network_mode" in mcp_policy:
+        raise ValueError("MCP policy requires network_policy")
     policy["mcp"] = {
-        "network_mode": network_mode,
+        **(
+            {"network_policy": mcp_policy["network_policy"]}
+            if "network_policy" in mcp_policy
+            else {}
+        ),
         "timeout_seconds": positive_int_or_default(mcp_policy.get("timeout_seconds"), 30),
         "max_input_bytes": positive_int_or_default(mcp_policy.get("max_input_bytes"), 64_000),
         "max_output_bytes": positive_int_or_default(

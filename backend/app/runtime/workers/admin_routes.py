@@ -13,7 +13,7 @@ router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
 @router.get("/workers", response_model=PageResponse[WorkerNodeResponse])
-async def list_admin_workers(
+def list_admin_workers(
     page: PageParams = Depends(pagination_params),
     status: str | None = Query(default=None),
     worker_type: str | None = Query(default=None),
@@ -24,7 +24,7 @@ async def list_admin_workers(
 
 
 @router.post("/workers/{worker_id}/drain", response_model=WorkerNodeResponse)
-async def drain_admin_worker(
+def drain_admin_worker(
     worker_id: str,
     service: AdminWorkerService = Depends(admin_worker_service),
 ) -> WorkerNodeResponse:
@@ -35,7 +35,7 @@ async def drain_admin_worker(
 
 
 @router.patch("/workers/{worker_id}", response_model=WorkerNodeResponse)
-async def update_admin_worker(
+def update_admin_worker(
     worker_id: str,
     request: AdminWorkerUpdateRequest,
     service: AdminWorkerService = Depends(admin_worker_service),

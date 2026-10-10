@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
+from backend.app.shared.utils import ensure_aware_utc
 from backend.app.workspaces.members.models import WorkspaceInvite, WorkspaceMember
 from backend.app.workspaces.projects.models import WorkspaceProjectQuota
 from backend.app.workspaces.quotas.models import WorkspaceQuota
@@ -48,13 +49,7 @@ def invite_snapshot(invite: WorkspaceInvite) -> dict[str, object]:
     }
 
 
-def as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
-
-
 def canonical_datetime(value: datetime | None) -> str | None:
     if value is None:
         return None
-    return as_utc(value).replace(tzinfo=None).isoformat()
+    return ensure_aware_utc(value).replace(tzinfo=None).isoformat()

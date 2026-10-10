@@ -48,14 +48,14 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/orchestrations", tags=["or
 
 
 @router.get("/authoring-contract", response_model=WorkflowAuthoringContract)
-async def get_authoring_contract(
+def get_authoring_contract(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
 ) -> WorkflowAuthoringContract:
     return authoring_contract()
 
 
 @router.get("", response_model=PageResponse[OrchestrationDefinitionResponse])
-async def list_orchestrations(
+def list_orchestrations(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -74,7 +74,7 @@ async def list_orchestrations(
     response_model=OrchestrationDefinitionResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_orchestration(
+def create_orchestration(
     request: OrchestrationDefinitionCreate,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -114,7 +114,7 @@ async def create_orchestration(
 
 
 @router.get("/{orchestration_definition_id}", response_model=OrchestrationDefinitionResponse)
-async def get_orchestration(
+def get_orchestration(
     orchestration_definition_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -129,7 +129,7 @@ async def get_orchestration(
 
 
 @router.patch("/{orchestration_definition_id}", response_model=OrchestrationDefinitionResponse)
-async def update_orchestration(
+def update_orchestration(
     orchestration_definition_id: UUID,
     request: OrchestrationDefinitionUpdate,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
@@ -168,7 +168,7 @@ async def update_orchestration(
     "/{orchestration_definition_id}/validate",
     response_model=OrchestrationValidationResponse,
 )
-async def validate_orchestration(
+def validate_orchestration(
     orchestration_definition_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -194,7 +194,7 @@ async def validate_orchestration(
     "/{orchestration_definition_id}/publish",
     response_model=OrchestrationDefinitionResponse,
 )
-async def publish_orchestration(
+def publish_orchestration(
     orchestration_definition_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -214,7 +214,7 @@ async def publish_orchestration(
     "/{orchestration_definition_id}/archive",
     response_model=OrchestrationDefinitionResponse,
 )
-async def archive_orchestration(
+def archive_orchestration(
     orchestration_definition_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),
     session: Session = Depends(get_db_session),
@@ -234,7 +234,7 @@ async def archive_orchestration(
     "/{orchestration_definition_id}/revisions",
     response_model=PageResponse[OrchestrationRevisionResponse],
 )
-async def list_revisions(
+def list_revisions(
     orchestration_definition_id: UUID,
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -255,7 +255,7 @@ async def list_revisions(
     "/{orchestration_definition_id}/revisions/{version}",
     response_model=OrchestrationRevisionResponse,
 )
-async def get_revision(
+def get_revision(
     orchestration_definition_id: UUID,
     version: int,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),

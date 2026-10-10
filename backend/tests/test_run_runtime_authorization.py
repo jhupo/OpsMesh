@@ -50,7 +50,7 @@ def test_effective_runtime_and_file_resources_freeze_execution_binding() -> None
         name="Runtime",
         status="running",
         connection_status="online",
-        network_policy={"disabled": True},
+        network_policy={"mode": "none"},
     )
     workspace_file = WorkspaceFile(
         workspace_id=workspace.id,
@@ -96,7 +96,7 @@ def test_effective_runtime_and_file_resources_freeze_execution_binding() -> None
         task=task,
         step=step,
         capability_catalog=catalog,
-        runtime_policy={"mcp": {"network_mode": "none"}},
+        runtime_policy={"mcp": {"network_policy": {"mode": "none"}}},
     )
 
     assert binding.mode == "capability_runtime"
@@ -199,28 +199,34 @@ def test_stdio_tool_runtime_admission_distinguishes_managed_process(managed: boo
     catalog = (
         EffectiveCapabilityCatalogService(session)
         .resolve(
-            workspace_id=workspace.id, agent_profile_id=profile.id,
+            workspace_id=workspace.id,
+            agent_profile_id=profile.id,
             user=AuthenticationService(session).authenticate_user(user.id),
         )
         .model_dump(mode="json")
     )
 
     assert catalog["tools"][0]["descriptor"]["mcp_server_type"] == "stdio"
-    assert catalog["tools"][0]["descriptor"]["mcp_runtime"] == (
-        "managed" if managed else "run"
-    )
+    assert catalog["tools"][0]["descriptor"]["mcp_runtime"] == ("managed" if managed else "run")
 
     if managed:
         binding = RunRuntimeAuthorizationService(session).resolve_for_snapshot(
-            task=task, step=step, capability_catalog=catalog, runtime_policy={},
+            task=task,
+            step=step,
+            capability_catalog=catalog,
+            runtime_policy={},
         )
         assert binding.mode == "none"
         assert binding.workspace_runtime_id is None
         run = AgentRun(workspace_id=workspace.id, task_id=task.id)
         validated = RunRuntimeAuthorizationService(session).validate_for_run(
-            run=run, task=task,
-            snapshot={"capability_catalog": catalog, "runtime_binding": binding.as_snapshot(),
-                      "file_scope": {"allowed_file_ids": []}},
+            run=run,
+            task=task,
+            snapshot={
+                "capability_catalog": catalog,
+                "runtime_binding": binding.as_snapshot(),
+                "file_scope": {"allowed_file_ids": []},
+            },
         )
         assert validated.mode == "none"
         return
@@ -249,7 +255,7 @@ def test_runtime_revocation_blocks_worker_request_and_records_audit() -> None:
         name="Runtime",
         status="running",
         connection_status="online",
-        network_policy={"disabled": True},
+        network_policy={"mode": "none"},
     )
     task = Task(workspace_id=workspace.id, created_by_user_id=user.id, title="Task")
     session.add_all([profile, runtime, task])
@@ -288,7 +294,7 @@ def test_runtime_revocation_blocks_worker_request_and_records_audit() -> None:
         task=task,
         step=step,
         capability_catalog=catalog,
-        runtime_policy={"network": "disabled"},
+        runtime_policy={"network": {"mode": "none"}},
     )
     snapshot = _snapshot(
         workspace_id=workspace.id,
@@ -349,12 +355,16 @@ def test_queued_run_rechecks_installed_skill_platform_blocks() -> None:
     session.add_all([profile, task, skill])
     session.flush()
     step = TaskStep(
-        workspace_id=workspace.id, task_id=task.id,
-        assigned_agent_profile_id=profile.id, title="Step",
+        workspace_id=workspace.id,
+        task_id=task.id,
+        assigned_agent_profile_id=profile.id,
+        title="Step",
     )
     install = WorkspaceSkillInstall(
-        workspace_id=workspace.id, skill_id=skill.id,
-        installed_key=skill.key, installed_name=skill.name,
+        workspace_id=workspace.id,
+        skill_id=skill.id,
+        installed_key=skill.key,
+        installed_name=skill.name,
         installed_version=skill.version,
     )
     session.add_all([step, install])
@@ -364,14 +374,21 @@ def test_queued_run_rechecks_installed_skill_platform_blocks() -> None:
         task=task, step=step, capability_catalog=catalog, runtime_policy={}
     )
     snapshot = _snapshot(
-        workspace_id=workspace.id, task=task, step=step, profile=profile,
-        catalog=catalog, binding=binding.as_snapshot(),
+        workspace_id=workspace.id,
+        task=task,
+        step=step,
+        profile=profile,
+        catalog=catalog,
+        binding=binding.as_snapshot(),
     )
     snapshot["installed_skills"] = [{"install_id": str(install.id)}]
     snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
     run = AgentRun(
-        workspace_id=workspace.id, task_id=task.id, task_step_id=step.id,
-        agent_profile_id=profile.id, input={"authorization_snapshot": snapshot},
+        workspace_id=workspace.id,
+        task_id=task.id,
+        task_step_id=step.id,
+        agent_profile_id=profile.id,
+        input={"authorization_snapshot": snapshot},
     )
     session.add(run)
     session.commit()
@@ -494,7 +511,7 @@ def test_team_runtime_unbinding_revokes_frozen_run() -> None:
         name="Team runtime",
         status="running",
         connection_status="online",
-        network_policy={"disabled": True},
+        network_policy={"mode": "none"},
     )
     session.add(runtime)
     session.flush()

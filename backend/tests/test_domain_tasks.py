@@ -2,13 +2,14 @@ from collections.abc import Generator
 
 import fakeredis
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from backend.app.agents.profiles.models import AgentProfile
 from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.identity.users.models import User
 from backend.app.main import create_app
@@ -23,6 +24,7 @@ from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.workspaces.domain_items.models import RevisionRequest
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
+from backend.tests.test_worker_run_execution import _seed_default_model_provider
 
 TOKEN = "test-token"
 
@@ -40,6 +42,7 @@ def test_task_view_returns_domain_state_comments_and_revisions() -> None:
             "domain_type": "novel",
             "generic_state": {"progress": 30},
             "domain_state": {"chapter": 1, "tone": "suspense"},
+            "agent_profile_id": _agent_id(session, workspace.id),
         },
     )
     assert task.status_code == 201
@@ -123,7 +126,11 @@ def test_task_view_redacts_sensitive_domain_metadata() -> None:
     task = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=_headers(owner.id),
-        json={"title": "Domain metadata", "domain_type": "research"},
+        json={
+            "title": "Domain metadata",
+            "domain_type": "research",
+            "agent_profile_id": _agent_id(session, workspace.id),
+        },
     )
     assert task.status_code == 201
     task_id = task.json()["id"]
@@ -200,14 +207,20 @@ def test_domain_item_cannot_be_used_across_workspaces() -> None:
     task = client.post(
         f"/api/v1/workspaces/{workspace.id}/tasks",
         headers=_headers(owner.id),
-        json={"title": "Owner task"},
+        json={
+            "title": "Owner task",
+            "agent_profile_id": _agent_id(session, workspace.id),
+        },
     )
     assert task.status_code == 201
 
     other_task = client.post(
         f"/api/v1/workspaces/{other_workspace.id}/tasks",
         headers=_headers(other.id),
-        json={"title": "Other task"},
+        json={
+            "title": "Other task",
+            "agent_profile_id": _agent_id(session, other_workspace.id),
+        },
     )
     assert other_task.status_code == 201
 
@@ -268,6 +281,17 @@ def _seed_workspace(
     workspace = Workspace(owner=user, name=slug.title(), slug=slug, settings={})
     membership = WorkspaceMember(workspace=workspace, user=user, role="owner")
     session.add_all([user, workspace, membership])
+    session.flush()
+    session.add(
+        AgentProfile(
+            workspace_id=workspace.id,
+            name="Domain reviewer",
+            role="reviewer",
+            instructions="Review the domain task.",
+            model="gpt-4.1",
+        )
+    )
+    _seed_default_model_provider(session, workspace_id=workspace.id, user_id=user.id)
     session.commit()
     return user, workspace
 
@@ -298,3 +322,9 @@ def _patch_portable_types_for_sqlite() -> None:
                 column.type = column.type.as_generic()
             if isinstance(column.type, JSONB):
                 column.type = SqliteJSON()
+
+
+def _agent_id(session: Session, workspace_id: object) -> str:
+    return str(
+        session.scalar(select(AgentProfile.id).where(AgentProfile.workspace_id == workspace_id))
+    )

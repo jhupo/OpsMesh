@@ -43,7 +43,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operat
 
 
 @router.get("/scheduler", response_model=OperationsSchedulerResponse)
-async def operations_scheduler(
+def operations_scheduler(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
     cache: RedisJsonCache = Depends(get_cache_service),
@@ -62,7 +62,7 @@ async def operations_scheduler(
 
 
 @router.get("/blocked-steps", response_model=PageResponse[BlockedStepExplanationResponse])
-async def operations_blocked_steps(
+def operations_blocked_steps(
     page: PageParams = Depends(pagination_params),
     code: str | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
@@ -82,7 +82,7 @@ async def operations_blocked_steps(
 
 
 @router.post("/blocked-steps/unblock", response_model=BlockedStepUnblockResponse)
-async def unblock_blocked_steps(
+def unblock_blocked_steps(
     request: BlockedStepUnblockRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -105,7 +105,7 @@ async def unblock_blocked_steps(
 
 
 @router.post("/scheduler/pause", response_model=SchedulerControlResponse)
-async def pause_scheduler(
+def pause_scheduler(
     request: SchedulerPauseRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -129,7 +129,7 @@ async def pause_scheduler(
 
 
 @router.post("/scheduler/resume", response_model=SchedulerControlResponse)
-async def resume_scheduler(
+def resume_scheduler(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> SchedulerControlResponse:

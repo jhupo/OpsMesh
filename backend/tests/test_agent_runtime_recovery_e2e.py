@@ -8,14 +8,14 @@ import fakeredis
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from backend.app.agents.execution.contracts import AgentRunRequest, AgentRunResult
-from backend.app.bootstrap.job_handlers import WorkerJobHandler
 from backend.app.governance.audit.models import AuditEvent
 from backend.app.governance.security_events.models import SecurityEvent
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.orchestration.runs.control import RunControlService
-from backend.app.orchestration.runs.execution import RunExecutionDependencies, RunExecutionService
+from backend.app.orchestration.runs.execution import RunExecutionService
 from backend.app.orchestration.runs.models import (
     AgentRun,
     RunEvent,
@@ -30,15 +30,16 @@ from backend.app.orchestration.runs.steps.scheduling_state import (
 )
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.orchestration.tasks.state import TaskStatus
-from backend.app.runtime.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.queues.contracts import JobPayload, JobType
-from backend.app.runtime.queues.service import RedisQueue, consume_once
+from backend.app.runtime.queues.service import RedisQueue
 from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
 from backend.app.shared.db.base import Base
 from backend.app.shared.redis.keys import RedisKeyBuilder
 from backend.app.teams.management.models import AgentTeam
+from backend.tests.fixtures.database import flow_database_url
 from backend.tests.fixtures.execution import test_agent_id
+from backend.tests.fixtures.worker import WorkerFlow
 from backend.tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
     _seed_workspace,
@@ -68,19 +69,7 @@ class ExplodingRunner:
 @pytest.fixture(autouse=True)
 def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.app.governance.reviews.model_request import ModelRequestReview
-    from backend.app.governance.reviews.models import ResourceReview
-    from backend.app.governance.reviews.service import ResourcePolicyReviewBuilder
 
-    monkeypatch.setattr(
-        ResourcePolicyReviewBuilder,
-        "review_tool_execution",
-        lambda self, **kwargs: ResourceReview(
-            required=False,
-            risk_level="low",
-            reasons=["llm_review.approved"],
-            signals={"reviewer": "llm", "verdict": "approve"},
-        ),
-    )
     monkeypatch.setattr(
         "backend.app.governance.reviews.model_request.ModelRequestReviewService.review_request",
         lambda self, **kwargs: ModelRequestReview(
@@ -117,10 +106,10 @@ def test_duplicate_delivery_is_terminally_idempotent() -> None:
     assert queue.enqueue(job, force=True) is True
     assert queue.enqueue(job, force=True) is True
     runner = CountingRunner()
-    handler = WorkerJobHandler(session, queue, agent_runner=runner)
+    handler = WorkerFlow(session, queue, agent_runner=runner)
 
-    assert consume_once(queue, handler.handle) is True
-    assert consume_once(queue, handler.handle) is True
+    assert handler.process_next() is True
+    assert handler.process_next() is True
 
     assert runner.calls == 1, (run.status, run.error, task.status)
     assert run.status == RunStatus.COMPLETED.value
@@ -148,18 +137,10 @@ def test_runtime_timeout_marks_run_failed_with_durable_evidence(
     session.add(task)
     session.flush()
     run = RunOrchestrationService(session).create_queued_run_for_task(task)
-    service = RunExecutionService(
-        session=session,
-        dependencies=RunExecutionDependencies(
-            lifecycle=_run_lifecycle(session),
-            runtime_backends=build_runtime_backend_registry(None, lambda: 60),
-        ),
-        agent_runner=SlowRunner(),
-    )
     monkeypatch.setattr(RunExecutionService, "runtime_timeout_seconds", lambda _self, _run: 0.01)
     job = _job(workspace.id, run.id, user.id)
-
-    result = service.run_agent_sync(job)
+    WorkerFlow(session, agent_runner=SlowRunner()).handle(job)
+    result = session.get(AgentRun, run.id)
 
     assert result.status == RunStatus.FAILED.value
     assert result.error == {
@@ -194,7 +175,7 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
         execution_mode="none",
         status="running",
         connection_status="online",
-        network_policy={"disabled": False},
+        network_policy={"mode": "internet"},
     )
     session.add(runtime)
     session.flush()
@@ -257,14 +238,8 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
     session.add(run)
     session.commit()
 
-    result = RunExecutionService(
-        session=session,
-        dependencies=RunExecutionDependencies(
-            lifecycle=_run_lifecycle(session),
-            runtime_backends=build_runtime_backend_registry(None, lambda: 60),
-        ),
-        agent_runner=ExplodingRunner(),
-    ).run_agent_sync(_job(workspace.id, run.id, user.id))
+    WorkerFlow(session, agent_runner=ExplodingRunner()).handle(_job(workspace.id, run.id, user.id))
+    result = session.get(AgentRun, run.id)
 
     assert result.status == RunStatus.FAILED.value
     assert result.error["code"] == "runtime_network_policy_mismatch"
@@ -429,6 +404,11 @@ def _run_lifecycle(session: Session):
 
 def _session() -> Session:
     _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = create_engine(
+        flow_database_url(),
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)()

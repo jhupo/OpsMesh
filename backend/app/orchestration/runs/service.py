@@ -16,7 +16,9 @@ from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.job_routing import RunJobRoutingService
 from backend.app.orchestration.runs.lifecycle import RunLifecycleCallbacks, RunLifecycleService
 from backend.app.orchestration.runs.models import AgentRun
-from backend.app.orchestration.runs.resources import RunResourceReservationService
+from backend.app.orchestration.runs.resources import (
+    release_run_reservations,
+)
 from backend.app.orchestration.runs.scheduling.service import WorkspaceScheduler
 from backend.app.orchestration.runs.state import RunStatus
 from backend.app.orchestration.runs.statuses import ACTIVE_RUN_STATUS_VALUES
@@ -260,7 +262,7 @@ class RunOrchestrationService:
         run: AgentRun,
         released_at: datetime,
     ) -> None:
-        self._run_reservations().release_for_run(run, released_at=released_at)
+        release_run_reservations(self._session, run, released_at=released_at)
 
     def _schedule_workspace_steps_for_lifecycle(
         self,
@@ -277,13 +279,6 @@ class RunOrchestrationService:
 
     def _run_job_routing(self) -> RunJobRoutingService:
         return RunJobRoutingService(self._session)
-
-    def _run_reservations(self) -> RunResourceReservationService:
-        return RunResourceReservationService(
-            session=self._session,
-            mark_step_scheduling_blocked=mark_step_scheduling_blocked,
-            mark_step_scheduling_runnable=mark_step_scheduling_runnable,
-        )
 
     def _request_builder(self) -> RunRequestBuilder:
         return RunRequestBuilder(self._session, None)

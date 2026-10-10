@@ -93,7 +93,7 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -263,7 +263,7 @@ def test_runtime_manager_passes_input_file_without_persisting_it() -> None:
         name="python-stdin",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -309,7 +309,7 @@ def test_runtime_manager_reserves_and_releases_runtime_space_docker_usage() -> N
         name="python-slots",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -402,7 +402,7 @@ def test_runtime_manager_releases_runtime_space_reservation_when_docker_create_f
         name="python-create-fail",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -452,7 +452,7 @@ def test_runtime_manager_rejects_runtime_space_docker_quota_before_container_cre
         name="python-quota-block",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -500,7 +500,7 @@ def test_runtime_manager_rejects_cross_workspace_command() -> None:
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -544,7 +544,7 @@ def test_runtime_manager_records_command_timeout_without_leaving_running_command
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -598,7 +598,7 @@ def test_runtime_manager_records_docker_exec_failure_without_raising() -> None:
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -650,7 +650,7 @@ def test_runtime_manager_limits_command_output_and_records_policy_event() -> Non
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -703,7 +703,7 @@ def test_cleanup_stale_runtime_removes_only_recorded_container() -> None:
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -745,7 +745,7 @@ def test_cleanup_stale_runtime_records_failure_evidence() -> None:
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -788,7 +788,7 @@ def test_cleanup_stale_runtime_removes_managed_host_resources(tmp_path: Path) ->
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -855,7 +855,7 @@ def test_cleanup_stale_runtime_rejects_unmanaged_host_resource(tmp_path: Path) -
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -915,7 +915,7 @@ def test_runtime_manager_rejects_single_runtime_over_workspace_quota() -> None:
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -993,7 +993,7 @@ def test_runtime_manager_rejects_total_cpu_over_workspace_quota() -> None:
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -1036,7 +1036,7 @@ def test_runtime_manager_rejects_process_limit_over_workspace_quota() -> None:
         name="python",
         image="python:3.12-slim",
         default_limits={},
-        default_network_policy={"disabled": True},
+        default_network_policy={"mode": "none"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -1080,7 +1080,9 @@ def test_docker_sdk_create_container_applies_limits_and_hardening() -> None:
         def close(self) -> None:
             captured["closed"] = True
 
-    container_id = DockerSdkRuntimeClient(lambda timeout: Client()).create_container(
+    container_id = DockerSdkRuntimeClient(
+        lambda: 30, client_factory=lambda timeout: Client()
+    ).create_container(
         RuntimeCreateRequest(
             image="python:3.12-slim",
             name="opsmesh-test",
@@ -1198,7 +1200,9 @@ def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
         def close(self) -> None:
             return None
 
-    result = DockerSdkRuntimeClient(lambda timeout: Client()).exec_command(
+    result = DockerSdkRuntimeClient(
+        lambda: 30, client_factory=lambda timeout: Client()
+    ).exec_command(
         "container-123",
         ["python", "-m", "worker"],
         10,
@@ -1263,7 +1267,9 @@ def test_docker_sdk_archive_transfer_uses_runtime_identity() -> None:
         member.mode = 0o644
         archive.addfile(member, io.BytesIO(b"ok"))
 
-    DockerSdkRuntimeClient(lambda timeout: Client()).copy_archive_to_container(
+    DockerSdkRuntimeClient(
+        lambda: 30, client_factory=lambda timeout: Client()
+    ).copy_archive_to_container(
         "container-123",
         "/workspace",
         source.getvalue(),
@@ -1361,7 +1367,7 @@ def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
             "max_output_bytes": 900_000,
             "max_processes": 300,
         },
-        default_network_policy={"allow_network": True},
+        default_network_policy={"mode": "internet"},
         created_at=datetime.now(UTC),
     )
     session.add_all([workspace, template])
@@ -1372,7 +1378,7 @@ def test_runtime_control_service_applies_team_runtime_space_policy() -> None:
         team_type="creative",
         default_task_policy={
             "runtime": {
-                "network": {"disabled": True},
+                "network": {"mode": "none"},
                 "limits": {
                     "cpu_count": 1,
                     "memory_mb": 1024,

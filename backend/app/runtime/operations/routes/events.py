@@ -61,7 +61,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/operations", tags=["operat
 
 
 @router.get("/correlation", response_model=OperationsCorrelationResponse)
-async def operations_correlation(
+def operations_correlation(
     trace_id: str | None = Query(default=None, min_length=32, max_length=32),
     request_id: str | None = Query(default=None, min_length=1, max_length=80),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
@@ -78,7 +78,7 @@ async def operations_correlation(
 
 
 @router.get("/audit-integrity", response_model=AuditIntegrityStatusResponse)
-async def audit_integrity_status(
+def audit_integrity_status(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
@@ -107,7 +107,7 @@ async def audit_integrity_status(
     response_model=AuditIntegrityVerificationQueuedResponse,
     status_code=202,
 )
-async def queue_audit_integrity_verification(
+def queue_audit_integrity_verification(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
     queue: RedisQueue = Depends(get_worker_queue),
@@ -134,7 +134,7 @@ async def queue_audit_integrity_verification(
 
 
 @router.get("/run-events", response_model=RunEventFilterResponse)
-async def list_run_events(
+def list_run_events(
     page: PageParams = Depends(pagination_params),
     event_type: str | None = Query(default=None),
     trace_id: str | None = Query(default=None, min_length=32, max_length=32),
@@ -158,7 +158,7 @@ async def list_run_events(
 
 
 @router.get("/runtime-events", response_model=PageResponse[RuntimeEventResponse])
-async def list_runtime_events(
+def list_runtime_events(
     page: PageParams = Depends(pagination_params),
     runtime_id: UUID | None = Query(default=None),
     event_type: str | None = Query(default=None),
@@ -179,7 +179,7 @@ async def list_runtime_events(
 
 
 @router.get("/stale-runs", response_model=StaleRunsDiagnosticsResponse)
-async def stale_runs_diagnostics(
+def stale_runs_diagnostics(
     stale_after_seconds: int = Query(default=900, ge=60, le=86_400),
     statuses: list[StaleRunRecoverStatus] | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
@@ -198,7 +198,7 @@ async def stale_runs_diagnostics(
 
 
 @router.post("/stale-runs/recover", response_model=StaleRunRecoveryResponse)
-async def recover_stale_runs(
+def recover_stale_runs(
     request: StaleRunRecoveryRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -224,7 +224,7 @@ async def recover_stale_runs(
 
 
 @router.get("/failed-runs", response_model=FailedJobInspectionResponse)
-async def inspect_failed_runs(
+def inspect_failed_runs(
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.OPERATE)),
     session: Session = Depends(get_db_session),
@@ -240,7 +240,7 @@ async def inspect_failed_runs(
 
 
 @router.get("/audit-events", response_model=AuditEventFilterResponse)
-async def filter_audit_events(
+def filter_audit_events(
     page: PageParams = Depends(pagination_params),
     action: str | None = Query(default=None),
     target_type: str | None = Query(default=None),
@@ -266,7 +266,7 @@ async def filter_audit_events(
 
 
 @router.get("/security-events", response_model=SecurityEventFilterResponse)
-async def filter_security_events(
+def filter_security_events(
     page: PageParams = Depends(pagination_params),
     action: str | None = Query(default=None),
     severity: str | None = Query(default=None),

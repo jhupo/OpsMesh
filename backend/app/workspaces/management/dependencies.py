@@ -43,7 +43,7 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
 @router.get("", response_model=PageResponse[WorkspaceResponse])
-async def list_workspaces(
+def list_workspaces(
     page: PageParams = Depends(pagination_params),
     current_user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_db_session),
@@ -57,7 +57,7 @@ async def list_workspaces(
 
 
 @router.post("", response_model=WorkspaceResponse, status_code=status.HTTP_201_CREATED)
-async def create_workspace(
+def create_workspace(
     request: WorkspaceCreateRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     current_user: AuthenticatedUser = Depends(
@@ -93,14 +93,14 @@ async def create_workspace(
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceResponse)
-async def get_workspace(
+def get_workspace(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
 ) -> WorkspaceResponse:
     return WorkspaceResponse.model_validate(context.workspace)
 
 
 @router.patch("/{workspace_id}", response_model=WorkspaceResponse)
-async def update_workspace(
+def update_workspace(
     request: WorkspaceUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -126,7 +126,7 @@ async def update_workspace(
 
 
 @router.get("/{workspace_id}/health", response_model=WorkspaceHealthResponse)
-async def get_workspace_health(
+def get_workspace_health(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceHealthResponse:
@@ -139,7 +139,7 @@ async def get_workspace_health(
     response_model=WorkspaceHealthSnapshotResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_workspace_health_snapshot(
+def create_workspace_health_snapshot(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
 ) -> WorkspaceHealthSnapshotResponse:
@@ -151,7 +151,7 @@ async def create_workspace_health_snapshot(
     "/{workspace_id}/health/snapshots",
     response_model=PageResponse[WorkspaceHealthSnapshotResponse],
 )
-async def list_workspace_health_snapshots(
+def list_workspace_health_snapshots(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
@@ -169,7 +169,7 @@ async def list_workspace_health_snapshots(
     "/{workspace_id}/health/trends",
     response_model=WorkspaceHealthTrendResponse,
 )
-async def get_workspace_health_trends(
+def get_workspace_health_trends(
     limit: int = Query(default=20, ge=2, le=200),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),

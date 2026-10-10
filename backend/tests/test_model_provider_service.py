@@ -117,7 +117,7 @@ def test_create_normalizes_openai_compatible_base_url() -> None:
         is_default=False,
     )
 
-    assert credential.base_url == "https://dash.ovload.com/v1"
+    assert credential.base_url == "https://dash.ovload.com/"
 
 
 def test_update_rejects_credential_bearing_base_url() -> None:
@@ -244,7 +244,7 @@ def test_update_provider_uses_formal_provider_key_before_base_url_normalization(
     )
 
     assert updated.provider == "openai-compatible"
-    assert updated.base_url == "https://dash.ovload.com/v1"
+    assert updated.base_url == "https://dash.ovload.com/"
 
 
 def test_update_provider_renormalizes_existing_base_url() -> None:
@@ -270,7 +270,7 @@ def test_update_provider_renormalizes_existing_base_url() -> None:
     )
 
     assert updated.provider == "openai-compatible"
-    assert updated.base_url == "https://dash.ovload.com/v1"
+    assert updated.base_url == "https://dash.ovload.com"
 
 
 @pytest.mark.parametrize(

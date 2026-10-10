@@ -15,6 +15,7 @@ from backend.app.runtime.operations.contracts.queue import (
 )
 from backend.app.runtime.queues.contracts import JobType
 from backend.app.runtime.workers.models import WorkerLease
+from backend.app.shared.utils import ensure_aware_utc
 
 
 def normalized_stale_run_statuses(statuses: list[str] | None) -> set[RunStatus]:
@@ -42,7 +43,7 @@ def stale_run_age_anchor(run: AgentRun) -> datetime | None:
         anchor = run.updated_at or run.created_at
     else:
         return None
-    return aware_datetime(anchor)
+    return ensure_aware_utc(anchor)
 
 
 def stale_run_reason(status: str) -> tuple[str, str]:
@@ -59,16 +60,10 @@ def stale_run_failure_message(status: str) -> str:
     return "Worker stopped reporting before the run completed"
 
 
-def aware_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
-
-
 def worker_lease_age_seconds(now: datetime, lease: WorkerLease | None) -> int | None:
     if lease is None:
         return None
-    lease_started_at = aware_datetime(lease.started_at)
+    lease_started_at = ensure_aware_utc(lease.started_at)
     return max(0, int((now - lease_started_at).total_seconds()))
 
 
@@ -120,18 +115,18 @@ def stale_run_diagnostic_item(
     now: datetime,
     lease: WorkerLease | None,
 ) -> StaleRunDiagnosticResponse:
-    anchor = stale_run_age_anchor(run) or aware_datetime(run.created_at)
+    anchor = stale_run_age_anchor(run) or ensure_aware_utc(run.created_at)
     reason_code, reason_message = stale_run_reason(run.status)
-    lease_started_at = aware_datetime(lease.started_at) if lease is not None else None
+    lease_started_at = ensure_aware_utc(lease.started_at) if lease is not None else None
     return StaleRunDiagnosticResponse(
         run_id=run.id,
         status=RunStatus(run.status).value,
         stale_reason_code=reason_code,
         stale_reason_message=reason_message,
         age_seconds=max(0, int((now - anchor).total_seconds())),
-        created_at=aware_datetime(run.created_at),
-        updated_at=aware_datetime(run.updated_at),
-        started_at=aware_datetime(run.started_at) if run.started_at is not None else None,
+        created_at=ensure_aware_utc(run.created_at),
+        updated_at=ensure_aware_utc(run.updated_at),
+        started_at=ensure_aware_utc(run.started_at) if run.started_at is not None else None,
         task_id=run.task_id,
         task_step_id=run.task_step_id,
         agent_profile_id=run.agent_profile_id,

@@ -19,7 +19,6 @@ from backend.app.capabilities.mcp.transport.stdio import (
 from backend.app.governance.security_events.models import SecurityEvent
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
-from backend.app.runtime.instances.manager import RuntimeManager
 from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.self_hosted.dispatch.mcp import SelfHostedMcpJobService
 from backend.app.shared.config import Settings
@@ -53,7 +52,7 @@ class ContextualMcpAdapterResolver:
                     "mcp_http_runtime_unsupported", "HTTP MCP requires a Docker Runtime"
                 )
             return DockerRuntimeHttpMcpToolAdapter(
-                RuntimeManager(self._session, self._docker_client), runtime, self._secret_service
+                self._docker_client, runtime, self._secret_service
             )
         if server.connection.get("runtime") == "managed":
             if server.workspace_id != self._context.workspace_id or self._current_run() is None:
@@ -82,7 +81,7 @@ class ContextualMcpAdapterResolver:
                     "Docker MCP execution requires a worker-injected runtime client",
                 )
             return DockerRuntimeStdioMcpToolAdapter(
-                runtime_manager=RuntimeManager(self._session, self._docker_client),
+                docker=self._docker_client,
                 runtime=runtime,
                 secret_service=self._secret_service,
                 working_dir=self._project_working_directory(run),
@@ -141,7 +140,7 @@ class ContextualMcpAdapterResolver:
                 "stdio_runtime_space_mismatch",
                 "MCP stdio runtime space does not match the frozen binding",
             )
-        if binding.network_disabled and runtime.network_policy.get("disabled") is not True:
+        if binding.network_disabled and runtime.network_policy.get("mode") != "none":
             self._deny_stdio(
                 "stdio_runtime_network_policy_mismatch",
                 "MCP stdio runtime does not enforce the frozen network policy",

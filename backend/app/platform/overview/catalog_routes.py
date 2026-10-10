@@ -21,7 +21,7 @@ def _response(resource: object) -> AdminCatalogResourceResponse:
     "/catalog/{kind}",
     response_model=PageResponse[AdminCatalogResourceResponse],
 )
-async def list_admin_catalog_resources(
+def list_admin_catalog_resources(
     kind: AdminCatalogKind,
     page: PageParams = Depends(pagination_params),
     workspace_id: UUID | None = Query(default=None),
@@ -49,7 +49,7 @@ async def list_admin_catalog_resources(
     "/catalog/{kind}/{resource_id}",
     response_model=AdminCatalogResourceResponse,
 )
-async def get_admin_catalog_resource(
+def get_admin_catalog_resource(
     kind: AdminCatalogKind,
     resource_id: UUID,
     workspace_id: UUID | None = Query(default=None),

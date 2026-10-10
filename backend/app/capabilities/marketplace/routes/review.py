@@ -23,7 +23,7 @@ router = APIRouter()
     response_model=TalentListingReviewResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def review_talent_listing(
+def review_talent_listing(
     listing_id: UUID,
     request: TalentListingReviewCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.WRITE)),

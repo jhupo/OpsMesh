@@ -21,7 +21,7 @@ router = APIRouter()
     "/workspaces/{workspace_id}/talent-market/recommendations",
     response_model=TalentRecommendationResponse,
 )
-async def recommend_talent_for_team(
+def recommend_talent_for_team(
     request: TalentRecommendationRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -39,7 +39,7 @@ async def recommend_talent_for_team(
     "/workspaces/{workspace_id}/tasks/{task_id}/talent-market/recommendations",
     response_model=TaskTalentRecommendationResponse,
 )
-async def recommend_talent_for_task_staffing(
+def recommend_talent_for_task_staffing(
     task_id: UUID,
     max_candidates_per_role: int = Query(default=3, ge=1, le=10),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),

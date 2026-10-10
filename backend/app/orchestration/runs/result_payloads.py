@@ -1,4 +1,3 @@
-import json
 from dataclasses import asdict
 from uuid import UUID
 
@@ -24,14 +23,6 @@ def run_output_payload(result: AgentRunResult) -> dict[str, object]:
     if result.usage is not None:
         payload["usage"] = json_safe_object(asdict(result.usage))
     return payload
-
-
-def json_object_from_text(value: str) -> dict[str, object] | None:
-    try:
-        payload = json.loads(value)
-    except json.JSONDecodeError:
-        return None
-    return payload if isinstance(payload, dict) else None
 
 
 def json_safe_object(value: object) -> object:

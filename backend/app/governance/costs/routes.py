@@ -25,12 +25,13 @@ from backend.app.identity.authorization.permissions import WorkspaceAction
 from backend.app.shared.db.session import get_db_session
 from backend.app.shared.http.pagination import PageResponse, pagination_params
 from backend.app.shared.pagination import PageParams
+from backend.app.shared.utils import ensure_aware_utc
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/costs", tags=["costs"])
 
 
 @router.get("/usage", response_model=PageResponse[ModelUsageRecordResponse])
-async def list_model_usage(
+def list_model_usage(
     page: PageParams = Depends(pagination_params),
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
@@ -62,13 +63,11 @@ async def list_model_usage(
 
 
 @router.get("/summary", response_model=CostSummaryResponse)
-async def cost_summary(
+def cost_summary(
     start_at: datetime | None = Query(default=None),
     end_at: datetime | None = Query(default=None),
     currency: str = Query(default="USD", pattern="^[A-Za-z]{3}$"),
-    group_by: Literal["provider", "model", "agent", "run", "day"] = Query(
-        default="model"
-    ),
+    group_by: Literal["provider", "model", "agent", "run", "day"] = Query(default="model"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> CostSummaryResponse:
@@ -87,7 +86,7 @@ async def cost_summary(
 
 
 @router.get("/pricing-rules", response_model=list[ModelPricingRuleResponse])
-async def list_pricing_rules(
+def list_pricing_rules(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> list[ModelPricingRuleResponse]:
@@ -102,7 +101,7 @@ async def list_pricing_rules(
     response_model=ModelPricingRuleResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_pricing_rule(
+def create_pricing_rule(
     request: ModelPricingRuleCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -131,7 +130,7 @@ async def create_pricing_rule(
     "/pricing-rules/{pricing_rule_id}/disable",
     response_model=ModelPricingRuleResponse,
 )
-async def disable_pricing_rule(
+def disable_pricing_rule(
     pricing_rule_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -151,7 +150,7 @@ async def disable_pricing_rule(
 
 
 @router.get("/budget", response_model=WorkspaceCostBudgetResponse)
-async def get_cost_budget(
+def get_cost_budget(
     currency: str = Query(default="USD", pattern="^[A-Za-z]{3}$"),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -168,7 +167,7 @@ async def get_cost_budget(
 
 
 @router.put("/budget", response_model=WorkspaceCostBudgetResponse)
-async def put_cost_budget(
+def put_cost_budget(
     request: WorkspaceCostBudgetRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
     session: Session = Depends(get_db_session),
@@ -191,8 +190,8 @@ def _time_range(
     start_at: datetime | None,
     end_at: datetime | None,
 ) -> tuple[datetime, datetime]:
-    end = _utc(end_at or datetime.now(UTC))
-    start = _utc(start_at or end - timedelta(days=30))
+    end = ensure_aware_utc(end_at or datetime.now(UTC))
+    start = ensure_aware_utc(start_at or end - timedelta(days=30))
     if start >= end:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -204,9 +203,3 @@ def _time_range(
             detail="cost query range cannot exceed 366 days",
         )
     return start, end
-
-
-def _utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)

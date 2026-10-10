@@ -14,7 +14,9 @@ def test_agent_file_reader_rejects_type_and_declared_or_actual_oversize(
 ) -> None:
     workspace_id = uuid4()
     storage = LocalStorage(str(tmp_path / "storage"))
-    reader = WorkspaceFileContentReader(storage, max_bytes=5)
+    reader = WorkspaceFileContentReader(
+        storage, max_bytes=5, allowed_content_types=frozenset({"text/plain"})
+    )
 
     unsupported = _file(
         workspace_id,
@@ -50,12 +52,14 @@ def test_agent_file_reader_rejects_type_and_declared_or_actual_oversize(
     assert actual_error.value.code == "workspace_file_too_large"
 
 
-def test_agent_file_reader_rejects_runtime_denied_and_secret_named_files(
+def test_agent_file_reader_rejects_runtime_denied_and_restricted_files(
     tmp_path: Path,
 ) -> None:
     workspace_id = uuid4()
     storage = LocalStorage(str(tmp_path / "storage"))
-    reader = WorkspaceFileContentReader(storage)
+    reader = WorkspaceFileContentReader(
+        storage, max_bytes=100, allowed_content_types=frozenset({"text/plain"})
+    )
     denied = _file(
         workspace_id,
         filename="notes.txt",
@@ -69,6 +73,7 @@ def test_agent_file_reader_rejects_runtime_denied_and_secret_named_files(
         content_type="text/plain",
         content=b"secret",
     )
+    secret_named.sensitivity = "restricted"
 
     with pytest.raises(WorkspaceFileReadError) as denied_error:
         reader.read(denied, workspace_id=workspace_id)

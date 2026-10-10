@@ -48,7 +48,7 @@ def _response(
     response_model=AdminAnnouncementResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def publish_admin_announcement(
+def publish_admin_announcement(
     request: AdminAnnouncementCreateRequest,
     session: Session = Depends(get_db_session),
 ) -> AdminAnnouncementResponse:
@@ -73,7 +73,7 @@ async def publish_admin_announcement(
     "/announcements",
     response_model=PageResponse[AdminAnnouncementResponse],
 )
-async def list_admin_announcements(
+def list_admin_announcements(
     page: PageParams = Depends(pagination_params),
     announcement_status: str | None = Query(default=None, alias="status"),
     session: Session = Depends(get_db_session),
@@ -92,7 +92,7 @@ async def list_admin_announcements(
     "/announcements/{announcement_id}",
     response_model=AdminAnnouncementResponse,
 )
-async def get_admin_announcement(
+def get_admin_announcement(
     announcement_id: UUID,
     session: Session = Depends(get_db_session),
 ) -> AdminAnnouncementResponse:
@@ -107,7 +107,7 @@ async def get_admin_announcement(
     "/announcements/{announcement_id}/retract",
     response_model=AdminAnnouncementResponse,
 )
-async def retract_admin_announcement(
+def retract_admin_announcement(
     announcement_id: UUID,
     session: Session = Depends(get_db_session),
 ) -> AdminAnnouncementResponse:

@@ -15,14 +15,11 @@ from backend.app.shared.pagination import PageParams
 router = APIRouter(dependencies=[Depends(require_platform_admin)])
 
 
-
-
-
 @router.get(
     "/system/logs",
     response_model=PageResponse[AdminSystemLogResponse],
 )
-async def list_admin_system_logs(
+def list_admin_system_logs(
     page: PageParams = Depends(pagination_params),
     workspace_id: UUID | None = Query(default=None),
     user_id: UUID | None = Query(default=None),

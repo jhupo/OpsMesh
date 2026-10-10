@@ -28,7 +28,7 @@ from backend.app.runtime.operations.contracts.providers import (
     ModelProviderOperationsRunResponse,
 )
 from backend.app.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
-from backend.app.shared.utils import dict_or_empty, uuid_or_none
+from backend.app.shared.utils import dict_or_empty, int_or_zero, string_list, uuid_or_none
 from backend.app.workspaces.management.models import Workspace
 
 
@@ -175,10 +175,10 @@ class ModelProviderOperationsService:
             model_api=_string_or_none(summary.get("model_api")),
             credential_id=credential_id,
             readiness_status=str(summary.get("readiness_status") or "blocked"),
-            reasons=_string_list(summary.get("reasons")),
-            warnings=_string_list(summary.get("warnings")),
+            reasons=string_list(summary.get("reasons")),
+            warnings=string_list(summary.get("warnings")),
             failure={
-                "count": _int_or_zero(summary.get("failure_count")),
+                "count": int_or_zero(summary.get("failure_count")),
                 "health_status": _string_or_none(summary.get("credential_health_status")),
                 "last_failure_code": _string_or_none(summary.get("last_failure_code")),
                 "last_failure_message": _redacted_string(summary.get("last_failure_message")),
@@ -322,7 +322,7 @@ class ModelProviderOperationsService:
         return redact_sensitive_payload(
             {
                 "enabled": policy.get("enabled") is True,
-                "retry_error_codes": _string_list(policy.get("retry_error_codes")),
+                "retry_error_codes": string_list(policy.get("retry_error_codes")),
                 "candidates": candidates,
                 "selected_run_count": selected_count,
                 "unavailable_run_count": unavailable_count,
@@ -388,14 +388,6 @@ class ModelProviderOperationsService:
 
 def _string_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
-
-
-def _string_list(value: object) -> list[str]:
-    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
-
-
-def _int_or_zero(value: object) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def _redacted_string(value: object) -> str | None:

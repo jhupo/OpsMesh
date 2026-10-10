@@ -182,12 +182,6 @@ def string_list(value: object) -> list[str]:
     return [item for item in value if isinstance(item, str)]
 
 
-def string_list_or_single(value: object) -> list[str]:
-    if isinstance(value, str):
-        return [value]
-    return string_list(value)
-
-
 def string_or_default(value: object, default: str) -> str:
     return value if isinstance(value, str) and value else default
 

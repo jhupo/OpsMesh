@@ -168,7 +168,7 @@ class RunRuntimeAuthorizationService:
             else False
         )
         actual_network_disabled = (
-            runtime.network_policy.get("disabled") is True if runtime is not None else False
+            runtime.network_policy.get("mode") == "none" if runtime is not None else False
         )
         network_disabled = (
             requested_network_disabled or space_network_disabled or actual_network_disabled
@@ -292,7 +292,7 @@ class RunRuntimeAuthorizationService:
                     "runtime_space_mismatch",
                     "Runtime space changed after the run was authorized",
                 )
-            if binding.network_disabled and runtime.network_policy.get("disabled") is not True:
+            if binding.network_disabled and runtime.network_policy.get("mode") != "none":
                 raise RunRuntimeAuthorizationError(
                     "runtime_network_policy_mismatch",
                     "Runtime no longer enforces the frozen network policy",
@@ -336,10 +336,7 @@ class RunRuntimeAuthorizationService:
                 "Per-run runtime is not bound to the frozen runtime placement",
             )
         self._require_runtime_ready(execution_runtime)
-        if (
-            binding.network_disabled
-            and execution_runtime.network_policy.get("disabled") is not True
-        ):
+        if binding.network_disabled and execution_runtime.network_policy.get("mode") != "none":
             raise RunRuntimeAuthorizationError(
                 "runtime_execution_network_policy_mismatch",
                 "Per-run runtime does not enforce the frozen network policy",

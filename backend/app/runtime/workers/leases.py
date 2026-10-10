@@ -288,9 +288,7 @@ class WorkerLeaseWriter:
     ) -> WorkerLease:
         now = datetime.now(UTC)
         lease = self._session.scalar(
-            select(WorkerLease)
-            .where(WorkerLease.job_id == job.job_id)
-            .with_for_update()
+            select(WorkerLease).where(WorkerLease.job_id == job.job_id).with_for_update()
         )
         if lease is None:
             lease = _new_worker_lease(
@@ -480,7 +478,7 @@ def _lease_event(event_type: str, at: datetime, job: JobPayload) -> dict[str, ob
 
 
 def _runtime_id(job: JobPayload) -> str | None:
-    value = job.routing.get("runtime_id") or job.routing.get("workspace_runtime_id")
+    value = job.routing.get("workspace_runtime_id")
     return str(value) if value is not None else None
 
 
@@ -495,6 +493,7 @@ def append_worker_lifecycle_events(
     if events:
         metadata["last_lifecycle_event"] = events[-1]
     return metadata
+
 
 def worker_lifecycle_event(
     event_type: str,
@@ -514,6 +513,7 @@ def worker_lifecycle_event(
     if metadata:
         event.update(metadata)
     return event
+
 
 def worker_finish_lifecycle_event(status: str) -> str:
     if status == "retrying":

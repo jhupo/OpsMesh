@@ -91,19 +91,3 @@ def string_list(value: object, *, key: str, context: str) -> list[str]:
     if len(items) != len(value):
         raise ValueError(f"{context} {key} must contain only strings")
     return items
-
-
-def dict_payload(value: object, *, context: str) -> dict[str, object]:
-    if value is None:
-        return {}
-    if not isinstance(value, dict):
-        raise ValueError(f"{context} arguments must be an object")
-    return dict(value)
-
-
-def string_tuple(value: object, *, context: str) -> tuple[str, ...] | None:
-    if value is None:
-        return None
-    if not isinstance(value, list):
-        raise ValueError(f"{context} runtime_allowed_tools must be a list")
-    return tuple(item for item in value if isinstance(item, str) and item)

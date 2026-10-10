@@ -28,7 +28,7 @@ router = APIRouter(
     "/agent-runtimes",
     response_model=list[AgentRuntimeAdapterCapabilityResponse],
 )
-async def list_agent_runtime_adapter_capabilities(
+def list_agent_runtime_adapter_capabilities(
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     registry: ProviderAgentRuntimeRegistry = Depends(get_agent_runtime_registry),
 ) -> list[AgentRuntimeAdapterCapabilityResponse]:
@@ -60,7 +60,7 @@ async def list_agent_runtime_adapter_capabilities(
 
 
 @router.get("", response_model=list[ModelCapabilityResponse])
-async def list_workspace_model_provider_capabilities(
+def list_workspace_model_provider_capabilities(
     provider: str | None = Query(default=None),
     capability: str | None = Query(default=None),
     session: Session = Depends(get_db_session),

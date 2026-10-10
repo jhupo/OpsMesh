@@ -59,9 +59,10 @@ def run_requires_verified_isolation(run: AgentRun) -> bool:
 
     snapshot = authorization_snapshot_for_run(run)
     runtime_policy = snapshot.get("runtime_policy")
-    return isinstance(runtime_policy, dict) and runtime_policy.get(
-        "requires_verified_isolation"
-    ) is True
+    return (
+        isinstance(runtime_policy, dict)
+        and runtime_policy.get("requires_verified_isolation") is True
+    )
 
 
 def _evaluate_allowed_tools(
@@ -191,47 +192,31 @@ def _network_requirements(
     modes: set[str] = set()
     runtime_policy = snapshot.get("runtime_policy")
     if isinstance(runtime_policy, dict):
-        modes |= _network_modes_from_policy(runtime_policy)
+        network = runtime_policy.get("network")
+        if isinstance(network, dict):
+            modes |= _network_modes_from_policy(network)
         mcp_policy = runtime_policy.get("mcp")
         if isinstance(mcp_policy, dict):
-            modes |= _network_modes_from_policy(mcp_policy)
+            network = mcp_policy.get("network_policy")
+            if isinstance(network, dict):
+                modes |= _network_modes_from_policy(network)
     if runtime_space is not None and isinstance(runtime_space.network_policy, dict):
         modes |= _network_modes_from_policy(runtime_space.network_policy)
     return modes
 
 
 def _worker_network_modes(worker_capabilities: dict[str, object]) -> set[str]:
-    modes: set[str] = set()
-    for key in ("supported_network_modes", "network_expectations"):
-        modes |= {
-            _normalize_network_mode(mode)
-            for mode in string_list(worker_capabilities.get(key))
-        }
-    for key in ("network_mode", "network"):
-        value = worker_capabilities.get(key)
-        if isinstance(value, str):
-            modes.add(_normalize_network_mode(value))
-        elif isinstance(value, dict):
-            modes |= _network_modes_from_policy(value)
-    return {mode for mode in modes if mode}
+    modes = set(string_list(worker_capabilities.get("supported_network_modes")))
+    if not modes <= {"none", "restricted", "internet"}:
+        return set()
+    return modes
 
 
 def _network_modes_from_policy(policy: dict[str, object]) -> set[str]:
-    modes: set[str] = set()
-    for key in ("mode", "network_mode", "egress_mode"):
-        value = policy.get(key)
-        if isinstance(value, str) and value:
-            modes.add(_normalize_network_mode(value))
-    for key in ("network", "network_policy"):
-        value = policy.get(key)
-        if isinstance(value, str) and value:
-            modes.add(_normalize_network_mode(value))
-        elif isinstance(value, dict):
-            modes |= _network_modes_from_policy(value)
-    allow_egress = policy.get("allow_network_egress")
-    if isinstance(allow_egress, bool):
-        modes.add("internet" if allow_egress else "none")
-    return {mode for mode in modes if mode}
+    mode = policy.get("mode", "none")
+    if mode not in {"none", "restricted", "internet"}:
+        raise ValueError("Network policy requires a canonical mode")
+    return {mode}
 
 
 def _optional_string_set(value: object) -> set[str] | None:
@@ -253,17 +238,6 @@ def _matches_any(value: str, patterns: list[str]) -> bool:
         if normalized == normalized_pattern:
             return True
     return False
-
-
-def _normalize_network_mode(value: str) -> str:
-    normalized = _normalize_token(value)
-    if normalized in {"off", "offline", "disabled", "disable", "none", "no_network", "deny"}:
-        return "none"
-    if normalized in {"egress", "online", "public", "web"}:
-        return "internet"
-    if normalized in {"allowlist", "allow_list", "restricted_egress"}:
-        return "restricted"
-    return normalized
 
 
 def _normalize_token(value: str) -> str:

@@ -8,8 +8,9 @@ from backend.app.runtime.spaces.models import (
     RuntimeSpaceQuota,
     RuntimeSpaceReservation,
 )
+from backend.app.shared.utils import dict_list
 from backend.app.teams.projects.policies import ACTIVE_RESERVATION_STATUSES, SPACE_TIER_TEMPLATES
-from backend.app.teams.projects.types import list_of_dicts, number
+from backend.app.teams.projects.types import number
 
 
 def runtime_space_payload(
@@ -38,6 +39,7 @@ def runtime_space_payload(
         "latest_events": [event_payload(event) for event in events[:10]],
     }
 
+
 def quota_payload(quota: RuntimeSpaceQuota) -> dict[str, object]:
     available = max(quota.limit_value - quota.reserved_value, 0)
     utilization = round(quota.reserved_value / quota.limit_value, 4) if quota.limit_value else 0.0
@@ -49,6 +51,7 @@ def quota_payload(quota: RuntimeSpaceQuota) -> dict[str, object]:
         "unit": quota.unit,
         "utilization": utilization,
     }
+
 
 def reservation_summary(reservations: list[RuntimeSpaceReservation]) -> dict[str, object]:
     usage_totals: dict[str, int | float] = {}
@@ -69,6 +72,7 @@ def reservation_summary(reservations: list[RuntimeSpaceReservation]) -> dict[str
         "resource_usage": dict(sorted(usage_totals.items())),
     }
 
+
 def event_payload(event: RuntimeSpaceEvent) -> dict[str, object]:
     return {
         "id": event.id,
@@ -77,6 +81,7 @@ def event_payload(event: RuntimeSpaceEvent) -> dict[str, object]:
         "metadata": event.event_metadata,
         "created_at": event.created_at,
     }
+
 
 def capacity_summary(
     *,
@@ -94,12 +99,13 @@ def capacity_summary(
         "reservations": reservations,
     }
 
+
 def aggregate_quota_limits(
     runtime_space_items: list[dict[str, object]],
 ) -> dict[str, dict[str, object]]:
     aggregate_limits: dict[str, dict[str, object]] = {}
     for space in runtime_space_items:
-        for quota in list_of_dicts(space.get("quota_limits")):
+        for quota in dict_list(space.get("quota_limits")):
             key = str(quota.get("quota_key"))
             current = aggregate_limits.setdefault(key, empty_quota_limit(key, quota))
             current["limit_value"] = number(current.get("limit_value")) + number(
@@ -118,6 +124,7 @@ def aggregate_quota_limits(
         quota["utilization"] = round(reserved / limit, 4) if limit else 0.0
     return aggregate_limits
 
+
 def empty_quota_limit(key: str, quota: dict[str, object]) -> dict[str, object]:
     return {
         "quota_key": key,
@@ -128,14 +135,13 @@ def empty_quota_limit(key: str, quota: dict[str, object]) -> dict[str, object]:
         "space_count": 0,
     }
 
+
 def max_project_space(runtime_space_items: list[dict[str, object]]) -> dict[str, object]:
     current_limits: dict[str, object] = {}
     for item in runtime_space_items:
-        for quota in list_of_dicts(item.get("quota_limits")):
+        for quota in dict_list(item.get("quota_limits")):
             key = str(quota.get("quota_key"))
-            current_limits[key] = number(current_limits.get(key)) + number(
-                quota.get("limit_value")
-            )
+            current_limits[key] = number(current_limits.get(key)) + number(quota.get("limit_value"))
     current_tier = infer_tier(current_limits)
     return {
         "current_tier": current_tier,
@@ -144,6 +150,7 @@ def max_project_space(runtime_space_items: list[dict[str, object]]) -> dict[str,
         "available_tiers": [template["tier"] for template in SPACE_TIER_TEMPLATES],
         "upgrade_recommendation": upgrade_recommendation(current_tier),
     }
+
 
 def infer_tier(current_limits: dict[str, object]) -> str | None:
     active_runs = number(current_limits.get("active_runs"))
@@ -159,6 +166,7 @@ def infer_tier(current_limits: dict[str, object]) -> str | None:
             return str(template["tier"])
         matched = str(template["tier"])
     return matched
+
 
 def upgrade_recommendation(current_tier: str | None) -> str | None:
     if current_tier is None:

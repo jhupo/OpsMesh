@@ -27,7 +27,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["runtime-spaces"])
 
 
 @router.get("/runtime-spaces", response_model=PageResponse[RuntimeSpaceResponse])
-async def list_runtime_spaces(
+def list_runtime_spaces(
     page: PageParams = Depends(pagination_params),
     status_filter: str | None = Query(default=None, alias="status"),
     scope: str | None = Query(default=None),
@@ -53,7 +53,7 @@ async def list_runtime_spaces(
     response_model=RuntimeSpaceResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_runtime_space(
+def create_runtime_space(
     request: RuntimeSpaceCreateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -81,7 +81,7 @@ async def create_runtime_space(
 
 
 @router.get("/runtime-spaces/{runtime_space_id}", response_model=RuntimeSpaceResponse)
-async def get_runtime_space(
+def get_runtime_space(
     runtime_space_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
@@ -99,7 +99,7 @@ async def get_runtime_space(
     "/runtime-spaces/{runtime_space_id}/diagnostics",
     response_model=RuntimeSpaceDiagnosticsResponse,
 )
-async def get_runtime_space_diagnostics(
+def get_runtime_space_diagnostics(
     runtime_space_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -114,7 +114,7 @@ async def get_runtime_space_diagnostics(
 
 
 @router.patch("/runtime-spaces/{runtime_space_id}", response_model=RuntimeSpaceResponse)
-async def update_runtime_space(
+def update_runtime_space(
     runtime_space_id: UUID,
     request: RuntimeSpaceUpdateRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -137,7 +137,7 @@ async def update_runtime_space(
 
 
 @router.post("/runtime-spaces/{runtime_space_id}/reset", response_model=RuntimeSpaceResetResponse)
-async def reset_runtime_space(
+def reset_runtime_space(
     runtime_space_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -161,7 +161,7 @@ async def reset_runtime_space(
     "/runtime-spaces/{runtime_space_id}/pause",
     response_model=RuntimeSpaceControlResponse,
 )
-async def pause_runtime_space(
+def pause_runtime_space(
     runtime_space_id: UUID,
     request: RuntimeSpacePauseRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -184,7 +184,7 @@ async def pause_runtime_space(
     "/runtime-spaces/{runtime_space_id}/resume",
     response_model=RuntimeSpaceControlResponse,
 )
-async def resume_runtime_space(
+def resume_runtime_space(
     runtime_space_id: UUID,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
     session: Session = Depends(get_db_session),
@@ -206,7 +206,7 @@ async def resume_runtime_space(
     "/runtime-spaces/{runtime_space_id}/reservations/force-release",
     response_model=RuntimeSpaceForceReleaseResponse,
 )
-async def force_release_runtime_space_reservations(
+def force_release_runtime_space_reservations(
     runtime_space_id: UUID,
     request: RuntimeSpaceForceReleaseRequest,
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.MANAGE_RUNTIME)),
@@ -232,7 +232,7 @@ async def force_release_runtime_space_reservations(
     "/runtime-spaces/{runtime_space_id}/events",
     response_model=PageResponse[RuntimeSpaceEventResponse],
 )
-async def list_runtime_space_events(
+def list_runtime_space_events(
     runtime_space_id: UUID,
     page: PageParams = Depends(pagination_params),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
