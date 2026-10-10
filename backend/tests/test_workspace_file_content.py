@@ -74,6 +74,7 @@ def test_agent_file_reader_rejects_runtime_denied_and_restricted_files(
         content=b"secret",
     )
     secret_named.sensitivity = "restricted"
+    secret_named.runtime_access = "denied"
 
     with pytest.raises(WorkspaceFileReadError) as denied_error:
         reader.read(denied, workspace_id=workspace_id)
@@ -81,7 +82,7 @@ def test_agent_file_reader_rejects_runtime_denied_and_restricted_files(
         reader.read(secret_named, workspace_id=workspace_id)
 
     assert denied_error.value.code == "project_input_runtime_access_denied"
-    assert secret_error.value.code == "project_input_sensitive_file_denied"
+    assert secret_error.value.code == "project_input_runtime_access_denied"
 
 
 def _file(

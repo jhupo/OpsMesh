@@ -50,7 +50,6 @@ from backend.app.orchestration.runs.authorization.validation import (
     resource_grants_for_snapshot,
     tool_definitions_for_snapshot,
 )
-from backend.app.orchestration.runs.cancellation import DatabaseRunCancellation
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.queries import authorization_snapshot_for_run
 from backend.app.orchestration.runs.runtime_metadata import RunRuntimeMetadataBuilder
@@ -510,11 +509,6 @@ class RunRequestBuilder:
             output_schema=context.output_schema,
             guardrails=context.guardrails,
             stream=True,
-            cancellation=DatabaseRunCancellation.for_session(
-                self.session,
-                workspace_id=run.workspace_id,
-                run_id=run.id,
-            ),
         )
 
     def build_direct_tool_context(

@@ -25,11 +25,13 @@ from backend.app.agents.execution.providers.openai.runner import OpenAIAgentsRun
 from backend.app.agents.profiles.models import AgentProfile
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.users.models import User
-from backend.app.orchestration.runs.cancellation import DatabaseRunCancellation
 from backend.app.orchestration.runs.models import AgentRun
+from backend.app.orchestration.runs.scoped_cancellation import ScopedRunCancellation
 from backend.app.orchestration.runs.state import RunStatus
 from backend.app.orchestration.tasks.models import Task
+from backend.app.shared.concurrency import BlockingIO
 from backend.app.shared.db.base import Base
+from backend.app.shared.db.operations import DatabaseOperations
 from backend.app.workspaces.management.models import Workspace
 from backend.app.workspaces.members.models import WorkspaceMember
 
@@ -257,9 +259,11 @@ def test_claude_cancellation_interrupts_client_and_active_tools() -> None:
     assert executor.cancelled is True
 
 
-def test_database_run_cancellation_observes_external_commit() -> None:
+def test_database_run_cancellation_observes_external_commit(tmp_path) -> None:
     _patch_portable_types_for_sqlite()
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = create_engine(
+        f"sqlite+pysqlite:///{(tmp_path / 'cancellation.sqlite').as_posix()}", future=True
+    )
     Base.metadata.create_all(engine)
     sessions = sessionmaker(bind=engine, expire_on_commit=False)
     with sessions() as session:
@@ -288,19 +292,21 @@ def test_database_run_cancellation_observes_external_commit() -> None:
         )
         session.add(run)
         session.commit()
-        cancellation = DatabaseRunCancellation.for_session(
-            session,
-            workspace_id=workspace.id,
-            run_id=run.id,
-        )
 
-        assert asyncio.run(cancellation.is_cancelled()) is False
-        with sessions() as control_session:
-            controlled_run = control_session.get(AgentRun, run.id)
-            assert controlled_run is not None
-            controlled_run.status = RunStatus.CANCELLED.value
-            control_session.commit()
-        assert asyncio.run(cancellation.is_cancelled()) is True
+        async def scenario():
+            with BlockingIO(1, name="test-cancellation") as io:
+                database = DatabaseOperations(sessions, io, lambda: None)
+                cancellation = ScopedRunCancellation(database, workspace.id, run.id)
+                assert await cancellation.is_cancelled() is False
+                with sessions() as control_session:
+                    controlled_run = control_session.get(AgentRun, run.id)
+                    assert controlled_run is not None
+                    controlled_run.status = RunStatus.CANCELLED.value
+                    control_session.commit()
+                assert await cancellation.is_cancelled() is True
+
+        asyncio.run(scenario())
+    engine.dispose()
 
 
 def _openai_request(**kwargs: object) -> AgentRunRequest:
