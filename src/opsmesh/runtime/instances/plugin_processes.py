@@ -272,7 +272,7 @@ class PluginProcessWorker:
             workspace_id=item.workspace_id,
             runtime_template_id=item.template_id,
             name=f"plugin-{item.install_id}",
-            execution_mode="persistent",
+            execution_mode="shared",
             status="provisioning",
             limits=asdict(config.limits),
             network_policy=config.network_policy,

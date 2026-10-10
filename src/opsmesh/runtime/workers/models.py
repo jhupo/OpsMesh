@@ -17,7 +17,14 @@ class WorkerRunnerConfig:
     worker_type: str = "cloud"
     queue_name: str = "agent_runs"
     concurrency: int = 32
+    task_concurrency: int | None = None
+    mcp_concurrency: int | None = None
     blocking_io_concurrency: int = 8
+    region: str | None = None
+    capabilities: tuple[str, ...] = ()
+    runtime_modes: tuple[str, ...] = ("isolated", "shared")
+    cpu_count: int | None = None
+    memory_mb: int | None = None
     heartbeat_interval_seconds: float = 30.0
     idle_sleep_seconds: float = 1.0
     maintenance_interval_seconds: float = 60.0
@@ -32,6 +39,42 @@ class WorkerRunnerConfig:
             raise ValueError("Worker blocking I/O concurrency must be positive")
         if self.concurrency < 1:
             raise ValueError("Worker concurrency must be positive")
+        task_concurrency = (
+            self.concurrency if self.task_concurrency is None else self.task_concurrency
+        )
+        mcp_concurrency = (
+            self.concurrency if self.mcp_concurrency is None else self.mcp_concurrency
+        )
+        if task_concurrency < 1:
+            raise ValueError("Worker task concurrency must be positive")
+        if mcp_concurrency < 1:
+            raise ValueError("Worker MCP concurrency must be positive")
+        if self.cpu_count is not None and self.cpu_count < 1:
+            raise ValueError("Worker CPU capacity must be positive")
+        if self.memory_mb is not None and self.memory_mb < 1:
+            raise ValueError("Worker memory capacity must be positive")
+        if self.region is not None and not self.region.strip():
+            raise ValueError("Worker region cannot be blank")
+        if any(mode not in {"isolated", "shared"} for mode in self.runtime_modes):
+            raise ValueError("Worker runtime modes must be isolated or shared")
+        object.__setattr__(self, "task_concurrency", task_concurrency)
+        object.__setattr__(self, "mcp_concurrency", mcp_concurrency)
+
+    def capacity(self) -> dict[str, object]:
+        capacity: dict[str, object] = {
+            "max_jobs": self.concurrency,
+            "task_slots": self.task_concurrency,
+            "mcp_slots": self.mcp_concurrency,
+            "capabilities": list(self.capabilities),
+            "runtime_modes": list(self.runtime_modes),
+        }
+        if self.region is not None:
+            capacity["region"] = self.region.strip()
+        if self.cpu_count is not None:
+            capacity["cpu_count"] = self.cpu_count
+        if self.memory_mb is not None:
+            capacity["memory_mb"] = self.memory_mb
+        return capacity
 
 
 @dataclass(frozen=True)

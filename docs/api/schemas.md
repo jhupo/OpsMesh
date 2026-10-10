@@ -3695,8 +3695,7 @@
 | `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_provider` | string | 是 | — |
 | `runtime_type` | string | 是 | — |
-| `execution_mode` | string | 是 | `enum=["none", "isolated", "pooled", "persistent"]` |
-| `pool_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `execution_mode` | string | 是 | `enum=["isolated", "shared"]` |
 | `name` | string | 是 | — |
 | `status` | string | 是 | — |
 | `connection_status` | string | 是 | — |
@@ -3737,10 +3736,8 @@
     },
     "execution_mode": {
       "enum": [
-        "none",
         "isolated",
-        "pooled",
-        "persistent"
+        "shared"
       ],
       "title": "Execution Mode",
       "type": "string"
@@ -3780,17 +3777,6 @@
       "additionalProperties": true,
       "title": "Network Policy",
       "type": "object"
-    },
-    "pool_key": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Pool Key"
     },
     "runtime_provider": {
       "title": "Runtime Provider",
@@ -3849,7 +3835,6 @@
     "runtime_provider",
     "runtime_type",
     "execution_mode",
-    "pool_key",
     "name",
     "status",
     "connection_status",
@@ -35289,19 +35274,16 @@ Explicit region a privileged editor is allowed to change.
 | `runtime_space_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `limits` | [RuntimeLimitsRequest](schemas.md#schema-RuntimeLimitsRequest) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/RuntimeLimitsRequest"}, {"type": "null"}]` |
 | `network_disabled` | boolean | 否 | `default=true` |
-| `execution_mode` | string | 否 | `default="pooled"`; `enum=["none", "isolated", "pooled", "persistent"]` |
-| `pool_key` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `execution_mode` | string | 否 | `default="shared"`; `enum=["isolated", "shared"]` |
 
 ```json
 {
   "properties": {
     "execution_mode": {
-      "default": "pooled",
+      "default": "shared",
       "enum": [
-        "none",
         "isolated",
-        "pooled",
-        "persistent"
+        "shared"
       ],
       "title": "Execution Mode",
       "type": "string"
@@ -35326,19 +35308,6 @@ Explicit region a privileged editor is allowed to change.
       "default": true,
       "title": "Network Disabled",
       "type": "boolean"
-    },
-    "pool_key": {
-      "anyOf": [
-        {
-          "maxLength": 160,
-          "minLength": 1,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Pool Key"
     },
     "runtime_space_id": {
       "anyOf": [
@@ -54759,8 +54728,7 @@ A bounded reference to task or completed-step data.
 | `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_provider` | string | 是 | — |
 | `runtime_type` | string | 是 | — |
-| `execution_mode` | string | 是 | `enum=["none", "isolated", "pooled", "persistent"]` |
-| `pool_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `execution_mode` | string | 是 | `enum=["isolated", "shared"]` |
 | `name` | string | 是 | — |
 | `status` | string | 是 | — |
 | `connection_status` | string | 是 | — |
@@ -54789,10 +54757,8 @@ A bounded reference to task or completed-step data.
     },
     "execution_mode": {
       "enum": [
-        "none",
         "isolated",
-        "pooled",
-        "persistent"
+        "shared"
       ],
       "title": "Execution Mode",
       "type": "string"
@@ -54832,17 +54798,6 @@ A bounded reference to task or completed-step data.
       "additionalProperties": true,
       "title": "Network Policy",
       "type": "object"
-    },
-    "pool_key": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Pool Key"
     },
     "runtime_provider": {
       "title": "Runtime Provider",
@@ -54901,7 +54856,6 @@ A bounded reference to task or completed-step data.
     "runtime_provider",
     "runtime_type",
     "execution_mode",
-    "pool_key",
     "name",
     "status",
     "connection_status",

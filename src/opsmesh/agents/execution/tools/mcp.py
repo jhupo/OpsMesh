@@ -68,7 +68,7 @@ class ContextualMcpAdapterResolver:
         if runtime_binding is None or runtime_binding.mode == "none":
             self._deny_stdio(
                 "stdio_requires_runtime",
-                "MCP stdio execution requires an isolated, pooled, or persistent runtime",
+                "MCP stdio execution requires an isolated or shared runtime",
             )
         run = self._current_run()
         if run is None:

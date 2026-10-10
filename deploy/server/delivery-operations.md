@@ -7,7 +7,7 @@
 Linux amd64 主机需准备 Docker、systemd 和 PostgreSQL 客户端工具。Compose 模式使用发布资产中声明的 PostgreSQL/Redis 服务；systemd 模式要求提前配置这两个依赖。使用已验证的发布版本，安装根目录默认 `/opt/opsmesh`：
 
 ```bash
-sudo sh deploy/install.sh --version <release-tag> --origin https://api.example.com --mode compose
+sudo sh deploy/install.sh --version <release-tag> --origin https://api.example.com
 ```
 
 安装器按固定仓库和版本下载发布资产，核对 manifest、平台/协议字段、包 SHA-256 和不可变镜像摘要；不在安装时从源码构建或临时解析 Python 依赖。保管一次性交付的初始管理员密码。配置、数据和加密密钥位于可变安装目录，发布目录保持不可变。

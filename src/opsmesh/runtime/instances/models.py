@@ -37,7 +37,7 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("workspace_id", "id", name="uq_workspace_runtime_scope"),
         CheckConstraint(
-            "execution_mode in ('none', 'isolated', 'pooled', 'persistent')",
+            "execution_mode in ('isolated', 'shared')",
             name="workspace_runtime_execution_mode_valid",
         ),
         Index("ix_workspace_runtimes_workspace_status", "workspace_id", "status"),
@@ -47,13 +47,6 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_workspace_runtimes_workspace_runtime_space", "workspace_id", "runtime_space_id"),
         Index("ix_workspace_runtimes_container", "docker_container_id"),
         Index("ix_workspace_runtimes_workspace_execution_run", "workspace_id", "execution_run_id"),
-        Index(
-            "ix_workspace_runtimes_workspace_pool",
-            "workspace_id",
-            "pool_key",
-            "execution_mode",
-            "status",
-        ),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -85,10 +78,9 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     execution_mode: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
-        default="pooled",
-        server_default="pooled",
+        default="shared",
+        server_default="shared",
     )
-    pool_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="created")
     connection_status: Mapped[str] = mapped_column(String(32), nullable=False, default="offline")

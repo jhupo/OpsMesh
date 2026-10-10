@@ -2835,10 +2835,8 @@
           },
           "execution_mode": {
             "enum": [
-              "none",
               "isolated",
-              "pooled",
-              "persistent"
+              "shared"
             ],
             "title": "Execution Mode",
             "type": "string"
@@ -2878,17 +2876,6 @@
             "additionalProperties": true,
             "title": "Network Policy",
             "type": "object"
-          },
-          "pool_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pool Key"
           },
           "runtime_provider": {
             "title": "Runtime Provider",
@@ -2947,7 +2934,6 @@
           "runtime_provider",
           "runtime_type",
           "execution_mode",
-          "pool_key",
           "name",
           "status",
           "connection_status",
@@ -27371,12 +27357,10 @@
       "RuntimeCreateRequest": {
         "properties": {
           "execution_mode": {
-            "default": "pooled",
+            "default": "shared",
             "enum": [
-              "none",
               "isolated",
-              "pooled",
-              "persistent"
+              "shared"
             ],
             "title": "Execution Mode",
             "type": "string"
@@ -27401,19 +27385,6 @@
             "default": true,
             "title": "Network Disabled",
             "type": "boolean"
-          },
-          "pool_key": {
-            "anyOf": [
-              {
-                "maxLength": 160,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pool Key"
           },
           "runtime_space_id": {
             "anyOf": [
@@ -42650,10 +42621,8 @@
           },
           "execution_mode": {
             "enum": [
-              "none",
               "isolated",
-              "pooled",
-              "persistent"
+              "shared"
             ],
             "title": "Execution Mode",
             "type": "string"
@@ -42693,17 +42662,6 @@
             "additionalProperties": true,
             "title": "Network Policy",
             "type": "object"
-          },
-          "pool_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pool Key"
           },
           "runtime_provider": {
             "title": "Runtime Provider",
@@ -42762,7 +42720,6 @@
           "runtime_provider",
           "runtime_type",
           "execution_mode",
-          "pool_key",
           "name",
           "status",
           "connection_status",

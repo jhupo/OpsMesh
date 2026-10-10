@@ -590,19 +590,33 @@ class RedisQueue:
         scan_limit: int = 50,
     ) -> QueueLease | None:
         queue_key = self.keys.queue(self.queue_name)
-        best: tuple[int, int, bytes | str, JobPayload] | None = None
+        best: tuple[int, float, int, bytes | str, JobPayload] | None = None
         raw_payloads = self.redis.lrange(queue_key, 0, max(1, scan_limit) - 1)
         for index, raw_payload in enumerate(raw_payloads):
             job = self._deserialize(raw_payload)
             if not predicate(job):
                 continue
-            candidate = (job.priority, -index, raw_payload, job)
-            if best is None or candidate[:2] > best[:2]:
+            fairness_key = job.routing.get("fairness_key")
+            fairness_score = -1.0
+            if isinstance(fairness_key, str):
+                stored_score = self.redis.zscore(
+                    self.keys.queue_fairness(self.queue_name), fairness_key
+                )
+                if stored_score is not None:
+                    fairness_score = float(stored_score)
+            candidate = (job.priority, -fairness_score, -index, raw_payload, job)
+            if best is None or candidate[:3] > best[:3]:
                 best = candidate
         if best is None:
             return None
-        _, _, selected_payload, job = best
+        _, _, _, selected_payload, job = best
         lease_token = self._lease_raw_job(queue_key, selected_payload)
+        fairness_key = job.routing.get("fairness_key")
+        if lease_token and isinstance(fairness_key, str):
+            sequence = self.redis.incr(self.keys.queue_fairness_sequence(self.queue_name))
+            fairness_set = self.keys.queue_fairness(self.queue_name)
+            self.redis.zadd(fairness_set, {fairness_key: sequence})
+            self.redis.zremrangebyrank(fairness_set, 0, -1001)
         return QueueLease(job=job, lease_token=lease_token) if lease_token else None
 
     def _lease_raw_job(self, queue_key: str, raw_payload: bytes | str) -> str | None:

@@ -38,8 +38,7 @@ class RuntimeCreateRequest(BaseModel):
     runtime_space_id: UUID | None = None
     limits: RuntimeLimitsRequest | None = None
     network_disabled: bool = True
-    execution_mode: Literal["none", "isolated", "pooled", "persistent"] = "pooled"
-    pool_key: str | None = Field(default=None, min_length=1, max_length=160)
+    execution_mode: Literal["isolated", "shared"] = "shared"
 
 
 class WorkspaceRuntimeResponse(TimestampedModel):
@@ -48,8 +47,7 @@ class WorkspaceRuntimeResponse(TimestampedModel):
     runtime_space_id: UUID | None
     runtime_provider: str
     runtime_type: str
-    execution_mode: Literal["none", "isolated", "pooled", "persistent"]
-    pool_key: str | None
+    execution_mode: Literal["isolated", "shared"]
     name: str
     status: str
     connection_status: str

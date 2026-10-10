@@ -80,8 +80,7 @@ class RuntimeProvisioningExecutor:
             "hardening": hardening_metadata,
             "execution": {
                 "mode": runtime.execution_mode,
-                "pool_key": runtime.pool_key,
-                "pool_member": runtime.execution_mode == "pooled",
+                "shared_host": runtime.execution_mode == "shared",
             },
             "policy_resolution": dict(policy_metadata or {}),
             "managed_resources": {

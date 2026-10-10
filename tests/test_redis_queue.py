@@ -238,6 +238,35 @@ def test_dequeue_matching_selects_highest_priority_compatible_job() -> None:
     assert queue.dequeue() == low
 
 
+def test_dequeue_round_robins_fairness_keys_within_priority() -> None:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    queue = _queue(redis)
+    first_workspace = uuid4()
+    second_workspace = uuid4()
+    first = _job(
+        workspace_id=first_workspace,
+        priority=5,
+        routing={"fairness_key": str(first_workspace)},
+    )
+    second = _job(
+        workspace_id=second_workspace,
+        priority=5,
+        routing={"fairness_key": str(second_workspace)},
+    )
+    third = _job(
+        workspace_id=first_workspace,
+        priority=5,
+        routing={"fairness_key": str(first_workspace)},
+    )
+    queue.enqueue(first)
+    queue.enqueue(second)
+    queue.enqueue(third)
+
+    assert queue.dequeue() == first
+    assert queue.dequeue() == second
+    assert queue.dequeue() == third
+
+
 def test_run_lock_allows_one_holder() -> None:
     redis = fakeredis.FakeRedis(decode_responses=True)
     queue = _queue(redis)

@@ -62,12 +62,12 @@ class _IsolatedRuntimeSpec:
 
 
 class RunRuntimeEnvironmentService:
-    """Bind a run to an isolated, pooled, or persistent managed runtime.
+    """Bind a run to an isolated or shared managed runtime.
 
     A workspace runtime is a durable placement and policy anchor. Isolated mode creates a fresh
-    child container and volume. Pooled and persistent modes acquire a bounded process slot on
-    an existing host. Each run has its own ``/workspace/runs/<run_id>`` tree. Persistent mode
-    retains that tree; pooled mode removes it when the run finishes.
+    child container and volume. Shared mode acquires a bounded process slot on an existing host.
+    Each run has its own ``/workspace/runs/<run_id>`` tree, which is removed when the run
+    finishes unless the run is suspended.
     """
 
     def __init__(self, session: Session, docker_client: DockerRuntimeClient | None) -> None:
@@ -79,22 +79,10 @@ class RunRuntimeEnvironmentService:
         if parent is None:
             return RunRuntimeEnvironmentResult(runtime=None, created=False)
         mode = _execution_mode(parent)
-        if mode == "none":
-            run.execution_runtime_id = None
-            _set_run_execution_metadata(
-                run,
-                status="not_required",
-                runtime_id=parent.id,
-                mode="none",
-            )
-            self._session.flush([run])
-            return RunRuntimeEnvironmentResult(runtime=None, created=False)
         self._require_managed_parent(parent)
         self._template(parent)
-        if mode == "pooled":
-            return self._ensure_pooled_for_run(run, parent)
-        if mode == "persistent":
-            return self._ensure_persistent_for_run(run, parent)
+        if mode == "shared":
+            return self._ensure_shared_for_run(run, parent)
         return self._ensure_isolated_for_run(run, parent)
 
     def _ensure_isolated_for_run(
@@ -153,7 +141,6 @@ class RunRuntimeEnvironmentService:
             runtime_provider=parent.runtime_provider,
             runtime_type=parent.runtime_type,
             execution_mode="isolated",
-            pool_key=None,
             name=f"run-{run.id}",
             status="provisioning",
             connection_status="offline",
@@ -313,19 +300,7 @@ class RunRuntimeEnvironmentService:
         _set_run_execution_metadata(run, status="active", runtime_id=child.id)
         self._session.flush([child, run])
 
-    def _ensure_persistent_for_run(
-        self,
-        run: AgentRun,
-        parent: WorkspaceRuntime,
-    ) -> RunRuntimeEnvironmentResult:
-        allocation = RuntimeAllocationStore(self._session).acquire(parent, "run", run.id)
-        if allocation is None:
-            raise RuntimeEnvironmentError(
-                "runtime_capacity_exhausted", "Runtime execution capacity is full"
-            )
-        return self._bind_shared_host(run, parent, mode="persistent")
-
-    def _ensure_pooled_for_run(
+    def _ensure_shared_for_run(
         self,
         run: AgentRun,
         parent: WorkspaceRuntime,
@@ -333,9 +308,9 @@ class RunRuntimeEnvironmentService:
         acquisition = RuntimePoolService(self._session).acquire(parent, run)
         if acquisition is None:
             raise RuntimeEnvironmentError(
-                "runtime_capacity_exhausted", "No matching Runtime host has capacity"
+                "runtime_capacity_exhausted", "Runtime execution capacity is full"
             )
-        return self._bind_shared_host(run, acquisition.member, mode="pooled")
+        return self._bind_shared_host(run, acquisition.member, mode="shared")
 
     def _bind_shared_host(
         self,
@@ -443,13 +418,13 @@ class RunRuntimeEnvironmentService:
         mode = _execution_mode(runtime)
         if _runtime_execution_status(run) == "completed":
             return True
-        if mode in {"pooled", "persistent"}:
+        if mode == "shared":
             self._session.commit()
             try:
                 RunProcessCleanupService(self._docker).reset(
                     runtime,
                     run,
-                    retain_workspace=suspend or mode == "persistent",
+                    retain_workspace=suspend,
                 )
                 RuntimeAllocationStore(self._session).release(runtime, "run", run.id)
             except Exception:
@@ -480,10 +455,11 @@ class RunRuntimeEnvironmentService:
         if status == "suspended":
             event_type = "run.runtime_environment.suspended"
         elif status in {"completed", "not_required"}:
-            event_type = {
-                "pooled": "run.runtime_environment.released",
-                "persistent": "run.runtime_environment.persistent_released",
-            }.get(mode, "run.runtime_environment.cleaned")
+            event_type = (
+                "run.runtime_environment.released"
+                if mode == "shared"
+                else "run.runtime_environment.cleaned"
+            )
         else:
             event_type = "run.runtime_environment.cleanup_failed"
         existing = self._session.scalar(
@@ -711,10 +687,8 @@ def _run_volume_name(workspace_id: UUID, run_id: UUID) -> str:
 
 
 def _execution_mode(runtime: WorkspaceRuntime) -> RuntimeExecutionMode:
-    if runtime.execution_mode == "none":
-        return "none"
     try:
-        return validate_runtime_execution_mode(runtime.execution_mode, runtime.pool_key)
+        return validate_runtime_execution_mode(runtime.execution_mode)
     except ValueError as exc:
         raise RuntimeEnvironmentError(
             "runtime_execution_mode_invalid",

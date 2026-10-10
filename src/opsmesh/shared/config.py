@@ -14,6 +14,10 @@ StorageBackend = Literal["local", "s3"]
 _RESOURCE_RECOMMENDATION = recommend_runtime_resources()
 
 
+def _default_worker_runtime_modes() -> list[Literal["isolated", "shared"]]:
+    return ["isolated", "shared"]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -47,6 +51,17 @@ class Settings(BaseSettings):
     redis_health_check_interval_seconds: int = Field(default=30, ge=0)
     redis_key_prefix: str = Field(default="opsmesh")
     worker_queue_name: str = Field(default="agent_runs")
+    worker_concurrency: int = Field(default=32, ge=1)
+    worker_task_concurrency: int | None = Field(default=None, ge=1)
+    worker_mcp_concurrency: int | None = Field(default=None, ge=1)
+    worker_blocking_io_concurrency: int = Field(default=8, ge=1)
+    worker_region: str | None = Field(default=None)
+    worker_capabilities: list[str] = Field(default_factory=list)
+    worker_runtime_modes: list[Literal["isolated", "shared"]] = Field(
+        default_factory=_default_worker_runtime_modes
+    )
+    worker_cpu_count: int | None = Field(default=None, ge=1)
+    worker_memory_mb: int | None = Field(default=None, ge=1)
     readiness_worker_check_enabled: bool = Field(default=False)
     mcp_health_check_stale_after_seconds: int = Field(default=24 * 60 * 60, ge=1)
     mcp_tool_timeout_seconds: int = Field(default=30, ge=1, le=300)
@@ -220,6 +235,15 @@ class Settings(BaseSettings):
             "redis_url": _redact_url(self.redis_url),
             "redis_max_connections": self.redis_max_connections,
             "worker_queue_name": self.worker_queue_name,
+            "worker_concurrency": self.worker_concurrency,
+            "worker_task_concurrency": self.worker_task_concurrency,
+            "worker_mcp_concurrency": self.worker_mcp_concurrency,
+            "worker_blocking_io_concurrency": self.worker_blocking_io_concurrency,
+            "worker_region": self.worker_region,
+            "worker_capabilities": list(self.worker_capabilities),
+            "worker_runtime_modes": list(self.worker_runtime_modes),
+            "worker_cpu_count": self.worker_cpu_count,
+            "worker_memory_mb": self.worker_memory_mb,
             "readiness_worker_check_enabled": self.readiness_worker_check_enabled,
             "mcp_health_check_stale_after_seconds": (self.mcp_health_check_stale_after_seconds),
             "mcp_tool_timeout_seconds": self.mcp_tool_timeout_seconds,

@@ -54,7 +54,8 @@ def release_notes(manifest: ReleaseManifest) -> str:
         f"--signer-workflow {manifest.repository}/.github/workflows/release-publish.yml "
         f"--source-ref refs/tags/{manifest.tag} --source-digest {manifest.commit} "
         "--deny-self-hosted-runners", "```", "",
-        "## Container images", "", f"- `{manifest.image('backend')}`",
+        "## Container images", "", f"- `{manifest.image('api')}`",
+        f"- `{manifest.image('worker')}`",
         f"- `{manifest.image('runtime')}`", "",
         "The `.whl` and source distributions are developer packages, not standalone executables.",
         "",
@@ -144,7 +145,7 @@ def finalize_release(tag: str, repository: str, directory: Path) -> None:
         return
     # Managed acceptance has passed against these exact draft bytes. Publish their immutable
     # image digests under version tags before making the GitHub release visible.
-    for kind in ("backend", "runtime"):
+    for kind in ("api", "worker", "runtime"):
         source = manifest.image(kind)
         target = f"{source.split('@')[0]}:{tag}"
         command("docker", "buildx", "imagetools", "create", "--tag", target, source)

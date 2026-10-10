@@ -70,7 +70,8 @@ def main() -> None:
     parser.add_argument("--tag", required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--repository", default="jhupo/OpsMesh")
-    parser.add_argument("--backend-digest")
+    parser.add_argument("--api-digest", required=False)
+    parser.add_argument("--worker-digest", required=False)
     parser.add_argument("--runtime-digest")
     args = parser.parse_args()
     validate_version(args.tag)
@@ -100,7 +101,8 @@ def main() -> None:
         tag=args.tag,
         commit=commit,
         repository=args.repository,
-        backend_digest=args.backend_digest,
+        api_digest=args.api_digest,
+        worker_digest=args.worker_digest,
         runtime_digest=args.runtime_digest,
         database_revision=revision,
         files=files,

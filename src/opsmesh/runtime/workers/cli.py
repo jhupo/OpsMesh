@@ -40,8 +40,25 @@ def _run_worker(args: argparse.Namespace, settings: Settings) -> int:
     config = WorkerRunnerConfig(
         worker_id=args.worker_id or _default_worker_id(),
         worker_type=args.worker_type,
-        concurrency=args.concurrency,
-        blocking_io_concurrency=args.blocking_io_concurrency,
+        concurrency=args.concurrency or settings.worker_concurrency,
+        task_concurrency=(
+            args.task_concurrency
+            if args.task_concurrency is not None
+            else settings.worker_task_concurrency
+        ),
+        mcp_concurrency=(
+            args.mcp_concurrency
+            if args.mcp_concurrency is not None
+            else settings.worker_mcp_concurrency
+        ),
+        blocking_io_concurrency=(
+            args.blocking_io_concurrency or settings.worker_blocking_io_concurrency
+        ),
+        region=args.region or settings.worker_region,
+        capabilities=tuple(args.capability or settings.worker_capabilities),
+        runtime_modes=tuple(args.runtime_mode or settings.worker_runtime_modes),
+        cpu_count=args.cpu_count or settings.worker_cpu_count,
+        memory_mb=args.memory_mb or settings.worker_memory_mb,
         queue_name=args.queue_name or settings.worker_queue_name,
         heartbeat_interval_seconds=args.heartbeat_interval_seconds,
         idle_sleep_seconds=args.idle_sleep_seconds,
@@ -104,8 +121,20 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--worker-id", default=None)
     parser.add_argument("--worker-type", default="cloud")
     parser.add_argument("--queue-name", default=None)
-    parser.add_argument("--concurrency", type=int, default=32)
-    parser.add_argument("--blocking-io-concurrency", type=int, default=8)
+    parser.add_argument("--concurrency", type=int, default=None)
+    parser.add_argument("--task-concurrency", type=int, default=None)
+    parser.add_argument("--mcp-concurrency", type=int, default=None)
+    parser.add_argument("--blocking-io-concurrency", type=int, default=None)
+    parser.add_argument("--region", default=None)
+    parser.add_argument("--capability", action="append", default=[])
+    parser.add_argument(
+        "--runtime-mode",
+        action="append",
+        choices=["isolated", "shared"],
+        default=None,
+    )
+    parser.add_argument("--cpu-count", type=int, default=None)
+    parser.add_argument("--memory-mb", type=int, default=None)
     parser.add_argument("--once", action="store_true", help="Consume at most one job and exit.")
     parser.add_argument(
         "--max-jobs",

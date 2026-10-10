@@ -470,7 +470,7 @@ class WorkerRunner:
                     status=status,
                     queue_name=self._config.queue_name,
                     details=details,
-                    capacity={"max_jobs": self._config.concurrency},
+                    capacity=self._config.capacity(),
                 )
         except Exception:
             logger.exception("Failed to record worker heartbeat")

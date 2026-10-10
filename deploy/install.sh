@@ -5,7 +5,7 @@ repository="${OPSMESH_REPOSITORY:-jhupo/OpsMesh}"
 version=""
 origin=""
 install_root="/opt/opsmesh"
-mode="compose"
+mode="systemd"
 
 usage() {
     cat <<'EOF'
@@ -14,7 +14,7 @@ Usage: install.sh --version TAG --origin HTTPS_ORIGIN [options]
 Options:
   --repository OWNER/REPOSITORY  Release repository (default: jhupo/OpsMesh)
   --root PATH                    Installation root (default: /opt/opsmesh)
-  --mode compose|systemd         Application deployment mode (default: compose)
+  --mode compose|systemd         Application deployment mode (default: systemd)
   -h, --help                     Show this help
 EOF
 }
@@ -119,16 +119,18 @@ if [ -n "$packages" ]; then
     apt-get install -y $packages
 fi
 
-if ! docker compose version >/dev/null 2>&1; then
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
-        apt-get install -y docker-compose-v2
-    elif apt-cache show docker-compose-plugin >/dev/null 2>&1; then
-        apt-get install -y docker-compose-plugin
-    else
-        echo "install.sh: Docker Compose v2 is unavailable from the configured package sources" >&2
-        exit 1
+if [ "$mode" = "compose" ]; then
+    if ! docker compose version >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+            apt-get install -y docker-compose-v2
+        elif apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+            apt-get install -y docker-compose-plugin
+        else
+            echo "install.sh: Docker Compose v2 is unavailable from the configured package sources" >&2
+            exit 1
+        fi
     fi
 fi
 

@@ -269,6 +269,17 @@ class WorkerLeaseQueryService:
         )
         return int(running or 0)
 
+    def running_lease_counts_for_worker(self, worker_id: str) -> dict[str, int]:
+        rows = self._session.execute(
+            select(WorkerLease.job_type, func.count())
+            .where(
+                WorkerLease.worker_id == worker_id,
+                WorkerLease.status.in_(RUNNING_LEASE_STATUSES),
+            )
+            .group_by(WorkerLease.job_type)
+        ).all()
+        return {str(job_type): int(count) for job_type, count in rows}
+
     def _page(self, statement: Select[tuple[T]], page: PageParams) -> tuple[list[T], int]:
         return page_scalars(self._session, statement, page)
 

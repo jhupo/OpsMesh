@@ -18,6 +18,7 @@ class RunJobRoutingService:
             routing["priority"] = priority
         if run.runtime_id is not None:
             routing["workspace_runtime_id"] = str(run.runtime_id)
+        routing["fairness_key"] = str(run.workspace_id)
         if run.runtime_space_id is None:
             return routing
         routing["runtime_space_id"] = str(run.runtime_space_id)
@@ -31,6 +32,10 @@ class RunJobRoutingService:
             runtime_modes = [runtime_mode]
         capabilities = string_list(runtime_space.policy.get("worker_capabilities"))
         worker_types = string_list(runtime_space.policy.get("worker_types"))
+        regions = string_list(runtime_space.policy.get("worker_regions"))
+        region = runtime_space.policy.get("worker_region")
+        if not regions and isinstance(region, str):
+            regions = [region]
         resource_requirements = positive_numeric_usage(
             runtime_space.policy.get("resource_requirements"),
         )
@@ -42,6 +47,8 @@ class RunJobRoutingService:
             routing["worker_types"] = worker_types
         if resource_requirements:
             routing["resource_requirements"] = resource_requirements
+        if regions:
+            routing["regions"] = regions
         return routing
 
     def priority(self, run: AgentRun) -> int:

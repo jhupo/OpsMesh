@@ -639,9 +639,11 @@ def test_worker_heartbeat_preserves_existing_capacity_routing_fields() -> None:
         assert node.capacity == {
             "max_jobs": 2,
             "worker_type": "self_hosted",
-            "runtime_modes": ["self_hosted"],
-            "capabilities": ["code.execute"],
+            "runtime_modes": ["isolated", "shared"],
+            "capabilities": [],
             "memory_mb": 2048,
+            "task_slots": 2,
+            "mcp_slots": 2,
         }
 
 
@@ -2917,6 +2919,7 @@ def test_agent_run_jobs_include_runtime_space_routing_requirements() -> None:
         "capabilities": ["image.generate"],
         "worker_types": ["cloud"],
         "resource_requirements": {"memory_mb": 4096, "cpu": 2.0},
+        "fairness_key": str(workspace_id),
     }
 
 

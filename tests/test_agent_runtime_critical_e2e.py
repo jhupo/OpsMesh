@@ -213,7 +213,7 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
         runtime_template_id=template.id,
         runtime_provider="cloud_docker",
         runtime_type="docker",
-        execution_mode="persistent",
+        execution_mode="shared",
         name="critical-runtime",
         status="running",
         connection_status="online",

@@ -80,7 +80,8 @@ def test_manifest_pins_images_and_rejects_duplicate_files() -> None:
         tag="v0.1.0",
         commit="b" * 40,
         repository="jhupo/OpsMesh",
-        backend_digest="sha256:" + "c" * 64,
+        api_digest="sha256:" + "c" * 64,
+        worker_digest="sha256:" + "e" * 64,
         runtime_digest="sha256:" + "d" * 64,
         database_revision="0070_memory_lifecycle",
         upgrade_from_revisions=[],
@@ -89,7 +90,7 @@ def test_manifest_pins_images_and_rejects_duplicate_files() -> None:
         platforms=["linux/amd64"],
         files=[file],
     )
-    assert manifest.image("backend") == "ghcr.io/jhupo/opsmesh@sha256:" + "c" * 64
+    assert manifest.image("api") == "ghcr.io/jhupo/opsmesh-api@sha256:" + "c" * 64
     with pytest.raises(ValidationError, match="unique"):
         ReleaseManifest.model_validate({**manifest.model_dump(), "files": [file, file]})
 

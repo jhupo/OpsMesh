@@ -54,9 +54,9 @@ Agent Profile 的 `memory_policy.sdk_memory` 默认关闭。例如只读取持�
 }
 ```
 
-启用后必须使用 OpenAI Agents SDK、persistent Runtime、已授权用户及 Agent Profile；不符合条件直接报错。文件根目录为 `.opsmesh/memory/{workspace}/{user}/{agent}/`，包含 SDK 管理的 `memories` 与 `sessions`。首次没有记忆文件时按 SDK 的 not-found 合同返回，不能把空文件当成运行失败。
+启用后必须使用 OpenAI Agents SDK、已授权用户及 Agent Profile，并绑定支持持久存储的 `shared` Runtime；不符合条件直接报错。文件根目录为 `.opsmesh/memory/{workspace}/{user}/{agent}/`，包含 SDK 管理的 `memories` 与 `sessions`。首次没有记忆文件时按 SDK 的 not-found 合同返回，不能把空文件当成运行失败。
 
-`generate=true` 启用 SDK Memory 的提取与汇总两阶段，使用已冻结的 Provider 凭据、模型及模型设置，生成用量计入同一 Run。同一个执行请求的 Memory 策略应用到嵌套/交接 Agent，文件目录按目标 Profile 隔离；独立委派 Run 使用自身冻结的策略。文件命名空间不等于操作系统 ACL；需要用户级文件隔离时应分配各自 persistent Runtime，不能把多人共享可写容器当作隔离边界。SDK Memory 是文件经验流水线，不替代工作空间知识库及受治理的 PostgreSQL 长期记忆。
+`generate=true` 启用 SDK Memory 的提取与汇总两阶段，使用已冻结的 Provider 凭据、模型及模型设置，生成用量计入同一 Run。同一个执行请求的 Memory 策略应用到嵌套/交接 Agent，文件目录按目标 Profile 隔离；独立委派 Run 使用自身冻结的策略。文件命名空间不等于操作系统 ACL；需要用户级文件隔离时应分配各自 `isolated` Runtime，不能把多人共享可写容器当作隔离边界。SDK Memory 是文件经验流水线，不替代工作空间知识库及受治理的 PostgreSQL 长期记忆。
 
 工作记忆只保留显式 `put`、查询、过期和 `promote`；已删除自动复制 objective、plan、tool_result 以及下一次请求自动重新注入的逻辑。Session、SDK Memory、产品知识库分别承担对话、经验文件和受治理检索职责。
 
@@ -74,6 +74,6 @@ API、Worker 和 Runtime 必须使用同一版本执行合同。升级前停止�
 
 相关流程覆盖 SDK Session 多轮续接、审批 RunState 恢复、原始 tool call ID、自托管 RPC 去重及取消、MCP 返回、结构化输出和持久文件记忆；SDK 离线传输测试不等同于真实供应商请求。共享宿主生命周期测试与 PostgreSQL 并发测试分别验证进程释放和执行槽准入。
 
-自托管 Agent MCP 的 HTTP/SSE 合同当前仍明确拒绝；stdio 路径可用。当前没有承诺跨租户公平调度或外部副作用的 exactly-once 执行。Linux 是现有服务器运行环境；Windows 的完整 PostgreSQL/Claude 子进程组合不是已验收部署能力。
+自托管 Agent MCP 的 HTTP/SSE 合同当前仍明确拒绝；stdio 路径可用。队列在同优先级按 workspace 公平轮转，但不承诺外部副作用的 exactly-once 执行。Linux 是现有服务器运行环境；Windows 的完整 PostgreSQL/Claude 子进程组合不是已验收部署能力。
 
 官方入口：[SQLAlchemySession](https://openai.github.io/openai-agents-python/sessions/sqlalchemy_session/)、[Session](https://openai.github.io/openai-agents-python/sessions/)、[MCP](https://openai.github.io/openai-agents-python/mcp/)、[本地 Context](https://openai.github.io/openai-agents-python/context/)、[锁定 SDK 源码](https://github.com/openai/openai-agents-python/tree/v0.17.2/src/agents)。

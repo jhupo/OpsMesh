@@ -78,7 +78,7 @@ class WorkerFlow:
             capacity={
                 "max_jobs": 32,
                 "capabilities": ["tools", "mcp", "sandbox"],
-                "runtime_modes": ["isolated", "pooled", "persistent"],
+                "runtime_modes": ["isolated", "shared"],
                 "cpu_count": 8,
                 "memory_mb": 32768,
             },

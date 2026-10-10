@@ -22,7 +22,7 @@ def deployment_runtime(session: Session, deployment: McpDeployment) -> Workspace
         select(WorkspaceRuntime).where(
             WorkspaceRuntime.workspace_id == deployment.workspace_id,
             WorkspaceRuntime.id == deployment.runtime_id,
-            WorkspaceRuntime.execution_mode.in_(["pooled", "persistent"]),
+            WorkspaceRuntime.execution_mode == "shared",
             WorkspaceRuntime.execution_run_id.is_(None),
             WorkspaceRuntime.runtime_provider == "cloud_docker",
         )
@@ -41,7 +41,7 @@ def require_managed_host(
     if runtime is None:
         raise NotFoundError("Runtime host not found")
     if (
-        runtime.execution_mode not in {"pooled", "persistent"}
+        runtime.execution_mode != "shared"
         or runtime.execution_run_id is not None
         or runtime.runtime_provider != "cloud_docker"
         or runtime.status != "running"

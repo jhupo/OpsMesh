@@ -74,7 +74,8 @@ class Deployment(ABC):
             runtime_images.add(retained.image("runtime"))
         atomic_write(
             staging / "images.env",
-            f"OPSMESH_BACKEND_IMAGE={manifest.image('backend')}\n"
+            f"OPSMESH_API_IMAGE={manifest.image('api')}\n"
+            f"OPSMESH_WORKER_IMAGE={manifest.image('worker')}\n"
             f"OPSMESH_RUNTIME_IMAGE={manifest.image('runtime')}\n"
             f"OPSMESH_RUNTIME_ALLOWED_IMAGES={json.dumps(sorted(runtime_images))}\n"
             f"OPSMESH_BUILD_COMMIT={manifest.commit}\n",
@@ -154,7 +155,8 @@ class ComposeDeployment(Deployment):
         client = docker.from_env(timeout=self.installation.timeout_seconds)
         try:
             client.ping()
-            client.images.pull(manifest.image("backend"))
+            client.images.pull(manifest.image("api"))
+            client.images.pull(manifest.image("worker"))
             client.images.pull(manifest.image("runtime"))
         finally:
             client.close()

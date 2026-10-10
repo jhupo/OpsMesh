@@ -6,8 +6,8 @@
 ## 使用前准备
 
 升级数据库到最新 Alembic head，启动 API、Redis 和 Worker。准备有模型凭据、
-能力授权及有效 Runtime 绑定的 Agent。对话 Run 缺少 active/running 的 isolated、pooled
-或 persistent 执行 Runtime 时会失败，不能以无 Runtime 模式执行。
+能力授权及有效 Runtime 绑定的 Agent。对话 Run 缺少 active/running 的 isolated、shared
+或执行 Runtime 时会失败，不能以无 Runtime 模式执行；Runtime 只能使用 `isolated` 或 `shared` 模式。
 
 自动模式需要一个已配置的入口 Agent。需要发现并委派专家或团队时，由用户在该 Agent 的 `tool_policy.allowed_tools` 中授权：
 

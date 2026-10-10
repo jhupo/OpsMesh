@@ -36,7 +36,9 @@ def test_real_backup_restore_preserves_data_configuration_and_ownership(
     installation = Installation(root=tmp_path, mode="systemd")
     release = ReleaseManifest(
         tag="v0.1.0rc1", repository="jhupo/OpsMesh", commit="a" * 40,
-        backend_digest="sha256:" + "b" * 64, runtime_digest="sha256:" + "c" * 64,
+        api_digest="sha256:" + "b" * 64,
+        worker_digest="sha256:" + "d" * 64,
+        runtime_digest="sha256:" + "c" * 64,
         database_revision="backup_probe", upgrade_from_revisions=["backup_probe"],
         rollback_database_revisions=["backup_probe"], connector_protocol=2,
         platforms=["linux/amd64"],

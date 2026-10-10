@@ -90,10 +90,9 @@ class RuntimeManager:
         runtime_space_id: UUID | None = None,
         network_disabled: bool = True,
         policy_metadata: dict[str, object] | None = None,
-        execution_mode: RuntimeExecutionMode = "pooled",
-        pool_key: str | None = None,
+        execution_mode: RuntimeExecutionMode = "shared",
     ) -> WorkspaceRuntime:
-        validate_runtime_execution_mode(execution_mode, pool_key)
+        validate_runtime_execution_mode(execution_mode)
         RuntimeQuotaPolicy(self._session).assert_can_create_runtime(workspace_id, limits)
         runtime = WorkspaceRuntime(
             workspace_id=workspace_id,
@@ -101,7 +100,6 @@ class RuntimeManager:
             runtime_space_id=runtime_space_id,
             name=name,
             execution_mode=execution_mode,
-            pool_key=pool_key,
             limits={
                 "cpu_count": limits.cpu_count,
                 "memory_mb": limits.memory_mb,
@@ -136,13 +134,11 @@ class RuntimeManager:
         network_disabled: bool,
         policy_metadata: dict[str, object] | None = None,
         execution_mode: RuntimeExecutionMode | None = None,
-        pool_key: str | None = None,
         process: RuntimeProcess | None = None,
     ) -> WorkspaceRuntime:
         if execution_mode is not None:
-            validate_runtime_execution_mode(execution_mode, pool_key)
+            validate_runtime_execution_mode(execution_mode)
             runtime.execution_mode = execution_mode
-            runtime.pool_key = pool_key
         return RuntimeProvisioningExecutor(
             self._session,
             self._docker,

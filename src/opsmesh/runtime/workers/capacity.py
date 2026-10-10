@@ -18,6 +18,7 @@ class WorkerCapacitySnapshot:
     running_jobs: int
     available_slots: int
     accepting: bool
+    running_jobs_by_type: dict[str, int]
     reason: str | None = None
     capacity: dict[str, object] | None = None
 
@@ -36,12 +37,14 @@ class WorkerCapacitySnapshotService:
         node = self._session.scalar(select(WorkerNode).where(WorkerNode.worker_id == worker_id))
         if node is not None and worker_status_blocks_claims(node):
             running_jobs = self._leases.running_leases_for_worker(worker_id)
+            running_jobs_by_type = self._leases.running_lease_counts_for_worker(worker_id)
             return WorkerCapacitySnapshot(
                 worker_id=worker_id,
                 max_jobs=positive_int_or_default(node.capacity.get("max_jobs"), default_max_jobs),
                 running_jobs=running_jobs,
                 available_slots=0,
                 accepting=False,
+                running_jobs_by_type=running_jobs_by_type,
                 reason=f"worker_{node.status}",
                 capacity=dict(node.capacity),
             )
@@ -52,15 +55,22 @@ class WorkerCapacitySnapshotService:
             else max(1, default_max_jobs)
         )
         running_jobs = self._leases.running_leases_for_worker(worker_id)
+        running_jobs_by_type = self._leases.running_lease_counts_for_worker(worker_id)
         available_slots = max(0, max_jobs - running_jobs)
+        node_capacity: dict[str, object] = (
+            dict(node.capacity) if node is not None else {"max_jobs": max_jobs}
+        )
+        node_capacity["running_jobs"] = running_jobs
+        node_capacity["running_jobs_by_type"] = running_jobs_by_type
         return WorkerCapacitySnapshot(
             worker_id=worker_id,
             max_jobs=max_jobs,
             running_jobs=running_jobs,
             available_slots=available_slots,
             accepting=available_slots > 0,
+            running_jobs_by_type=running_jobs_by_type,
             reason=None if available_slots > 0 else "worker_capacity_full",
-            capacity=dict(node.capacity) if node is not None else {"max_jobs": max_jobs},
+            capacity=node_capacity,
         )
 
 
@@ -111,8 +121,6 @@ def bounded_worker_capacity(
 
 def worker_can_run_job(job: JobPayload, capacity: dict[str, object]) -> bool:
     routing = job.routing
-    if not routing:
-        return True
     required_worker_types = string_set(routing.get("worker_types"))
     worker_type = capacity_string(capacity, "worker_type")
     if required_worker_types and worker_type not in required_worker_types:
@@ -124,6 +132,28 @@ def worker_can_run_job(job: JobPayload, capacity: dict[str, object]) -> bool:
     required_runtime_modes = string_set(routing.get("runtime_modes"))
     worker_runtime_modes = string_set(capacity.get("runtime_modes"))
     if required_runtime_modes and not required_runtime_modes <= worker_runtime_modes:
+        return False
+    required_regions = string_set(routing.get("regions"))
+    worker_region = capacity_string(capacity, "region")
+    if required_regions and worker_region not in required_regions:
+        return False
+    job_class = "mcp" if job.job_type.value == "mcp.process_control" else "task"
+    slot_key = "mcp_slots" if job_class == "mcp" else "task_slots"
+    running_key = "running_mcp_jobs" if job_class == "mcp" else "running_task_jobs"
+    slot_limit = positive_number(capacity.get(slot_key))
+    running_by_type = capacity.get("running_jobs_by_type")
+    if isinstance(running_by_type, dict):
+        running = sum(
+            int(value)
+            for key, value in running_by_type.items()
+            if isinstance(key, str)
+            and (key == "mcp.process_control") == (job_class == "mcp")
+            and isinstance(value, int)
+            and value >= 0
+        )
+    else:
+        running = int(positive_number(capacity.get(running_key)))
+    if slot_limit > 0 and running >= slot_limit:
         return False
     resource_requirements = dict_or_empty(routing.get("resource_requirements"))
     for key, required_value in resource_requirements.items():

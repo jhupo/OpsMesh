@@ -14,6 +14,12 @@ class RedisKeyBuilder:
     def workspace_queue(self, workspace_id: str, queue_name: str) -> str:
         return self._join("workspace", workspace_id, "queue", queue_name)
 
+    def queue_fairness(self, queue_name: str) -> str:
+        return self._join("queue", queue_name, "fairness")
+
+    def queue_fairness_sequence(self, queue_name: str) -> str:
+        return self._join("queue", queue_name, "fairness", "sequence")
+
     def run_lock(self, workspace_id: str, run_id: str) -> str:
         return self._join("lock", workspace_id, "run", run_id)
 

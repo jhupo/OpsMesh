@@ -32,10 +32,9 @@ class RuntimeProvisioningService:
         limits: RuntimeLimits | None,
         network_disabled: bool,
         runtime_space_id: UUID | None,
-        execution_mode: RuntimeExecutionMode = "pooled",
-        pool_key: str | None = None,
+        execution_mode: RuntimeExecutionMode = "shared",
     ) -> WorkspaceRuntime | None:
-        execution_mode = validate_runtime_execution_mode(execution_mode, pool_key)
+        execution_mode = validate_runtime_execution_mode(execution_mode)
         resolution = self._resolve_policy(
             workspace_id=workspace_id,
             template_id=template_id,
@@ -55,7 +54,6 @@ class RuntimeProvisioningService:
             network_disabled=policy.network_disabled,
             policy_metadata=policy.metadata,
             execution_mode=execution_mode,
-            pool_key=pool_key,
         )
 
     def queue_runtime_create(
@@ -68,10 +66,9 @@ class RuntimeProvisioningService:
         network_disabled: bool,
         runtime_space_id: UUID | None,
         requested_by_user_id: UUID | None,
-        execution_mode: RuntimeExecutionMode = "pooled",
-        pool_key: str | None = None,
+        execution_mode: RuntimeExecutionMode = "shared",
     ) -> WorkspaceRuntime | None:
-        execution_mode = validate_runtime_execution_mode(execution_mode, pool_key)
+        execution_mode = validate_runtime_execution_mode(execution_mode)
         resolution = self._resolve_policy(
             workspace_id=workspace_id,
             template_id=template_id,
@@ -102,7 +99,6 @@ class RuntimeProvisioningService:
                 }
             },
             execution_mode=execution_mode,
-            pool_key=pool_key,
         )
         self._session.add(runtime)
         self._session.flush()
@@ -117,7 +113,6 @@ class RuntimeProvisioningService:
                     "runtime_id": str(runtime.id),
                     "template_id": str(template.id),
                     "execution_mode": execution_mode,
-                    "pool_key": pool_key,
                     "requested_by_user_id": str(requested_by_user_id)
                     if requested_by_user_id is not None
                     else None,
@@ -139,10 +134,9 @@ class RuntimeProvisioningService:
         limits: RuntimeLimits | None,
         network_disabled: bool,
         runtime_space_id: UUID | None,
-        execution_mode: RuntimeExecutionMode = "pooled",
-        pool_key: str | None = None,
+        execution_mode: RuntimeExecutionMode = "shared",
     ) -> WorkspaceRuntime | None:
-        execution_mode = validate_runtime_execution_mode(execution_mode, pool_key)
+        execution_mode = validate_runtime_execution_mode(execution_mode)
         resolution = self._resolve_policy(
             workspace_id=workspace_id,
             template_id=template_id,
@@ -161,7 +155,6 @@ class RuntimeProvisioningService:
         runtime.limits = limits_metadata(policy.limits)
         runtime.network_policy = _network_policy(policy)
         runtime.execution_mode = execution_mode
-        runtime.pool_key = pool_key
         runtime.capabilities = {
             **dict(runtime.capabilities or {}),
             "provisioning": {
@@ -178,7 +171,6 @@ class RuntimeProvisioningService:
             network_disabled=policy.network_disabled,
             policy_metadata=policy.metadata,
             execution_mode=execution_mode,
-            pool_key=pool_key,
         )
 
     def _resolve_policy(

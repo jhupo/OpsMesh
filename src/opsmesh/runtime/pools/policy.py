@@ -3,11 +3,7 @@ from __future__ import annotations
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 
 
-def runtime_pool_key(runtime: WorkspaceRuntime) -> str:
-    return runtime.pool_key or f"runtime:{runtime.id}"
-
-
-def pool_policy_matches(parent: WorkspaceRuntime, member: WorkspaceRuntime) -> bool:
+def shared_host_policy_matches(parent: WorkspaceRuntime, member: WorkspaceRuntime) -> bool:
     return (
         parent.runtime_provider == member.runtime_provider
         and parent.runtime_type == member.runtime_type

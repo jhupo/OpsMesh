@@ -36,7 +36,7 @@ def test_parallel_admission_is_bounded_idempotent_and_workspace_scoped():
             host = WorkspaceRuntime(
                 workspace_id=workspace.id,
                 name="Shared",
-                execution_mode="persistent",
+                execution_mode="shared",
                 status="running",
                 connection_status="online",
                 limits={"max_concurrent_executions": 2},

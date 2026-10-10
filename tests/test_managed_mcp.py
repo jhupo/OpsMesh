@@ -121,7 +121,7 @@ def managed(monkeypatch):
         workspace_id=workspace.id,
         runtime_template_id=template.id,
         name="shared",
-        execution_mode="persistent",
+        execution_mode="shared",
         status="running",
         connection_status="online",
         docker_container_id="shared-container",

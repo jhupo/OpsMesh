@@ -86,7 +86,7 @@ class DockerRuntimeBackend:
                 timeout_seconds=_runtime_limit(runtime, "timeout_seconds", 300),
                 max_file_bytes=_runtime_limit(runtime, "max_output_bytes", 256_000),
             ),
-            persistent=runtime.execution_mode == "persistent",
+            persistent=runtime.execution_mode == "shared",
         )
 
 

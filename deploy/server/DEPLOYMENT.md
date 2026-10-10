@@ -5,7 +5,13 @@ This project ships as a backend control plane with two long-running process type
 - API process: serves workspace, task, runtime, approval, file, and operations APIs.
 - Worker process: pulls queued agent runs from Redis and records durable run state in Postgres.
 
-Packaged production deployment supports Compose or direct systemd services. Systemd uses the
+Workers advertise region, capabilities, Runtime modes and separate task/MCP slots in their
+heartbeats. The queue keeps priority ordering and applies workspace fair-share rotation within a
+priority, so adding workers across machines increases distributed capacity without creating a
+Runtime container per Agent or MCP.
+
+Packaged production deployment supports Compose or direct systemd services. Systemd is the
+default installer mode and uses the
 self-contained release runtime, not a host Python virtual environment. Docker remains required
 for isolated task runtimes and the separately managed observability stack.
 
@@ -13,7 +19,7 @@ Postgres remains the source of truth. Redis is used for queues, locks, pub/sub, 
 
 ## Deployment asset layout
 
-- `deploy/images/`: backend and isolated runtime Dockerfiles. Build context is the repository root.
+- `deploy/images/`: API/Worker targets and isolated Runtime Dockerfiles. Build context is the repository root.
 - `deploy/local/`: development Compose and `env.example`; copy the template to the untracked root `.env` for local CLI and Compose use.
 - `deploy/server/`: production Compose, environment template, systemd units and monitoring configuration.
 
@@ -159,8 +165,8 @@ Compose file is Linux-specific: it uses host networking so Prometheus can scrape
 
 ## Verified Releases and Online Updates
 
-The official packaged deployment is a prebuilt GHCR backend image and a separate runtime image.
-The backend image is shared by the API, worker and explicit migration job. Production Compose is
+The official packaged deployment uses separate prebuilt GHCR API and Worker images plus a separate
+Runtime image. The API image also runs the explicit migration job. Production Compose is
 `deploy/server/compose.yml`; `deploy/local/compose.yml` remains a source-build development environment.
 Neither API startup nor worker startup runs migrations automatically.
 Systemd and the independent updater use the checksummed self-contained runtime without downloading

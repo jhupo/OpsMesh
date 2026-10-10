@@ -46,7 +46,7 @@ def _advance(client, session) -> bool:
     return handled
 
 
-@pytest.mark.parametrize("mode", ["isolated", "pooled", "persistent"])
+@pytest.mark.parametrize("mode", ["isolated", "shared"])
 def test_chat_request_uses_the_leased_execution_runtime_and_releases_it(mode: str) -> None:
     from datetime import UTC, datetime
 
@@ -150,11 +150,11 @@ def test_chat_request_uses_the_leased_execution_runtime_and_releases_it(mode: st
     )
     assert request.sandbox is not None
     assert request.sandbox.session.executor.container_id == result.runtime.docker_container_id
-    assert request.sandbox.session.persistent is (mode == "persistent")
+    assert request.sandbox.session.persistent is (mode == "shared")
     assert request.context.metadata["runtime_execution"]["execution_runtime_id"] == str(
         result.runtime.id
     )
-    if mode in {"pooled", "persistent"}:
+    if mode == "shared":
         from opsmesh.orchestration.runs.async_execution import AsyncAgentRunExecutor
         from opsmesh.orchestration.runs.control import stale_recovery_anchor
         from opsmesh.runtime.instances.models import RuntimeAllocation
@@ -191,7 +191,7 @@ def test_chat_request_uses_the_leased_execution_runtime_and_releases_it(mode: st
         assert environment.ensure_for_run(waiting).runtime.id == parent.id
         assert environment.cleanup_for_run(waiting)
     assert environment.cleanup_for_run(run)
-    if mode == "persistent":
+    if mode == "shared":
         assert docker.created == docker.removed == docker.removed_volumes == []
         with pytest.raises(RunRuntimeAuthorizationError) as error:
             RunRequestBuilder(
