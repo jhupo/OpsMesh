@@ -209,7 +209,7 @@ def test_checksums_cover_artifacts_not_their_own_digest(tmp_path: Path) -> None:
 @pytest.mark.parametrize("tag", ["../v1.0.0", "v9.9.9"])
 def test_native_builder_rejects_wrong_identity_before_writing(tmp_path: Path, tag: str) -> None:
     with pytest.raises(ValueError):
-        build("cli", tag, tmp_path, tmp_path / "output", "never-run")
+        build("cli", tag, tmp_path, tmp_path / "output", "never-run", "a" * 40)
     assert not (tmp_path / "output").exists()
 
 

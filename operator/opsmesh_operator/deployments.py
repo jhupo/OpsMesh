@@ -217,6 +217,9 @@ class ComposeDeployment(Deployment):
 
 class SystemdDeployment(Deployment):
     def prepare(self, directory: Path, manifest: ReleaseManifest) -> None:
+        identity = json.loads((directory / "BUILD.json").read_bytes())
+        if identity["commit"] != manifest.commit:
+            raise ValueError("Bundled server commit does not match release manifest")
         result = json.loads(
             run_command([str(directory / "opsmesh-server"), "check"], cwd=directory)
         )
