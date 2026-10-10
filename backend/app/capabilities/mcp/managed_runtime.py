@@ -1,4 +1,4 @@
-"""Worker-side transport to persistent MCP sessions inside dedicated runtimes."""
+"""Worker-side transport to persistent MCP sessions inside shared Runtime hosts."""
 
 from __future__ import annotations
 
@@ -11,8 +11,10 @@ from sqlalchemy.orm import Session
 from backend.app.capabilities.mcp.execution.contracts import McpExecutionError
 from backend.app.capabilities.mcp.models import McpCredentialReference, McpDeployment, McpServer
 from backend.app.capabilities.mcp.transport.runtime_operation import RuntimeMcpOperation
+from backend.app.runtime.instances.allocations import RuntimeAllocationStore
 from backend.app.runtime.instances.contracts import DockerRuntimeClient, RuntimeCommandInputFile
 from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.shared.errors import NotFoundError, PolicyDeniedError
 
 
 def deployment_runtime(session: Session, deployment: McpDeployment) -> WorkspaceRuntime | None:
@@ -20,10 +22,35 @@ def deployment_runtime(session: Session, deployment: McpDeployment) -> Workspace
         select(WorkspaceRuntime).where(
             WorkspaceRuntime.workspace_id == deployment.workspace_id,
             WorkspaceRuntime.id == deployment.runtime_id,
-            WorkspaceRuntime.execution_mode == "persistent",
+            WorkspaceRuntime.execution_mode.in_(["pooled", "persistent"]),
+            WorkspaceRuntime.execution_run_id.is_(None),
             WorkspaceRuntime.runtime_provider == "cloud_docker",
         )
     )
+
+
+def require_managed_host(
+    session: Session, workspace_id: UUID, runtime_id: UUID
+) -> WorkspaceRuntime:
+    runtime = session.scalar(
+        select(WorkspaceRuntime).where(
+            WorkspaceRuntime.workspace_id == workspace_id,
+            WorkspaceRuntime.id == runtime_id,
+        )
+    )
+    if runtime is None:
+        raise NotFoundError("Runtime host not found")
+    if (
+        runtime.execution_mode not in {"pooled", "persistent"}
+        or runtime.execution_run_id is not None
+        or runtime.runtime_provider != "cloud_docker"
+        or runtime.status != "running"
+        or runtime.connection_status != "online"
+        or not runtime.docker_container_id
+        or runtime.capabilities.get("plugin_install_id")
+    ):
+        raise PolicyDeniedError("MCP requires an available shared Runtime host")
+    return runtime
 
 
 def process_request(
@@ -103,6 +130,10 @@ class ManagedMcpToolAdapter:
         if runtime is None:
             raise McpExecutionError(
                 "Managed MCP runtime is unavailable", code="mcp_process_not_ready"
+            )
+        if RuntimeAllocationStore(self.session).get(runtime, "mcp", deployment.id) is None:
+            raise McpExecutionError(
+                "Managed MCP has no execution slot", code="mcp_process_not_ready"
             )
         if not runtime.docker_container_id:
             raise McpExecutionError(

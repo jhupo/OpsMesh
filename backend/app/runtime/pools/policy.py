@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from backend.app.orchestration.runs.models import AgentRun
-from backend.app.runtime.contracts import RuntimeEnvironmentError
 from backend.app.runtime.instances.models import WorkspaceRuntime
-from backend.app.runtime.instances.project_files import RUNTIME_WORKSPACE_ROOT
 
 
 def runtime_pool_key(runtime: WorkspaceRuntime) -> str:
@@ -46,46 +43,3 @@ def isolation_policy(runtime: WorkspaceRuntime) -> dict[str, object]:
         },
         "hardening": dict(hardening) if isinstance(hardening, dict) else {},
     }
-
-
-def pooled_isolation_metadata(
-    parent: WorkspaceRuntime,
-    member: WorkspaceRuntime,
-    run: AgentRun,
-) -> dict[str, object]:
-    isolation = member.capabilities.get("isolation")
-    if not isinstance(isolation, dict):
-        raise RuntimeEnvironmentError(
-            "runtime_isolation_unverified",
-            "Pooled runtime member has no platform isolation evidence",
-        )
-    workspace_mount = isolation.get("workspace_mount")
-    if not isinstance(workspace_mount, dict):
-        raise RuntimeEnvironmentError(
-            "runtime_isolation_unverified",
-            "Pooled runtime member has no workspace mount evidence",
-        )
-    return {
-        "workspace_id": str(run.workspace_id),
-        "runtime_id": str(run.id),
-        "runtime_space_id": str(member.runtime_space_id) if member.runtime_space_id else None,
-        "workspace_mount": dict(workspace_mount),
-        "network": dict(isolation.get("network") or {}),
-        "execution": {
-            "mode": "pooled",
-            "parent_runtime_id": str(parent.id),
-            "pool_member_runtime_id": str(member.id),
-            "run_id": str(run.id),
-            "workspace_root": f"{RUNTIME_WORKSPACE_ROOT}/runs/{run.id}",
-        },
-    }
-
-
-def runtime_timeout(limits: dict[str, object]) -> int:
-    value = limits.get("timeout_seconds")
-    if isinstance(value, int) and value > 0:
-        return value
-    raise RuntimeEnvironmentError(
-        "runtime_limits_invalid",
-        "Pooled runtime timeout limit is invalid",
-    )

@@ -64,8 +64,7 @@ class StdioProjectConfig(BaseModel):
 class ManagedMcpCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    template_id: UUID
-    network_disabled: bool = True
+    runtime_id: UUID
     mcpServers: dict[str, StdioProjectConfig] = Field(min_length=1, max_length=20)
 
     @model_validator(mode="after")
@@ -79,12 +78,15 @@ class ManagedMcpActionRequest(BaseModel):
     action: Literal["start", "stop", "restart", "refresh"]
 
 
+class ManagedMcpHostRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    runtime_id: UUID
+
+
 class ManagedMcpResponse(TimestampedModel):
     workspace_id: UUID
     mcp_server_id: UUID
-    runtime_id: UUID | None
-    template_id: UUID
-    network_disabled: bool
+    runtime_id: UUID
     status: str
     action: str
     generation: int

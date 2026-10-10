@@ -13,7 +13,7 @@ from backend.app.governance.audit.service import AuditService
 from backend.app.governance.costs.models import ModelUsageRecord
 from backend.app.governance.security_events.models import SecurityEvent
 from backend.app.orchestration.runs.models import AgentRun, RunEvent
-from backend.app.runtime.instances.models import RuntimeEvent, WorkspaceRuntime
+from backend.app.runtime.instances.models import RuntimeEvent
 from backend.app.runtime.operations.contracts.events import OperationsCorrelationResponse
 from backend.app.runtime.workers.models import WorkerLease
 from backend.app.shared.db.pagination import page_scalars
@@ -140,8 +140,7 @@ class OperationsEventQueryService:
                 correlation_column == correlation_value,
             )
             evidence_counts[name] = int(
-                self._session.scalar(select(func.count()).select_from(model).where(*filters))
-                or 0
+                self._session.scalar(select(func.count()).select_from(model).where(*filters)) or 0
             )
             rows_by_name[name] = list(
                 self._session.scalars(select(model).where(*filters).limit(100)).all()
@@ -191,19 +190,16 @@ class OperationsEventQueryService:
 
     def _runtime_run_ids(self, workspace_id: UUID, runtime_ids: list[str]) -> set[UUID]:
         workspace_runtime_ids = {
-            value
-            for runtime_id in runtime_ids
-            if (value := _uuid_or_none(runtime_id)) is not None
+            value for runtime_id in runtime_ids if (value := _uuid_or_none(runtime_id)) is not None
         }
         if not workspace_runtime_ids:
             return set()
         return {
             run_id
             for run_id in self._session.scalars(
-                select(WorkspaceRuntime.execution_run_id).where(
-                    WorkspaceRuntime.workspace_id == workspace_id,
-                    WorkspaceRuntime.id.in_(workspace_runtime_ids),
-                    WorkspaceRuntime.execution_run_id.is_not(None),
+                select(AgentRun.id).where(
+                    AgentRun.workspace_id == workspace_id,
+                    AgentRun.execution_runtime_id.in_(workspace_runtime_ids),
                 )
             ).all()
             if run_id is not None
@@ -215,11 +211,7 @@ class OperationsEventQueryService:
 
 def _string_values(rows: list[object], field: str) -> list[str]:
     return sorted(
-        {
-            value
-            for row in rows
-            if isinstance((value := getattr(row, field, None)), str) and value
-        }
+        {value for row in rows if isinstance((value := getattr(row, field, None)), str) and value}
     )
 
 
@@ -240,11 +232,7 @@ def _run_ids(rows_by_name: dict[str, list[object]]) -> set[UUID]:
 
 
 def _task_ids(rows: list[object]) -> set[UUID]:
-    return {
-        value
-        for row in rows
-        if isinstance((value := getattr(row, "task_id", None)), UUID)
-    }
+    return {value for row in rows if isinstance((value := getattr(row, "task_id", None)), UUID)}
 
 
 def _runtime_ids(rows_by_name: dict[str, list[object]]) -> list[str]:

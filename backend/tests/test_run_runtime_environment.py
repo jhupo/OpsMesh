@@ -99,6 +99,7 @@ def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> Non
             "timeout_seconds": 30,
             "max_output_bytes": 256_000,
             "max_processes": 64,
+            "max_concurrent_executions": 1,
         },
         network_policy={"mode": "none", "disabled": True},
         capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
@@ -174,6 +175,7 @@ def test_pooled_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
             "timeout_seconds": 30,
             "max_output_bytes": 256_000,
             "max_processes": 64,
+            "max_concurrent_executions": 1,
         },
         network_policy={"mode": "none", "disabled": True},
         capabilities={
@@ -202,7 +204,7 @@ def test_pooled_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
 
     assert result.runtime is not None
     assert result.runtime.execution_mode == "pooled"
-    assert result.runtime.execution_pool_member_id == parent.id
+    assert result.runtime.id == parent.id
     assert result.runtime.docker_container_id == parent.docker_container_id
     assert docker.created == []
     assert docker.started == []
@@ -237,6 +239,7 @@ def test_pooled_runs_use_distinct_pool_members_until_a_member_is_released() -> N
         "timeout_seconds": 30,
         "max_output_bytes": 256_000,
         "max_processes": 64,
+        "max_concurrent_executions": 1,
     }
     capabilities = {
         "isolation": {
@@ -289,8 +292,8 @@ def test_pooled_runs_use_distinct_pool_members_until_a_member_is_released() -> N
     second_child = service.ensure_for_run(second).runtime
 
     assert first_child is not None and second_child is not None
-    assert first_child.execution_pool_member_id == members[0].id
-    assert second_child.execution_pool_member_id == members[1].id
+    assert first_child.id == members[0].id
+    assert second_child.id == members[1].id
     assert first_child.docker_container_id != second_child.docker_container_id
     assert docker.created == []
 
@@ -315,7 +318,7 @@ def test_persistent_run_binds_parent_without_child_or_container_cleanup() -> Non
         status="active",
         connection_status="online",
         docker_container_id="persistent-container",
-        limits={"timeout_seconds": 30},
+        limits={"timeout_seconds": 30, "max_concurrent_executions": 2},
         network_policy={"mode": "none", "disabled": True},
         capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
     )
@@ -329,7 +332,7 @@ def test_persistent_run_binds_parent_without_child_or_container_cleanup() -> Non
     service = RunRuntimeEnvironmentService(session, docker)
     result = service.ensure_for_run(run)
     assert result.runtime is parent
-    assert run.execution_runtime_id is None
+    assert run.execution_runtime_id == parent.id
     assert result.created is True
     assert service.ensure_for_run(run).created is False
     assert service.cleanup_for_run(run) is True
@@ -339,7 +342,7 @@ def test_persistent_run_binds_parent_without_child_or_container_cleanup() -> Non
     assert docker.removed_volumes == []
 
 
-def test_persistent_runtime_rejects_a_concurrent_run() -> None:
+def test_persistent_runtime_shares_capacity_and_releases_only_one_run() -> None:
     session = _session()
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="persistent-busy", settings={})
     template = RuntimeTemplate(
@@ -359,7 +362,7 @@ def test_persistent_runtime_rejects_a_concurrent_run() -> None:
         status="active",
         connection_status="online",
         docker_container_id="persistent-container",
-        limits={"timeout_seconds": 30},
+        limits={"timeout_seconds": 30, "max_concurrent_executions": 2},
         network_policy={"mode": "none", "disabled": True},
         capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
     )
@@ -373,12 +376,24 @@ def test_persistent_runtime_rejects_a_concurrent_run() -> None:
     docker = FakeDockerClient()
     service = RunRuntimeEnvironmentService(session, docker)
     service.ensure_for_run(first)
-    try:
-        service.ensure_for_run(second)
-    except RuntimeError as exc:
-        assert "already attached" in str(exc)
-    else:
-        raise AssertionError("A persistent runtime must not be shared concurrently")
+    service.ensure_for_run(second)
+    third = AgentRun(workspace_id=workspace.id, runtime_id=parent.id, status="running", input={})
+    session.add(third)
+    session.commit()
+    import pytest
+
+    from backend.app.runtime.contracts import RuntimeEnvironmentError
+    from backend.app.runtime.instances.models import RuntimeAllocation
+
+    with pytest.raises(RuntimeEnvironmentError, match="capacity is full"):
+        service.ensure_for_run(third)
+    assert service.cleanup_for_run(first)
+    session.commit()
+    assert service.ensure_for_run(third).runtime is parent
+    assert service.ensure_for_run(second).runtime is parent
+    assert len(session.scalars(select(RuntimeAllocation)).all()) == 2
+    assert not docker.created and not docker.removed
+    assert not any("/proc" in " ".join(command) for _, command, _, _ in docker.exec_command_calls)
 
 
 def _session() -> Session:

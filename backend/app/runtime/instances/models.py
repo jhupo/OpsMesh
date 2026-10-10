@@ -1,7 +1,15 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,11 +54,6 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "execution_mode",
             "status",
         ),
-        Index(
-            "ix_workspace_runtimes_pool_member",
-            "workspace_id",
-            "execution_pool_member_id",
-        ),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -71,10 +74,6 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     execution_run_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("agent_runs.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    execution_pool_member_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("workspace_runtimes.id", ondelete="SET NULL"),
         nullable=True,
     )
     runtime_provider: Mapped[str] = mapped_column(
@@ -171,6 +170,27 @@ class RuntimeLease(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     acquired_at: Mapped[datetime] = mapped_column(nullable=False)
     released_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
+class RuntimeAllocation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "runtime_allocations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "workspace_runtime_id"],
+            ["workspace_runtimes.workspace_id", "workspace_runtimes.id"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "workspace_id", "owner_kind", "owner_id", name="uq_runtime_allocation_owner"
+        ),
+        CheckConstraint("owner_kind in ('run', 'mcp')", name="runtime_allocation_kind_valid"),
+        Index("ix_runtime_allocations_host", "workspace_id", "workspace_runtime_id"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(nullable=False)
+    workspace_runtime_id: Mapped[UUID] = mapped_column(nullable=False)
+    owner_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    owner_id: Mapped[UUID] = mapped_column(nullable=False)
 
 
 class RuntimeCommand(UUIDPrimaryKeyMixin, Base):

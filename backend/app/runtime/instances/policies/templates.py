@@ -44,9 +44,8 @@ class RuntimeTemplateGuard:
             requested_limits=limits,
             requested_network_disabled=network_disabled,
         )
-        if (
-            not network_disabled
-            and policy_disables_network({"network": template.default_network_policy})
+        if not network_disabled and policy_disables_network(
+            {"network": template.default_network_policy}
         ):
             raise RuntimeSafetyError(
                 "runtime_network_globally_disabled",

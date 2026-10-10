@@ -5,12 +5,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.runtime.commands.executor import RuntimeCommandExecutor
 from backend.app.runtime.commands.output import lease_metadata
 from backend.app.runtime.contracts import RuntimeExecutionMode, validate_runtime_execution_mode
+from backend.app.runtime.instances.allocations import RuntimeAllocationStore
 from backend.app.runtime.instances.cleanup import RuntimeResourceCleaner, cleanup_succeeded
 from backend.app.runtime.instances.contracts import (
     DockerRuntimeClient,
@@ -22,7 +22,6 @@ from backend.app.runtime.instances.events import RuntimeEventLog
 from backend.app.runtime.instances.leases import RuntimeLeaseStore, RuntimeSpaceReservationStore
 from backend.app.runtime.instances.models import (
     RuntimeCommand,
-    RuntimeLease,
     RuntimeTemplate,
     WorkspaceRuntime,
 )
@@ -110,6 +109,7 @@ class RuntimeManager:
                 "timeout_seconds": limits.timeout_seconds,
                 "max_output_bytes": limits.max_output_bytes,
                 "max_processes": limits.max_processes,
+                "max_concurrent_executions": limits.max_concurrent_executions,
             },
             network_policy=_network_policy_from_metadata(
                 network_disabled=network_disabled,
@@ -160,6 +160,10 @@ class RuntimeManager:
 
     def start_runtime(self, runtime: WorkspaceRuntime) -> WorkspaceRuntime:
         require_container(runtime)
+        self._require_host_idle(runtime)
+        runtime.status = "starting"
+        runtime.connection_status = "offline"
+        self._session.commit()
         self._docker.start_container(runtime.docker_container_id or "")
         runtime.status = "running"
         runtime.connection_status = "online"
@@ -172,6 +176,10 @@ class RuntimeManager:
 
     def stop_runtime(self, runtime: WorkspaceRuntime) -> WorkspaceRuntime:
         require_container(runtime)
+        self._require_host_idle(runtime)
+        runtime.status = "stopping"
+        runtime.connection_status = "offline"
+        self._session.commit()
         self._docker.stop_container(runtime.docker_container_id or "")
         runtime.status = "stopped"
         runtime.connection_status = "offline"
@@ -184,12 +192,12 @@ class RuntimeManager:
     def delete_runtime(
         self,
         runtime: WorkspaceRuntime,
-        *,
-        allow_active_pool_lease: bool = False,
     ) -> None:
         require_container(runtime)
-        if not allow_active_pool_lease:
-            self._require_pool_control_available(runtime)
+        self._require_host_idle(runtime)
+        runtime.status = "deleting"
+        runtime.connection_status = "offline"
+        self._session.commit()
         container_id = runtime.docker_container_id or ""
         try:
             self._docker.remove_container(container_id)
@@ -294,7 +302,7 @@ class RuntimeManager:
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
     ) -> RuntimeCommand:
-        self._require_pool_control_available(runtime)
+        self._require_host_idle(runtime)
         return self._commands.execute_command(
             workspace_id=workspace_id,
             runtime=runtime,
@@ -312,7 +320,7 @@ class RuntimeManager:
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
     ) -> RuntimeCommand:
-        self._require_pool_control_available(runtime)
+        self._require_host_idle(runtime)
         return await self._commands.execute_command_async(
             workspace_id=workspace_id,
             runtime=runtime,
@@ -331,7 +339,7 @@ class RuntimeManager:
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
     ) -> RuntimeCommand:
-        self._require_pool_control_available(runtime)
+        self._require_host_idle(runtime)
         return self._commands.execute_existing_command(
             workspace_id=workspace_id,
             runtime=runtime,
@@ -341,20 +349,8 @@ class RuntimeManager:
             working_dir=working_dir,
         )
 
-    def _require_pool_control_available(self, runtime: WorkspaceRuntime) -> None:
-        if runtime.execution_pool_member_id is not None:
-            return
-        if runtime.execution_mode not in {"pooled", "persistent"}:
-            return
-        lease = self._session.scalar(
-            select(RuntimeLease).where(
-                RuntimeLease.workspace_id == runtime.workspace_id,
-                RuntimeLease.workspace_runtime_id == runtime.id,
-                RuntimeLease.status == "leased",
-            )
-        )
-        if lease is not None:
-            raise ValueError("Runtime is leased by an active run")
+    def _require_host_idle(self, runtime: WorkspaceRuntime) -> None:
+        RuntimeAllocationStore(self._session).require_idle(runtime)
 
 
 def _network_policy_from_metadata(

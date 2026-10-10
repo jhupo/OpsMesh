@@ -173,11 +173,7 @@ class RunRequestBuilder:
             )
             is not None
         ):
-            runtime_id = (
-                runtime_binding.workspace_runtime_id
-                if _runtime_execution_mode(run) == "persistent"
-                else runtime_binding.execution_runtime_id
-            )
+            runtime_id = runtime_binding.execution_runtime_id
             runtime = self.session.scalar(
                 select(WorkspaceRuntime).where(
                     WorkspaceRuntime.workspace_id == run.workspace_id,
@@ -238,9 +234,7 @@ class RunRequestBuilder:
             authorization_snapshot=inputs.snapshot,
         )
         binding = inputs.runtime_binding
-        runtime_id = (
-            binding.workspace_runtime_id if mode == "persistent" else binding.execution_runtime_id
-        )
+        runtime_id = binding.execution_runtime_id
         if runtime_id is not None:
             metadata["runtime_execution"] = {
                 "mode": mode,
@@ -270,7 +264,7 @@ class RunRequestBuilder:
             root = (
                 project_workspace.get("working_directory")
                 if isinstance(project_workspace, dict)
-                else "/workspace"
+                else f"/workspace/runs/{run.id}"
             )
             manifest = SandboxManifest(run_id=run.id, root=str(root))
             backend = self._runtime_backends().require(runtime.runtime_provider)
@@ -541,11 +535,7 @@ class RunRequestBuilder:
             "node_execution": "direct_tool",
         }
         mode = _runtime_execution_mode(run)
-        runtime_id = (
-            runtime_binding.workspace_runtime_id
-            if mode == "persistent"
-            else runtime_binding.execution_runtime_id
-        )
+        runtime_id = runtime_binding.execution_runtime_id
         if runtime_id is not None:
             metadata["runtime_execution"] = {
                 "mode": mode,

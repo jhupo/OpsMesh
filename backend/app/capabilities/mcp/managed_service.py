@@ -11,10 +11,10 @@ from backend.app.capabilities.mcp.catalog.contracts import (
 )
 from backend.app.capabilities.mcp.catalog.credentials import McpCredentialService
 from backend.app.capabilities.mcp.catalog.servers import McpServerService
+from backend.app.capabilities.mcp.managed_runtime import require_managed_host
 from backend.app.capabilities.mcp.managed_schemas import ManagedMcpCreateRequest
 from backend.app.capabilities.mcp.models import McpDeployment
 from backend.app.governance.audit.service import AuditService
-from backend.app.governance.policies.reader import PlatformPolicyService
 from backend.app.identity.authorization.context import AuthenticatedUser
 from backend.app.identity.authorization.execution import ExecutionIdentityService
 from backend.app.identity.authorization.permissions import WorkspaceAction
@@ -24,8 +24,8 @@ from backend.app.identity.authorization.resources import (
     ResourceKind,
 )
 from backend.app.identity.authorization.service import AuthorizationService
-from backend.app.runtime.instances.policies.safety import RuntimeSafetyPolicy
-from backend.app.runtime.instances.policies.templates import RuntimeTemplateGuard
+from backend.app.runtime.instances.allocations import RuntimeAllocationStore
+from backend.app.runtime.instances.models import WorkspaceRuntime
 from backend.app.runtime.queues.contracts import JobPayload, JobType
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.shared.config import Settings
@@ -70,24 +70,13 @@ class ManagedMcpService:
     ) -> list[McpDeployment]:
         authorize_management(self.session, workspace_id, user)
         identity = ExecutionIdentityService(self.session).capture(workspace_id, user.user_id)
-        guard = RuntimeTemplateGuard(
-            self.session,
-            RuntimeSafetyPolicy(
-                tuple(self.settings.runtime_allowed_images),
-                PlatformPolicyService(self.session).risky_execution_policy(),
-            ),
+        require_managed_host(self.session, workspace_id, request.runtime_id)
+        ResourceAuthorizationService(self.session, user).require(
+            workspace_id,
+            ResourceKind.RUNTIME,
+            request.runtime_id,
+            ResourceAction.INVOKE,
         )
-        if (
-            guard.validated_template(
-                workspace_id=workspace_id,
-                template_id=request.template_id,
-                limits=None,
-                network_disabled=request.network_disabled,
-                runtime_space_id=None,
-            )
-            is None
-        ):
-            raise NotFoundError("Runtime template not found")
         secrets = SecretEncryptionService(
             secret=self.settings.credential_encryption_secret,
             key_id=self.settings.credential_encryption_key_id,
@@ -133,8 +122,7 @@ class ManagedMcpService:
                 deployment = McpDeployment(
                     workspace_id=workspace_id,
                     mcp_server_id=server.id,
-                    template_id=request.template_id,
-                    network_disabled=request.network_disabled,
+                    runtime_id=request.runtime_id,
                     status="queued" if approved else "pending_approval",
                     action="start",
                     generation=1,
@@ -198,6 +186,45 @@ class ManagedMcpService:
         )
         self.session.commit()
         self._enqueue(deployment)
+        return deployment
+
+    def bind_host(
+        self, workspace_id: UUID, server_id: UUID, user: AuthenticatedUser, runtime_id: UUID
+    ) -> McpDeployment:
+        authorize_management(self.session, workspace_id, user)
+        deployment = self.get(workspace_id, server_id, lock=True)
+        authorization = ResourceAuthorizationService(self.session, user)
+        authorization.require(
+            workspace_id, ResourceKind.MCP_SERVER, server_id, ResourceAction.CONTROL
+        )
+        host = require_managed_host(self.session, workspace_id, runtime_id)
+        authorization.require(workspace_id, ResourceKind.RUNTIME, host.id, ResourceAction.INVOKE)
+        previous = self.session.scalar(
+            select(WorkspaceRuntime).where(
+                WorkspaceRuntime.workspace_id == workspace_id,
+                WorkspaceRuntime.id == deployment.runtime_id,
+            )
+        )
+        if deployment.status not in {"stopped", "failed", "pending_approval"} or (
+            previous is not None
+            and RuntimeAllocationStore(self.session).get(previous, "mcp", deployment.id) is not None
+        ):
+            raise ConflictError("Stop the MCP process before changing its Runtime host")
+        deployment.runtime_id = host.id
+        deployment.server_version = None
+        deployment.credential_version = None
+        deployment.execution_identity = ExecutionIdentityService(self.session).capture(
+            workspace_id, user.user_id
+        )
+        AuditService(self.session).record_user_action(
+            workspace_id=workspace_id,
+            user_id=user.user_id,
+            action="mcp_process.host_bound",
+            target_type="mcp_server",
+            target_id=server_id,
+            metadata={"runtime_id": str(host.id)},
+        )
+        self.session.commit()
         return deployment
 
     def _enqueue(self, deployment: McpDeployment) -> None:

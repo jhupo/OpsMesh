@@ -28,12 +28,12 @@ from backend.app.identity.auth.service import AuthenticationService
 from backend.app.identity.users.models import User
 from backend.app.runtime.backends.factory import build_runtime_backend_registry
 from backend.app.runtime.instances.contracts import RuntimeCommandResult
-from backend.app.runtime.instances.models import RuntimeTemplate
+from backend.app.runtime.instances.models import RuntimeTemplate, WorkspaceRuntime
 from backend.app.runtime.queues.context import WorkerJobHandlerContext
 from backend.app.shared.concurrency import BlockingIO
 from backend.app.shared.config import Settings
 from backend.app.shared.db.errors import DatabaseConflictError
-from backend.app.shared.errors import NotFoundError
+from backend.app.shared.errors import ConflictError, NotFoundError
 from backend.tests.test_mcp_execution import _seed_workspace, _session
 from backend.tests.test_runtime_manager import FakeDockerClient
 from runtime.opsmesh_runtime.mcp_process import McpProcess
@@ -117,9 +117,23 @@ def managed(monkeypatch):
     queue = Queue()
     service = ManagedMcpService(session, settings, queue)
     auth = AuthenticationService(session).authenticate_user(user.id)
+    host = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        runtime_template_id=template.id,
+        name="shared",
+        execution_mode="persistent",
+        status="running",
+        connection_status="online",
+        docker_container_id="shared-container",
+        limits={"max_concurrent_executions": 4},
+        network_policy={"mode": "none"},
+        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+    )
+    session.add(host)
+    session.commit()
     request = ManagedMcpCreateRequest.model_validate(
         {
-            "template_id": str(template.id),
+            "runtime_id": str(host.id),
             "mcpServers": {
                 "counter": {
                     "command": "python",
@@ -130,6 +144,7 @@ def managed(monkeypatch):
         }
     )
     docker = Docker()
+    docker.started.append(host.docker_container_id)
     handler = ManagedMcpJobHandler(
         WorkerJobHandlerContext(
             session=session,
@@ -156,11 +171,16 @@ def test_import_start_reuse_stop_restart_and_secret_boundary(managed):
     assert "hidden-value" not in queue.jobs[-1].model_dump_json()
     handler.handle(queue.jobs[-1])
     assert deployment.status == "running"
-    assert len(docker.created_requests) == 1
+    assert not docker.created_requests
     assert session.scalar(select(McpToolAllowlist)).status == "discovered"
-    assert docker.requests[0]["server"]["env"]["TEST_PASSWORD"] == "hidden-value"
+    assert (
+        next(item for item in docker.requests if item["action"] == "start")["server"]["env"][
+            "TEST_PASSWORD"
+        ]
+        == "hidden-value"
+    )
     handler.handle(queue.jobs[-1])
-    assert len(docker.created_requests) == 1
+    assert not docker.created_requests
     adapter = ManagedMcpToolAdapter(session, docker)
     operation = adapter.prepare(
         server=server,
@@ -189,7 +209,7 @@ def test_import_start_reuse_stop_restart_and_secret_boundary(managed):
     service.control(workspace.id, server.id, auth, "start")
     handler.handle(queue.jobs[-1])
     assert deployment.status == "running"
-    assert len(docker.created_requests) == 1
+    assert not docker.created_requests
 
 
 def test_worker_revalidates_approval_and_workspace_isolation(managed):
@@ -205,6 +225,36 @@ def test_worker_revalidates_approval_and_workspace_isolation(managed):
     assert not docker.created_requests
     assert deployment.status == "failed"
     assert server.health_status == "unhealthy"
+
+
+def test_shared_host_capacity_and_rebinding_require_a_stopped_process(managed):
+    session, workspace, auth, request, service, queue, docker, handler = managed
+    (deployment,) = service.create(workspace.id, auth, request)
+    handler.handle(queue.jobs[-1])
+    with pytest.raises(ConflictError):
+        service.bind_host(workspace.id, deployment.mcp_server_id, auth, request.runtime_id)
+    host = session.get(WorkspaceRuntime, request.runtime_id)
+    second = service.create(
+        workspace.id,
+        auth,
+        request.model_copy(
+            update={
+                "mcpServers": {"neighbour": request.mcpServers["counter"]},
+            }
+        ),
+    )[0]
+    handler.handle(queue.jobs[-1])
+    service.control(workspace.id, deployment.mcp_server_id, auth, "restart")
+    handler.handle(queue.jobs[-1])
+    assert second.status == "running" and host.status == "running" and not docker.stopped
+    service.control(workspace.id, deployment.mcp_server_id, auth, "stop")
+    handler.handle(queue.jobs[-1])
+    with pytest.raises(NotFoundError):
+        service.bind_host(workspace.id, deployment.mcp_server_id, auth, uuid4())
+    assert (
+        service.bind_host(workspace.id, deployment.mcp_server_id, auth, host.id).runtime_id
+        == host.id
+    )
 
 
 def test_recovery_after_queue_loss_and_rotated_credentials(managed):
@@ -235,6 +285,32 @@ def test_recovery_after_queue_loss_and_rotated_credentials(managed):
     assert deployment.status == "running"
 
 
+def test_waiting_mcp_is_requeued_only_after_a_slot_is_released(managed):
+    session, workspace, auth, request, service, queue, docker, handler = managed
+    host = session.get(WorkspaceRuntime, request.runtime_id)
+    host.limits = {"max_concurrent_executions": 1}
+    session.commit()
+    first = service.create(workspace.id, auth, request)[0]
+    handler.handle(queue.jobs[-1])
+    second = service.create(
+        workspace.id,
+        auth,
+        request.model_copy(update={"mcpServers": {"queued": request.mcpServers["counter"]}}),
+    )[0]
+    handler.handle(queue.jobs[-1])
+    assert second.status == "waiting_capacity"
+    queue.jobs.clear()
+    reconcile_managed_mcp(session, queue)
+    assert not queue.jobs
+    service.control(workspace.id, first.mcp_server_id, auth, "stop")
+    handler.handle(queue.jobs[-1])
+    reconcile_managed_mcp(session, queue)
+    assert queue.jobs[-1].resource_id == second.id
+    handler.handle(queue.jobs[-1])
+    assert second.status == "running" and first.status == "stopped"
+    assert not docker.created_requests
+
+
 def test_revoked_user_stops_long_lived_process_on_refresh(managed):
     session, workspace, auth, request, service, queue, docker, handler = managed
     (deployment,) = service.create(workspace.id, auth, request)
@@ -246,7 +322,8 @@ def test_revoked_user_stops_long_lived_process_on_refresh(managed):
     with pytest.raises(RuntimeError, match="Managed MCP lifecycle failed"):
         handler.handle(queue.jobs[-1])
     assert deployment.status == "failed"
-    assert docker.stopped
+    assert not docker.stopped
+    assert any(item["action"] == "stop" for item in docker.requests)
 
 
 def test_import_is_atomic_and_approval_does_not_start_code(managed, monkeypatch):

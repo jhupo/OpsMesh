@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.runs.events import RunEventRecorder
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.service import RunOrchestrationService
-from backend.app.orchestration.runs.state import RunStatus
+from backend.app.orchestration.runs.state import RunStateService, RunStatus
+from backend.app.runtime.instances.allocations import RuntimeAllocationStore
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.runtime.pools.service import RuntimePoolService
 from backend.app.runtime.queues.contracts import JobType
 from backend.app.runtime.queues.service import RedisQueue
 from backend.app.runtime.workers.models import WorkerLease
@@ -37,7 +40,13 @@ class QueueRehydrationService:
         runs = list(
             self._session.scalars(
                 select(AgentRun)
-                .where(AgentRun.status == RunStatus.QUEUED.value)
+                .where(
+                    or_(
+                        AgentRun.status == RunStatus.QUEUED.value,
+                        (AgentRun.status == RunStatus.WAITING_RUNTIME.value)
+                        & (AgentRun.input["runtime_capacity_waiting"].as_boolean() == True),  # noqa: E712
+                    )
+                )
                 .order_by(AgentRun.updated_at.asc(), AgentRun.created_at.asc())
                 .limit(limit)
             ).all()
@@ -57,12 +66,8 @@ class QueueRehydrationService:
             ).all()
         }
         present_ids = self._queue.queued_job_resource_ids(job_type=JobType.AGENT_RUN)
-        present_ids.update(
-            self._queue.processing_job_resource_ids(job_type=JobType.AGENT_RUN)
-        )
-        present_ids.update(
-            self._queue.scheduled_retry_job_resource_ids(job_type=JobType.AGENT_RUN)
-        )
+        present_ids.update(self._queue.processing_job_resource_ids(job_type=JobType.AGENT_RUN))
+        present_ids.update(self._queue.scheduled_retry_job_resource_ids(job_type=JobType.AGENT_RUN))
 
         summary = QueueRehydrationSummary(scanned_runs=len(runs))
         orchestration = RunOrchestrationService(self._session, queue=self._queue)
@@ -74,6 +79,33 @@ class QueueRehydrationService:
                 summary = _replace_summary(summary, skipped_present=summary.skipped_present + 1)
                 continue
             try:
+                if run.status == RunStatus.WAITING_RUNTIME.value:
+                    parent = self._session.scalar(
+                        select(WorkspaceRuntime).where(
+                            WorkspaceRuntime.workspace_id == run.workspace_id,
+                            WorkspaceRuntime.id == run.runtime_id,
+                            WorkspaceRuntime.status.in_(["active", "running"]),
+                            WorkspaceRuntime.connection_status == "online",
+                        )
+                    )
+                    if parent is None:
+                        continue
+                    hosts = (
+                        RuntimePoolService(self._session).hosts(parent)
+                        if parent.execution_mode == "pooled"
+                        else [parent]
+                    )
+                    if not any(
+                        RuntimeAllocationStore(self._session).available(host) for host in hosts
+                    ):
+                        continue
+                    RunStateService().transition(run, RunStatus.QUEUED)
+                    run.input = {
+                        key: value
+                        for key, value in run.input.items()
+                        if key != "runtime_capacity_waiting"
+                    }
+                    self._session.commit()
                 if not orchestration.enqueue_run(run, requested_by_user_id=None, force=True):
                     summary = _replace_summary(summary, failed_runs=summary.failed_runs + 1)
                     continue

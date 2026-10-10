@@ -321,7 +321,16 @@ class RunControlService:
         timeout = runtime.limits.get("timeout_seconds")
         if not isinstance(timeout, int) or timeout <= 0:
             return False
-        started_at = run.started_at or run.updated_at
+        execution = run.input.get("runtime_execution")
+        if isinstance(execution, dict) and execution.get("mode") in {"pooled", "persistent"}:
+            if execution.get("status") != "active":
+                return False
+            active_since = execution.get("active_since")
+            if not isinstance(active_since, str):
+                return False
+            started_at = datetime.fromisoformat(active_since)
+        else:
+            started_at = run.started_at or run.updated_at
         if started_at is None:
             return False
         if started_at.tzinfo is None:
@@ -433,6 +442,8 @@ class RunControlService:
 
 
 def stale_recovery_anchor(run: AgentRun) -> datetime | None:
+    if run.status == RunStatus.WAITING_RUNTIME.value and run.input.get("runtime_capacity_waiting"):
+        return None
     if run.status == RunStatus.RUNNING.value:
         anchor = run.started_at or run.updated_at or run.created_at
     elif run.status == RunStatus.WAITING_RUNTIME.value:

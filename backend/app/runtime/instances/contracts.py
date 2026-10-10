@@ -16,6 +16,7 @@ class RuntimeLimits:
     timeout_seconds: int
     max_output_bytes: int = 256_000
     max_processes: int = 256
+    max_concurrent_executions: int = 16
 
 
 @dataclass(frozen=True)

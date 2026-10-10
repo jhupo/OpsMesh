@@ -1,14 +1,14 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.runs.state import RunStatus
 from backend.app.runtime.backends.registry import RuntimeBackendRegistry
 from backend.app.runtime.instances.contracts import DockerRuntimeClient
-from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.runtime.instances.models import RuntimeAllocation, WorkspaceRuntime
 from backend.app.runtime.instances.run_environment import RunRuntimeEnvironmentService
 from backend.app.runtime.spaces.models import RuntimeSpaceEvent
 from backend.app.shared.config import Settings
@@ -134,7 +134,18 @@ class RuntimeCleanupService:
             )
             .where(
                 AgentRun.execution_runtime_id.is_not(None),
-                WorkspaceRuntime.status != "deleted",
+                or_(
+                    (WorkspaceRuntime.execution_mode == "isolated")
+                    & (WorkspaceRuntime.status != "deleted"),
+                    exists(
+                        select(RuntimeAllocation.id).where(
+                            RuntimeAllocation.workspace_id == AgentRun.workspace_id,
+                            RuntimeAllocation.owner_kind == "run",
+                            RuntimeAllocation.owner_id == AgentRun.id,
+                        )
+                    ),
+                    AgentRun.input["runtime_execution"]["status"].as_string() == "suspended",
+                ),
                 AgentRun.status.in_(
                     (
                         RunStatus.COMPLETED.value,
@@ -159,28 +170,6 @@ class RuntimeCleanupService:
                 failed += 1
         self._session.commit()
         return completed, failed
-
-    def cleanup_orphaned_pool_leases(
-        self,
-        *,
-        docker_client: DockerRuntimeClient | None,
-        workspace_id: UUID | None = None,
-        stale_after_seconds: int = 600,
-        limit: int = 100,
-    ) -> tuple[int, int]:
-        """Reclaim pool members left leased by a terminal or lost worker run."""
-        if docker_client is None:
-            return 0, limit
-        result = RunRuntimeEnvironmentService(
-            self._session,
-            docker_client,
-        ).reclaim_orphaned_pool_leases(
-            workspace_id=workspace_id,
-            stale_after_seconds=stale_after_seconds,
-            limit=limit,
-        )
-        self._session.commit()
-        return result
 
     def _stale_runtimes(
         self,

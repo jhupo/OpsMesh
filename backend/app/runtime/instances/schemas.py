@@ -29,6 +29,7 @@ class RuntimeLimitsRequest(BaseModel):
     timeout_seconds: int = Field(ge=1, le=3_600)
     max_output_bytes: int = Field(default=256_000, ge=1, le=2_000_000)
     max_processes: int = Field(default=256, ge=1, le=512)
+    max_concurrent_executions: int = Field(default=16, ge=1, le=128)
 
 
 class RuntimeCreateRequest(BaseModel):
@@ -70,6 +71,13 @@ class WorkspaceRuntimeResponse(TimestampedModel):
 
 class RuntimeCommandRequest(BaseModel):
     command: list[str] = Field(min_length=1, max_length=32)
+
+
+class RuntimeAllocationResponse(TimestampedModel):
+    workspace_id: UUID
+    workspace_runtime_id: UUID
+    owner_kind: Literal["run", "mcp"]
+    owner_id: UUID
 
 
 class RuntimeCommandResponse(ORMModel):

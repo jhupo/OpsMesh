@@ -21,7 +21,9 @@ from backend.app.orchestration.runs.authorization.policy import (
 from backend.app.orchestration.runs.models import AgentRun
 from backend.app.orchestration.tasks.models import Task, TaskStep
 from backend.app.resources.files.models import WorkspaceFile
-from backend.app.runtime.instances.models import RuntimeLease, WorkspaceRuntime
+from backend.app.runtime.instances.allocations import RuntimeAllocationStore
+from backend.app.runtime.instances.models import WorkspaceRuntime
+from backend.app.runtime.pools.policy import pool_policy_matches, runtime_pool_key
 from backend.app.runtime.spaces.models import RuntimeSpace, RuntimeSpaceBinding
 from backend.app.teams.management.models import AgentTeam
 from backend.app.teams.sessions.refs import team_bound_runtime_id
@@ -297,8 +299,6 @@ class RunRuntimeAuthorizationService:
                     "runtime_network_policy_mismatch",
                     "Runtime no longer enforces the frozen network policy",
                 )
-            if runtime.execution_mode == "persistent" and run.execution_runtime_id is None:
-                self._require_persistent_execution_lease(runtime, run)
         execution_runtime_id = self._execution_runtime_for_run(run, binding)
         if binding.runtime_space_id is not None:
             runtime_space = self._runtime_space(run.workspace_id, binding.runtime_space_id)
@@ -326,91 +326,40 @@ class RunRuntimeAuthorizationService:
                 "A per-run runtime requires an authorized parent runtime",
             )
         execution_runtime = self._runtime(run.workspace_id, run.execution_runtime_id)
-        if (
-            execution_runtime.parent_runtime_id != binding.workspace_runtime_id
-            or execution_runtime.execution_run_id != run.id
-            or execution_runtime.runtime_space_id != binding.runtime_space_id
-        ):
+        parent = self._runtime(run.workspace_id, binding.workspace_runtime_id)
+        if execution_runtime.execution_mode == "isolated":
+            valid = (
+                execution_runtime.parent_runtime_id == parent.id
+                and execution_runtime.execution_run_id == run.id
+            )
+        else:
+            valid = (
+                execution_runtime.execution_run_id is None
+                and execution_runtime.runtime_space_id == binding.runtime_space_id
+                and execution_runtime.execution_mode == parent.execution_mode
+                and (
+                    execution_runtime.id == parent.id
+                    or (
+                        parent.execution_mode == "pooled"
+                        and runtime_pool_key(execution_runtime) == runtime_pool_key(parent)
+                        and pool_policy_matches(parent, execution_runtime)
+                    )
+                )
+                and RuntimeAllocationStore(self._session).get(execution_runtime, "run", run.id)
+                is not None
+            )
+        if not valid:
             raise RunRuntimeAuthorizationError(
                 "runtime_execution_binding_invalid",
-                "Per-run runtime is not bound to the frozen runtime placement",
+                "Run has no authorized execution slot",
             )
         self._require_runtime_ready(execution_runtime)
         if binding.network_disabled and execution_runtime.network_policy.get("mode") != "none":
             raise RunRuntimeAuthorizationError(
                 "runtime_execution_network_policy_mismatch",
-                "Per-run runtime does not enforce the frozen network policy",
-            )
-        if execution_runtime.execution_mode == "pooled":
-            self._require_pooled_execution_binding(execution_runtime, binding, run)
-        elif execution_runtime.execution_pool_member_id is not None:
-            raise RunRuntimeAuthorizationError(
-                "runtime_execution_binding_invalid",
-                "Only pooled execution runtimes may reference a pool member",
+                "Runtime violates the frozen network policy",
             )
         return execution_runtime.id
-
-    def _require_pooled_execution_binding(
-        self,
-        execution_runtime: WorkspaceRuntime,
-        binding: ResolvedRunRuntimeBinding,
-        run: AgentRun,
-    ) -> None:
-        member_id = execution_runtime.execution_pool_member_id
-        if member_id is None or binding.workspace_runtime_id is None:
-            raise RunRuntimeAuthorizationError(
-                "runtime_execution_binding_invalid",
-                "Pooled execution runtime has no pool member binding",
-            )
-        member = self._runtime(run.workspace_id, member_id)
-        if (
-            member.execution_mode != "pooled"
-            or member.execution_run_id is not None
-            or member.execution_pool_member_id is not None
-            or member.runtime_template_id != execution_runtime.runtime_template_id
-            or member.runtime_space_id != binding.runtime_space_id
-            or member.docker_container_id != execution_runtime.docker_container_id
-            or member.status not in RUNTIME_READY_STATUSES
-            or member.connection_status != "online"
-        ):
-            raise RunRuntimeAuthorizationError(
-                "runtime_execution_binding_invalid",
-                "Pooled execution runtime does not match its active pool member",
-            )
-        lease = self._session.scalar(
-            select(RuntimeLease).where(
-                RuntimeLease.workspace_id == run.workspace_id,
-                RuntimeLease.workspace_runtime_id == member.id,
-                RuntimeLease.status == "leased",
-            )
-        )
-        pool_metadata = lease.lease_metadata.get("pool") if lease is not None else None
-        current_run_id = pool_metadata.get("run_id") if isinstance(pool_metadata, dict) else None
-        if current_run_id != str(run.id):
-            raise RunRuntimeAuthorizationError(
-                "runtime_execution_lease_invalid",
-                "Pooled runtime member is not leased to this run",
-            )
-
-    def _require_persistent_execution_lease(
-        self,
-        runtime: WorkspaceRuntime,
-        run: AgentRun,
-    ) -> None:
-        lease = self._session.scalar(
-            select(RuntimeLease).where(
-                RuntimeLease.workspace_id == run.workspace_id,
-                RuntimeLease.workspace_runtime_id == runtime.id,
-                RuntimeLease.status == "leased",
-            )
-        )
-        pool_metadata = lease.lease_metadata.get("pool") if lease is not None else None
-        current_run_id = pool_metadata.get("run_id") if isinstance(pool_metadata, dict) else None
-        if current_run_id != str(run.id):
-            raise RunRuntimeAuthorizationError(
-                "runtime_execution_lease_invalid",
-                "Persistent runtime is not leased to this run",
-            )
 
     def _team_for_task(self, task: Task) -> AgentTeam | None:
         if task.agent_team_id is None:
