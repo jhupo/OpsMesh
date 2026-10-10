@@ -53,7 +53,7 @@ services:
       - prometheus
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.157.0
+    image: otel/opentelemetry-collector-contrib:0.161.0
     network_mode: host
     command: --config=/etc/otelcol-contrib/config.yml
     volumes:
