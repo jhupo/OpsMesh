@@ -92,7 +92,7 @@ class WorkspaceMemoryProductTools:
             )
             if version is None or not any(
                 scope.allows(
-                    source_type="workspace_memory",
+                    source_type="semantic_memory",
                     tags=set(string_list(version.snapshot.get("tags"))),
                     scope_type=str(version.snapshot.get("scope_type", "")),
                     scope_id=str(version.snapshot.get("scope_id", "")),
@@ -149,7 +149,7 @@ class WorkspaceMemoryProductTools:
         )
         if entry is None or not any(
             scope.allows(
-                source_type="workspace_memory",
+                source_type="semantic_memory",
                 tags=set(entry.tags),
                 scope_type=entry.scope_type,
                 scope_id=entry.scope_id,
@@ -350,6 +350,7 @@ class WorkspaceMemoryProductTools:
             raise ToolResourceNotFoundError("Semantic memory entry not found")
         if not any(
             scope.allows_write(
+                source_type="semantic_memory",
                 scope_type=entry.scope_type,
                 scope_id=entry.scope_id,
                 tags=set(entry.tags),
@@ -414,6 +415,7 @@ def _require_memory_write(
 ) -> None:
     if not any(
         scope.allows_write(
+            source_type="semantic_memory",
             scope_type=scope_type,
             scope_id=str(scope_id),
             tags=tags,

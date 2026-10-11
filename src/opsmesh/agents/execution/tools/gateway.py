@@ -339,6 +339,7 @@ class AgentToolGateway:
             )
         if not any(
             scope.allows_write(
+                source_type="semantic_memory",
                 scope_type=scope_type,
                 scope_id=str(scope_id),
                 tags=tags,

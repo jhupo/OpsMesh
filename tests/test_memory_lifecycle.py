@@ -148,7 +148,7 @@ def test_memory_candidates_are_prefiltered_by_each_resource_grant() -> None:
             AuthorizedMemoryScope(
                 resource_id=uuid4(),
                 access_mode="read",
-                source_types=frozenset({"workspace_memory"}),
+                source_types=frozenset({"semantic_memory"}),
                 tags=frozenset({"alpha"}),
                 scope_types=frozenset({"team"}),
                 scope_ids=frozenset({str(team_a)}),
@@ -156,7 +156,7 @@ def test_memory_candidates_are_prefiltered_by_each_resource_grant() -> None:
             AuthorizedMemoryScope(
                 resource_id=uuid4(),
                 access_mode="read",
-                source_types=frozenset({"workspace_memory"}),
+                source_types=frozenset({"semantic_memory"}),
                 tags=frozenset({"beta"}),
                 scope_types=frozenset({"team"}),
                 scope_ids=frozenset({str(team_b)}),

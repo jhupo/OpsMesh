@@ -382,20 +382,10 @@ def memory_scope_predicate(scope: AuthorizedMemoryScope) -> ColumnElement[bool]:
 
 
 def _source_type_condition(source_types: set[str]) -> ColumnElement[bool]:
-    conditions: list[ColumnElement[bool]] = []
+    declared_type = WorkspaceMemoryEntry.source_type.in_(source_types)
     if "workspace_memory" in source_types:
-        conditions.append(
-            WorkspaceMemoryEntry.entry_type.not_in(("indexed_chunk", "knowledge_chunk"))
-        )
-    indexed_types = source_types - {"workspace_memory"}
-    if indexed_types:
-        conditions.append(
-            and_(
-                WorkspaceMemoryEntry.entry_type.in_(("indexed_chunk", "knowledge_chunk")),
-                WorkspaceMemoryEntry.source_type.in_(indexed_types),
-            )
-        )
-    return or_(*conditions) if conditions else false()
+        return or_(WorkspaceMemoryEntry.source_type.is_(None), declared_type)
+    return declared_type
 
 
 def _document_matches_request(
@@ -493,9 +483,7 @@ def memory_entry_document_metadata(entry: WorkspaceMemoryEntry) -> dict[str, obj
 
 
 def memory_entry_source_type(entry: WorkspaceMemoryEntry) -> str:
-    if entry.entry_type in {"indexed_chunk", "knowledge_chunk"} and entry.source_type:
-        return entry.source_type
-    return "workspace_memory"
+    return entry.source_type or "workspace_memory"
 
 
 def memory_entry_source_id(entry: WorkspaceMemoryEntry) -> UUID:

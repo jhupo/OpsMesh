@@ -71,7 +71,7 @@ def test_semantic_memory_is_scoped_versioned_idempotent_and_searchable() -> None
         workspace_id=workspace.id,
         query="two approvals",
         limit=5,
-        source_types={"workspace_memory"},
+        source_types={"semantic_memory"},
     )
 
     assert repeated is first
@@ -270,7 +270,7 @@ def test_memory_configuration_api_versions_policy_and_retries_failed_embeddings(
         workspace_id=workspace.id,
         query="retry embedding secret-query-value",
         limit=5,
-        source_types={"workspace_memory"},
+        source_types={"semantic_memory"},
     )
     session.commit()
     retrieval_events = client.get(
