@@ -196,7 +196,7 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             decisions=decisions,
             active_calls={},
         )
-        observer.lifecycle(
+        await observer.lifecycle(
             "agent.started",
             "Claude agent started.",
             {"agent": request.agent_profile.name},
@@ -298,7 +298,7 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
                 results=guardrail_results,
             )
         events = self._events(request, result_message, messages, approval_state)
-        observer.lifecycle(
+        await observer.lifecycle(
             "agent.completed",
             "Claude agent completed.",
             {"agent": request.agent_profile.name},

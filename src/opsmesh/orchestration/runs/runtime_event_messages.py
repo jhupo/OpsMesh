@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRunResult
+from opsmesh.agents.execution.contracts import AgentRunResult, AgentRuntimeEvent
 from opsmesh.agents.execution.events import RuntimeEventTaskMessageMapper
 from opsmesh.orchestration.runs.events import RunEventRecorder
 from opsmesh.orchestration.runs.models import AgentRun
@@ -19,33 +19,10 @@ class RunRuntimeEventMessageMapper:
         if not result.events and not result.stream_events:
             return
 
-        step = self._step_for_run(run) if run.task_id is not None else None
         events = RunEventRecorder(self.session)
-        messages = TaskMessageAppendService(self.session)
-        mapper = RuntimeEventTaskMessageMapper()
 
         for event in result.events:
-            events.append_event(
-                run,
-                event.event_type,
-                event.message,
-                {"runtime_event": event.payload},
-            )
-            if run.task_id is None:
-                continue
-            draft = mapper.map_event(event=event, run=run, step=step)
-            if draft is None:
-                continue
-            messages.append(
-                task_id=run.task_id,
-                workspace_id=run.workspace_id,
-                message_type=draft.message_type,
-                body=draft.body,
-                task_step_id=run.task_step_id,
-                agent_run_id=run.id,
-                agent_profile_id=run.agent_profile_id,
-                payload=draft.payload,
-            )
+            self.map_event(run, event)
         for stream_event in result.stream_events:
             events.append_event(
                 run,
@@ -60,6 +37,27 @@ class RunRuntimeEventMessageMapper:
                         "is_terminal": stream_event.is_terminal,
                     }
                 },
+            )
+
+    def map_event(self, run: AgentRun, event: AgentRuntimeEvent) -> None:
+        RunEventRecorder(self.session).append_event(
+            run, event.event_type, event.message, {"runtime_event": event.payload}
+        )
+        if run.task_id is None:
+            return
+        draft = RuntimeEventTaskMessageMapper().map_event(
+            event=event, run=run, step=self._step_for_run(run)
+        )
+        if draft is not None:
+            TaskMessageAppendService(self.session).append(
+                task_id=run.task_id,
+                workspace_id=run.workspace_id,
+                message_type=draft.message_type,
+                body=draft.body,
+                task_step_id=run.task_step_id,
+                agent_run_id=run.id,
+                agent_profile_id=run.agent_profile_id,
+                payload=draft.payload,
             )
 
     def _step_for_run(self, run: AgentRun) -> TaskStep | None:

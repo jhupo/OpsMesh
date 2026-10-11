@@ -26,23 +26,23 @@ class OpenAIRuntimeHooks(RunHooksBase[Any, Any]):
         input_items: list[Any],
     ) -> None:
         await self._checkpoint()
-        self._record("agent.llm.started", agent)
+        await self._record("agent.llm.started", agent)
 
     async def on_llm_end(self, context: Any, agent: Any, response: Any) -> None:
         await self._checkpoint()
-        self._record("agent.llm.completed", agent)
+        await self._record("agent.llm.completed", agent)
 
     async def on_agent_start(self, context: Any, agent: Any) -> None:
         await self._checkpoint()
-        self._record("agent.started", agent)
+        await self._record("agent.started", agent)
 
     async def on_agent_end(self, context: Any, agent: Any, output: Any) -> None:
         await self._checkpoint()
-        self._record("agent.completed", agent)
+        await self._record("agent.completed", agent)
 
     async def on_handoff(self, context: Any, from_agent: Any, to_agent: Any) -> None:
         await self._checkpoint()
-        self._observer.lifecycle(
+        await self._observer.lifecycle(
             "agent.handoff.started",
             "Agent handoff started.",
             {
@@ -53,7 +53,7 @@ class OpenAIRuntimeHooks(RunHooksBase[Any, Any]):
 
     async def on_tool_start(self, context: Any, agent: Any, tool: Any) -> None:
         await self._checkpoint()
-        self._record(
+        await self._record(
             "agent.tool.started",
             agent,
             tool_name=str(getattr(tool, "name", "")),
@@ -68,7 +68,7 @@ class OpenAIRuntimeHooks(RunHooksBase[Any, Any]):
         result: str,
     ) -> None:
         await self._checkpoint()
-        self._record(
+        await self._record(
             "agent.tool.completed",
             agent,
             tool_name=str(getattr(tool, "name", "")),
@@ -78,8 +78,8 @@ class OpenAIRuntimeHooks(RunHooksBase[Any, Any]):
     async def _checkpoint(self) -> None:
         await raise_if_cancelled(self._cancellation)
 
-    def _record(self, event_type: str, agent: Any, **payload: object) -> None:
-        self._observer.lifecycle(
+    async def _record(self, event_type: str, agent: Any, **payload: object) -> None:
+        await self._observer.lifecycle(
             event_type,
             event_type.replace(".", " ").capitalize() + ".",
             {"agent": _agent_name(agent), **payload},

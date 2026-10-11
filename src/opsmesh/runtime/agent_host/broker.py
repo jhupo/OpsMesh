@@ -11,7 +11,7 @@ from opsmesh.agents.execution.contracts import (
     AgentSessionBinding,
 )
 from opsmesh.agents.execution.errors import AgentRuntimeCancelledError
-from opsmesh.runtime.agent_host.wire import CONTEXT, TOOL_RESULT
+from opsmesh.runtime.agent_host.wire import CONTEXT, LIFECYCLE_EVENT, TOOL_RESULT
 from opsmesh.shared.utils import payload_hash
 
 
@@ -36,6 +36,23 @@ class RuntimeCallbackBroker:
     async def dispatch(self, method: str, payload: object) -> object:
         if not isinstance(payload, dict):
             raise ValueError("SDK callback requires an object payload")
+        if method == "event.lifecycle":
+            if self.request.lifecycle_sink is None:
+                raise ValueError("SDK callback has no authorized lifecycle sink")
+            event = LIFECYCLE_EVENT.validate_python(payload)
+            if event.event_type not in {
+                "agent.started",
+                "agent.completed",
+                "agent.llm.started",
+                "agent.llm.completed",
+                "agent.handoff.started",
+                "agent.tool.started",
+                "agent.tool.completed",
+                "agent.tool.failed",
+            }:
+                raise ValueError("SDK callback cannot publish control-plane events")
+            await self.request.lifecycle_sink(event)
+            return None
         if method == "control.cancelled":
             return bool(
                 self.request.cancellation and await self.request.cancellation.is_cancelled()

@@ -30,19 +30,19 @@ def activity_phase(run_status: str, event_type: str | None) -> str:
         return "waiting_runtime"
     if event_type == "approval.requested":
         return "waiting_approval"
-    if event_type in {"tool.called", "tool.blocked"}:
+    if event_type in {"tool.called", "tool.blocked", "agent.tool.started"}:
         return "tool_calling"
-    if event_type == "tool.failed":
+    if event_type in {"tool.failed", "agent.tool.failed"}:
         return "tool_failed"
-    if event_type == "tool.completed":
+    if event_type in {"tool.completed", "agent.tool.completed"}:
         return "tool_completed"
     if event_type == "run.claimed":
         return "worker_claimed"
     if event_type == "run.context_built":
         return "context_ready"
-    if event_type == "model.request_started":
+    if event_type in {"model.request_started", "agent.started", "agent.llm.started"}:
         return "model_running"
-    if event_type == "model.response_received":
+    if event_type in {"model.response_received", "agent.llm.completed", "agent.completed"}:
         return "model_processing"
     if event_type == "model.request_failed":
         return "model_failed"
@@ -50,7 +50,7 @@ def activity_phase(run_status: str, event_type: str | None) -> str:
         return "model_routing"
     if event_type in {"model.usage", "agent.raw_item"}:
         return "model_running"
-    if event_type == "agent.handoff":
+    if event_type in {"agent.handoff", "agent.handoff.started"}:
         return "handoff"
     if event_type == "run.cancelled":
         return "cancelling"
