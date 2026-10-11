@@ -280,7 +280,10 @@ async def control(request: dict[str, Any]) -> dict[str, Any]:
         if current.get("status") == "running":
             return current
         if current.get("status") == "failed":
-            return {"error": "mcp_process_restart_required"}
+            return {
+                "error": "mcp_process_restart_required",
+                "diagnostic": current.get("diagnostic"),
+            }
     except (FileNotFoundError, ConnectionRefusedError):
         home = Path(f"/workspace/mcp/{UUID(identifier)}")
         (home / "tmp").mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -309,7 +312,10 @@ async def control(request: dict[str, Any]) -> dict[str, Any]:
                 }
         except (FileNotFoundError, ConnectionRefusedError):
             continue
-    return {"error": "mcp_process_start_failed"}
+    return {
+        "error": "mcp_process_start_failed",
+        "diagnostic": exception_diagnostic(TimeoutError(), phase="connect"),
+    }
 
 
 def main() -> int:

@@ -22,6 +22,7 @@ from opsmesh.capabilities.mcp.models import (
     McpServer,
     McpToolAllowlist,
 )
+from opsmesh.governance.audit.models import AuditEvent
 from opsmesh.governance.reviews.models import ResourceReview
 from opsmesh.governance.reviews.service import ResourcePolicyReviewBuilder
 from opsmesh.identity.auth.service import AuthenticationService
@@ -238,6 +239,11 @@ def test_worker_revalidates_approval_and_workspace_isolation(managed):
     assert not docker.created_requests
     assert deployment.status == "failed"
     assert server.health_status == "unhealthy"
+    failure = session.scalar(select(AuditEvent).where(AuditEvent.action == "mcp_process.failed"))
+    assert failure.workspace_id == workspace.id
+    assert failure.audit_metadata["error"]["exception_type"] == "PolicyDeniedError"
+    assert failure.audit_metadata["error"]["error_id"]
+    assert "hidden-value" not in json.dumps(failure.audit_metadata)
 
 
 def test_shared_host_capacity_and_rebinding_require_a_stopped_process(managed):

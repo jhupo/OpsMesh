@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy import select
 
 from opsmesh.capabilities.mcp.catalog.discovery import McpToolDiscoveryService
+from opsmesh.capabilities.mcp.execution.contracts import McpExecutionError
+from opsmesh.capabilities.mcp.execution.diagnostics import normalize_failure, public_error
 from opsmesh.capabilities.mcp.managed_runtime import (
     deployment_runtime,
     process_request,
@@ -59,15 +63,30 @@ class ManagedMcpJobHandler:
         session.commit()
         try:
             self._handle(deployment)
-        except Exception:
+        except Exception as error:
             session.rollback()
+            error_id = uuid4()
+            summary = public_error(
+                normalize_failure(
+                    error.diagnostic
+                    if isinstance(error, McpExecutionError)
+                    else {
+                        "exception_type": type(error).__name__,
+                        "phase": "control",
+                    },
+                    code="mcp_process_control_failed",
+                    message="Managed MCP lifecycle failed",
+                    error_id=error_id,
+                )
+            )
             # Revoked authority or invalid configuration must not leave a project running.
             runtime = deployment_runtime(session, deployment)
             try:
                 if runtime is not None and runtime.docker_container_id:
                     self._stop_process(deployment, runtime)
-            except Exception:
+            except Exception as cleanup_error:
                 deployment.last_error = "mcp_process_cleanup_failed"
+                summary["cleanup_exception_type"] = type(cleanup_error).__name__
             else:
                 deployment.last_error = "mcp_process_control_failed"
             deployment.status = "failed"
@@ -76,7 +95,29 @@ class ManagedMcpJobHandler:
             server.health_status = "unhealthy"
             server.last_error = deployment.last_error
             server.last_health_check_at = deployment.checked_at
+            evidence = {
+                "runtime_id": str(deployment.runtime_id),
+                "mcp_server_id": str(deployment.mcp_server_id),
+                "generation": deployment.generation,
+                "action": deployment.action,
+                "error": summary,
+            }
+            AuditService(session).record_system_action(
+                workspace_id=deployment.workspace_id,
+                action="mcp_process.failed",
+                target_type="mcp_server",
+                target_id=deployment.mcp_server_id,
+                metadata=evidence,
+            )
             session.commit()
+            logging.getLogger(__name__).warning(
+                "Managed MCP lifecycle failed",
+                extra={
+                    **evidence,
+                    "workspace_id": str(deployment.workspace_id),
+                    "error_id": str(error_id),
+                },
+            )
             # Do not put secret-bearing third-party exceptions in queue retry metadata.
             raise RuntimeError("Managed MCP lifecycle failed; inspect deployment status") from None
 

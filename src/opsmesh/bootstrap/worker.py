@@ -72,7 +72,7 @@ def build_worker_runner(
                         session, days=(settings or get_settings()).mcp_diagnostic_retention_days
                     )
         except Exception:
-            logging.getLogger(__name__).error("Managed MCP maintenance failed")
+            logging.getLogger(__name__).exception("Managed MCP maintenance failed")
         with failure_session_scope() as session:
             if not maintenance_enabled(session):
                 ConversationRecoveryService(session).recover(limit=config.recovery_batch_size)

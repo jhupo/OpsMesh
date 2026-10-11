@@ -95,3 +95,8 @@ transport cleanup/cancellation, public/private serialization, workspace query is
 and diagnostic expiry against real PostgreSQL. Business API and model endpoints are not
 part of this offline validation. Historical errors whose details were discarded cannot
 be reconstructed after upgrading.
+
+Managed MCP lifecycle failures write the safe exception summary to the existing audit
+stream as `mcp_process.failed`. Its `error.error_id` matches the structured Worker log;
+cleanup failures preserve their exception type separately from the original cause.
+Lifecycle auditing follows the existing workspace audit access and retention policy.
