@@ -20,4 +20,6 @@ Worker 心跳声明地区、能力、任务槽、MCP 槽、CPU 和内存。Docke
 
 升级 `0119_runtime_host_process_identity` 前必须排空任务、停止托管 MCP，备份数据库、卷和部署配置。活动占用使迁移直接拒绝；旧容器登记为 `requires_reprovision`，部署程序重建身份监督宿主后移除旧容器。降级也须排空；共享容器的多个策略必须拆分并重新配置旧版容器，不能由旧执行逻辑接管新容器。
 
+`0120_retired_egress_configuration` 清理 Agent、可恢复版本、团队、Runtime Space 和已发布定义中的旧网关配置。冻结 Run 授权与审计证据保持原样；旧 Run 不能直接当作新授权恢复，须按当前定义重新授权创建任务。降回 0119 不恢复已淘汰的网关地址。
+
 运行 `python scripts/verify_runtime_isolation.py --image sha256:<immutable-image>` 验证真实网络允许/拒绝、提权拒绝、并发 SDK 审批恢复与 Session 续接、取消脱离进程组的子进程、邻近任务存活和身份复用清理。脚本使用有界临时容器，不调用业务订单 API。数据库并发、租户隔离与 migration 使用 `tests/test_runtime_allocations_postgres.py` 和真实 PostgreSQL。跨机器调度与节点断电接管需要至少两台机器，不能用单机测试代替。

@@ -13,6 +13,7 @@ from alembic.config import Config
 from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import sessionmaker
 
+from opsmesh.agents.profiles.models import AgentProfile, AgentProfileVersion
 from opsmesh.bootstrap.models import register_models
 from opsmesh.identity.users.models import User
 from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
@@ -270,6 +271,7 @@ def test_shared_host_migration_up_down_up():
             session.flush()
             host_id = uuid4()
             deleted_id = uuid4()
+            migration_workspace_id = workspace.id
             session.execute(
                 text("""
                     INSERT INTO workspace_runtimes
@@ -295,7 +297,48 @@ def test_shared_host_migration_up_down_up():
                 {"id": deleted_id, "workspace": workspace.id},
             )
             session.commit()
+        command.upgrade(config, "0119_runtime_host_process_identity")
+        with sessionmaker(engine)() as session:
+            profile = AgentProfile(
+                workspace_id=migration_workspace_id,
+                name="Migrated model access",
+                role="manager",
+                runtime_policy={
+                    "network": {
+                        "mode": "restricted",
+                        "proxy_url": "obsolete",
+                        "gateway_network": "obsolete",
+                        "allowed_domains": ["example.org"],
+                        "allowed_ports": [443],
+                    }
+                },
+            )
+            session.add(profile)
+            session.flush()
+            session.add(
+                AgentProfileVersion(
+                    workspace_id=migration_workspace_id,
+                    agent_profile_id=profile.id,
+                    version=1,
+                    snapshot={"runtime_policy": profile.runtime_policy},
+                )
+            )
+            profile_id = profile.id
+            session.commit()
         command.upgrade(config, "head")
+        with sessionmaker(engine)() as session:
+            profile = session.get(AgentProfile, profile_id)
+            assert profile.runtime_policy["network"] == {
+                "mode": "restricted",
+                "allowed_domains": ["example.org"],
+                "allowed_ports": [443],
+            }
+            version = session.scalar(
+                select(AgentProfileVersion).where(
+                    AgentProfileVersion.agent_profile_id == profile_id
+                )
+            )
+            assert version.snapshot["runtime_policy"] == profile.runtime_policy
         with engine.connect() as connection:
             assert (
                 connection.scalar(
@@ -308,12 +351,18 @@ def test_shared_host_migration_up_down_up():
                 text("SELECT status,host_id FROM workspace_runtimes WHERE id=:id"),
                 {"id": deleted_id},
             ).one() == ("deleted", None)
-            assert connection.scalar(
-                text("SELECT count(*) FROM runtime_hosts WHERE id=:id"), {"id": deleted_id}
-            ) == 0
-            assert connection.scalar(
-                text("SELECT host_id FROM workspace_runtimes WHERE id=:id"), {"id": host_id}
-            ) == host_id
+            assert (
+                connection.scalar(
+                    text("SELECT count(*) FROM runtime_hosts WHERE id=:id"), {"id": deleted_id}
+                )
+                == 0
+            )
+            assert (
+                connection.scalar(
+                    text("SELECT host_id FROM workspace_runtimes WHERE id=:id"), {"id": host_id}
+                )
+                == host_id
+            )
         assert "pool_key" not in {
             c["name"] for c in inspect(engine).get_columns("workspace_runtimes")
         }
