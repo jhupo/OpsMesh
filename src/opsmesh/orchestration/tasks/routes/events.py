@@ -25,7 +25,6 @@ from opsmesh.orchestration.tasks.routes.streaming import (
     _message_sequence,
     _read_task_bus_events,
     _snapshot_messages,
-    _sse_event,
     _task_event_stream_payload,
     _task_stream_complete,
     get_task_event_bus,
@@ -38,6 +37,7 @@ from opsmesh.orchestration.tasks.schemas.core import (
 from opsmesh.orchestration.tasks.schemas.status import TaskLiveStatusResponse
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.shared.http.pagination import PageResponse, pagination_params
+from opsmesh.shared.http.sse import sse_event
 from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.telemetry.trace_context import current_trace_metadata
 
@@ -155,12 +155,12 @@ async def stream_task_events(
                 )
             except ResourceAccessDenied:
                 session.rollback()
-                yield _sse_event("stream.revoked", {})
+                yield sse_event("stream.revoked", {})
                 return
             messages = _snapshot_messages(snapshot)
             if messages:
                 cursor = max(_message_sequence(message, cursor) for message in messages)
-            yield _sse_event(
+            yield sse_event(
                 "task.snapshot",
                 {
                     **snapshot,
@@ -194,10 +194,10 @@ async def stream_task_events(
                     )
                 except ResourceAccessDenied:
                     session.rollback()
-                    yield _sse_event("stream.revoked", {})
+                    yield sse_event("stream.revoked", {})
                     return
                 bus_cursor = task_event.id
-                yield _sse_event("task.event", _task_event_stream_payload(task_event, cursor))
+                yield sse_event("task.event", _task_event_stream_payload(task_event, cursor))
                 last_emit_at = asyncio.get_running_loop().time()
 
             if stop_after_bus_drain:
@@ -211,13 +211,13 @@ async def stream_task_events(
                 message_limit=message_limit,
             )
             if next_snapshot is None:
-                yield _sse_event("task.missing", {"task_id": str(task_id), "cursor": cursor})
+                yield sse_event("task.missing", {"task_id": str(task_id), "cursor": cursor})
                 break
             snapshot = next_snapshot
             if not _snapshot_messages(snapshot):
                 now = asyncio.get_running_loop().time()
                 if now - last_emit_at >= heartbeat_seconds:
-                    yield _sse_event(
+                    yield sse_event(
                         "heartbeat",
                         {
                             "workspace_id": str(context.workspace.id),

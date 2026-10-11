@@ -24,20 +24,13 @@ def test_client_follows_tools_and_terminal_result_without_replaying(
         "error": None,
         "reply": None,
     }
-    polls = 0
 
     async def handle(request: httpx.Request) -> httpx.Response:
-        nonlocal polls
         if request.method == "POST":
             posts.append(request.url.path)
             return httpx.Response(202, json=turn)
-        if request.url.path.endswith("/executions"):
-            assert request.url.params["turn_id"] == "turn"
-            assert int(request.url.params["limit"]) <= 100
-            return httpx.Response(
-                200, json={"items": [{"turn_id": "turn", "task_id": "task", "purpose": "manager"}]}
-            )
         if request.url.path.endswith("/events/stream"):
+            assert request.url.path.endswith("/turns/turn/events/stream")
             payload = {
                 "event_type": "run.live",
                 "payload": {
@@ -45,13 +38,7 @@ def test_client_follows_tools_and_terminal_result_without_replaying(
                     "data": {"tool_name": "search_workspace_memory"},
                 },
             }
-            return httpx.Response(
-                200, text="event: task.event\ndata: " + json.dumps(payload) + "\n\n"
-            )
-        polls += 1
-        await asyncio.sleep(0)
-        result = {**turn, "status": "running" if polls == 1 else status}
-        if polls > 1:
+            result = {**turn, "status": status}
             result.update(
                 reply="Answer" if status == "completed" else None,
                 error_code="provider_request_failed" if status == "failed" else None,
@@ -59,7 +46,21 @@ def test_client_follows_tools_and_terminal_result_without_replaying(
                 if status == "failed"
                 else None,
             )
-        return httpx.Response(200, json={"items": [result]})
+            return httpx.Response(
+                200,
+                text=(
+                    "event: turn.snapshot\ndata: "
+                    + json.dumps({"turn": {**turn, "status": "running"}, "task_id": "task"})
+                    + "\n\n"
+                    + "event: task.event\ndata: "
+                    + json.dumps(payload)
+                    + "\n\n"
+                    + "event: stream.completed\ndata: "
+                    + json.dumps({"turn": result, "task_id": "task"})
+                    + "\n\n"
+                ),
+            )
+        raise AssertionError("Client must not poll messages or executions")
 
     native_client = httpx.AsyncClient
     monkeypatch.setattr(
@@ -84,3 +85,35 @@ def test_client_follows_tools_and_terminal_result_without_replaying(
     assert "status=running" in output
     assert code == (0 if status == "completed" else 1)
     assert ("Answer" if status == "completed" else "Bad Request") in output
+
+
+def test_stream_reconnect_keeps_last_complete_frame_cursor(monkeypatch, capsys) -> None:
+    from scripts.conversation_client import follow_turn
+
+    class Interrupted(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'id: 10-0\nevent: task.event\ndata: {"event_type":"unrelated"}\n\n'
+            yield b"id: 11-0\nevent: task.event\n"
+            raise httpx.ReadError("interrupted before frame data")
+
+    requests = []
+
+    async def handle(request):
+        requests.append(request.headers["Last-Event-ID"])
+        if len(requests) == 1:
+            return httpx.Response(200, stream=Interrupted())
+        return httpx.Response(
+            200,
+            text='event: stream.completed\ndata: '
+            '{"turn":{"status":"completed","reply":"done"}}\n\n',
+        )
+
+    async def exercise():
+        async with httpx.AsyncClient(
+            base_url="http://test", transport=httpx.MockTransport(handle)
+        ) as client:
+            assert await follow_turn(client, "/stream") == 0
+
+    asyncio.run(exercise())
+    assert requests == ["0-0", "10-0"]
+    assert "done" in capsys.readouterr().out

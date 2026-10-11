@@ -29,6 +29,7 @@ ENQUEUE_SCRIPT = """
 if ARGV[3] == "1" then
     redis.call("SET", KEYS[1], ARGV[1], "EX", ARGV[4])
     redis.call("RPUSH", KEYS[2], ARGV[2])
+    redis.call("PUBLISH", KEYS[2] .. ":ready", "1")
     return 1
 end
 local reserved = redis.call("SET", KEYS[1], ARGV[1], "NX", "EX", ARGV[4])
@@ -36,6 +37,7 @@ if not reserved then
     return 0
 end
 redis.call("RPUSH", KEYS[2], ARGV[2])
+redis.call("PUBLISH", KEYS[2] .. ":ready", "1")
 return 1
 """
 
@@ -58,6 +60,7 @@ for _, raw in ipairs(redis.call("ZRANGE", KEYS[3], 0, -1)) do
     if matches(raw, false) then return 0 end
 end
 redis.call("RPUSH", KEYS[1], ARGV[1])
+redis.call("PUBLISH", KEYS[1] .. ":ready", "1")
 return 1
 """
 
@@ -105,6 +108,7 @@ if redis.call("ZREM", KEYS[1], ARGV[1]) == 0 then
     return 0
 end
 redis.call("RPUSH", KEYS[2], ARGV[2])
+redis.call("PUBLISH", KEYS[2] .. ":ready", "1")
 return 1
 """
 
@@ -113,6 +117,7 @@ if redis.call("ZREM", KEYS[1], ARGV[1]) == 0 then
     return 0
 end
 redis.call("RPUSH", KEYS[2], ARGV[1])
+redis.call("PUBLISH", KEYS[2] .. ":ready", "1")
 return 1
 """
 
@@ -123,6 +128,7 @@ end
 if ARGV[4] == "retry" then
     if tonumber(ARGV[3]) <= 0 then
         redis.call("RPUSH", KEYS[2], ARGV[2])
+        redis.call("PUBLISH", KEYS[2] .. ":ready", "1")
     else
         redis.call("ZADD", KEYS[3], ARGV[3], ARGV[2])
     end
@@ -137,6 +143,7 @@ if redis.call("LREM", KEYS[1], 1, ARGV[1]) == 0 then
     return 0
 end
 redis.call("RPUSH", KEYS[2], ARGV[2])
+redis.call("PUBLISH", KEYS[2] .. ":ready", "1")
 return 1
 """
 
@@ -381,6 +388,7 @@ class RedisQueue:
                     self.redis.zadd(self._retry_key(), {serialized: due_at})
                 else:
                     self.redis.rpush(self.keys.queue(self.queue_name), serialized)
+                    self.redis.publish(self.keys.queue(self.queue_name) + ":ready", "1")
             else:
                 self.redis.rpush(self.keys.dead_letter_queue(self.queue_name), serialized)
             return True
