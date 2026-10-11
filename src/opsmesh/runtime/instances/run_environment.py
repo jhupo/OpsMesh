@@ -109,6 +109,15 @@ class RunRuntimeEnvironmentService:
         docker: DockerRuntimeClient,
     ) -> RunRuntimeEnvironmentResult:
         self._require_parent_binding(existing, parent, run)
+        if existing.status in {"created", "provisioning"} and existing.docker_container_id:
+            docker.start_container(existing.docker_container_id)
+            if existing.host is None:
+                raise RuntimeError("Isolated Runtime has no physical host")
+            existing.host.status = "running"
+            existing.status = "active"
+            existing.connection_status = "online"
+            existing.last_heartbeat_at = datetime.now(UTC)
+            self._session.commit()
         if existing.status in {"active", "running"} and existing.connection_status == "online":
             allocation = RuntimeAllocationStore(self._session).acquire(existing, "run", run.id)
             if allocation is None:
@@ -121,14 +130,6 @@ class RunRuntimeEnvironmentService:
             )
             self._prepare_run_directory(existing, run, allocation_identity(allocation))
             run.execution_runtime_id = existing.id
-            return RunRuntimeEnvironmentResult(runtime=existing, created=False)
-        if existing.status in {"created", "provisioning"} and existing.docker_container_id:
-            docker.start_container(existing.docker_container_id)
-            existing.status = "active"
-            existing.connection_status = "online"
-            existing.last_heartbeat_at = datetime.now(UTC)
-            run.execution_runtime_id = existing.id
-            self._session.flush([existing, run])
             return RunRuntimeEnvironmentResult(runtime=existing, created=False)
         raise RuntimeEnvironmentError(
             "runtime_execution_unavailable",

@@ -8,6 +8,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.orchestration.runs.models import AgentRun
+from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
 from opsmesh.runtime.instances.contracts import RuntimeCommandInputFile, RuntimeCommandResult
 from opsmesh.runtime.instances.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from opsmesh.runtime.instances.run_environment import RunRuntimeEnvironmentService
@@ -144,6 +145,18 @@ def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> Non
     assert docker.created[0].mounts[0].source != docker.created[1].mounts[0].source
     assert docker.created[0].labels["opsmesh.run_id"] == str(first.id)
     assert docker.created[1].labels["opsmesh.run_id"] == str(second.id)
+
+    # A process restart after Docker creation must reacquire an identity before
+    # resuming; an acknowledged container start alone cannot authorize execution.
+    RuntimeAllocationStore(session).release(first_result.runtime, "run", first.id)
+    first_result.runtime.status = "created"
+    first_result.runtime.connection_status = "offline"
+    first_result.runtime.host.status = "created"
+    session.commit()
+    resumed = service.ensure_for_run(first)
+    assert resumed.runtime.id == first_result.runtime.id
+    allocation = RuntimeAllocationStore(session).get(resumed.runtime, "run", first.id)
+    assert allocation is not None and allocation.id in docker.identities
 
     assert service.cleanup_for_run(first) is True
     assert service.cleanup_for_run(first) is True
