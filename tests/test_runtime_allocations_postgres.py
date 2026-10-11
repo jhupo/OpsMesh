@@ -269,17 +269,30 @@ def test_shared_host_migration_up_down_up():
             session.add_all([user, workspace])
             session.flush()
             host_id = uuid4()
+            deleted_id = uuid4()
             session.execute(
                 text("""
                     INSERT INTO workspace_runtimes
                         (id, workspace_id, runtime_provider, runtime_type, name, status,
                          connection_status, execution_mode, pool_key, limits,
-                         network_policy, capabilities, created_at, updated_at)
+                         network_policy, capabilities, docker_container_id, created_at, updated_at)
                     VALUES (:id, :workspace, 'cloud_docker', 'docker', 'Old host',
                             'stopped', 'offline', 'persistent', 'old-pool', '{}', '{}',
-                            '{}', now(), now())
+                            '{}', 'old-container', now(), now())
                 """),
                 {"id": host_id, "workspace": workspace.id},
+            )
+            session.execute(
+                text("""
+                    INSERT INTO workspace_runtimes
+                        (id, workspace_id, runtime_provider, runtime_type, name, status,
+                         connection_status, execution_mode, limits, network_policy,
+                         capabilities, docker_container_id, created_at, updated_at)
+                    VALUES (:id, :workspace, 'cloud_docker', 'docker', 'Deleted host',
+                            'deleted', 'offline', 'persistent', '{}', '{}', '{}',
+                            'removed-container', now(), now())
+                """),
+                {"id": deleted_id, "workspace": workspace.id},
             )
             session.commit()
         command.upgrade(config, "head")
@@ -291,6 +304,16 @@ def test_shared_host_migration_up_down_up():
                 )
                 == "shared"
             )
+            assert connection.execute(
+                text("SELECT status,host_id FROM workspace_runtimes WHERE id=:id"),
+                {"id": deleted_id},
+            ).one() == ("deleted", None)
+            assert connection.scalar(
+                text("SELECT count(*) FROM runtime_hosts WHERE id=:id"), {"id": deleted_id}
+            ) == 0
+            assert connection.scalar(
+                text("SELECT host_id FROM workspace_runtimes WHERE id=:id"), {"id": host_id}
+            ) == host_id
         assert "pool_key" not in {
             c["name"] for c in inspect(engine).get_columns("workspace_runtimes")
         }
@@ -301,6 +324,11 @@ def test_shared_host_migration_up_down_up():
         command.downgrade(config, "0116_execution_contracts")
         assert "runtime_allocations" not in inspect(engine).get_table_names()
         command.upgrade(config, "head")
+        with engine.connect() as connection:
+            assert connection.execute(
+                text("SELECT status,host_id FROM workspace_runtimes WHERE id=:id"),
+                {"id": deleted_id},
+            ).one() == ("deleted", None)
         assert "execution_pool_member_id" not in {
             c["name"] for c in inspect(engine).get_columns("workspace_runtimes")
         }

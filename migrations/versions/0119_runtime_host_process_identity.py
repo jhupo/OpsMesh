@@ -69,9 +69,9 @@ def upgrade() -> None:
           r.id::text,coalesce(t.image,'unavailable'),r.docker_container_id,'requires_reprovision',
           16,coalesce(r.capabilities->'managed_resources','{}'::jsonb),r.created_at,r.updated_at
         FROM workspace_runtimes r LEFT JOIN runtime_templates t ON t.id=r.runtime_template_id
-        WHERE r.docker_container_id IS NOT NULL;
+        WHERE r.docker_container_id IS NOT NULL AND r.status <> 'deleted';
         UPDATE workspace_runtimes SET host_id=id,status='stopped',connection_status='offline'
-          WHERE docker_container_id IS NOT NULL;
+          WHERE docker_container_id IS NOT NULL AND status <> 'deleted';
         UPDATE workspace_runtimes SET capabilities=capabilities-'managed_resources';
         UPDATE runtime_space_reservations SET reservation_key=
           replace(reservation_key,'workspace_runtime:','runtime_host:')
