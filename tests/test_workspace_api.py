@@ -100,6 +100,7 @@ from opsmesh.workspaces.quotas.models import WorkspaceQuota
 from opsmesh.workspaces.quotas.reservations import WorkspaceQuotaService
 from tests.fixtures.database import flow_database_url
 from tests.fixtures.execution import test_agent_id
+from tests.fixtures.runtime_host import runtime_host
 from tests.fixtures.worker import WorkerFlow
 from tests.test_worker_run_execution import _seed_default_model_provider
 
@@ -107,6 +108,12 @@ TOKEN = "test-token"
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
     def node_identity(self) -> str:
         return "test-node"
 
@@ -140,6 +147,8 @@ class FakeDockerClient(DockerRuntimeClient):
         timeout_seconds: int,
         *,
         input_file: RuntimeCommandInputFile | None = None,
+        working_dir=None,
+        identity=None,
     ) -> RuntimeCommandResult:
         _ = input_file
         self.executed.append((container_id, command, timeout_seconds))
@@ -1901,7 +1910,7 @@ def test_team_command_center_apply_reports_scheduler_blocked_reasons() -> None:
         name="Quota test runtime",
         status="running",
         connection_status="online",
-        docker_container_id="quota-test-container",
+        host=runtime_host(workspace.id, "quota-test-container", capacity=16, node_id="test-node"),
         network_policy={"mode": "none"},
     )
     session.add(runtime)
@@ -2841,7 +2850,7 @@ def test_bound_team_runtime_stop_and_resume_control_workspace_runtime() -> None:
         name="Bound Runtime",
         status="running",
         connection_status="online",
-        docker_container_id="bound-container",
+        host=runtime_host(workspace.id, "bound-container", capacity=16, node_id="test-node"),
         limits={},
         network_policy={},
         capabilities={"node_id": "test-node"},

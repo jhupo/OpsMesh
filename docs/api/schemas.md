@@ -3691,6 +3691,7 @@
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `host_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_template_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_provider` | string | 是 | — |
@@ -3746,6 +3747,18 @@
       "readOnly": true,
       "title": "Has Docker Container",
       "type": "boolean"
+    },
+    "host_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Host Id"
     },
     "id": {
       "format": "uuid",
@@ -3830,6 +3843,7 @@
     "created_at",
     "updated_at",
     "workspace_id",
+    "host_id",
     "runtime_template_id",
     "runtime_space_id",
     "runtime_provider",
@@ -35005,8 +35019,9 @@ Explicit region a privileged editor is allowed to change.
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
 | `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `owner_kind` | string | 是 | `enum=["run", "mcp"]` |
+| `owner_kind` | string | 是 | `enum=["run", "mcp", "command"]` |
 | `owner_id` | string (uuid) | 是 | `format="uuid"` |
+| `host_id` | string (uuid) | 是 | `format="uuid"` |
 
 ```json
 {
@@ -35014,6 +35029,11 @@ Explicit region a privileged editor is allowed to change.
     "created_at": {
       "format": "date-time",
       "title": "Created At",
+      "type": "string"
+    },
+    "host_id": {
+      "format": "uuid",
+      "title": "Host Id",
       "type": "string"
     },
     "id": {
@@ -35029,7 +35049,8 @@ Explicit region a privileged editor is allowed to change.
     "owner_kind": {
       "enum": [
         "run",
-        "mcp"
+        "mcp",
+        "command"
       ],
       "title": "Owner Kind",
       "type": "string"
@@ -35057,7 +35078,8 @@ Explicit region a privileged editor is allowed to change.
     "workspace_id",
     "workspace_runtime_id",
     "owner_kind",
-    "owner_id"
+    "owner_id",
+    "host_id"
   ],
   "title": "RuntimeAllocationResponse",
   "type": "object"
@@ -54724,6 +54746,7 @@ A bounded reference to task or completed-step data.
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `host_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_template_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_provider` | string | 是 | — |
@@ -54767,6 +54790,18 @@ A bounded reference to task or completed-step data.
       "readOnly": true,
       "title": "Has Docker Container",
       "type": "boolean"
+    },
+    "host_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Host Id"
     },
     "id": {
       "format": "uuid",
@@ -54851,6 +54886,7 @@ A bounded reference to task or completed-step data.
     "created_at",
     "updated_at",
     "workspace_id",
+    "host_id",
     "runtime_template_id",
     "runtime_space_id",
     "runtime_provider",

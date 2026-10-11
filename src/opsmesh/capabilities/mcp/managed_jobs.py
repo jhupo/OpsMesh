@@ -27,7 +27,7 @@ from opsmesh.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
-from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
+from opsmesh.runtime.instances.allocations import RuntimeAllocationStore, allocation_identity
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.runtime.instances.policies.safety import RuntimeSafetyPolicy
 from opsmesh.runtime.instances.policies.templates import RuntimeTemplateGuard
@@ -82,10 +82,28 @@ class ManagedMcpJobHandler:
 
     def _stop_process(self, deployment: McpDeployment, runtime: WorkspaceRuntime) -> None:
         docker = self.context.docker_client()
+        store = RuntimeAllocationStore(self.context.session)
+        allocation = store.get(runtime, "mcp", deployment.id)
         self.context.session.commit()
-        if runtime.docker_container_id and docker.container_running(runtime.docker_container_id):
-            process_request(docker, runtime, deployment.mcp_server_id, {"action": "stop"})
-        RuntimeAllocationStore(self.context.session).release(runtime, "mcp", deployment.id)
+        if (
+            allocation is not None
+            and runtime.docker_container_id
+            and docker.container_running(runtime.docker_container_id)
+        ):
+            identity = allocation_identity(allocation)
+            process_request(
+                docker, runtime, deployment.mcp_server_id, {"action": "stop"}, identity=identity
+            )
+            docker.revoke_execution(runtime.docker_container_id, identity)
+            result = docker.exec_command(
+                runtime.docker_container_id,
+                ["rm", "-rf", "--", f"/workspace/mcp/{deployment.mcp_server_id}"],
+                30,
+                working_dir="/",
+            )
+            if result.exit_code:
+                raise RuntimeError("MCP private workspace cleanup failed")
+        store.release(runtime, "mcp", deployment.id)
 
     def _handle(self, deployment: McpDeployment) -> None:
         session = self.context.session
@@ -171,9 +189,12 @@ class ManagedMcpJobHandler:
             session.commit()
             return
         session.commit()
+        identity = allocation_identity(allocation)
+        docker = self.context.docker_client()
+        docker.configure_execution(runtime.docker_container_id or "", identity)
         if deployment.action == "restart" or changed:
             # Keep the service slot reserved until the replacement is ready.
-            process_request(self.context.docker_client(), runtime, server.id, {"action": "stop"})
+            process_request(docker, runtime, server.id, {"action": "stop"}, identity=identity)
         server_config = {
             key: value
             for key, value in server.connection.items()
@@ -184,6 +205,21 @@ class ManagedMcpJobHandler:
             secret_service=self.context.secret_service(context="MCP process"),
         )
         home = f"/workspace/mcp/{server.id}"
+        result = docker.exec_command(
+            runtime.docker_container_id or "",
+            [
+                "python",
+                "-c",
+                "import os,sys; p=sys.argv[1]; os.makedirs(p,mode=0o700,exist_ok=True); "
+                "os.chown(p,int(sys.argv[2]),int(sys.argv[2]))",
+                home,
+                str(identity.uid),
+            ],
+            30,
+            working_dir="/",
+        )
+        if result.exit_code:
+            raise RuntimeError("MCP private workspace could not be assigned")
         server_config["env"] = {
             **environment,
             "HOME": home,
@@ -199,9 +235,14 @@ class ManagedMcpJobHandler:
             runtime,
             server.id,
             {"action": "start", "server": server_config},
+            identity=identity,
         )
         discovered = process_request(
-            self.context.docker_client(), runtime, server.id, {"action": "discover"}
+            self.context.docker_client(),
+            runtime,
+            server.id,
+            {"action": "discover"},
+            identity=identity,
         )
         tools = discovered.get("tools")
         if not isinstance(tools, list) or any(not isinstance(tool, dict) for tool in tools):

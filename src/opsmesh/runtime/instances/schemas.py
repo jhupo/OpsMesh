@@ -43,6 +43,7 @@ class RuntimeCreateRequest(BaseModel):
 
 class WorkspaceRuntimeResponse(TimestampedModel):
     workspace_id: UUID
+    host_id: UUID | None
     runtime_template_id: UUID | None
     runtime_space_id: UUID | None
     runtime_provider: str
@@ -74,8 +75,9 @@ class RuntimeCommandRequest(BaseModel):
 class RuntimeAllocationResponse(TimestampedModel):
     workspace_id: UUID
     workspace_runtime_id: UUID
-    owner_kind: Literal["run", "mcp"]
+    owner_kind: Literal["run", "mcp", "command"]
     owner_id: UUID
+    host_id: UUID
 
 
 class RuntimeCommandResponse(ORMModel):

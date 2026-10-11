@@ -35,6 +35,7 @@ from opsmesh.shared.config import Settings
 from opsmesh.shared.db.errors import DatabaseConflictError
 from opsmesh.shared.errors import ConflictError, NotFoundError
 from runtime.opsmesh_runtime.mcp_process import McpProcess
+from tests.fixtures.runtime_host import runtime_host
 from tests.test_mcp_execution import _seed_workspace, _session
 from tests.test_runtime_manager import FakeDockerClient
 
@@ -52,7 +53,7 @@ class Docker(FakeDockerClient):
         super().__init__()
         self.requests = []
 
-    def open_mcp_channel(self, container_id, *, working_dir):
+    def open_mcp_channel(self, container_id, *, working_dir, identity):
         from opsmesh.runtime.agent_host.wire import RpcFrame
         from tests.test_mcp_adapters import RuntimeChannel
 
@@ -66,7 +67,7 @@ class Docker(FakeDockerClient):
 
         return Channel()
 
-    def terminate_agent_process(self, container_id, pid):
+    def terminate_agent_process(self, container_id, pid, *, identity):
         pass
 
     def container_running(self, container_id):
@@ -78,8 +79,17 @@ class Docker(FakeDockerClient):
             self.stopped.remove(container_id)
 
     def exec_command(
-        self, container_id, command, timeout_seconds, *, input_file=None, working_dir=None
+        self,
+        container_id,
+        command,
+        timeout_seconds,
+        *,
+        input_file=None,
+        working_dir=None,
+        identity=None,
     ):
+        if input_file is None:
+            return RuntimeCommandResult(0, "", "")
         request = json.loads(input_file.content)
         self.requests.append(request)
         if request["action"] == "discover":
@@ -124,7 +134,7 @@ def managed(monkeypatch):
         execution_mode="shared",
         status="running",
         connection_status="online",
-        docker_container_id="shared-container",
+        host=runtime_host(workspace.id, "shared-container", capacity=4, node_id="test-node"),
         limits={"max_concurrent_executions": 4},
         network_policy={"mode": "none"},
         capabilities={
@@ -292,6 +302,7 @@ def test_waiting_mcp_is_requeued_only_after_a_slot_is_released(managed):
     session, workspace, auth, request, service, queue, docker, handler = managed
     host = session.get(WorkspaceRuntime, request.runtime_id)
     host.limits = {"max_concurrent_executions": 1}
+    host.host.capacity = 1
     session.commit()
     first = service.create(workspace.id, auth, request)[0]
     handler.handle(queue.jobs[-1])

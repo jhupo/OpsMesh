@@ -57,6 +57,7 @@ from opsmesh.workspaces.projects.models import (
 )
 from opsmesh.workspaces.projects.snapshots.format import sha256_json
 from tests.fixtures.database import flow_database_url
+from tests.fixtures.runtime_host import runtime_host
 from tests.fixtures.worker import WorkerFlow
 from tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
@@ -81,6 +82,12 @@ def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @dataclass
 class CriticalDocker:
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
     def node_identity(self) -> str:
         return "test-node"
 
@@ -95,6 +102,7 @@ class CriticalDocker:
         timeout_seconds: int,
         *,
         working_dir: str | None = None,
+        identity=None,
     ) -> RuntimeCommandResult:
         assert container_id == "critical-container"
         assert timeout_seconds in {30, 60}
@@ -125,6 +133,8 @@ class CriticalDocker:
         source_path: str,
         max_bytes: int,
         timeout_seconds: int,
+        *,
+        identity=None,
     ) -> bytes | None:
         assert container_id == "critical-container"
         assert timeout_seconds == 60
@@ -220,7 +230,7 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
         name="critical-runtime",
         status="running",
         connection_status="online",
-        docker_container_id="critical-container",
+        host=runtime_host(workspace.id, "critical-container", capacity=4, node_id="test-node"),
         limits={
             "cpu_count": 1,
             "memory_mb": 256,

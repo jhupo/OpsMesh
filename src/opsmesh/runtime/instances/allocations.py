@@ -6,9 +6,16 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from opsmesh.runtime.instances.models import RuntimeAllocation, RuntimeCommand, WorkspaceRuntime
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
+from opsmesh.runtime.instances.models import (
+    RuntimeAllocation,
+    RuntimeCommand,
+    RuntimeHost,
+    WorkspaceRuntime,
+)
 
-AllocationKind = Literal["run", "mcp"]
+AllocationKind = Literal["run", "mcp", "command"]
+FIRST_EXECUTION_UID = 100_000
 
 
 class RuntimeAllocationStore:
@@ -32,30 +39,43 @@ class RuntimeAllocationStore:
     ) -> RuntimeAllocation | None:
         # Every admission and lifecycle transition locks the same host row. The lock
         # ends before process startup or any remote I/O; no worker waits holding it.
+        if runtime.host_id is None:
+            raise ValueError("Runtime has no physical host")
         host = self.session.scalar(
-            select(WorkspaceRuntime)
+            select(RuntimeHost)
             .where(
-                WorkspaceRuntime.workspace_id == runtime.workspace_id,
-                WorkspaceRuntime.id == runtime.id,
-                WorkspaceRuntime.execution_run_id.is_(None),
-                WorkspaceRuntime.status.in_(["active", "running"]),
-                WorkspaceRuntime.connection_status == "online",
+                RuntimeHost.workspace_id == runtime.workspace_id,
+                RuntimeHost.id == runtime.host_id,
+                RuntimeHost.status == "running",
             )
             .with_for_update(skip_locked=True)
             .execution_options(populate_existing=True)
         )
         if host is None:
             return None
-        existing = self.get(host, kind, owner_id)
+        existing = self.get(runtime, kind, owner_id)
         if existing is not None:
             return existing
-        if not self.available(host):
+        if not self.available(runtime):
             return None
+        occupied = set(
+            self.session.scalars(
+                select(RuntimeAllocation.execution_uid).where(RuntimeAllocation.host_id == host.id)
+            )
+        )
+        uid = next(
+            uid
+            for uid in range(FIRST_EXECUTION_UID, FIRST_EXECUTION_UID + host.capacity)
+            if uid not in occupied
+        )
         allocation = RuntimeAllocation(
-            workspace_id=host.workspace_id,
-            workspace_runtime_id=host.id,
+            workspace_id=runtime.workspace_id,
+            workspace_runtime_id=runtime.id,
             owner_kind=kind,
             owner_id=owner_id,
+            host_id=host.id,
+            execution_uid=uid,
+            network_policy=dict(runtime.network_policy),
         )
         self.session.add(allocation)
         self.session.flush([allocation])
@@ -64,7 +84,7 @@ class RuntimeAllocationStore:
     def available(self, runtime: WorkspaceRuntime) -> bool:
         if self._running_command(runtime) is not None:
             return False
-        capacity = runtime.limits.get("max_concurrent_executions")
+        capacity = runtime.host.capacity if runtime.host is not None else None
         if not isinstance(capacity, int) or not 1 <= capacity <= 128:
             raise ValueError("Runtime execution capacity is invalid")
         count = (
@@ -73,7 +93,7 @@ class RuntimeAllocationStore:
                 .select_from(RuntimeAllocation)
                 .where(
                     RuntimeAllocation.workspace_id == runtime.workspace_id,
-                    RuntimeAllocation.workspace_runtime_id == runtime.id,
+                    RuntimeAllocation.host_id == runtime.host_id,
                 )
             )
             or 0
@@ -88,10 +108,10 @@ class RuntimeAllocationStore:
 
     def require_idle(self, runtime: WorkspaceRuntime, *, command_id: UUID | None = None) -> None:
         self.session.scalar(
-            select(WorkspaceRuntime.id)
+            select(RuntimeHost.id)
             .where(
-                WorkspaceRuntime.workspace_id == runtime.workspace_id,
-                WorkspaceRuntime.id == runtime.id,
+                RuntimeHost.workspace_id == runtime.workspace_id,
+                RuntimeHost.id == runtime.host_id,
             )
             .with_for_update()
         )
@@ -99,7 +119,7 @@ class RuntimeAllocationStore:
             select(RuntimeAllocation.id)
             .where(
                 RuntimeAllocation.workspace_id == runtime.workspace_id,
-                RuntimeAllocation.workspace_runtime_id == runtime.id,
+                RuntimeAllocation.host_id == runtime.host_id,
             )
             .limit(1)
         )
@@ -111,11 +131,30 @@ class RuntimeAllocationStore:
     def _running_command(
         self, runtime: WorkspaceRuntime, *, command_id: UUID | None = None
     ) -> UUID | None:
-        statement = select(RuntimeCommand.id).where(
-            RuntimeCommand.workspace_id == runtime.workspace_id,
-            RuntimeCommand.workspace_runtime_id == runtime.id,
-            RuntimeCommand.status == "running",
+        statement = (
+            select(RuntimeCommand.id)
+            .join(WorkspaceRuntime, RuntimeCommand.workspace_runtime_id == WorkspaceRuntime.id)
+            .where(
+                RuntimeCommand.workspace_id == runtime.workspace_id,
+                WorkspaceRuntime.host_id == runtime.host_id,
+                RuntimeCommand.status == "running",
+            )
         )
         if command_id is not None:
             statement = statement.where(RuntimeCommand.id != command_id)
         return self.session.scalar(statement.limit(1))
+
+
+def allocation_identity(allocation: RuntimeAllocation) -> RuntimeExecutionIdentity:
+    return RuntimeExecutionIdentity(
+        allocation.id, allocation.execution_uid, dict(allocation.network_policy)
+    )
+
+
+def run_execution_identity(
+    session: Session, runtime: WorkspaceRuntime, owner_id: UUID
+) -> RuntimeExecutionIdentity:
+    allocation = RuntimeAllocationStore(session).get(runtime, "run", owner_id)
+    if allocation is None:
+        raise ValueError("Run has no Runtime execution identity")
+    return allocation_identity(allocation)

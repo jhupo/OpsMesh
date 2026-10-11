@@ -36,6 +36,7 @@ from opsmesh.shared.db.base import Base
 from opsmesh.shared.db.session import get_db_session
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.runtime_host import runtime_host
 
 TOKEN = "test-token"
 PINNED_IMAGE = "python@sha256:" + "0" * 64
@@ -47,7 +48,12 @@ def test_runtime_allocation_table_is_workspace_scoped():
     _, other = _seed_workspace(
         session, role="owner", email="other-allocation@test.com", slug="other-allocation"
     )
-    host = WorkspaceRuntime(workspace_id=workspace.id, name="Shared", status="running")
+    host = WorkspaceRuntime(
+        workspace_id=workspace.id,
+        name="Shared",
+        status="running",
+        host=runtime_host(workspace.id, "scoped-host"),
+    )
     session.add(host)
     session.flush()
     owner_id = uuid4()
@@ -57,6 +63,9 @@ def test_runtime_allocation_table_is_workspace_scoped():
             workspace_runtime_id=host.id,
             owner_kind="run",
             owner_id=owner_id,
+            host_id=host.host_id,
+            execution_uid=100000,
+            network_policy={"mode": "none"},
         )
     )
     session.commit()
@@ -83,6 +92,12 @@ def test_runtime_allocation_table_is_workspace_scoped():
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
     def node_identity(self) -> str:
         return "test-node"
 
@@ -116,6 +131,8 @@ class FakeDockerClient(DockerRuntimeClient):
         timeout_seconds: int,
         *,
         input_file: RuntimeCommandInputFile | None = None,
+        working_dir=None,
+        identity=None,
     ) -> RuntimeCommandResult:
         _ = input_file
         self.executed.append((container_id, command, timeout_seconds))
@@ -362,7 +379,7 @@ def test_runtime_events_redact_sensitive_metadata() -> None:
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
         name="runtime",
-        docker_container_id="container-secret",
+        host=runtime_host(workspace.id, "container-secret", capacity=16, node_id="test-node"),
     )
     session.add(runtime)
     session.flush()
@@ -416,7 +433,7 @@ def test_runtime_responses_redact_sensitive_policy_fields() -> None:
         workspace_id=workspace.id,
         runtime_template_id=template.id,
         name="runtime",
-        docker_container_id="container-secret",
+        host=runtime_host(workspace.id, "container-secret", capacity=16, node_id="test-node"),
         limits={"memory_mb": 512, "token": "runtime-token"},
         network_policy={"remote_url": "https://runtime.example.test/private"},
         capabilities={"mcp": {"headers": {"authorization": "Bearer runtime"}}},

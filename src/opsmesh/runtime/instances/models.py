@@ -9,9 +9,11 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    and_,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from opsmesh.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
@@ -32,6 +34,35 @@ class RuntimeTemplate(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(nullable=False)
 
 
+class RuntimeHost(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Physical execution capacity, independent of a workspace's execution policies."""
+
+    __tablename__ = "runtime_hosts"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_runtime_host_scope"),
+        Index(
+            "uq_runtime_host_node_key",
+            "node_id",
+            "workspace_id",
+            "host_key",
+            unique=True,
+            postgresql_where=text("status not in ('deleted','failed')"),
+            sqlite_where=text("status not in ('deleted','failed')"),
+        ),
+        CheckConstraint("capacity between 1 and 128", name="runtime_host_capacity_valid"),
+    )
+
+    workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
+    node_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    host_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    image: Mapped[str] = mapped_column(String(260), nullable=False)
+    docker_container_id: Mapped[str | None] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(32), default="created", nullable=False)
+    capacity: Mapped[int] = mapped_column(Integer, default=16, nullable=False)
+    resources: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict, nullable=False)
+    provisioning_owner_id: Mapped[UUID | None] = mapped_column(nullable=True)
+
+
 class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "workspace_runtimes"
     __table_args__ = (
@@ -45,7 +76,11 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "ix_workspace_runtimes_workspace_provider", "workspace_id", "runtime_provider", "status"
         ),
         Index("ix_workspace_runtimes_workspace_runtime_space", "workspace_id", "runtime_space_id"),
-        Index("ix_workspace_runtimes_container", "docker_container_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "host_id"],
+            ["runtime_hosts.workspace_id", "runtime_hosts.id"],
+        ),
+        Index("ix_workspace_runtimes_host", "host_id"),
         Index("ix_workspace_runtimes_workspace_execution_run", "workspace_id", "execution_run_id"),
     )
 
@@ -84,7 +119,20 @@ class WorkspaceRuntime(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="created")
     connection_status: Mapped[str] = mapped_column(String(32), nullable=False, default="offline")
-    docker_container_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    host_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    host: Mapped[RuntimeHost | None] = relationship(
+        lazy="selectin",
+        primaryjoin=lambda: and_(
+            WorkspaceRuntime.host_id == RuntimeHost.id,
+            WorkspaceRuntime.workspace_id == RuntimeHost.workspace_id,
+        ),
+        foreign_keys=lambda: [WorkspaceRuntime.host_id],
+    )
+
+    @property
+    def docker_container_id(self) -> str | None:
+        return self.host.docker_container_id if self.host is not None else None
+
     limits: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, default=dict)
     network_policy: Mapped[dict[str, object]] = mapped_column(
         JSONB, nullable=False, default=lambda: {"mode": "none"}
@@ -175,14 +223,26 @@ class RuntimeAllocation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint(
             "workspace_id", "owner_kind", "owner_id", name="uq_runtime_allocation_owner"
         ),
-        CheckConstraint("owner_kind in ('run', 'mcp')", name="runtime_allocation_kind_valid"),
+        CheckConstraint(
+            "owner_kind in ('run', 'mcp', 'command')", name="runtime_allocation_kind_valid"
+        ),
         Index("ix_runtime_allocations_host", "workspace_id", "workspace_runtime_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "host_id"], ["runtime_hosts.workspace_id", "runtime_hosts.id"]
+        ),
+        UniqueConstraint("host_id", "execution_uid", name="uq_runtime_allocation_identity"),
+        CheckConstraint(
+            "execution_uid between 100000 and 100127", name="runtime_allocation_uid_valid"
+        ),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(nullable=False)
     workspace_runtime_id: Mapped[UUID] = mapped_column(nullable=False)
     owner_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     owner_id: Mapped[UUID] = mapped_column(nullable=False)
+    host_id: Mapped[UUID] = mapped_column(nullable=False)
+    execution_uid: Mapped[int] = mapped_column(Integer, nullable=False)
+    network_policy: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
 
 
 class RuntimeCommand(UUIDPrimaryKeyMixin, Base):

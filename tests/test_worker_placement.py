@@ -5,6 +5,7 @@ from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.runtime.queues.contracts import JobPayload, JobType
 from opsmesh.runtime.workers.placement import worker_owns_runtime_job
 from opsmesh.workspaces.management.models import Workspace
+from tests.fixtures.runtime_host import runtime_host
 from tests.test_run_runtime_environment import _session
 
 
@@ -19,7 +20,7 @@ def test_worker_only_claims_the_durable_execution_node() -> None:
         capabilities={"node_id": "east"},
         status="running",
         connection_status="online",
-        docker_container_id="east-container",
+        host=runtime_host(workspace.id, "east-container", capacity=2, node_id="east"),
         limits={"max_concurrent_executions": 2},
     )
     session.add(host)
@@ -42,7 +43,7 @@ def test_worker_only_claims_the_durable_execution_node() -> None:
         capabilities={"node_id": "west"},
         status="running",
         connection_status="online",
-        docker_container_id="west-container",
+        host=runtime_host(workspace.id, "west-container", capacity=2, node_id="west"),
         limits={"max_concurrent_executions": 2},
     )
     session.add(other_host)
@@ -51,7 +52,10 @@ def test_worker_only_claims_the_durable_execution_node() -> None:
     run.execution_runtime_id = host.id
     session.commit()
     assert not worker_owns_runtime_job(session, job, "west")
-    # An unassigned managed host cannot be executed by guessing a node identity.
-    host.capabilities = {}
+    # JSON metadata and request routing cannot change durable physical ownership.
+    host.capabilities = {"node_id": "west"}
+    session.commit()
+    assert worker_owns_runtime_job(session, job, "east")
+    host.host.node_id = "unassigned"
     session.commit()
     assert not worker_owns_runtime_job(session, job, "east")

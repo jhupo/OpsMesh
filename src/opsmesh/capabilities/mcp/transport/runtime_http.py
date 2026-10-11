@@ -12,6 +12,7 @@ from opsmesh.capabilities.mcp.transport.remote import (
 )
 from opsmesh.capabilities.mcp.transport.runtime_operation import RuntimeMcpOperation
 from opsmesh.runtime.instances.contracts import DockerRuntimeClient
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.shared.security.egress import MCP_EGRESS_URL_POLICY
 from opsmesh.shared.security.secrets import SecretEncryptionService
@@ -23,8 +24,10 @@ class DockerRuntimeHttpMcpToolAdapter:
         docker: DockerRuntimeClient,
         runtime: WorkspaceRuntime,
         secrets: SecretEncryptionService | None,
+        identity: RuntimeExecutionIdentity,
     ) -> None:
         self.docker, self.runtime, self.secrets = docker, runtime, secrets
+        self.identity = identity
 
     def prepare(
         self,
@@ -68,5 +71,10 @@ class DockerRuntimeHttpMcpToolAdapter:
         if not self.runtime.docker_container_id:
             raise McpExecutionError("Runtime has no container", code="mcp_runtime_unavailable")
         return RuntimeMcpOperation(
-            self.docker, self.runtime.docker_container_id, "http", request, timeout_seconds
+            self.docker,
+            self.runtime.docker_container_id,
+            "http",
+            request,
+            timeout_seconds,
+            self.identity,
         )

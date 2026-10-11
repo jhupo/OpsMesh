@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
-from opsmesh.runtime.instances.models import RuntimeAllocation, WorkspaceRuntime
+from opsmesh.runtime.instances.models import RuntimeAllocation, RuntimeHost, WorkspaceRuntime
 from opsmesh.runtime.pools.policy import shared_host_policy_matches
 
 MANAGED_RUNTIME_PROVIDER = "cloud_docker"
@@ -52,6 +52,7 @@ class RuntimePoolService:
     def hosts(self, parent: WorkspaceRuntime) -> list[WorkspaceRuntime]:
         statement = (
             select(WorkspaceRuntime)
+            .join(WorkspaceRuntime.host)
             .where(
                 WorkspaceRuntime.workspace_id == parent.workspace_id,
                 WorkspaceRuntime.execution_mode == "shared",
@@ -65,12 +66,9 @@ class RuntimePoolService:
             .order_by(WorkspaceRuntime.updated_at.asc(), WorkspaceRuntime.created_at.asc())
         )
         if self._node_id is not None:
-            statement = statement.where(
-                WorkspaceRuntime.capabilities["node_id"].as_string() == self._node_id
-            )
+            statement = statement.where(RuntimeHost.node_id == self._node_id)
         return [
             member
             for member in self._session.scalars(statement)
-            if shared_host_policy_matches(parent, member)
-            and member.docker_container_id
+            if shared_host_policy_matches(parent, member) and member.docker_container_id
         ]

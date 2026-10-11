@@ -48,6 +48,7 @@ from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.runtime_host import runtime_host
 
 TOKEN = "test-token"
 WORKER_HEARTBEAT_TOKEN = "worker-heartbeat-token"
@@ -345,8 +346,7 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert audit.json()["total"] == 1
 
     correlation = client.get(
-        f"/api/v1/workspaces/{workspace.id}/operations/correlation"
-        f"?trace_id={correlation_trace_id}",
+        f"/api/v1/workspaces/{workspace.id}/operations/correlation?trace_id={correlation_trace_id}",
         headers=_headers(owner.id),
     )
     assert correlation.status_code == 200
@@ -400,10 +400,14 @@ def test_operations_endpoints_expose_metrics_and_cleanup() -> None:
     assert stale_lease.lease_metadata["scope"] == "owned"
     assert stale_lease.lease_metadata["expired_by"] == "worker_maintenance"
     assert other_workspace_stale_lease.status == "running"
-    space_event = session.query(RuntimeSpaceEvent).filter_by(
-        runtime_space_id=runtime_space.id,
-        event_type="runtime.marked_offline",
-    ).one()
+    space_event = (
+        session.query(RuntimeSpaceEvent)
+        .filter_by(
+            runtime_space_id=runtime_space.id,
+            event_type="runtime.marked_offline",
+        )
+        .one()
+    )
     assert space_event.event_metadata["runtime_id"] == str(runtime.id)
 
 
@@ -477,8 +481,7 @@ def test_operations_stale_runs_diagnostics_and_recovery_are_workspace_scoped() -
     session.commit()
 
     diagnostics = client.get(
-        f"/api/v1/workspaces/{workspace.id}/operations/stale-runs"
-        "?stale_after_seconds=900",
+        f"/api/v1/workspaces/{workspace.id}/operations/stale-runs?stale_after_seconds=900",
         headers=_headers(owner.id),
     )
 
@@ -553,7 +556,7 @@ def test_operations_runtime_events_redact_sensitive_metadata() -> None:
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
         name="runtime",
-        docker_container_id="container-secret",
+        host=runtime_host(workspace.id, "container-secret", capacity=16, node_id="test-node"),
     )
     session.add(runtime)
     session.flush()
@@ -577,8 +580,7 @@ def test_operations_runtime_events_redact_sensitive_metadata() -> None:
     session.commit()
 
     response = client.get(
-        f"/api/v1/workspaces/{workspace.id}/operations/runtime-events"
-        "?event_type=runtime.cleanup",
+        f"/api/v1/workspaces/{workspace.id}/operations/runtime-events?event_type=runtime.cleanup",
         headers=_headers(owner.id),
     )
 
@@ -997,19 +999,20 @@ def test_team_runtime_timeline_aggregates_redacts_and_scopes_events() -> None:
     }
     assert default_payload["summary"]["source_counts"]["queue_job"] == 3
     assert default_payload["summary"]["source_counts"]["mcp_governance"] == 1
-    assert default_payload["summary"]["event_type_counts"][
-        "team.runtime.queue.scheduled_retry"
-    ] == 1
+    assert (
+        default_payload["summary"]["event_type_counts"]["team.runtime.queue.scheduled_retry"] == 1
+    )
     assert default_payload["summary"]["event_type_counts"]["team.runtime.queue.dead_letter"] == 1
-    assert default_payload["summary"]["event_type_counts"][
-        "capability_governance.mcp_health_check_refreshed"
-    ] == 1
+    assert (
+        default_payload["summary"]["event_type_counts"][
+            "capability_governance.mcp_health_check_refreshed"
+        ]
+        == 1
+    )
     mcp_governance_event = next(
         item for item in default_payload["items"] if item["source_type"] == "mcp_governance"
     )
-    assert mcp_governance_event["message"] == (
-        "MCP health check refreshed for docs-tools: healthy"
-    )
+    assert mcp_governance_event["message"] == ("MCP health check refreshed for docs-tools: healthy")
     assert mcp_governance_event["metadata"]["target_id"] == str(mcp_server.id)
     assert mcp_governance_event["metadata"]["audit_metadata"]["connection"] == {
         "remote_host": "mcp.example.test",
@@ -1215,9 +1218,10 @@ def test_worker_heartbeat_requires_configured_token() -> None:
 
     assert missing.status_code == 401
     assert wrong.status_code == 401
-    assert session.scalar(
-        select(WorkerNode).where(WorkerNode.worker_id == "worker-token-gated")
-    ) is None
+    assert (
+        session.scalar(select(WorkerNode).where(WorkerNode.worker_id == "worker-token-gated"))
+        is None
+    )
     events = session.scalars(
         select(SecurityEvent).where(SecurityEvent.action == "worker.heartbeat_token.rejected")
     ).all()
@@ -1679,9 +1683,7 @@ def test_operations_aggregates_return_zero_metrics_for_empty_workspace() -> None
     assert control_plane.json()["evidence"]["audit_integrity"]["status"] == "missing"
     assert control_plane.json()["evidence"]["cost_accounting"]["status"] == "healthy"
     assert control_plane.json()["evidence"]["data_lifecycle"]["status"] == "blocked"
-    assert control_plane.json()["drilldowns"]["audit"].endswith(
-        "/operations/audit-integrity"
-    )
+    assert control_plane.json()["drilldowns"]["audit"].endswith("/operations/audit-integrity")
     assert control_plane.json()["drilldowns"]["costs"].endswith("/costs/summary")
 
 
@@ -1907,8 +1909,7 @@ def test_operations_queue_governance_diagnoses_queue_run_drift() -> None:
     session.commit()
 
     response = client.get(
-        f"/api/v1/workspaces/{workspace.id}/operations/queue-governance"
-        "?stale_after_seconds=600",
+        f"/api/v1/workspaces/{workspace.id}/operations/queue-governance?stale_after_seconds=600",
         headers=_headers(owner.id),
     )
 
@@ -1982,8 +1983,7 @@ def test_operations_queue_governance_reconciles_missing_and_stale_jobs() -> None
     assert payload["removed_non_runnable_jobs"] == 1
     assert payload["remaining_issues"] == []
     queued_jobs = [
-        JobPayload.model_validate_json(raw)
-        for raw in redis.lrange(keys.queue("agent_runs"), 0, -1)
+        JobPayload.model_validate_json(raw) for raw in redis.lrange(keys.queue("agent_runs"), 0, -1)
     ]
     assert [job.resource_id for job in queued_jobs] == [queued_run.id]
     assert queued_jobs[0].job_type == JobType.AGENT_RUN
@@ -2250,9 +2250,7 @@ def test_operations_runtime_capacity_reports_provider_and_worker_slots() -> None
 
     assert response.status_code == 200
     payload = response.json()
-    providers = {
-        (item["provider"], item["runtime_type"]): item for item in payload["providers"]
-    }
+    providers = {(item["provider"], item["runtime_type"]): item for item in payload["providers"]}
     assert providers[("cloud_docker", "docker")] == {
         "provider": "cloud_docker",
         "runtime_type": "docker",
@@ -2967,8 +2965,7 @@ def test_operations_scheduler_reports_backlog_and_fairness_inputs() -> None:
         headers=_headers(owner.id),
     )
     blocked_steps = client.get(
-        f"/api/v1/workspaces/{workspace.id}/operations/blocked-steps"
-        "?code=workspace_quota_exceeded",
+        f"/api/v1/workspaces/{workspace.id}/operations/blocked-steps?code=workspace_quota_exceeded",
         headers=_headers(owner.id),
     )
 
@@ -3288,13 +3285,13 @@ def test_operations_lists_runtime_leases_by_workspace() -> None:
         workspace_id=workspace.id,
         runtime_space_id=runtime_space.id,
         name="owned-runtime",
-        docker_container_id="container-owned",
+        host=runtime_host(workspace.id, "container-owned", capacity=16, node_id="test-node"),
     )
     other_runtime = WorkspaceRuntime(
         workspace_id=other_workspace.id,
         runtime_space_id=other_runtime_space.id,
         name="other-runtime",
-        docker_container_id="container-other",
+        host=runtime_host(other_workspace.id, "container-other", capacity=16, node_id="test-node"),
     )
     session.add_all([runtime, other_runtime])
     session.flush()
@@ -3363,7 +3360,9 @@ def test_operations_runtime_leases_reject_foreign_runtime_space_filter() -> None
         workspace_id=other_workspace.id,
         runtime_space_id=runtime_space.id,
         name="foreign-runtime",
-        docker_container_id="foreign-container",
+        host=runtime_host(
+            other_workspace.id, "foreign-container", capacity=16, node_id="test-node"
+        ),
     )
     session.add(runtime)
     session.flush()
@@ -3476,8 +3475,7 @@ def test_workspace_security_event_response_redacts_sensitive_metadata() -> None:
     session.commit()
 
     response = client.get(
-        f"/api/v1/workspaces/{workspace.id}/operations/security-events"
-        "?action=mcp_tool.blocked",
+        f"/api/v1/workspaces/{workspace.id}/operations/security-events?action=mcp_tool.blocked",
         headers=_headers(owner.id),
     )
 

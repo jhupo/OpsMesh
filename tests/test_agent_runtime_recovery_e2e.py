@@ -39,6 +39,7 @@ from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.teams.management.models import AgentTeam
 from tests.fixtures.database import flow_database_url
 from tests.fixtures.execution import test_agent_id
+from tests.fixtures.runtime_host import runtime_host
 from tests.fixtures.worker import WorkerFlow
 from tests.test_run_runtime_environment import FakeDockerClient
 from tests.test_worker_run_execution import (
@@ -186,7 +187,9 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
         execution_mode="shared",
         status="running",
         connection_status="online",
-        docker_container_id="network-denied-container",
+        host=runtime_host(
+            workspace.id, "network-denied-container", capacity=1, node_id="test-node"
+        ),
         limits={"max_concurrent_executions": 1},
         network_policy={"mode": "internet"},
         capabilities={

@@ -20,6 +20,7 @@ from opsmesh.capabilities.mcp.transport.stdio_credentials import (
     self_hosted_stdio_environment_refs,
 )
 from opsmesh.runtime.instances.contracts import DockerRuntimeClient
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.runtime.self_hosted.dispatch.mcp import SelfHostedMcpJobService
 from opsmesh.shared.security.secrets import SecretEncryptionService
@@ -31,11 +32,13 @@ class DockerRuntimeStdioMcpToolAdapter:
         *,
         docker: DockerRuntimeClient,
         runtime: WorkspaceRuntime,
+        identity: RuntimeExecutionIdentity,
         secret_service: SecretEncryptionService | None = None,
         working_dir: str | None = None,
     ) -> None:
         self._docker, self._runtime, self._secret_service = docker, runtime, secret_service
         self._working_dir = working_dir
+        self._identity = identity
 
     def prepare(
         self,
@@ -63,6 +66,7 @@ class DockerRuntimeStdioMcpToolAdapter:
             "stdio",
             request,
             timeout_seconds,
+            self._identity,
             self._working_dir or "/",
         )
 

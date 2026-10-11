@@ -24,6 +24,7 @@ from opsmesh.runtime.workers.maintenance_contracts import WorkerMaintenanceSumma
 from opsmesh.runtime.workers.models import WorkerNode, WorkerRunnerConfig
 from opsmesh.runtime.workers.runner import WorkerRunner
 from opsmesh.workspaces.management.models import Workspace
+from tests.fixtures.runtime_host import runtime_host
 from tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema
 from tests.test_redis_queue import _queue
 
@@ -113,6 +114,7 @@ def test_parallel_admission_is_bounded_idempotent_and_workspace_scoped():
                 status="running",
                 connection_status="online",
                 limits={"max_concurrent_executions": 2},
+                host=runtime_host(workspace.id, "real-pg-host", capacity=2),
             )
             session.add(host)
             session.commit()
@@ -150,7 +152,11 @@ def test_parallel_admission_is_bounded_idempotent_and_workspace_scoped():
             assert store.acquire(host, "mcp", uuid4()) is not None
             session.commit()
             unrelated = WorkspaceRuntime(
-                id=host_id, workspace_id=uuid4(), name="Unrelated", limits=host.limits
+                id=host_id,
+                workspace_id=uuid4(),
+                name="Unrelated",
+                limits=host.limits,
+                host_id=host.host_id,
             )
             assert store.get(unrelated, "run", allocations[1].owner_id) is None
             assert store.acquire(unrelated, "run", uuid4()) is None
@@ -164,6 +170,82 @@ def test_parallel_admission_is_bounded_idempotent_and_workspace_scoped():
                 )
                 == 2
             )
+
+
+def test_distinct_policies_share_physical_capacity_and_cleanup_ownership():
+    from opsmesh.runtime.instances.contracts import RuntimeLimits
+    from opsmesh.runtime.instances.manager import RuntimeManager
+    from opsmesh.runtime.instances.models import RuntimeHost, RuntimeTemplate
+    from tests.test_runtime_manager import FakeDockerClient
+
+    with _temporary_postgres_schema() as engine:
+        register_models().create_all(engine)
+        factory = sessionmaker(engine, expire_on_commit=False)
+        docker = FakeDockerClient()
+        with factory() as session:
+            user = User(email=f"{uuid4()}@policy.test", display_name="Owner")
+            workspace = Workspace(
+                owner=user,
+                name="Policies",
+                slug=uuid4().hex,
+                settings={"runtime_quota": {"max_active_runtimes": 1}},
+            )
+            template = RuntimeTemplate(
+                name=uuid4().hex, image="sha256:" + "0" * 64, created_at=datetime.now(UTC)
+            )
+            session.add_all([user, workspace, template])
+            session.commit()
+            manager = RuntimeManager(session, docker)
+            limits = RuntimeLimits(
+                cpu_count=1,
+                memory_mb=512,
+                disk_mb=512,
+                timeout_seconds=30,
+                max_concurrent_executions=2,
+            )
+            denied = manager.create_runtime(
+                workspace_id=workspace.id, template=template, name="Denied", limits=limits
+            )
+            manager.start_runtime(denied)
+            allowed = manager.create_runtime(
+                workspace_id=workspace.id,
+                template=template,
+                name="Public",
+                limits=limits,
+                network_disabled=False,
+            )
+            assert allowed.host_id == denied.host_id
+            assert len(session.scalars(select(RuntimeHost)).all()) == 1
+            assert len(docker.created_requests) == 1
+            policy_ids = [denied.id, allowed.id]
+            volume = allowed.host.resources["docker_volumes"][0]
+        barrier = threading.Barrier(4)
+
+        def claim(index):
+            with factory() as session:
+                policy = session.get(WorkspaceRuntime, policy_ids[index % 2])
+                barrier.wait(timeout=10)
+                allocation = RuntimeAllocationStore(session).acquire(policy, "run", uuid4())
+                session.commit()
+                return allocation is not None
+
+        with ThreadPoolExecutor(max_workers=4) as workers:
+            results = list(workers.map(claim, range(4)))
+        assert 1 <= sum(results) <= 2
+        with factory() as session:
+            allocations = session.scalars(select(RuntimeAllocation)).all()
+            assert len(allocations) == sum(results)
+            assert len({allocation.execution_uid for allocation in allocations}) == len(allocations)
+            for allocation in allocations:
+                session.delete(allocation)  # No real process was started in this DB-only test.
+            session.commit()
+            manager = RuntimeManager(session, docker)
+            manager.delete_runtime(session.get(WorkspaceRuntime, policy_ids[0]))
+            remaining = session.get(WorkspaceRuntime, policy_ids[1])
+            assert remaining.docker_container_id and not docker.removed
+            assert remaining.host.resources["docker_volumes"] == [volume]
+            manager.delete_runtime(remaining)
+            assert len(docker.removed) == 1 and docker.removed_volumes == [volume]
 
 
 def test_shared_host_migration_up_down_up():

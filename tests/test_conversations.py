@@ -27,6 +27,7 @@ from opsmesh.runtime.queues.dispatch import QueueDispatchPublisher
 from opsmesh.runtime.recovery.rehydration import QueueRehydrationService
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.runtime_host import runtime_host
 from tests.test_agent_management_api import _client, _headers, _seed_workspace
 from tests.test_run_runtime_environment import FakeDockerClient
 
@@ -68,7 +69,7 @@ def test_chat_request_uses_the_leased_execution_runtime_and_releases_it(mode: st
         execution_mode=mode,
         status="running",
         connection_status="online",
-        docker_container_id="chat-container",
+        host=runtime_host(workspace.id, "chat-container", capacity=2, node_id="test-node"),
         network_policy={"mode": "none"},
         limits={
             "cpu_count": 1,
@@ -163,6 +164,7 @@ def test_chat_request_uses_the_leased_execution_runtime_and_releases_it(mode: st
         from opsmesh.runtime.instances.models import RuntimeAllocation
 
         parent.limits = {**parent.limits, "max_concurrent_executions": 1}
+        parent.host.capacity = 1
         waiting = AgentRun(
             workspace_id=workspace.id, runtime_id=parent.id, status="queued", input={}
         )

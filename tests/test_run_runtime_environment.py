@@ -13,13 +13,21 @@ from opsmesh.runtime.instances.models import RuntimeEvent, RuntimeTemplate, Work
 from opsmesh.runtime.instances.run_environment import RunRuntimeEnvironmentService
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
+from tests.fixtures.runtime_host import runtime_host
 
 
 class FakeDockerClient:
+    def configure_execution(self, container_id, identity):
+        self.identities[identity.allocation_id] = identity
+
+    def revoke_execution(self, container_id, identity):
+        self.identities.pop(identity.allocation_id, None)
+
     def node_identity(self) -> str:
         return "test-node"
 
     def __init__(self) -> None:
+        self.identities = {}
         self.created = []
         self.started: list[str] = []
         self.removed: list[str] = []
@@ -50,6 +58,7 @@ class FakeDockerClient:
         *,
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
+        identity=None,
     ) -> RuntimeCommandResult:
         self.exec_command_calls.append((container_id, command, timeout_seconds, working_dir))
         _ = input_file
@@ -70,6 +79,8 @@ class FakeDockerClient:
         source_path: str,
         max_bytes: int,
         timeout_seconds: int,
+        *,
+        identity=None,
     ) -> bytes | None:
         _ = (container_id, source_path, max_bytes, timeout_seconds)
         return None
@@ -94,7 +105,7 @@ def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> Non
         execution_mode="isolated",
         status="active",
         connection_status="online",
-        docker_container_id="parent-container",
+        host=runtime_host(workspace.id, "parent-container", capacity=1, node_id="test-node"),
         limits={
             "cpu_count": 1,
             "memory_mb": 512,
@@ -172,7 +183,7 @@ def test_shared_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
         execution_mode="shared",
         status="active",
         connection_status="online",
-        docker_container_id="shared-container",
+        host=runtime_host(workspace.id, "shared-container", capacity=1, node_id="test-node"),
         limits={
             "cpu_count": 1,
             "memory_mb": 512,
@@ -223,7 +234,7 @@ def test_shared_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
     assert len(docker.started) == 0
     assert len(docker.removed) == 0
     assert len(docker.removed_volumes) == 0
-    assert len(docker.exec_command_calls) == 3
+    assert len(docker.exec_command_calls) == 4
 
 
 def test_shared_runs_use_distinct_hosts_until_a_slot_is_released() -> None:
@@ -268,7 +279,9 @@ def test_shared_runs_use_distinct_hosts_until_a_slot_is_released() -> None:
             execution_mode="shared",
             status="active",
             connection_status="online",
-            docker_container_id=f"pool-container-{index}",
+            host=runtime_host(
+                workspace.id, f"pool-container-{index}", capacity=1, node_id="test-node"
+            ),
             limits=limits,
             network_policy={"mode": "none", "disabled": True},
             capabilities=capabilities,
@@ -323,7 +336,7 @@ def test_shared_run_binds_parent_without_child_or_container_cleanup() -> None:
         execution_mode="shared",
         status="active",
         connection_status="online",
-        docker_container_id="shared-container",
+        host=runtime_host(workspace.id, "shared-container", capacity=2, node_id="test-node"),
         limits={"timeout_seconds": 30, "max_concurrent_executions": 2},
         network_policy={"mode": "none", "disabled": True},
         capabilities={
@@ -370,7 +383,7 @@ def test_shared_runtime_shares_capacity_and_releases_only_one_run() -> None:
         execution_mode="shared",
         status="active",
         connection_status="online",
-        docker_container_id="shared-container",
+        host=runtime_host(workspace.id, "shared-container", capacity=2, node_id="test-node"),
         limits={"timeout_seconds": 30, "max_concurrent_executions": 2},
         network_policy={"mode": "none", "disabled": True},
         capabilities={

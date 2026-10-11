@@ -81,6 +81,7 @@ from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.teams.sessions.service import TeamRuntimeService
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.runtime_host import runtime_host
 
 
 @pytest.fixture(autouse=True)
@@ -184,6 +185,12 @@ class MustNotRunAgentRunner:
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
     def node_identity(self) -> str:
         return "test-node"
 
@@ -214,6 +221,8 @@ class FakeDockerClient(DockerRuntimeClient):
         timeout_seconds: int,
         *,
         input_file: RuntimeCommandInputFile | None = None,
+        working_dir=None,
+        identity=None,
     ) -> RuntimeCommandResult:
         _ = input_file
         return RuntimeCommandResult(exit_code=0, stdout="ok\n", stderr="")
@@ -1507,7 +1516,7 @@ def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime() -> N
             name="Offline Team Runtime",
             status="running",
             connection_status="offline",
-            docker_container_id="offline-container",
+            host=runtime_host(workspace_id, "offline-container", capacity=16, node_id="test-node"),
             limits={},
             network_policy={},
             capabilities={"node_id": "test-node"},

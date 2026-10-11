@@ -2846,6 +2846,18 @@
             "title": "Has Docker Container",
             "type": "boolean"
           },
+          "host_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Id"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -2929,6 +2941,7 @@
           "created_at",
           "updated_at",
           "workspace_id",
+          "host_id",
           "runtime_template_id",
           "runtime_space_id",
           "runtime_provider",
@@ -27155,6 +27168,11 @@
             "title": "Created At",
             "type": "string"
           },
+          "host_id": {
+            "format": "uuid",
+            "title": "Host Id",
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -27168,7 +27186,8 @@
           "owner_kind": {
             "enum": [
               "run",
-              "mcp"
+              "mcp",
+              "command"
             ],
             "title": "Owner Kind",
             "type": "string"
@@ -27196,7 +27215,8 @@
           "workspace_id",
           "workspace_runtime_id",
           "owner_kind",
-          "owner_id"
+          "owner_id",
+          "host_id"
         ],
         "title": "RuntimeAllocationResponse",
         "type": "object"
@@ -42632,6 +42652,18 @@
             "title": "Has Docker Container",
             "type": "boolean"
           },
+          "host_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Id"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -42715,6 +42747,7 @@
           "created_at",
           "updated_at",
           "workspace_id",
+          "host_id",
           "runtime_template_id",
           "runtime_space_id",
           "runtime_provider",

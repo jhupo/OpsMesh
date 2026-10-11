@@ -17,7 +17,7 @@ from opsmesh.runtime.contracts import (
     RuntimeExecutionMode,
     validate_runtime_execution_mode,
 )
-from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
+from opsmesh.runtime.instances.allocations import RuntimeAllocationStore, allocation_identity
 from opsmesh.runtime.instances.contracts import (
     DockerRuntimeClient,
     RuntimeCreateRequest,
@@ -34,7 +34,7 @@ from opsmesh.runtime.instances.metadata import (
     runtime_isolation_metadata,
     runtime_labels,
 )
-from opsmesh.runtime.instances.models import RuntimeTemplate, WorkspaceRuntime
+from opsmesh.runtime.instances.models import RuntimeHost, RuntimeTemplate, WorkspaceRuntime
 from opsmesh.runtime.instances.policies.safety import is_digest_pinned_image
 from opsmesh.runtime.instances.process_cleanup import RunProcessCleanupService
 from opsmesh.runtime.pools.service import MANAGED_RUNTIME_PROVIDER, RuntimePoolService
@@ -109,6 +109,16 @@ class RunRuntimeEnvironmentService:
     ) -> RunRuntimeEnvironmentResult:
         self._require_parent_binding(existing, parent, run)
         if existing.status in {"active", "running"} and existing.connection_status == "online":
+            allocation = RuntimeAllocationStore(self._session).acquire(existing, "run", run.id)
+            if allocation is None:
+                raise RuntimeEnvironmentError(
+                    "runtime_capacity_exhausted", "Runtime capacity is full"
+                )
+            self._session.commit()
+            docker.configure_execution(
+                existing.docker_container_id or "", allocation_identity(allocation)
+            )
+            self._prepare_run_directory(existing, run, allocation.execution_uid)
             run.execution_runtime_id = existing.id
             return RunRuntimeEnvironmentResult(runtime=existing, created=False)
         if existing.status in {"created", "provisioning"} and existing.docker_container_id:
@@ -186,7 +196,6 @@ class RunRuntimeEnvironmentService:
                 "identity": identity,
                 "persistent_mounts": [_mount_metadata(mount) for mount in persistent_mounts],
             },
-            "managed_resources": {"docker_volumes": [volume_name]},
         }
         return _IsolatedRuntimeSpec(
             child=child,
@@ -222,6 +231,7 @@ class RunRuntimeEnvironmentService:
                     ),
                     limits=spec.limits,
                     network_disabled=spec.network_disabled,
+                    shared_host=True,
                     network_policy=spec.network_policy,
                     labels={
                         **runtime_labels(spec.child),
@@ -254,7 +264,23 @@ class RunRuntimeEnvironmentService:
         container_id: str,
     ) -> None:
         child = spec.child
-        child.docker_container_id = container_id
+        child.host = RuntimeHost(
+            workspace_id=child.workspace_id,
+            node_id=self._require_docker().node_identity(),
+            host_key=str(child.id),
+            image=spec.template.image,
+            docker_container_id=container_id,
+            status="running",
+            capacity=1,
+            resources={"docker_volumes": [spec.volume_name]},
+        )
+        self._session.flush()
+        allocation = RuntimeAllocationStore(self._session).acquire(child, "run", run.id)
+        if allocation is None:
+            raise RuntimeError("Isolated Runtime identity could not be allocated")
+        self._session.commit()
+        self._require_docker().configure_execution(container_id, allocation_identity(allocation))
+        self._prepare_run_directory(child, run, allocation_identity(allocation).uid)
         child.status = "active"
         child.connection_status = "online"
         child.last_heartbeat_at = datetime.now(UTC)
@@ -351,6 +377,16 @@ class RunRuntimeEnvironmentService:
         # Persist the slot before creating directories or starting any SDK process.
         self._session.commit()
         docker = self._require_docker()
+        allocation = RuntimeAllocationStore(self._session).get(host, "run", run.id)
+        if allocation is None:
+            raise RuntimeError("Run has no execution allocation")
+        identity = allocation_identity(allocation)
+        docker.configure_execution(host.docker_container_id or "", identity)
+        self._prepare_run_directory(host, run, identity.uid)
+        return RunRuntimeEnvironmentResult(runtime=host, created=not was_active)
+
+    def _prepare_run_directory(self, host: WorkspaceRuntime, run: AgentRun, uid: int) -> None:
+        docker = self._require_docker()
         result = docker.exec_command(
             host.docker_container_id or "",
             ["mkdir", "-p", "--", f"/workspace/runs/{run.id}"],
@@ -361,7 +397,22 @@ class RunRuntimeEnvironmentService:
             raise RuntimeEnvironmentError(
                 "runtime_workspace_failed", "Run workspace could not be prepared"
             )
-        return RunRuntimeEnvironmentResult(runtime=host, created=not was_active)
+        prepared = docker.exec_command(
+            host.docker_container_id or "",
+            ["chown", "-R", f"{uid}:{uid}", f"/workspace/runs/{run.id}"],
+            30,
+            working_dir="/",
+        )
+        if prepared.exit_code:
+            raise RuntimeError("Run workspace identity could not be assigned")
+        sealed = docker.exec_command(
+            host.docker_container_id or "",
+            ["chmod", "700", f"/workspace/runs/{run.id}"],
+            30,
+            working_dir="/",
+        )
+        if sealed.exit_code:
+            raise RuntimeError("Run workspace could not be sealed")
 
     def _parent_for_run(self, run: AgentRun) -> WorkspaceRuntime | None:
         if run.runtime_id is None:
@@ -380,7 +431,7 @@ class RunRuntimeEnvironmentService:
                 "Managed runtime has no platform isolation evidence",
             )
         if parent.execution_mode == "isolated" and (
-            parent.capabilities.get("node_id") != self._require_docker().node_identity()
+            parent.host is None or parent.host.node_id != self._require_docker().node_identity()
         ):
             raise RuntimeEnvironmentError(
                 "runtime_node_mismatch", "Runtime belongs to another execution node"
@@ -425,13 +476,14 @@ class RunRuntimeEnvironmentService:
         runtime = self._runtime(run.workspace_id, run.execution_runtime_id)
         if (
             self._docker is None
-            or runtime.capabilities.get("node_id") != self._docker.node_identity()
+            or runtime.host is None
+            or runtime.host.node_id != self._docker.node_identity()
         ):
             return False
         mode = _execution_mode(runtime)
         if _runtime_execution_status(run) == "completed":
             return True
-        if mode == "shared":
+        if mode in {"shared", "isolated"}:
             self._session.commit()
             try:
                 RunProcessCleanupService(self._docker).reset(
@@ -444,7 +496,7 @@ class RunRuntimeEnvironmentService:
                 _set_run_execution_metadata(run, status="failed", runtime_id=runtime.id, mode=mode)
                 self._record_cleanup(run, status="failed", runtime_id=runtime.id)
                 return False
-        elif runtime.status != "deleted":
+        if mode == "isolated" and not suspend and runtime.status != "deleted":
             if runtime.execution_run_id != run.id or self._docker is None:
                 return False
             try:
@@ -639,7 +691,7 @@ def _positive_runtime_limit(
 
 def _network_disabled(policy: dict[str, object]) -> bool:
     mode = policy.get("mode")
-    return policy.get("disabled") is True or mode in {None, "none"}
+    return mode in {None, "none"}
 
 
 def _persistent_mounts(capabilities: dict[str, object]) -> tuple[RuntimeMount, ...]:

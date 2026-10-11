@@ -23,6 +23,20 @@ class DockerRunProjectFilesystem:
         self._timeout_seconds = timeout_seconds
         self._client = client
         self._container_id = runtime.docker_container_id or ""
+        from sqlalchemy.orm import object_session
+
+        from opsmesh.runtime.instances.allocations import (
+            RuntimeAllocationStore,
+            allocation_identity,
+        )
+
+        session = object_session(runtime)
+        if session is None:
+            raise RuntimeError("Runtime filesystem requires a persisted identity")
+        allocation = RuntimeAllocationStore(session).get(runtime, "run", run_id)
+        if allocation is None:
+            raise RuntimeError("Run filesystem has no execution allocation")
+        self._identity = allocation_identity(allocation)
         self._root_path = f"{RUNTIME_WORKSPACE_ROOT}/runs/{run_id}"
         self._require_workspace_mount(runtime)
 
@@ -37,6 +51,22 @@ class DockerRunProjectFilesystem:
             archive,
             self._timeout_seconds,
         )
+        result = self._client.exec_command(
+            self._container_id,
+            ["chown", "-R", f"{self._identity.uid}:{self._identity.uid}", self._root_path],
+            self._timeout_seconds,
+            working_dir="/",
+        )
+        if result.exit_code:
+            raise RuntimeError("Runtime filesystem identity could not be assigned")
+        sealed = self._client.exec_command(
+            self._container_id,
+            ["chmod", "700", self._root_path],
+            self._timeout_seconds,
+            working_dir="/",
+        )
+        if sealed.exit_code:
+            raise RuntimeError("Runtime filesystem could not be sealed")
 
     def read_file(self, relative_path: str, *, max_bytes: int) -> bytes | None:
         normalized = validate_runtime_relative_path(relative_path)
@@ -45,6 +75,7 @@ class DockerRunProjectFilesystem:
             f"{self._root_path}/{normalized}",
             max_bytes,
             self._timeout_seconds,
+            identity=self._identity,
         )
 
     def cleanup(self) -> None:

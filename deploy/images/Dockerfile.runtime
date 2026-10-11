@@ -13,7 +13,7 @@ ARG BUILD_COMMIT
 LABEL org.opencontainers.image.revision=$BUILD_COMMIT
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/app/.venv/bin:$PATH"
 COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /uvx /usr/local/bin/
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm ca-certificates nftables squid \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/.venv /app/.venv
 RUN addgroup --system --gid 65532 opsmesh-runtime \
@@ -22,4 +22,4 @@ RUN addgroup --system --gid 65532 opsmesh-runtime \
 USER opsmesh-runtime
 WORKDIR /workspace
 RUN python -m opsmesh_runtime.mcp_stdio_client --check
-CMD ["sleep", "infinity"]
+CMD ["python", "-m", "opsmesh_runtime.execution_control", "--initialize"]

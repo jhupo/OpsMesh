@@ -24,7 +24,9 @@ class RuntimeIsolationMetadata(TypedDict):
 
 
 def runtime_space_reservation_key(runtime: WorkspaceRuntime) -> str:
-    return f"workspace_runtime:{runtime.id}:docker"
+    if runtime.host_id is None:
+        raise ValueError("Runtime space reservation requires a physical host")
+    return f"runtime_host:{runtime.host_id}:docker"
 
 
 def runtime_space_usage_for_runtime(limits: RuntimeLimits) -> dict[str, int]:

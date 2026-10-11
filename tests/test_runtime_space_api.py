@@ -33,6 +33,7 @@ from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.runtime_host import runtime_host
 
 TOKEN = "test-token"
 
@@ -419,9 +420,7 @@ def test_runtime_space_force_release_reservations_updates_quota_and_events() -> 
     assert "scheduling_status" not in step.dependencies
     assert "blocked_reason" not in step.dependencies
     assert "blocked_resource_keys" not in step.dependencies
-    assert [event.event_type for event in events] == [
-        "runtime_space.reservations_force_released"
-    ]
+    assert [event.event_type for event in events] == ["runtime_space.reservations_force_released"]
     assert events[0].event_metadata["released_reservations"] == 1
     assert events[0].event_metadata["cleared_blocked_steps"] == 1
     assert events[0].event_metadata["reason"] == "stale worker lease"
@@ -494,10 +493,14 @@ def test_runtime_space_reset_releases_reservations_and_clears_blocks() -> None:
     session.refresh(quota)
     session.refresh(reservation)
     session.refresh(step)
-    event = session.query(RuntimeSpaceEvent).filter_by(
-        runtime_space_id=runtime_space.id,
-        event_type="runtime_space.reset_requested",
-    ).one()
+    event = (
+        session.query(RuntimeSpaceEvent)
+        .filter_by(
+            runtime_space_id=runtime_space.id,
+            event_type="runtime_space.reset_requested",
+        )
+        .one()
+    )
     assert reset.status_code == 200
     assert reset.json()["runtime_space"]["status"] == "active"
     assert reset.json()["released_reservations"] == 1
@@ -552,7 +555,7 @@ def test_runtime_space_diagnostics_reports_quota_reservations_runtimes_and_block
         name="runtime",
         status="running",
         connection_status="online",
-        docker_container_id="container-secret",
+        host=runtime_host(workspace.id, "container-secret", capacity=16, node_id="test-node"),
         limits={"memory_mb": 4096, "token": "runtime-token"},
         network_policy={"base_url": "https://runtime.example.test/private"},
         capabilities={"headers": {"authorization": "Bearer hidden"}, "tools": ["python"]},

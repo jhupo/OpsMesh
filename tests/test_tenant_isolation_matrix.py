@@ -49,6 +49,7 @@ from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.runtime_host import runtime_host
 
 TOKEN = "test-token"
 SOURCE_MARKER = "source-secret-marker"
@@ -566,14 +567,18 @@ def _seed_isolation_data(session: Session, tmp_path: Path) -> SeededIsolationDat
         workspace_id=source_workspace.id,
         runtime_space_id=source_runtime_space.id,
         name=f"{SOURCE_MARKER} runtime",
-        docker_container_id="source-container",
+        host=runtime_host(
+            source_workspace.id, "source-container", capacity=16, node_id="test-node"
+        ),
         status="running",
     )
     target_runtime = WorkspaceRuntime(
         workspace_id=target_workspace.id,
         runtime_space_id=target_runtime_space.id,
         name="target runtime",
-        docker_container_id="target-container",
+        host=runtime_host(
+            target_workspace.id, "target-container", capacity=16, node_id="test-node"
+        ),
         status="running",
     )
     source_webhook = WebhookSubscription(
@@ -892,6 +897,12 @@ def _patch_portable_types_for_sqlite() -> None:
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
     def node_identity(self) -> str:
         return "test-node"
 
@@ -917,6 +928,8 @@ class FakeDockerClient(DockerRuntimeClient):
         timeout_seconds: int,
         *,
         input_file: RuntimeCommandInputFile | None = None,
+        working_dir=None,
+        identity=None,
     ) -> RuntimeCommandResult:
         _ = input_file
         return RuntimeCommandResult(exit_code=0, stdout="", stderr="")

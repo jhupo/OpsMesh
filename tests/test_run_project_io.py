@@ -31,6 +31,7 @@ from opsmesh.resources.files.models import FileAccessEvent, WorkspaceFile
 from opsmesh.resources.storage.storage import LocalStorage
 from opsmesh.runtime.backends.docker import DockerRuntimeBackend
 from opsmesh.runtime.backends.registry import RuntimeBackendRegistry
+from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
 from opsmesh.runtime.instances.contracts import RuntimeCommandResult
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.shared.config import Settings
@@ -49,6 +50,7 @@ from opsmesh.workspaces.projects.models import (
 from opsmesh.workspaces.projects.snapshots.format import sha256_json
 from opsmesh.workspaces.projects.snapshots.service import RunProjectSnapshotService
 from tests.fixtures.project_authorization import authorize_project_run
+from tests.fixtures.runtime_host import runtime_host
 
 
 @dataclass
@@ -65,6 +67,7 @@ class FakeDockerClient:
         timeout_seconds: int,
         *,
         working_dir: str | None = None,
+        identity=None,
     ) -> RuntimeCommandResult:
         assert container_id == "container-1"
         assert timeout_seconds == 60
@@ -97,6 +100,8 @@ class FakeDockerClient:
         source_path: str,
         max_bytes: int,
         timeout_seconds: int,
+        *,
+        identity=None,
     ) -> bytes | None:
         assert container_id == "container-1"
         assert timeout_seconds == 60
@@ -212,9 +217,8 @@ def test_terminal_run_cleanup_is_scoped_idempotent_and_audited(tmp_path: Path) -
     assert state.cleanup_status == "completed"
     assert state.cleanup_attempts == 1
     assert state.cleaned_at is not None
-    assert fixture.docker.cleanup_commands == [
-        ["rm", "-rf", "--", f"/workspace/runs/{fixture.run.id}"]
-    ]
+    removed = [command for command in fixture.docker.cleanup_commands if command[0] == "rm"]
+    assert removed == [["rm", "-rf", "--", f"/workspace/runs/{fixture.run.id}"]]
     event = fixture.session.scalar(
         select(RunEvent).where(
             RunEvent.workspace_id == fixture.workspace.id,
@@ -602,7 +606,7 @@ def _fixture(tmp_path: Path) -> ProjectIOFixture:
         name="managed-runtime",
         status="running",
         connection_status="online",
-        docker_container_id="container-1",
+        host=runtime_host(workspace.id, "container-1", capacity=16, node_id="test-node"),
         limits={"disk_mb": 256},
         capabilities={"isolation": {"workspace_mount": {"target": "/workspace", "mode": "rw"}}},
     )
@@ -631,6 +635,7 @@ def _fixture(tmp_path: Path) -> ProjectIOFixture:
         runtime=runtime,
         files=[source_file],
     )
+    assert RuntimeAllocationStore(session).acquire(runtime, "run", run.id) is not None
     RunProjectSnapshotService(session).freeze_for_run(run=run, task=task)
     session.commit()
     storage = LocalStorage(str(tmp_path / "storage"))
@@ -685,6 +690,7 @@ def _new_run(fixture: ProjectIOFixture) -> AgentRun:
         runtime=runtime,
         files=[fixture.source_file],
     )
+    assert RuntimeAllocationStore(fixture.session).acquire(runtime, "run", run.id) is not None
     RunProjectSnapshotService(fixture.session).freeze_for_run(run=run, task=task)
     fixture.session.commit()
     return run

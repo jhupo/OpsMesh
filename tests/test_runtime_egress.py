@@ -1,6 +1,8 @@
+from dataclasses import replace
+
 import pytest
 
-from opsmesh.runtime.backends.docker import _docker_network_environment, _docker_network_mode
+from opsmesh.runtime.backends.docker import _docker_network_mode
 from opsmesh.runtime.instances.contracts import RuntimeCreateRequest, RuntimeLimits
 from opsmesh.runtime.instances.policies.egress import (
     RuntimeEgressPolicyError,
@@ -25,16 +27,14 @@ def _request(policy: dict[str, object], *, disabled: bool = False) -> RuntimeCre
     )
 
 
-def test_restricted_egress_requires_gateway_and_normalizes_allowlist() -> None:
+def test_restricted_egress_normalizes_allowlist_without_container_network_group() -> None:
     policy = resolve_egress_policy(
         {
             "mode": "restricted",
-            "gateway_network": "opsmesh-egress",
             "allowed_domains": ["API.Example.com."],
             "allowed_cidrs": ["203.0.113.7/24"],
             "allowed_ports": [443, 443],
             "allowed_protocols": ["TCP"],
-            "proxy_url": "http://egress-gateway:3128",
         },
         forced_disabled=False,
     )
@@ -45,23 +45,16 @@ def test_restricted_egress_requires_gateway_and_normalizes_allowlist() -> None:
         "allowed_cidrs": ["203.0.113.0/24"],
         "allowed_ports": [443],
         "allowed_protocols": ["tcp"],
-        "gateway_network": "opsmesh-egress",
-        "proxy_url": "http://egress-gateway:3128",
     }
     request = _request(policy.as_dict())
-    assert _docker_network_mode(request) == "opsmesh-egress"
-    assert _docker_network_environment(request) == {
-        "HTTP_PROXY": "http://egress-gateway:3128",
-        "HTTPS_PROXY": "http://egress-gateway:3128",
-        "ALL_PROXY": "http://egress-gateway:3128",
-        "NO_PROXY": "localhost,127.0.0.1",
-    }
+    request = replace(request, shared_host=True)
+    assert _docker_network_mode(request) == "bridge"
 
 
-def test_restricted_egress_fails_closed_without_gateway() -> None:
+def test_restricted_egress_fails_closed_without_destinations() -> None:
     with pytest.raises(RuntimeEgressPolicyError) as failure:
         resolve_egress_policy({"mode": "restricted"}, forced_disabled=False)
-    assert failure.value.code == "runtime_egress_gateway_required"
+    assert failure.value.code == "runtime_egress_destinations_required"
 
 
 def test_forced_network_disable_overrides_requested_egress() -> None:
@@ -73,7 +66,6 @@ def test_forced_network_disable_overrides_requested_egress() -> None:
     assert policy.disabled is True
     request = _request(policy.as_dict(), disabled=True)
     assert _docker_network_mode(request) == "none"
-    assert _docker_network_environment(request) is None
 
 
 @pytest.mark.parametrize(

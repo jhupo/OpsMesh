@@ -48,4 +48,4 @@ def worker_owns_runtime_job(session: Session, job: JobPayload, node_id: str) -> 
         return True
     if runtime.runtime_provider != "cloud_docker":
         return True
-    return runtime.capabilities.get("node_id") == node_id
+    return runtime.host is not None and runtime.host.node_id == node_id

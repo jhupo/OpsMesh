@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 from opsmesh.capabilities.mcp.execution.contracts import McpExecutionError
 from opsmesh.capabilities.mcp.models import McpCredentialReference, McpDeployment, McpServer
 from opsmesh.capabilities.mcp.transport.runtime_operation import RuntimeMcpOperation
-from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
+from opsmesh.runtime.instances.allocations import RuntimeAllocationStore, allocation_identity
 from opsmesh.runtime.instances.contracts import DockerRuntimeClient, RuntimeCommandInputFile
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.shared.errors import NotFoundError, PolicyDeniedError
 
@@ -60,6 +61,7 @@ def process_request(
     payload: dict[str, object],
     *,
     timeout_seconds: int = 70,
+    identity: RuntimeExecutionIdentity,
 ) -> dict[str, object]:
     if runtime.status != "running" or not runtime.docker_container_id:
         raise McpExecutionError("Managed MCP runtime is not running", code="mcp_process_not_ready")
@@ -71,6 +73,7 @@ def process_request(
             content=json.dumps({**payload, "id": str(server_id)}).encode(),
             argument_name="--request-file",
         ),
+        identity=identity,
     )
     try:
         result = json.loads(record.stdout)
@@ -131,7 +134,8 @@ class ManagedMcpToolAdapter:
             raise McpExecutionError(
                 "Managed MCP runtime is unavailable", code="mcp_process_not_ready"
             )
-        if RuntimeAllocationStore(self.session).get(runtime, "mcp", deployment.id) is None:
+        allocation = RuntimeAllocationStore(self.session).get(runtime, "mcp", deployment.id)
+        if allocation is None:
             raise McpExecutionError(
                 "Managed MCP has no execution slot", code="mcp_process_not_ready"
             )
@@ -151,4 +155,5 @@ class ManagedMcpToolAdapter:
             },
             min(timeout_seconds, 70),
             server_id=str(server.id),
+            identity=allocation_identity(allocation),
         )

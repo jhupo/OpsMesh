@@ -106,8 +106,10 @@ class RuntimeCleanupService:
                 failed += 1
                 continue
             runtime = self._session.get(WorkspaceRuntime, run.execution_runtime_id)
-            if runtime is not None and runtime.runtime_provider == "cloud_docker" and (
-                runtime.capabilities.get("node_id") != docker_client.node_identity()
+            if (
+                runtime is not None
+                and runtime.runtime_provider == "cloud_docker"
+                and (runtime.host is None or runtime.host.node_id != docker_client.node_identity())
             ):
                 continue
             if RunProjectIOService(
@@ -167,7 +169,7 @@ class RuntimeCleanupService:
         if docker_client is None:
             return 0, 0
         statement = statement.where(
-            WorkspaceRuntime.capabilities["node_id"].as_string() == docker_client.node_identity()
+            WorkspaceRuntime.host.has(node_id=docker_client.node_identity())
         )
         runs = list(self._session.scalars(statement).all())
         completed = 0
@@ -206,7 +208,10 @@ class RuntimeCleanupService:
             if runtime.runtime_provider == "cloud_docker" and runtime.docker_container_id:
                 if self._docker_client is None:
                     continue
-                if runtime.capabilities.get("node_id") != self._docker_client.node_identity():
+                if (
+                    runtime.host is None
+                    or runtime.host.node_id != self._docker_client.node_identity()
+                ):
                     continue
                 # Managed containers do not emit worker heartbeat leases. Inspect them instead.
                 if self._docker_client.container_running(runtime.docker_container_id):
@@ -251,7 +256,7 @@ class RuntimeCleanupService:
     ) -> int:
         statement = select(WorkspaceRuntime).where(
             WorkspaceRuntime.status.in_(["stopped", "failed"]),
-            WorkspaceRuntime.docker_container_id.is_(None),
+            WorkspaceRuntime.host_id.is_(None),
         )
         if workspace_id is not None:
             statement = statement.where(WorkspaceRuntime.workspace_id == workspace_id)
