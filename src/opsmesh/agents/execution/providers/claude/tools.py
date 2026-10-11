@@ -137,7 +137,7 @@ def _claude_lifecycle_hook(
             payload["tool_name"] = _product_tool_name(tool_name)
         if tool_use_id:
             payload["tool_call_id"] = tool_use_id
-        observer.lifecycle(
+        await observer.lifecycle(
             event_type,
             event_type.replace(".", " ").capitalize() + ".",
             payload,

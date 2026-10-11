@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
@@ -381,6 +381,7 @@ class AgentRunRequest:
     guardrails: AgentRuntimeGuardrails | None = None
     stream: bool = False
     event_sink: Callable[[AgentRuntimeStreamEvent], None] | None = None
+    lifecycle_sink: Callable[[AgentRuntimeEvent], Awaitable[None]] | None = None
     cancellation: AgentRuntimeCancellation | None = None
     sandbox: SandboxBinding | None = None
     attachments: tuple[AgentInputAttachment, ...] = ()

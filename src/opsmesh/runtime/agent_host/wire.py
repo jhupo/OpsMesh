@@ -14,6 +14,7 @@ from opsmesh.agents.execution.contracts import (
     AgentRuntimeAgentTool,
     AgentRuntimeApprovalDecision,
     AgentRuntimeContext,
+    AgentRuntimeEvent,
     AgentRuntimeGuardrails,
     AgentRuntimeHandoff,
     AgentRuntimeOutputSchema,
@@ -30,6 +31,7 @@ RESULT = TypeAdapter(AgentRunResult)
 CONTEXT = TypeAdapter(AgentRuntimeContext)
 TOOL_RESULT = TypeAdapter(AgentRuntimeToolResult)
 STREAM_EVENT = TypeAdapter(AgentRuntimeStreamEvent)
+LIFECYCLE_EVENT = TypeAdapter(AgentRuntimeEvent)
 
 
 class WireModel(BaseModel):
@@ -100,6 +102,7 @@ class RuntimeRunInput(WireModel):
             "cancellation",
             "sandbox",
             "event_sink",
+            "lifecycle_sink",
             "attachments",
         }
         payload = {

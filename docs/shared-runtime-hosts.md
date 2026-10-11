@@ -6,6 +6,8 @@ PostgreSQL `runtime_allocations` 保存物理宿主、逻辑策略、Run/MCP/命
 
 Worker 使用有界 asyncio Task，阻塞数据库和 Docker 控制进入有界 I/O 线程池；等待 SDK 流不占线程。SDK 在 Runtime 子进程使用原生 Runner、Session、审批恢复和 MCP；平台不增加外层 Agent 循环。执行有独立 UID、私有 RPC、HOME、临时目录和 `/workspace/runs/<run_id>`。工作负载 capabilities 为零，启用 `no-new-privileges`。
 
+SDK 生命周期 Hook 经 Runtime RPC 实时回传。Worker 在有租户与租约校验的独立短事务中提交 `agent.started`、`agent.llm.started/completed`、`agent.tool.started/completed/failed`、`agent.handoff.started` 与 `agent.completed`，然后发布 Task 的 `run.live` 进度。客户端可在执行中查询 Run events 和 activity；live payload 的 `kind` 分别为 `started`、`llm.started/completed`、`tool.started/completed/failed`、`handoff.started` 与 `completed`。生命周期提交不依赖文本流开关，不经过可丢弃的预览缓冲，也不在结果返回后重复补写。文本预览仍使用有界缓冲；已授权平台工具的即时预览由工具执行器发布一次。SDK 的 `agent.completed` 表示 SDK 返回，最终 Run 状态仍由控制面结果校验和持久化决定。
+
 容器启动时，可信控制程序配置 nftables，然后降权运行内部代理。OUTPUT 默认拒绝，按 socket UID 强制网络权限：`none` 无网络；`restricted` 只能连接自己的 loopback 代理端口，由代理校验域名/IP 和端口；`internet` 可访问公网 TCP/UDP。宿主、其他容器、私网、link-local 和元数据地址均禁止；DNS 仅允许配置解析器。修改环境变量、请求头或使用其他身份的代理端口不能扩权。共享 Runtime 不支持私网目标。
 
 内部代理是 Runtime 进程，不增加模型网关容器。Docker 控制面使用 root 和 `NET_ADMIN/KILL/CHOWN/DAC_OVERRIDE/SETUID/SETGID`；用户代码没有这些权限，不能写控制策略。UID 和私有文件权限提供可信工作空间内的执行边界，不替代不可信代码的容器或虚拟机隔离。

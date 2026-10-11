@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 
 from opsmesh.agents.execution.contracts import (
     AgentRunRequest,
+    AgentRuntimeEvent,
     AgentRuntimeExecutor,
     AgentRuntimeSession,
 )
@@ -23,6 +24,7 @@ from opsmesh.runtime.agent_host.local_sandbox import LocalSandboxExecutor
 from opsmesh.runtime.agent_host.processes import register
 from opsmesh.runtime.agent_host.proxies import RpcCancellation, RpcSession, RpcTools
 from opsmesh.runtime.agent_host.wire import (
+    LIFECYCLE_EVENT,
     MAX_FRAME_BYTES,
     RESULT,
     STREAM_EVENT,
@@ -142,6 +144,9 @@ async def execute(executor: AgentRuntimeExecutor) -> None:
     arguments.update({name: getattr(wire, name) for name in arguments})
     credential_id = wire.model_provider_credential_id
     arguments["model_provider_credential_id"] = UUID(credential_id) if credential_id else None
+    async def publish_lifecycle(event: AgentRuntimeEvent) -> None:
+        await rpc.call("event.lifecycle", LIFECYCLE_EVENT.dump_python(event, mode="json"))
+
     request = AgentRunRequest(
         **arguments,
         session=cast(AgentRuntimeSession, storage),
@@ -149,6 +154,7 @@ async def execute(executor: AgentRuntimeExecutor) -> None:
         cancellation=RpcCancellation(rpc.call),
         sandbox=sandbox,
         attachments=tuple(a.attachment() for a in wire.attachments),
+        lifecycle_sink=publish_lifecycle,
         event_sink=lambda event: rpc.send(
             RpcFrame(type="event", payload=STREAM_EVENT.dump_python(event, mode="json"))
         ),

@@ -9,7 +9,7 @@ from opsmesh.agents.execution.contracts import (
     AgentRuntimeStreamEvent,
     AgentRuntimeStreamEventKind,
 )
-from opsmesh.shared.security.redaction import redact_sensitive_payload
+from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 
 
 @dataclass(slots=True)
@@ -23,22 +23,27 @@ class AgentRuntimeExecutionObserver:
         if self.request.stream:
             self.stream(AgentRuntimeStreamEventKind.RUN_STARTED.value)
 
-    def lifecycle(
+    async def lifecycle(
         self,
         event_type: str,
         message: str,
         payload: dict[str, object] | None = None,
     ) -> None:
-        self.events.append(
-            AgentRuntimeEvent(
-                event_type=event_type,
-                message=message,
-                payload=redact_sensitive_payload(payload or {}),
-            )
+        event = AgentRuntimeEvent(
+            event_type=event_type,
+            message=redact_sensitive_text(message),
+            payload=redact_sensitive_payload(payload or {}),
         )
+        if self.request.lifecycle_sink is not None:
+            await self.request.lifecycle_sink(event)
+        else:
+            self.events.append(event)
         if event_type in {"agent.tool.started", "agent.tool.completed", "agent.tool.failed"}:
             tool_name = (payload or {}).get("tool_name")
-            if tool_name not in self.request.context.allowed_tools:
+            if (
+                self.request.lifecycle_sink is None
+                and tool_name not in self.request.context.allowed_tools
+            ):
                 self.stream(event_type, payload=payload)
 
     def stream(

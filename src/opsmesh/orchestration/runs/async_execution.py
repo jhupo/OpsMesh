@@ -16,6 +16,7 @@ from opsmesh.agents.execution.cancellation import raise_if_cancelled
 from opsmesh.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
+    AgentRuntimeEvent,
     AgentRuntimeExecutor,
     AgentRuntimeSession,
     AgentRuntimeToolResult,
@@ -40,7 +41,9 @@ from opsmesh.orchestration.runs.execution import (
     RunExecutionService,
 )
 from opsmesh.orchestration.runs.live_async import buffered_live_events
+from opsmesh.orchestration.runs.live_events import RunLivePublisher
 from opsmesh.orchestration.runs.models import AgentRun
+from opsmesh.orchestration.runs.runtime_event_messages import RunRuntimeEventMessageMapper
 from opsmesh.orchestration.runs.scoped_cancellation import ScopedRunCancellation
 from opsmesh.orchestration.runs.service import RunOrchestrationService
 from opsmesh.orchestration.runs.state import RunStatus
@@ -58,6 +61,7 @@ from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.concurrency import BlockingIO
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.operations import DatabaseOperations
+from opsmesh.shared.security.redaction import redact_sensitive_payload, redact_sensitive_text
 from opsmesh.shared.telemetry.trace_context import current_trace_context, telemetry_span
 
 T = TypeVar("T")
@@ -279,6 +283,7 @@ class AsyncAgentRunExecutor:
             if attempt is None:
                 return None
             request, budget = attempt
+            request = self._lifecycle_request(request, controls, job)
             try:
                 runner = self.agent_runner
                 if runner is None:
@@ -369,6 +374,44 @@ class AsyncAgentRunExecutor:
             service.dependencies.lifecycle.mark_run_failed(run, error)
             service.commit_and_refresh(run)
             return None
+
+    def _lifecycle_request(
+        self, request: AgentRunRequest, controls: DatabaseOperations, job: JobPayload
+    ) -> AgentRunRequest:
+        publisher = request.event_sink
+
+        async def sink(event: AgentRuntimeEvent) -> None:
+            event = replace(
+                event,
+                message=redact_sensitive_text(event.message),
+                payload=redact_sensitive_payload(event.payload),
+            )
+            await self._phase(controls, job, partial(self._record_lifecycle, event=event))
+            if isinstance(publisher, RunLivePublisher):
+                # Governed tools already publish through LiveToolExecutor.
+                if (
+                    event.event_type.startswith("agent.tool.")
+                    and event.payload.get("tool_name") in request.context.allowed_tools
+                ):
+                    return
+                payload = {"message": event.message, **event.payload}
+                if event.event_type.startswith("agent.tool."):
+                    payload["call_id"] = payload.pop("tool_call_id", None)
+                publisher.publish(event.event_type.removeprefix("agent."), payload)
+
+        return replace(request, lifecycle_sink=sink)
+
+    def _record_lifecycle(
+        self,
+        service: RunExecutionService,
+        run: AgentRun,
+        job: JobPayload,
+        *,
+        event: AgentRuntimeEvent,
+    ) -> None:
+        if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
+            raise AgentRuntimeCancelledError
+        RunRuntimeEventMessageMapper(service.session).map_event(run, event)
 
     def _select_fallback(
         self,
