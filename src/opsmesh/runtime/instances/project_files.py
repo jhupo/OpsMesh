@@ -67,6 +67,7 @@ class DockerRunProjectFilesystem:
             ["chmod", "700", self._root_path],
             self._timeout_seconds,
             working_dir="/",
+            identity=self._identity,
         )
         if sealed.exit_code:
             raise RuntimeError("Runtime filesystem could not be sealed")

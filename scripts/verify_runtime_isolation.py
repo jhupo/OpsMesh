@@ -329,6 +329,14 @@ class DockerProbe:
         executor = DockerSandboxSessionExecutor(
             docker, self.name, "/workspace/input", 30, 128, identity=identity
         )
+        sealed = docker.exec_command(
+            self.name,
+            ["chmod", "700", "/workspace/input"],
+            30,
+            working_dir="/",
+            identity=identity,
+        )
+        assert sealed.exit_code == 0, "Run owner could not seal its workspace"
         assert executor.read_file(PurePosixPath("/workspace/input/staged.txt")) == b"staged"
         executor.write_file(PurePosixPath("/workspace/input/new.txt"), io.BytesIO(b"written"))
         assert executor.read_file(PurePosixPath("/workspace/input/new.txt")) == b"written"

@@ -26,6 +26,7 @@ from opsmesh.runtime.instances.contracts import (
     RuntimeMount,
 )
 from opsmesh.runtime.instances.events import RuntimeEventLog
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
 from opsmesh.runtime.instances.leases import RuntimeLeaseStore
 from opsmesh.runtime.instances.manager import RuntimeManager
 from opsmesh.runtime.instances.metadata import (
@@ -118,7 +119,7 @@ class RunRuntimeEnvironmentService:
             docker.configure_execution(
                 existing.docker_container_id or "", allocation_identity(allocation)
             )
-            self._prepare_run_directory(existing, run, allocation.execution_uid)
+            self._prepare_run_directory(existing, run, allocation_identity(allocation))
             run.execution_runtime_id = existing.id
             return RunRuntimeEnvironmentResult(runtime=existing, created=False)
         if existing.status in {"created", "provisioning"} and existing.docker_container_id:
@@ -280,7 +281,7 @@ class RunRuntimeEnvironmentService:
             raise RuntimeError("Isolated Runtime identity could not be allocated")
         self._session.commit()
         self._require_docker().configure_execution(container_id, allocation_identity(allocation))
-        self._prepare_run_directory(child, run, allocation_identity(allocation).uid)
+        self._prepare_run_directory(child, run, allocation_identity(allocation))
         child.status = "active"
         child.connection_status = "online"
         child.last_heartbeat_at = datetime.now(UTC)
@@ -382,10 +383,12 @@ class RunRuntimeEnvironmentService:
             raise RuntimeError("Run has no execution allocation")
         identity = allocation_identity(allocation)
         docker.configure_execution(host.docker_container_id or "", identity)
-        self._prepare_run_directory(host, run, identity.uid)
+        self._prepare_run_directory(host, run, identity)
         return RunRuntimeEnvironmentResult(runtime=host, created=not was_active)
 
-    def _prepare_run_directory(self, host: WorkspaceRuntime, run: AgentRun, uid: int) -> None:
+    def _prepare_run_directory(
+        self, host: WorkspaceRuntime, run: AgentRun, identity: RuntimeExecutionIdentity
+    ) -> None:
         docker = self._require_docker()
         result = docker.exec_command(
             host.docker_container_id or "",
@@ -399,7 +402,7 @@ class RunRuntimeEnvironmentService:
             )
         prepared = docker.exec_command(
             host.docker_container_id or "",
-            ["chown", "-R", f"{uid}:{uid}", f"/workspace/runs/{run.id}"],
+            ["chown", "-R", f"{identity.uid}:{identity.uid}", f"/workspace/runs/{run.id}"],
             30,
             working_dir="/",
         )
@@ -410,6 +413,7 @@ class RunRuntimeEnvironmentService:
             ["chmod", "700", f"/workspace/runs/{run.id}"],
             30,
             working_dir="/",
+            identity=identity,
         )
         if sealed.exit_code:
             raise RuntimeError("Run workspace could not be sealed")
