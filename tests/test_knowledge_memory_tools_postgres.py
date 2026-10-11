@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import replace
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -13,8 +14,14 @@ from sqlalchemy.orm import sessionmaker
 
 from opsmesh.agents.execution.contracts import AgentRuntimeContext
 from opsmesh.agents.execution.tools.executor import BackendToolExecutor
+from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.identity.authorization.resource_queries import execution_resource_queries
+from opsmesh.orchestration.approvals.models import Approval
+from opsmesh.orchestration.approvals.pending_tools import (
+    PendingToolInvocationRequest,
+    PendingToolInvocationService,
+)
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task
 from opsmesh.resources.knowledge.ingestion import KnowledgeSourceIngestionService
@@ -23,6 +30,7 @@ from opsmesh.resources.memory.models import WorkspaceMemoryEntry
 from opsmesh.runtime.queues.dispatch import QueueDispatchPublisher
 from opsmesh.runtime.queues.models import QueueDispatch
 from opsmesh.shared.db.base import Base
+from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
 from tests.test_agent_runtime_tools import _memory_resource_grant, _product_definitions
 from tests.test_conversations_postgres import _queue, _seed_conversation
@@ -39,6 +47,7 @@ TOOLS = (
     "get_knowledge",
     "list_knowledge",
     "search_knowledge",
+    "search_workspace_memory",
     "get_knowledge_ingestion",
     "upsert_semantic_memory",
     "archive_semantic_memory",
@@ -90,6 +99,9 @@ def test_text_source_migration_round_trip_and_refuses_history_loss():
 def _seed(factory):
     wid, uid, _, _ = _seed_conversation(factory)
     with factory() as session:
+        profile = AgentProfile(workspace_id=wid, name="Knowledge Manager", role="manager")
+        session.add(profile)
+        session.flush()
         task = Task(
             workspace_id=wid,
             created_by_user_id=uid,
@@ -98,7 +110,13 @@ def _seed(factory):
         )
         session.add(task)
         session.flush()
-        run = AgentRun(workspace_id=wid, task_id=task.id, status="running", input={})
+        run = AgentRun(
+            workspace_id=wid,
+            task_id=task.id,
+            agent_profile_id=profile.id,
+            status="running",
+            input={},
+        )
         session.add(run)
         grant = _memory_resource_grant(session, session.get(Workspace, wid))
         session.commit()
@@ -110,6 +128,7 @@ def _seed(factory):
             allowed_tools=TOOLS,
             tool_definitions=_product_definitions(*TOOLS),
             resource_grants=(grant,),
+            metadata={"agent_profile_id": str(profile.id)},
         )
 
 
@@ -117,11 +136,47 @@ def _call(factory, context, tool, arguments):
     with factory() as session:
         user = ExecutionIdentityService(session).for_run(context.workspace_id, context.run_id)
         with execution_resource_queries(session, context.workspace_id, user):
-            result = BackendToolExecutor(session).prepare_tool(
+            secrets = SecretEncryptionService(secret="knowledge-acceptance-secret", key_id="test")
+            executor = BackendToolExecutor(session, secret_service=secrets)
+            call_id = uuid4().hex
+            if tool == "archive_knowledge":
+                review = executor.review_tool_call(
+                    context=context, tool_name=tool, arguments=arguments
+                )
+                assert review["required"]
+                approval = Approval(
+                    workspace_id=context.workspace_id,
+                    task_id=context.task_id,
+                    agent_run_id=context.run_id,
+                    approval_type="product.tool",
+                    risk_level="medium",
+                    status="approved",
+                    created_at=datetime.now(UTC),
+                )
+                session.add(approval)
+                session.flush()
+                pending = PendingToolInvocationService(session, secrets).create_or_get(
+                    PendingToolInvocationRequest(
+                        workspace_id=context.workspace_id,
+                        task_id=context.task_id,
+                        agent_run_id=context.run_id,
+                        approval_id=approval.id,
+                        tool_call_id=call_id,
+                        tool_name=tool,
+                        tool_kind="product",
+                        arguments=arguments,
+                        policy_decision=review,
+                        idempotency_key=call_id,
+                    )
+                )
+                pending.status = "approved"
+                session.commit()
+            result = executor.prepare_tool(
                 context=context,
                 tool_name=tool,
                 arguments=arguments,
                 approval_granted=True,
+                tool_call_id=call_id,
             )
         return result
 
@@ -335,6 +390,19 @@ def test_memory_revision_reads_enforce_scope_and_read_only_grants():
         Base.metadata.create_all(engine)
         factory = sessionmaker(engine, expire_on_commit=False)
         context = _seed(factory)
+        context = replace(
+            context,
+            resource_grants=(
+                replace(
+                    context.resource_grants[0],
+                    locator={
+                        "source_types": ["semantic_memory", "agent_episode"],
+                        "scope_types": ["workspace"],
+                        "scope_ids": [str(context.workspace_id)],
+                    },
+                ),
+            ),
+        )
         other = _seed(factory)
         args = {
             "scope_id": str(context.workspace_id),
@@ -348,6 +416,37 @@ def test_memory_revision_reads_enforce_scope_and_read_only_grants():
         created = _call(factory, context, "upsert_semantic_memory", args)
         assert created.status == "completed", created.error
         memory_id = created.output["id"]
+        knowledge_only = replace(
+            context,
+            resource_grants=(
+                replace(context.resource_grants[0], locator={"source_types": ["knowledge_source"]}),
+            ),
+        )
+        assert (
+            _call(
+                factory,
+                knowledge_only,
+                "upsert_semantic_memory",
+                {
+                    **args,
+                    "expected_revision": 1,
+                    "content": "Forbidden replacement",
+                },
+            ).status
+            == "failed"
+        )
+        assert (
+            _call(
+                factory,
+                knowledge_only,
+                "archive_semantic_memory",
+                {
+                    "memory_entry_id": memory_id,
+                    "expected_revision": 1,
+                },
+            ).status
+            == "failed"
+        )
         updated = _call(
             factory,
             context,
@@ -386,6 +485,20 @@ def test_memory_revision_reads_enforce_scope_and_read_only_grants():
             == 1
         )
         assert _call(factory, context, "list_semantic_memory", {}).output["total"] == 1
+        matches = _call(
+            factory, context, "search_workspace_memory", {"query": "original evidence", "limit": 3}
+        ).output["items"]
+        assert matches and matches[0]["source_type"] == "semantic_memory"
+        assert matches[0]["memory_entry_id"] == memory_id
+        assert (
+            _call(
+                factory,
+                knowledge_only,
+                "search_workspace_memory",
+                {"query": "original evidence", "limit": 3},
+            ).output["items"]
+            == []
+        )
         audit_reader = replace(
             context,
             resource_grants=(
@@ -476,3 +589,29 @@ def test_memory_revision_reads_enforce_scope_and_read_only_grants():
             ).output["total"]
             == 1
         )
+
+
+def test_knowledge_archive_requires_approval_before_mutation():
+    with _temporary_postgres_schema() as engine:
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(engine, expire_on_commit=False)
+        context = _seed(factory)
+        created = _call(
+            factory, context, "create_knowledge", {"name": "Temporary", "content": "Data"}
+        )
+        assert created.status == "completed", created.error
+        arguments = {"source_id": created.output["source_id"], "expected_version": 1}
+        with factory() as session:
+            user = ExecutionIdentityService(session).for_run(context.workspace_id, context.run_id)
+            with execution_resource_queries(session, context.workspace_id, user):
+                review = BackendToolExecutor(session).review_tool_call(
+                    context=context,
+                    tool_name="archive_knowledge",
+                    arguments=arguments,
+                )
+            assert review["required"] is True and review["blocked"] is False
+            source = session.get(KnowledgeSource, UUID(arguments["source_id"]))
+            assert source.status == "active" and source.version == 1
+        archived = _call(factory, context, "archive_knowledge", arguments)
+        assert archived.status == "completed", archived.error
+        assert archived.output["status"] == "archived"

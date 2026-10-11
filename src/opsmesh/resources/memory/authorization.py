@@ -58,7 +58,7 @@ class AuthorizedMemoryScope:
         scope_type: str,
         scope_id: str,
         tags: set[str],
-        source_type: str = "workspace_memory",
+        source_type: str,
     ) -> bool:
         return (
             (self.source_types is None or source_type in self.source_types)

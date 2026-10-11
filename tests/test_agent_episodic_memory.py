@@ -152,7 +152,7 @@ def test_decisions_failures_and_human_feedback_create_distinct_episodes() -> Non
         workspace_id=workspace.id,
         query="command_failed",
         limit=5,
-        source_types={"workspace_memory"},
+        source_types={"agent_run"},
     )
     assert hits[0]["metadata"]["source_metadata"]["task"]["id"] == str(task.id)
     assert hits[0]["metadata"]["source_metadata"]["run"]["id"] == str(run.id)

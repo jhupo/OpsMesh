@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from opsmesh.capabilities.catalog.product_tools import PRODUCT_TOOL_CATALOG
 from opsmesh.governance.reviews.configured import ConfiguredApprovalService, ConfiguredReview
 from opsmesh.shared.config import Settings
 
@@ -62,6 +63,7 @@ class ToolExecutionReviewService:
         arguments: dict[str, object],
         context: dict[str, object],
     ) -> ToolExecutionReview:
+        definition = next((item for item in PRODUCT_TOOL_CATALOG if item.name == tool_name), None)
         return self._convert(
             self._reviewer.review(
                 workspace_id=workspace_id,
@@ -69,6 +71,8 @@ class ToolExecutionReviewService:
                 name=tool_name,
                 arguments=arguments,
                 context=context,
+                configured_review=definition.requires_approval if definition is not None else False,
+                force_human=definition.requires_approval if definition is not None else False,
             )
         )
 

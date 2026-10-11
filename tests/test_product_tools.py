@@ -370,7 +370,7 @@ def test_semantic_memory_can_be_versioned_searched_and_archived() -> None:
     assert entry.workspace_id == workspace.id
     assert entry.tags == ["customer", "renewal"]
     assert entry.importance == 77
-    assert results[0]["source_type"] == "workspace_memory"
+    assert results[0]["source_type"] == "semantic_memory"
     assert results[0]["source_id"] == str(entry.id)
     assert results[0]["memory_entry_id"] == str(entry.id)
     assert other_results == []
