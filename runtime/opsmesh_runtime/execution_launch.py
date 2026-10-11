@@ -16,7 +16,7 @@ def main() -> None:
     if os.getuid() != uid_value or os.geteuid() != uid_value:
         raise PermissionError("Execution UID does not match its allocation")
     marker = Path(f"/run/opsmesh-identities/{uid_value}/allocation")
-    if UUID(marker.read_text()) != UUID(allocation):
+    if UUID(str(marker.readlink())) != UUID(allocation):
         raise PermissionError("Execution allocation has been revoked")
     # The process and every child inherit this unprivileged identity. Docker's
     # no-new-privileges prevents setuid binaries from regaining supervisor rights.

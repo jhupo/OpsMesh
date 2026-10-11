@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import tarfile
 from uuid import UUID
 
 from opsmesh.resources.files.security import validate_runtime_relative_path
@@ -38,6 +40,7 @@ class DockerRunProjectFilesystem:
             raise RuntimeError("Run filesystem has no execution allocation")
         self._identity = allocation_identity(allocation)
         self._root_path = f"{RUNTIME_WORKSPACE_ROOT}/runs/{run_id}"
+        self._archive_prefix = f"runs/{run_id}"
         self._require_workspace_mount(runtime)
 
     @property
@@ -47,8 +50,8 @@ class DockerRunProjectFilesystem:
     def stage_archive(self, archive: bytes) -> None:
         self._client.copy_archive_to_container(
             self._container_id,
-            RUNTIME_WORKSPACE_ROOT,
-            archive,
+            self._root_path,
+            self._scoped_archive(archive),
             self._timeout_seconds,
         )
         result = self._client.exec_command(
@@ -67,6 +70,26 @@ class DockerRunProjectFilesystem:
         )
         if sealed.exit_code:
             raise RuntimeError("Runtime filesystem could not be sealed")
+
+    def _scoped_archive(self, archive: bytes) -> bytes:
+        output = io.BytesIO()
+        with (
+            tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as source,
+            tarfile.open(fileobj=output, mode="w") as target,
+        ):
+            for member in source.getmembers():
+                if member.isdir() and member.name in {"runs", self._archive_prefix}:
+                    continue
+                if not member.name.startswith(f"{self._archive_prefix}/"):
+                    raise ValueError("Project archive is outside its run workspace")
+                if not (member.isfile() or member.isdir()):
+                    raise ValueError("Project archive contains an unsupported entry")
+                stream = source.extractfile(member) if member.isfile() else None
+                member.name = validate_runtime_relative_path(
+                    member.name.removeprefix(f"{self._archive_prefix}/")
+                )
+                target.addfile(member, stream)
+        return output.getvalue()
 
     def read_file(self, relative_path: str, *, max_bytes: int) -> bytes | None:
         normalized = validate_runtime_relative_path(relative_path)

@@ -34,6 +34,7 @@ from opsmesh.runtime.backends.registry import RuntimeBackendRegistry
 from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
 from opsmesh.runtime.instances.contracts import RuntimeCommandResult
 from opsmesh.runtime.instances.models import WorkspaceRuntime
+from opsmesh.runtime.instances.project_files import DockerRunProjectFilesystem
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
@@ -83,16 +84,20 @@ class FakeDockerClient:
         timeout_seconds: int,
     ) -> None:
         assert container_id == "container-1"
-        assert destination_path == "/workspace"
+        assert destination_path.startswith("/workspace/runs/")
         assert timeout_seconds == 60
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
             for member in bundle.getmembers():
-                self.staged_modes[member.name] = member.mode
+                self.staged_modes[
+                    f"{destination_path.removeprefix(chr(47) + 'workspace/')}/{member.name}"
+                ] = member.mode
                 if not member.isfile():
                     continue
                 stream = bundle.extractfile(member)
                 assert stream is not None
-                self.staged_files[member.name] = stream.read()
+                self.staged_files[
+                    f"{destination_path.removeprefix(chr(47) + 'workspace/')}/{member.name}"
+                ] = stream.read()
 
     def copy_file_from_container(
         self,
@@ -124,6 +129,29 @@ class ProjectIOFixture:
     output: WorkspaceProjectOutput
     source_file: WorkspaceFile
     run: AgentRun
+
+
+@pytest.mark.parametrize("entry", ["../neighbour/file", "link", "absolute"])
+def test_project_archive_rejects_entries_outside_run_scope(tmp_path: Path, entry: str) -> None:
+    fixture = _fixture(tmp_path)
+    runtime = fixture.session.get(WorkspaceRuntime, fixture.run.runtime_id)
+    assert runtime is not None
+    filesystem = DockerRunProjectFilesystem(
+        fixture.docker, runtime, fixture.run.id, timeout_seconds=60
+    )
+    content = io.BytesIO()
+    with tarfile.open(fileobj=content, mode="w") as bundle:
+        member = tarfile.TarInfo(f"runs/{fixture.run.id}/{entry}")
+        if entry == "link":
+            member.type = tarfile.SYMTYPE
+            member.linkname = "../../neighbour"
+        elif entry == "absolute":
+            member.name = "/workspace/other/file"
+        bundle.addfile(member, io.BytesIO())
+    with pytest.raises(ValueError):
+        filesystem.stage_archive(content.getvalue())
+    assert fixture.docker.staged_files == {}
+    assert fixture.docker.cleanup_commands == []
 
 
 def test_managed_runtime_stages_snapshot_and_versions_declared_outputs(tmp_path: Path) -> None:

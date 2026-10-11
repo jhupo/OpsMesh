@@ -52,7 +52,6 @@ def initialize() -> None:
     Path("/run/opsmesh-identities").mkdir(mode=0o755, exist_ok=True)
     for directory in ("/tmp/opsmesh-mcp", "/tmp/opsmesh-runs"):
         Path(directory).mkdir(mode=0o711, exist_ok=True)
-        os.chmod(directory, 0o711)
     nft(initialize_rules(proxy.pw_uid, resolvers()))
     ports = "\n".join(
         f"http_port 127.0.0.1:{FIRST_PROXY_PORT + slot}" for slot in range(EXECUTION_SLOTS)
@@ -143,15 +142,24 @@ def configure(value: dict) -> None:
     )
     nft(identity_rules(policy, resolvers(), exists=exists))
     temporary = path.with_suffix(".pending")
-    temporary.write_text(json.dumps(policy.as_dict()))
-    os.chmod(temporary, 0o640)
-    os.chown(temporary, 0, pwd.getpwnam(PROXY_USER).pw_gid)
+    temporary.unlink(missing_ok=True)
+    # Create with the final read scope, rather than briefly publishing a default
+    # world-readable file. Only root and the trusted proxy read these ACLs.
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
+    with os.fdopen(descriptor, "w") as output:
+        os.fchown(output.fileno(), 0, pwd.getpwnam(PROXY_USER).pw_gid)
+        output.write(json.dumps(policy.as_dict()))
     temporary.replace(path)
     directory = Path(f"/run/opsmesh-identities/{policy.uid}")
     directory.mkdir(mode=0o555, exist_ok=True)
     marker = directory / "allocation"
-    marker.write_text(str(policy.allocation_id))
-    os.chmod(marker, 0o444)
+    # An allocation ID is public metadata, never a credential. A root-owned
+    # symlink publishes it without granting workloads access to a writable file.
+    if marker.is_symlink():
+        if marker.readlink() != Path(str(policy.allocation_id)):
+            raise ValueError("Execution allocation marker does not match")
+    else:
+        marker.symlink_to(str(policy.allocation_id))
     for parent in ("/tmp/opsmesh-mcp", "/tmp/opsmesh-runs"):
         private = Path(parent) / str(policy.uid)
         private.mkdir(mode=0o700, exist_ok=True)
@@ -202,6 +210,13 @@ def main() -> None:
     request = json.loads(raw)
     if set(request) != {"action", "execution"}:
         raise ValueError("Execution control request is invalid")
+    # Docker start acknowledges process creation, not supervisor readiness. No
+    # workload is admitted before both the kernel policy and proxy are initialized.
+    deadline = time.monotonic() + 20
+    while not Path("/run/squid/squid.pid").exists():
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Runtime supervisor is not ready")
+        time.sleep(0.05)
     with (ROOT / "control.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if request["action"] == "configure":

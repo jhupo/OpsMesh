@@ -317,10 +317,10 @@ class DockerProbe:
         self.execute(0, "import os; os.mkdir('/workspace/input',0o700)")
         bundle = io.BytesIO()
         with tarfile.open(fileobj=bundle, mode="w") as archive:
-            member = tarfile.TarInfo("input/staged.txt")
+            member = tarfile.TarInfo("staged.txt")
             member.size, member.mode = 6, 0o600
             archive.addfile(member, io.BytesIO(b"staged"))
-        docker.copy_archive_to_container(self.name, "/workspace", bundle.getvalue(), 30)
+        docker.copy_archive_to_container(self.name, "/workspace/input", bundle.getvalue(), 30)
         self.execute(
             0,
             "import os; os.chown('/workspace/input',100000,100000); "
@@ -347,6 +347,19 @@ class DockerProbe:
             pass
         else:
             raise AssertionError("Sandbox file read bypassed execution ownership")
+        malicious = io.BytesIO()
+        with tarfile.open(fileobj=malicious, mode="w") as archive:
+            member = tarfile.TarInfo("link/overwrite")
+            member.size = 0
+            archive.addfile(member, io.BytesIO())
+        try:
+            docker.copy_archive_to_container(
+                self.name, "/workspace/input", malicious.getvalue(), 30
+            )
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("Archive followed a link outside its run scope")
         print(
             json.dumps(
                 {

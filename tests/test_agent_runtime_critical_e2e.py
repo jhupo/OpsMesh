@@ -118,14 +118,16 @@ class CriticalDocker:
         timeout_seconds: int,
     ) -> None:
         assert container_id == "critical-container"
-        assert destination_path == "/workspace"
+        assert destination_path.startswith("/workspace/runs/")
         assert timeout_seconds == 60
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
             for member in bundle.getmembers():
                 if member.isfile():
                     stream = bundle.extractfile(member)
                     assert stream is not None
-                    self.staged_files[member.name] = stream.read()
+                    self.staged_files[
+                        f"{destination_path.removeprefix(chr(47) + 'workspace/')}/{member.name}"
+                    ] = stream.read()
 
     def copy_file_from_container(
         self,
