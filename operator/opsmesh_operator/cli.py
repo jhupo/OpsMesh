@@ -49,7 +49,7 @@ def parser() -> argparse.ArgumentParser:
     setup = commands.add_parser("install")
     setup.add_argument("--version", required=True)
     setup.add_argument("--origin", required=True)
-    setup.add_argument("--mode", choices=["compose", "systemd"], default="compose")
+    setup.add_argument("--mode", choices=["compose", "systemd"], default="systemd")
     setup.add_argument("--repository", default="jhupo/OpsMesh")
     admin = commands.add_parser("admin")
     admin_commands = admin.add_subparsers(dest="admin_action", required=True)

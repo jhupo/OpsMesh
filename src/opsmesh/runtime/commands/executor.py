@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime
 from subprocess import TimeoutExpired
 from uuid import UUID
@@ -11,14 +12,15 @@ from opsmesh.runtime.commands.output import (
     command_failure_metadata,
     positive_int_limit,
 )
-from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
+from opsmesh.runtime.instances.allocations import RuntimeAllocationStore, allocation_identity
 from opsmesh.runtime.instances.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
     RuntimeCommandResult,
 )
 from opsmesh.runtime.instances.events import RuntimeEventLog
-from opsmesh.runtime.instances.models import RuntimeCommand, WorkspaceRuntime
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
+from opsmesh.runtime.instances.models import RuntimeAllocation, RuntimeCommand, WorkspaceRuntime
 from opsmesh.runtime.instances.policies.runtime import require_container
 from opsmesh.runtime.instances.security_events import RuntimeSecurityEventRecorder
 
@@ -44,6 +46,8 @@ class RuntimeCommandExecutor:
         command: list[str],
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
+        result_consumer: Callable[[RuntimeCommandResult, RuntimeExecutionIdentity], None]
+        | None = None,
     ) -> RuntimeCommand:
         record = self._create_command_record(
             workspace_id=workspace_id,
@@ -57,6 +61,7 @@ class RuntimeCommandExecutor:
             command=command,
             input_file=input_file,
             working_dir=working_dir,
+            result_consumer=result_consumer,
         )
 
     async def execute_command_async(
@@ -91,6 +96,8 @@ class RuntimeCommandExecutor:
         command: list[str],
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
+        result_consumer: Callable[[RuntimeCommandResult, RuntimeExecutionIdentity], None]
+        | None = None,
     ) -> RuntimeCommand:
         timeout_seconds = self._prepare_execution(
             workspace_id=workspace_id,
@@ -98,14 +105,19 @@ class RuntimeCommandExecutor:
             record=record,
             command=command,
         )
+        identity = self._identity(runtime, record)
         try:
+            self._docker.configure_execution(runtime.docker_container_id or "", identity)
             result = self._execute_docker_command(
                 runtime=runtime,
                 command=command,
                 timeout_seconds=timeout_seconds,
                 input_file=input_file,
                 working_dir=working_dir,
+                identity=identity,
             )
+            if result_consumer is not None:
+                result_consumer(result, identity)
         except Exception as exc:
             self._record_execution_error(
                 runtime=runtime,
@@ -116,6 +128,8 @@ class RuntimeCommandExecutor:
             )
         else:
             self._record_execution_result(runtime, record, command, result)
+        finally:
+            self._release_identity(runtime, record, identity)
         return self._persist_result(record)
 
     async def execute_existing_command_async(
@@ -134,7 +148,11 @@ class RuntimeCommandExecutor:
             record=record,
             command=command,
         )
+        identity = self._identity(runtime, record)
         try:
+            await asyncio.to_thread(
+                self._docker.configure_execution, runtime.docker_container_id or "", identity
+            )
             result = await asyncio.to_thread(
                 self._execute_docker_command,
                 runtime=runtime,
@@ -142,6 +160,7 @@ class RuntimeCommandExecutor:
                 timeout_seconds=timeout_seconds,
                 input_file=input_file,
                 working_dir=working_dir,
+                identity=identity,
             )
         except Exception as exc:
             self._record_execution_error(
@@ -153,6 +172,11 @@ class RuntimeCommandExecutor:
             )
         else:
             self._record_execution_result(runtime, record, command, result)
+        finally:
+            await asyncio.to_thread(
+                self._docker.revoke_execution, runtime.docker_container_id or "", identity
+            )
+            RuntimeAllocationStore(self._session).release(runtime, "command", record.id)
         return self._persist_result(record)
 
     def _create_command_record(
@@ -196,6 +220,17 @@ class RuntimeCommandExecutor:
         record.command = command
         record.status = "running"
         record.started_at = datetime.now(UTC)
+        self._session.add(
+            RuntimeAllocation(
+                workspace_id=runtime.workspace_id,
+                workspace_runtime_id=runtime.id,
+                host_id=runtime.host_id,
+                owner_kind="command",
+                owner_id=record.id,
+                execution_uid=100_000,
+                network_policy=dict(runtime.network_policy),
+            )
+        )
         self._session.flush()
         self._session.commit()
         return timeout_seconds
@@ -208,31 +243,31 @@ class RuntimeCommandExecutor:
         timeout_seconds: int,
         input_file: RuntimeCommandInputFile | None,
         working_dir: str | None,
+        identity: RuntimeExecutionIdentity,
     ) -> RuntimeCommandResult:
         container_id = runtime.docker_container_id or ""
-        if input_file is not None and working_dir is not None:
-            return self._docker.exec_command(
-                container_id,
-                command,
-                timeout_seconds,
-                input_file=input_file,
-                working_dir=working_dir,
-            )
-        if input_file is not None:
-            return self._docker.exec_command(
-                container_id,
-                command,
-                timeout_seconds,
-                input_file=input_file,
-            )
-        if working_dir is not None:
-            return self._docker.exec_command(
-                container_id,
-                command,
-                timeout_seconds,
-                working_dir=working_dir,
-            )
-        return self._docker.exec_command(container_id, command, timeout_seconds)
+        return self._docker.exec_command(
+            container_id,
+            command,
+            timeout_seconds,
+            input_file=input_file,
+            working_dir=working_dir,
+            identity=identity,
+        )
+
+    def _identity(
+        self, runtime: WorkspaceRuntime, record: RuntimeCommand
+    ) -> RuntimeExecutionIdentity:
+        allocation = RuntimeAllocationStore(self._session).get(runtime, "command", record.id)
+        if allocation is None:
+            raise RuntimeError("Command has no execution identity")
+        return allocation_identity(allocation)
+
+    def _release_identity(
+        self, runtime: WorkspaceRuntime, record: RuntimeCommand, identity: RuntimeExecutionIdentity
+    ) -> None:
+        self._docker.revoke_execution(runtime.docker_container_id or "", identity)
+        RuntimeAllocationStore(self._session).release(runtime, "command", record.id)
 
     def _record_execution_error(
         self,

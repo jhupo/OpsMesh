@@ -43,7 +43,7 @@ class Deployment(ABC):
         source = ReleaseSource(self.installation.repository)
         cache = self.root / "downloads" / manifest.tag
         cache.mkdir(parents=True, exist_ok=True)
-        target = self.installation.release_dir(manifest.tag)
+        target = self.installation.release_dir(manifest)
         if target.exists():
             existing = ReleaseManifest.model_validate_json(
                 (target / "release-manifest.json").read_bytes()
@@ -60,7 +60,7 @@ class Deployment(ABC):
             if file.name == f"opsmesh-server-{manifest.tag}-linux-amd64.tar.gz"
         )
         archive = source.download_file(manifest, record, cache)
-        staging = self.root / "releases" / f".{manifest.tag}.staging"
+        staging = self.root / "releases" / f".{manifest.tag}-{manifest.commit}.staging"
         # An interrupted stage is quarantined, never recursively deleted or reused.
         if staging.exists():
             raise RuntimeError("Interrupted staging directory requires operator inspection")
@@ -69,12 +69,13 @@ class Deployment(ABC):
             staging / "release-manifest.json", manifest.model_dump_json(indent=2), mode=0o644
         )
         runtime_images = {manifest.image("runtime")}
-        for path in (self.root / "releases").glob("v*/release-manifest.json"):
+        for path in (self.root / "releases").glob("*/release-manifest.json"):
             retained = ReleaseManifest.model_validate_json(path.read_bytes())
             runtime_images.add(retained.image("runtime"))
         atomic_write(
             staging / "images.env",
-            f"OPSMESH_BACKEND_IMAGE={manifest.image('backend')}\n"
+            f"OPSMESH_API_IMAGE={manifest.image('api')}\n"
+            f"OPSMESH_WORKER_IMAGE={manifest.image('worker')}\n"
             f"OPSMESH_RUNTIME_IMAGE={manifest.image('runtime')}\n"
             f"OPSMESH_RUNTIME_ALLOWED_IMAGES={json.dumps(sorted(runtime_images))}\n"
             f"OPSMESH_BUILD_COMMIT={manifest.commit}\n",
@@ -93,7 +94,7 @@ class Deployment(ABC):
         return target
 
     def switch(self, manifest: ReleaseManifest) -> None:
-        target = self.installation.release_dir(manifest.tag)
+        target = self.installation.release_dir(manifest)
         temporary = self.root / ".current.next"
         temporary.unlink(missing_ok=True)
         temporary.symlink_to(target, target_is_directory=True)
@@ -154,7 +155,8 @@ class ComposeDeployment(Deployment):
         client = docker.from_env(timeout=self.installation.timeout_seconds)
         try:
             client.ping()
-            client.images.pull(manifest.image("backend"))
+            client.images.pull(manifest.image("api"))
+            client.images.pull(manifest.image("worker"))
             client.images.pull(manifest.image("runtime"))
         finally:
             client.close()
@@ -162,13 +164,13 @@ class ComposeDeployment(Deployment):
 
     def infrastructure(self, manifest: ReleaseManifest) -> None:
         run_command(
-            self.command(self.installation.release_dir(manifest.tag))
+            self.command(self.installation.release_dir(manifest))
             + ["up", "-d", "--wait", "postgres", "redis"]
         )
 
     def migrate(self, manifest: ReleaseManifest) -> None:
         run_command(
-            self.command(self.installation.release_dir(manifest.tag))
+            self.command(self.installation.release_dir(manifest))
             + ["run", "--rm", "--no-deps", "migrate"],
             timeout=self.installation.timeout_seconds,
         )
@@ -184,7 +186,7 @@ class ComposeDeployment(Deployment):
 
     def _run_admin_command(self, manifest: ReleaseManifest, command: str) -> str:
         return run_command(
-            self.command(self.installation.release_dir(manifest.tag))
+            self.command(self.installation.release_dir(manifest))
             + [
                 "run",
                 "--rm",
@@ -207,7 +209,7 @@ class ComposeDeployment(Deployment):
 
     def start(self, manifest: ReleaseManifest) -> None:
         run_command(
-            self.command(self.installation.release_dir(manifest.tag))
+            self.command(self.installation.release_dir(manifest))
             + ["up", "-d", "--no-deps", "--wait", "api", "worker"],
             timeout=self.installation.timeout_seconds,
         )
@@ -215,6 +217,9 @@ class ComposeDeployment(Deployment):
 
 class SystemdDeployment(Deployment):
     def prepare(self, directory: Path, manifest: ReleaseManifest) -> None:
+        identity = json.loads((directory / "BUILD.json").read_bytes())
+        if identity["commit"] != manifest.commit:
+            raise ValueError("Bundled server commit does not match release manifest")
         result = json.loads(
             run_command([str(directory / "opsmesh-server"), "check"], cwd=directory)
         )
@@ -222,7 +227,7 @@ class SystemdDeployment(Deployment):
             raise ValueError("Bundled server version does not match release manifest")
 
     def migrate(self, manifest: ReleaseManifest) -> None:
-        directory = self.installation.release_dir(manifest.tag)
+        directory = self.installation.release_dir(manifest)
         # Persistent configuration is linked, never copied into release assets.
         env_link = directory / ".env"
         if not env_link.exists():
@@ -236,7 +241,7 @@ class SystemdDeployment(Deployment):
         run_command(["systemctl", "start", "opsmesh-api", "opsmesh-worker"])
 
     def bootstrap_admin(self, manifest: ReleaseManifest) -> str:
-        directory = self.installation.release_dir(manifest.tag)
+        directory = self.installation.release_dir(manifest)
         return run_command(
             [str(directory / "opsmesh-server"), "bootstrap-admin"],
             cwd=directory,

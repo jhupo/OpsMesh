@@ -1,6 +1,6 @@
 name: opsmesh
-x-backend: &backend
-  image: ${OPSMESH_BACKEND_IMAGE:?Set an attested release image digest}
+x-api: &api
+  image: ${OPSMESH_API_IMAGE:?Set an attested API image digest}
   env_file: ${OPSMESH_ROOT:?Set installation root}/.env
   environment: &environment
     OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:?Set database password}@postgres:5432/opsmesh
@@ -18,7 +18,7 @@ x-backend: &backend
   cpus: 2
 services:
   api:
-    <<: *backend
+    <<: *api
     environment:
       <<: *environment
       OPSMESH_SERVICE_NAME: opsmesh-api
@@ -29,18 +29,18 @@ services:
       timeout: 4s
       retries: 24
   worker:
-    <<: *backend
+    <<: *api
+    image: ${OPSMESH_WORKER_IMAGE:?Set an attested Worker image digest}
     environment:
       <<: *environment
       OPSMESH_SERVICE_NAME: opsmesh-worker
-    command: [python, -m, opsmesh.runtime.workers.cli]
     # Only the runtime-management worker has daemon authority. Never expose this to API/runtimes.
     group_add: ['${OPSMESH_DOCKER_GID:?Set Docker socket group}']
     volumes:
       - ${OPSMESH_ROOT}/data/storage:/app/.opsmesh-storage
       - /var/run/docker.sock:/var/run/docker.sock
   migrate:
-    <<: *backend
+    <<: *api
     profiles: [maintenance]
     restart: 'no'
     command: [alembic, upgrade, head]

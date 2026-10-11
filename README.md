@@ -5,7 +5,7 @@
 
 OpsMesh 是企业级 Agent 控制面，提供身份与工作空间、Agent 与团队、任务编排、知识与记忆、MCP 与插件、Runtime、审批、审计和运行运维 API。客户端在独立项目开发，本仓库只交付后端服务、执行运行时和管理工具。
 
-PostgreSQL 保存持久业务事实；Redis 承担队列、锁和事件发布。API 接收请求并保存执行意图，Worker 调度任务；Agent SDK 与用户工具在授权 Runtime 中执行。共享宿主使用独立执行槽和进程组，增加 Agent 或托管 MCP 不自动创建容器。
+PostgreSQL 保存持久业务事实；Redis 承担队列、锁和事件发布。API 接收请求并保存执行意图，Worker 调度任务；Agent SDK 与用户工具在授权 Runtime 中执行。共享宿主使用物理宿主执行槽、独立执行 UID 与内核网络策略，增加 Agent 或托管 MCP 不自动创建容器。
 
 ## 目录
 

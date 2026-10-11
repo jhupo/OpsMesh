@@ -10,6 +10,7 @@ from uuid import uuid4
 from opsmesh.capabilities.mcp.execution.contracts import McpExecutionError
 from opsmesh.runtime.agent_host.wire import RpcFrame
 from opsmesh.runtime.instances.contracts import DockerRuntimeClient
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
 from opsmesh.shared.concurrency import BlockingIO
 
 
@@ -20,12 +21,18 @@ class RuntimeMcpOperation:
     transport: str
     request: dict[str, object] = field(repr=False)
     timeout_seconds: int
+    identity: RuntimeExecutionIdentity
     working_dir: str = "/"
     server_id: str | None = None
 
     async def execute(self, io: BlockingIO) -> dict[str, object]:
         channel = await io.run(
-            partial(self.docker.open_mcp_channel, self.container_id, working_dir=self.working_dir)
+            partial(
+                self.docker.open_mcp_channel,
+                self.container_id,
+                working_dir=self.working_dir,
+                identity=self.identity,
+            )
         )
         operation_id = uuid4().hex
         pid = None
@@ -70,7 +77,12 @@ class RuntimeMcpOperation:
             try:
                 if pid is not None:
                     await io.run(
-                        partial(self.docker.terminate_agent_process, self.container_id, pid)
+                        partial(
+                            self.docker.terminate_agent_process,
+                            self.container_id,
+                            pid,
+                            identity=self.identity,
+                        )
                     )
             finally:
                 with suppress(ConnectionError, BrokenPipeError):

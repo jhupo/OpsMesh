@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 from opsmesh.agents.profiles.models import AgentProfile
+from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.identity.users.models import User
 from opsmesh.orchestration.definitions.application import (
     OrchestrationDefinitionApplicationService,
@@ -31,7 +32,9 @@ from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.shared.db.base import Base
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
+from opsmesh.workspaces.members.models import WorkspaceMember
 from tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema
+from tests.test_worker_run_execution import _seed_default_model_provider
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("OPSMESH_TEST_POSTGRES_URL"), reason="PostgreSQL integration URL required"
@@ -58,6 +61,9 @@ def test_plugin_deployment_admission_recovery_service_access_and_revocation() ->
     from tests.test_runtime_manager import FakeDockerClient
 
     class ProcessDocker(FakeDockerClient):
+        def node_identity(self) -> str:
+            return "test-node"
+
         def __init__(self):
             super().__init__()
             self.containers = {}
@@ -213,6 +219,9 @@ def test_concurrent_publish_and_apply_keep_one_revision_and_one_plan() -> None:
             workspace = Workspace(owner=user, name="Workflow", slug=uuid4().hex)
             session.add(workspace)
             session.flush()
+            session.add(WorkspaceMember(workspace=workspace, user=user, role="owner"))
+            session.flush()
+            _seed_default_model_provider(session, workspace_id=workspace.id, user_id=user.id)
             agent = AgentProfile(workspace_id=workspace.id, name="Manager", role="manager")
             session.add(agent)
             session.flush()
@@ -227,6 +236,8 @@ def test_concurrent_publish_and_apply_keep_one_revision_and_one_plan() -> None:
                 workspace_id=workspace.id,
                 agent_team_id=team.id,
                 title="Workflow",
+                created_by_user_id=user.id,
+                execution_identity=ExecutionIdentityService(session).capture(workspace.id, user.id),
             )
             session.add(task)
             definition = OrchestrationDefinitionService(session).create_definition(
@@ -293,7 +304,7 @@ def test_concurrent_publish_and_apply_keep_one_revision_and_one_plan() -> None:
 
 
 def test_revision_migration_preserves_published_nodes_and_skipped_evidence() -> None:
-    migration = import_module("backend.migrations.versions.0075_workflow_revisions")
+    migration = import_module("migrations.versions.0075_workflow_revisions")
     with _temporary_postgres_schema() as engine:
         Base.metadata.create_all(engine)
         factory = sessionmaker(bind=engine, expire_on_commit=False)

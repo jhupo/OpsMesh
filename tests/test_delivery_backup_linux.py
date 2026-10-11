@@ -36,13 +36,15 @@ def test_real_backup_restore_preserves_data_configuration_and_ownership(
     installation = Installation(root=tmp_path, mode="systemd")
     release = ReleaseManifest(
         tag="v0.1.0rc1", repository="jhupo/OpsMesh", commit="a" * 40,
-        backend_digest="sha256:" + "b" * 64, runtime_digest="sha256:" + "c" * 64,
+        api_image="ghcr.io/jhupo/opsmesh-api@sha256:" + "b" * 64,
+        worker_image="ghcr.io/jhupo/opsmesh-worker@sha256:" + "d" * 64,
+        runtime_image="ghcr.io/jhupo/opsmesh-runtime@sha256:" + "c" * 64,
         database_revision="backup_probe", upgrade_from_revisions=["backup_probe"],
         rollback_database_revisions=["backup_probe"], connector_protocol=2,
         platforms=["linux/amd64"],
         files=[ReleaseFile(name="probe.tar.gz", size=1, sha256="d" * 64)],
     )
-    directory = installation.release_dir(release.tag)
+    directory = installation.release_dir(release)
     directory.mkdir(parents=True)
     atomic_write(directory / "release-manifest.json", release.model_dump_json())
     (tmp_path / "current").symlink_to(directory, target_is_directory=True)

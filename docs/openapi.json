@@ -2835,10 +2835,8 @@
           },
           "execution_mode": {
             "enum": [
-              "none",
               "isolated",
-              "pooled",
-              "persistent"
+              "shared"
             ],
             "title": "Execution Mode",
             "type": "string"
@@ -2847,6 +2845,18 @@
             "readOnly": true,
             "title": "Has Docker Container",
             "type": "boolean"
+          },
+          "host_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Id"
           },
           "id": {
             "format": "uuid",
@@ -2878,17 +2888,6 @@
             "additionalProperties": true,
             "title": "Network Policy",
             "type": "object"
-          },
-          "pool_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pool Key"
           },
           "runtime_provider": {
             "title": "Runtime Provider",
@@ -2942,12 +2941,12 @@
           "created_at",
           "updated_at",
           "workspace_id",
+          "host_id",
           "runtime_template_id",
           "runtime_space_id",
           "runtime_provider",
           "runtime_type",
           "execution_mode",
-          "pool_key",
           "name",
           "status",
           "connection_status",
@@ -27169,6 +27168,11 @@
             "title": "Created At",
             "type": "string"
           },
+          "host_id": {
+            "format": "uuid",
+            "title": "Host Id",
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -27182,7 +27186,8 @@
           "owner_kind": {
             "enum": [
               "run",
-              "mcp"
+              "mcp",
+              "command"
             ],
             "title": "Owner Kind",
             "type": "string"
@@ -27210,7 +27215,8 @@
           "workspace_id",
           "workspace_runtime_id",
           "owner_kind",
-          "owner_id"
+          "owner_id",
+          "host_id"
         ],
         "title": "RuntimeAllocationResponse",
         "type": "object"
@@ -27371,12 +27377,10 @@
       "RuntimeCreateRequest": {
         "properties": {
           "execution_mode": {
-            "default": "pooled",
+            "default": "shared",
             "enum": [
-              "none",
               "isolated",
-              "pooled",
-              "persistent"
+              "shared"
             ],
             "title": "Execution Mode",
             "type": "string"
@@ -27401,19 +27405,6 @@
             "default": true,
             "title": "Network Disabled",
             "type": "boolean"
-          },
-          "pool_key": {
-            "anyOf": [
-              {
-                "maxLength": 160,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pool Key"
           },
           "runtime_space_id": {
             "anyOf": [
@@ -42650,10 +42641,8 @@
           },
           "execution_mode": {
             "enum": [
-              "none",
               "isolated",
-              "pooled",
-              "persistent"
+              "shared"
             ],
             "title": "Execution Mode",
             "type": "string"
@@ -42662,6 +42651,18 @@
             "readOnly": true,
             "title": "Has Docker Container",
             "type": "boolean"
+          },
+          "host_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host Id"
           },
           "id": {
             "format": "uuid",
@@ -42693,17 +42694,6 @@
             "additionalProperties": true,
             "title": "Network Policy",
             "type": "object"
-          },
-          "pool_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pool Key"
           },
           "runtime_provider": {
             "title": "Runtime Provider",
@@ -42757,12 +42747,12 @@
           "created_at",
           "updated_at",
           "workspace_id",
+          "host_id",
           "runtime_template_id",
           "runtime_space_id",
           "runtime_provider",
           "runtime_type",
           "execution_mode",
-          "pool_key",
           "name",
           "status",
           "connection_status",

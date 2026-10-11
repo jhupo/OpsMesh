@@ -42,7 +42,8 @@ jobs:
       contents: read
       packages: write
     outputs:
-      backend: ${{ steps.backend.outputs.digest }}
+      api: ${{ steps.api.outputs.digest }}
+      worker: ${{ steps.worker.outputs.digest }}
       runtime: ${{ steps.runtime.outputs.digest }}
     env:
       GH_TOKEN: ${{ github.token }}
@@ -64,18 +65,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        id: backend
+        id: api
         with:
           context: .
           file: deploy/images/Dockerfile
           push: true
           platforms: linux/amd64
-          tags: ghcr.io/jhupo/opsmesh:candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          target: api
+          tags: ghcr.io/jhupo/opsmesh-api:candidate-${{ github.run_id }}-${{ github.run_attempt }}
           build-args: BUILD_COMMIT=${{ github.sha }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        id: worker
+        with:
+          context: .
+          file: deploy/images/Dockerfile
+          target: worker
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/jhupo/opsmesh-worker:candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          build-args: BUILD_COMMIT=${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         id: runtime
         with:
@@ -90,22 +106,25 @@ jobs:
           cache-to: type=gha,mode=max,scope=runtime
       - name: Test the exact candidate image digests
         env:
-          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WORKER_DIGEST: ${{ steps.worker.outputs.digest }}
           RUNTIME_DIGEST: ${{ steps.runtime.outputs.digest }}
         run: |
           docker pull "ghcr.io/jhupo/opsmesh-runtime@$RUNTIME_DIGEST"
-          docker pull "ghcr.io/jhupo/opsmesh@$BACKEND_DIGEST"
+          docker pull "ghcr.io/jhupo/opsmesh-api@$API_DIGEST"
+          docker pull "ghcr.io/jhupo/opsmesh-worker@$WORKER_DIGEST"
           uv run python scripts/check_runtime_image.py \
             --image "ghcr.io/jhupo/opsmesh-runtime@$RUNTIME_DIGEST" \
             --fixture tests/fixtures/mcp_stdio_server.py
-          docker run --rm "ghcr.io/jhupo/opsmesh@$BACKEND_DIGEST" python -c 'from opsmesh.main import create_app; create_app()'
+          docker run --rm "ghcr.io/jhupo/opsmesh-api@$API_DIGEST" python -c 'from opsmesh.main import create_app; create_app()'
       - name: Verify fresh production Compose deployment using candidate digests
         env:
-          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WORKER_DIGEST: ${{ steps.worker.outputs.digest }}
           RUNTIME_DIGEST: ${{ steps.runtime.outputs.digest }}
         run: |
           sudo env "PATH=$PATH" GITHUB_ACTIONS=true "DOCKER_CONFIG=$HOME/.docker" \
-            "BACKEND_DIGEST=$BACKEND_DIGEST" "RUNTIME_DIGEST=$RUNTIME_DIGEST" \
+            "API_DIGEST=$API_DIGEST" "WORKER_DIGEST=$WORKER_DIGEST" "RUNTIME_DIGEST=$RUNTIME_DIGEST" \
             .venv/bin/python scripts/ci_command.py .venv/bin/python scripts/check_candidate.py
   stage:
     needs: [gate, candidate, standalone]
@@ -119,7 +138,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.ref_name }}
-      BACKEND_DIGEST: ${{ needs.candidate.outputs.backend }}
+      API_DIGEST: ${{ needs.candidate.outputs.api }}
+      WORKER_DIGEST: ${{ needs.candidate.outputs.worker }}
       RUNTIME_DIGEST: ${{ needs.candidate.outputs.runtime }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -145,10 +165,16 @@ jobs:
           password: ${{ github.token }}
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ghcr.io/jhupo/opsmesh
-          subject-digest: ${{ needs.candidate.outputs.backend }}
+          subject-name: ghcr.io/jhupo/opsmesh-api
+          subject-digest: ${{ needs.candidate.outputs.api }}
           push-to-registry: true
           # Storage records are organization-only; retain registry attestations.
+          create-storage-record: false
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/jhupo/opsmesh-worker
+          subject-digest: ${{ needs.candidate.outputs.worker }}
+          push-to-registry: true
           create-storage-record: false
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -161,7 +187,7 @@ jobs:
         run: |
           install -m 0755 deploy/install.sh dist/install.sh
           uv run python -m scripts.release manifest --tag "$RELEASE_TAG" \
-            --repository "$GITHUB_REPOSITORY" --backend-digest "$BACKEND_DIGEST" --runtime-digest "$RUNTIME_DIGEST"
+            --repository "$GITHUB_REPOSITORY" --api-digest "$API_DIGEST" --worker-digest "$WORKER_DIGEST" --runtime-digest "$RUNTIME_DIGEST"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/*

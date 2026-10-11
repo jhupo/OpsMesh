@@ -54,8 +54,7 @@ class RuntimeControlService:
         limits: RuntimeLimits | None,
         network_disabled: bool,
         runtime_space_id: UUID | None = None,
-        execution_mode: RuntimeExecutionMode = "pooled",
-        pool_key: str | None = None,
+        execution_mode: RuntimeExecutionMode = "shared",
     ) -> WorkspaceRuntime | None:
         return self._provisioning().create_runtime(
             workspace_id=workspace_id,
@@ -65,7 +64,6 @@ class RuntimeControlService:
             network_disabled=network_disabled,
             runtime_space_id=runtime_space_id,
             execution_mode=execution_mode,
-            pool_key=pool_key,
         )
 
     def queue_runtime_create(
@@ -78,8 +76,7 @@ class RuntimeControlService:
         network_disabled: bool,
         runtime_space_id: UUID | None = None,
         requested_by_user_id: UUID | None = None,
-        execution_mode: RuntimeExecutionMode = "pooled",
-        pool_key: str | None = None,
+        execution_mode: RuntimeExecutionMode = "shared",
     ) -> WorkspaceRuntime | None:
         return self._provisioning().queue_runtime_create(
             workspace_id=workspace_id,
@@ -90,7 +87,6 @@ class RuntimeControlService:
             runtime_space_id=runtime_space_id,
             requested_by_user_id=requested_by_user_id,
             execution_mode=execution_mode,
-            pool_key=pool_key,
         )
 
     def complete_queued_runtime_create(
@@ -103,8 +99,7 @@ class RuntimeControlService:
         limits: RuntimeLimits | None,
         network_disabled: bool,
         runtime_space_id: UUID | None = None,
-        execution_mode: RuntimeExecutionMode = "pooled",
-        pool_key: str | None = None,
+        execution_mode: RuntimeExecutionMode = "shared",
     ) -> WorkspaceRuntime | None:
         runtime = self.get_runtime(workspace_id, runtime_id)
         if runtime is None:
@@ -118,7 +113,6 @@ class RuntimeControlService:
             network_disabled=network_disabled,
             runtime_space_id=runtime_space_id,
             execution_mode=execution_mode,
-            pool_key=pool_key,
         )
 
     def list_runtimes(

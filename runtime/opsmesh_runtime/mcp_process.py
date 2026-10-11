@@ -24,7 +24,7 @@ ROOT = Path("/tmp/opsmesh-mcp")
 
 
 def socket_path(identifier: str) -> Path:
-    return ROOT / f"{UUID(identifier).hex}.sock"
+    return ROOT / str(os.getuid()) / f"{UUID(identifier).hex}.sock"
 
 
 async def exchange(path: Path, request: dict[str, Any]) -> dict[str, Any]:
@@ -220,8 +220,8 @@ class McpProcess:
 async def serve(identifier: str, config: dict[str, Any]) -> None:
     import fcntl
 
-    ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = socket_path(identifier)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     with path.with_suffix(".lock").open("w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

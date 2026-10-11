@@ -44,7 +44,7 @@ class RuntimeResourceCleaner:
         container_removed: bool,
         error: str | None = None,
     ) -> dict[str, object]:
-        host_resource_results = self._cleanup_host_resources(runtime)
+        host_resource_results = self._cleanup_host_resources(runtime) if container_removed else []
         success = container_removed and all(
             result.get("success") is not False for result in host_resource_results
         )
@@ -59,7 +59,7 @@ class RuntimeResourceCleaner:
         return dict(evidence)
 
     def _cleanup_host_resources(self, runtime: WorkspaceRuntime) -> list[dict[str, object]]:
-        managed_resources = runtime.capabilities.get("managed_resources")
+        managed_resources = runtime.host.resources if runtime.host is not None else {}
         if not isinstance(managed_resources, dict):
             return []
         results: list[dict[str, object]] = []

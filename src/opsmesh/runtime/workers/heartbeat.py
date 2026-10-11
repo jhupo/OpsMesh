@@ -83,9 +83,7 @@ def worker_heartbeat_details(
         "workspace_health_snapshots_disabled": workspace_health_snapshots_disabled,
         "queue_rehydrated_runs": queue_rehydrated_runs,
         "queue_recovery_failures": queue_recovery_failures,
-        "capacity": {
-            "max_jobs": config.concurrency,
-        },
+        "capacity": config.capacity(),
     }
     if last_error is not None:
         details["last_error"] = last_error

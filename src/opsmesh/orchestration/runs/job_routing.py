@@ -31,6 +31,7 @@ class RunJobRoutingService:
             runtime_modes = [runtime_mode]
         capabilities = string_list(runtime_space.policy.get("worker_capabilities"))
         worker_types = string_list(runtime_space.policy.get("worker_types"))
+        regions = string_list(runtime_space.policy.get("worker_regions"))
         resource_requirements = positive_numeric_usage(
             runtime_space.policy.get("resource_requirements"),
         )
@@ -42,6 +43,8 @@ class RunJobRoutingService:
             routing["worker_types"] = worker_types
         if resource_requirements:
             routing["resource_requirements"] = resource_requirements
+        if regions:
+            routing["regions"] = regions
         return routing
 
     def priority(self, run: AgentRun) -> int:

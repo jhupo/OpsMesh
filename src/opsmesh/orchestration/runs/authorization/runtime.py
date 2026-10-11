@@ -23,7 +23,7 @@ from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.resources.files.models import WorkspaceFile
 from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
 from opsmesh.runtime.instances.models import WorkspaceRuntime
-from opsmesh.runtime.pools.policy import pool_policy_matches, runtime_pool_key
+from opsmesh.runtime.pools.policy import shared_host_policy_matches
 from opsmesh.runtime.spaces.models import RuntimeSpace, RuntimeSpaceBinding
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.teams.sessions.refs import team_bound_runtime_id
@@ -278,17 +278,6 @@ class RunRuntimeAuthorizationService:
         if binding.workspace_runtime_id is not None:
             runtime = self._runtime(run.workspace_id, binding.workspace_runtime_id)
             self._require_runtime_ready(runtime)
-            if runtime.execution_mode == "none":
-                if catalog_requires_stdio_runtime(catalog_for_snapshot(snapshot)):
-                    raise RunRuntimeAuthorizationError(
-                        "sandbox_required",
-                        "stdio MCP tools require a sandbox execution mode",
-                    )
-                if binding.capability_resource_ids:
-                    raise RunRuntimeAuthorizationError(
-                        "sandbox_required",
-                        "Runtime execution grants require a sandbox execution mode",
-                    )
             if runtime.runtime_space_id != binding.runtime_space_id:
                 raise RunRuntimeAuthorizationError(
                     "runtime_space_mismatch",
@@ -340,9 +329,8 @@ class RunRuntimeAuthorizationService:
                 and (
                     execution_runtime.id == parent.id
                     or (
-                        parent.execution_mode == "pooled"
-                        and runtime_pool_key(execution_runtime) == runtime_pool_key(parent)
-                        and pool_policy_matches(parent, execution_runtime)
+                        parent.execution_mode == "shared"
+                        and shared_host_policy_matches(parent, execution_runtime)
                     )
                 )
                 and RuntimeAllocationStore(self._session).get(execution_runtime, "run", run.id)

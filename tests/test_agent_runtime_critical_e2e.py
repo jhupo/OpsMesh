@@ -57,6 +57,7 @@ from opsmesh.workspaces.projects.models import (
 )
 from opsmesh.workspaces.projects.snapshots.format import sha256_json
 from tests.fixtures.database import flow_database_url
+from tests.fixtures.runtime_host import runtime_host
 from tests.fixtures.worker import WorkerFlow
 from tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
@@ -81,6 +82,15 @@ def approve_reviews(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @dataclass
 class CriticalDocker:
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
+    def node_identity(self) -> str:
+        return "test-node"
+
     staged_files: dict[str, bytes] = field(default_factory=dict)
     output_files: dict[str, bytes] = field(default_factory=dict)
     commands: list[list[str]] = field(default_factory=list)
@@ -92,6 +102,7 @@ class CriticalDocker:
         timeout_seconds: int,
         *,
         working_dir: str | None = None,
+        identity=None,
     ) -> RuntimeCommandResult:
         assert container_id == "critical-container"
         assert timeout_seconds in {30, 60}
@@ -107,14 +118,16 @@ class CriticalDocker:
         timeout_seconds: int,
     ) -> None:
         assert container_id == "critical-container"
-        assert destination_path == "/workspace"
+        assert destination_path.startswith("/workspace/runs/")
         assert timeout_seconds == 60
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
             for member in bundle.getmembers():
                 if member.isfile():
                     stream = bundle.extractfile(member)
                     assert stream is not None
-                    self.staged_files[member.name] = stream.read()
+                    self.staged_files[
+                        f"{destination_path.removeprefix(chr(47) + 'workspace/')}/{member.name}"
+                    ] = stream.read()
 
     def copy_file_from_container(
         self,
@@ -122,6 +135,8 @@ class CriticalDocker:
         source_path: str,
         max_bytes: int,
         timeout_seconds: int,
+        *,
+        identity=None,
     ) -> bytes | None:
         assert container_id == "critical-container"
         assert timeout_seconds == 60
@@ -213,11 +228,11 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
         runtime_template_id=template.id,
         runtime_provider="cloud_docker",
         runtime_type="docker",
-        execution_mode="persistent",
+        execution_mode="shared",
         name="critical-runtime",
         status="running",
         connection_status="online",
-        docker_container_id="critical-container",
+        host=runtime_host(workspace.id, "critical-container", capacity=4, node_id="test-node"),
         limits={
             "cpu_count": 1,
             "memory_mb": 256,
@@ -228,7 +243,10 @@ def test_critical_agent_workflow_plan_read_approval_restart_handoff_and_acceptan
             "max_concurrent_executions": 4,
         },
         network_policy={"mode": "none"},
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace", "mode": "rw"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace", "mode": "rw"}},
+        },
     )
     content = b"project input"
     source_file = WorkspaceFile(

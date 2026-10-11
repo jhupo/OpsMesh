@@ -11,6 +11,7 @@ from opsmesh.runtime.instances.contracts import (
     RuntimeProcess,
 )
 from opsmesh.runtime.instances.events import RuntimeEventLog
+from opsmesh.runtime.instances.hosts import RuntimeHostStore
 from opsmesh.runtime.instances.leases import RuntimeLeaseStore, RuntimeSpaceReservationStore
 from opsmesh.runtime.instances.metadata import (
     RuntimeIsolationMetadata,
@@ -59,12 +60,19 @@ class RuntimeProvisioningExecutor:
         workspace_id = runtime.workspace_id
         runtime_space_id = runtime.runtime_space_id
         RuntimeQuotaPolicy(self._session).assert_can_create_runtime(
-            workspace_id, limits, excluding_runtime_id=runtime.id
+            workspace_id, limits, excluding_runtime_id=runtime.id, check_totals=False
         )
+        host, created = RuntimeHostStore(self._session, self._docker).acquire(
+            runtime, template, limits
+        )
+        if created:
+            RuntimeQuotaPolicy(self._session).assert_can_create_runtime(
+                workspace_id, limits, excluding_runtime_id=runtime.id
+            )
         network_policy = dict(runtime.network_policy)
         isolation_metadata = runtime_isolation_metadata(
             workspace_id=workspace_id,
-            runtime_id=runtime.id,
+            runtime_id=host.id,
             runtime_space_id=runtime_space_id,
             network_disabled=network_disabled,
             network_policy=network_policy,
@@ -76,29 +84,56 @@ class RuntimeProvisioningExecutor:
         )
         runtime.capabilities = {
             **dict(runtime.capabilities or {}),
+            "node_id": self._docker.node_identity(),
             "isolation": isolation_metadata,
             "hardening": hardening_metadata,
             "execution": {
                 "mode": runtime.execution_mode,
-                "pool_key": runtime.pool_key,
-                "pool_member": runtime.execution_mode == "pooled",
+                "shared_host": runtime.execution_mode == "shared",
+                "network_enforcement": "nftables_socket_uid",
+                "supervisor": {
+                    "user": "0:0",
+                    "capabilities": [
+                        "NET_ADMIN",
+                        "KILL",
+                        "CHOWN",
+                        "DAC_OVERRIDE",
+                        "SETUID",
+                        "SETGID",
+                    ],
+                },
+                "workload": {
+                    "user": "allocation_uid",
+                    "capabilities": [],
+                    "no_new_privileges": True,
+                },
             },
             "policy_resolution": dict(policy_metadata or {}),
-            "managed_resources": {
-                "docker_volumes": [isolation_metadata["workspace_mount"]["docker_volume"]],
-            },
         }
         reservation_key = runtime_space_reservation_key(runtime)
-        self._reserve_runtime_space(
-            runtime,
-            workspace_id=workspace_id,
-            runtime_space_id=runtime_space_id,
-            reservation_key=reservation_key,
-            limits=limits,
+        owns_provisioning = (
+            host.status == "provisioning" and host.provisioning_owner_id == runtime.id
         )
-
+        if not created and not owns_provisioning:
+            runtime.status = host.status
+            runtime.connection_status = "online" if host.status == "running" else "offline"
+            self._session.commit()
+            self._session.refresh(runtime)
+            return runtime
+        host.resources = {
+            "docker_volumes": [isolation_metadata["workspace_mount"]["docker_volume"]],
+        }
+        runtime.status = "provisioning"
         try:
-            container_id = self._create_container(
+            self._reserve_runtime_space(
+                runtime,
+                workspace_id=workspace_id,
+                runtime_space_id=runtime_space_id,
+                reservation_key=reservation_key,
+                limits=limits,
+            )
+            # Freeze the request before ending the short reservation transaction.
+            request = self._container_request(
                 runtime,
                 template=template,
                 workspace_id=workspace_id,
@@ -110,15 +145,20 @@ class RuntimeProvisioningExecutor:
                 hardening_policy=hardening_policy,
                 process=process,
             )
+            self._session.commit()
+            container_id = self._docker.create_container(request)
         except Exception:
-            self._reservations.release(runtime)
-            if process is None:
-                self._session.delete(runtime)
-            self._session.flush()
+            # Retain ownership and reservations when a Docker outcome is unknown.
+            # Redelivery reconciles the deterministic container name instead of
+            # provisioning a second host or discarding an unobserved container.
+            self._session.rollback()
             raise
 
-        runtime.docker_container_id = container_id
-        runtime.status = "created"
+        host.docker_container_id = container_id
+        host.status = "created"
+        for binding in RuntimeHostStore(self._session, self._docker).bindings(runtime):
+            binding.status = "created"
+            binding.connection_status = "offline"
         lease = self._leases.ensure(
             runtime,
             status="active",
@@ -179,15 +219,13 @@ class RuntimeProvisioningExecutor:
         )
         if reservation_result.reservation is not None:
             return
-        self._session.delete(runtime)
-        self._session.flush()
         blocked_reason = reservation_result.blocked_reason or "runtime_space_quota_exceeded"
         raise RuntimeQuotaExceededError(
             blocked_reason,
             "Runtime space quota blocks Docker runtime creation",
         )
 
-    def _create_container(
+    def _container_request(
         self,
         runtime: WorkspaceRuntime,
         *,
@@ -200,26 +238,25 @@ class RuntimeProvisioningExecutor:
         isolation_metadata: RuntimeIsolationMetadata,
         hardening_policy: RuntimeHardeningPolicy,
         process: RuntimeProcess | None,
-    ) -> str:
-        return self._docker.create_container(
-            RuntimeCreateRequest(
-                image=template.image,
-                name=f"opsmesh-{workspace_id}-{runtime.id}",
-                workspace_id=str(workspace_id),
-                runtime_id=str(runtime.id),
-                runtime_space_id=str(runtime_space_id) if runtime_space_id else None,
-                limits=limits,
-                network_disabled=network_disabled,
-                network_policy=network_policy,
-                labels=runtime_labels(runtime),
-                mounts=(
-                    RuntimeMount(
-                        source=isolation_metadata["workspace_mount"]["docker_volume"],
-                        target=isolation_metadata["workspace_mount"]["target"],
-                    ),
+    ) -> RuntimeCreateRequest:
+        return RuntimeCreateRequest(
+            image=template.image,
+            name=f"opsmesh-{workspace_id}-{runtime.host_id}",
+            workspace_id=str(workspace_id),
+            runtime_id=str(runtime.id),
+            runtime_space_id=str(runtime_space_id) if runtime_space_id else None,
+            limits=limits,
+            network_disabled=network_disabled,
+            network_policy=network_policy,
+            labels=runtime_labels(runtime),
+            mounts=(
+                RuntimeMount(
+                    source=isolation_metadata["workspace_mount"]["docker_volume"],
+                    target=isolation_metadata["workspace_mount"]["target"],
                 ),
-                hardening=hardening_policy,
-                working_dir=isolation_metadata["workspace_mount"]["target"],
-                process=process,
-            )
+            ),
+            hardening=hardening_policy,
+            working_dir=isolation_metadata["workspace_mount"]["target"],
+            process=process,
+            shared_host=process is None,
         )

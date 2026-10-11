@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, Protocol
 from uuid import UUID
 
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
+
 if TYPE_CHECKING:
     from opsmesh.runtime.agent_host.channel import DockerAgentChannel
     from opsmesh.runtime.instances.manager import RuntimeManager
@@ -41,6 +43,7 @@ class RuntimeCreateRequest:
     hardening: "RuntimeHardeningPolicy" = field(default_factory=lambda: RuntimeHardeningPolicy())
     working_dir: str | None = None
     process: RuntimeProcess | None = None
+    shared_host: bool = False
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,7 @@ class RuntimeHardeningPolicy:
     tmpfs: tuple[RuntimeTmpfsMount, ...] = (
         RuntimeTmpfsMount(target="/tmp", size_mb=64),
         RuntimeTmpfsMount(target="/var/tmp", size_mb=16),
+        RuntimeTmpfsMount(target="/run", size_mb=32),
     )
     user: str | None = "65532:65532"
     user_policy: str = "fixed_non_root"
@@ -122,15 +126,29 @@ class RuntimeManagerProvider(Protocol):
 
 
 class DockerRuntimeClient(Protocol):
+    def node_identity(self) -> str:
+        """Return the stable identity of the Docker execution node."""
+        ...
+
     def open_agent_channel(
-        self, container_id: str, *, working_dir: str
+        self, container_id: str, *, working_dir: str, identity: RuntimeExecutionIdentity
     ) -> "DockerAgentChannel": ...
 
-    def open_mcp_channel(self, container_id: str, *, working_dir: str) -> "DockerAgentChannel":
+    def open_mcp_channel(
+        self, container_id: str, *, working_dir: str, identity: RuntimeExecutionIdentity
+    ) -> "DockerAgentChannel":
         """Open a private execution channel to the isolated MCP host."""
         ...
 
-    def terminate_agent_process(self, container_id: str, pid: int) -> None: ...
+    def terminate_agent_process(
+        self, container_id: str, pid: int, *, identity: RuntimeExecutionIdentity
+    ) -> None: ...
+
+    def configure_execution(
+        self, container_id: str, identity: RuntimeExecutionIdentity
+    ) -> None: ...
+
+    def revoke_execution(self, container_id: str, identity: RuntimeExecutionIdentity) -> None: ...
 
     def create_container(self, request: RuntimeCreateRequest) -> str: ...
 
@@ -152,6 +170,7 @@ class DockerRuntimeClient(Protocol):
         *,
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
+        identity: RuntimeExecutionIdentity | None = None,
     ) -> RuntimeCommandResult: ...
 
     def copy_archive_to_container(
@@ -168,4 +187,6 @@ class DockerRuntimeClient(Protocol):
         source_path: str,
         max_bytes: int,
         timeout_seconds: int,
+        *,
+        identity: RuntimeExecutionIdentity,
     ) -> bytes | None: ...

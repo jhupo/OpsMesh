@@ -20,9 +20,19 @@ from opsmesh.runtime.instances.service import RuntimeControlService
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
+from tests.fixtures.runtime_host import runtime_host
 
 
 class FakeDockerClient:
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
+    def node_identity(self) -> str:
+        return "test-node"
+
     def create_container(self, request: RuntimeCreateRequest) -> str:
         _ = request
         return "container"
@@ -47,6 +57,7 @@ class FakeDockerClient:
         *,
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
+        identity=None,
     ) -> RuntimeCommandResult:
         _ = (container_id, command, timeout_seconds, input_file, working_dir)
         return RuntimeCommandResult(exit_code=0, stdout="ok", stderr="")
@@ -66,6 +77,8 @@ class FakeDockerClient:
         source_path: str,
         max_bytes: int,
         timeout_seconds: int,
+        *,
+        identity=None,
     ) -> bytes | None:
         _ = (container_id, source_path, max_bytes, timeout_seconds)
         return None
@@ -158,7 +171,8 @@ def _runtime() -> tuple[Session, WorkspaceRuntime]:
         name="runtime",
         status="active",
         connection_status="online",
-        docker_container_id="container",
+        host=runtime_host(workspace.id, "container", capacity=16, node_id="test-node"),
+        capabilities={"node_id": "test-node"},
         limits={"timeout_seconds": 10},
         network_policy={"mode": "none", "disabled": True},
     )

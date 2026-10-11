@@ -41,6 +41,7 @@ class RuntimeAgentExecutor:
                 self.docker_client.open_agent_channel,
                 runtime.container_id,
                 working_dir=wire.manifest.root,
+                identity=runtime.identity,
             )
         )
         callbacks: dict[str, asyncio.Task[None]] = {}
@@ -119,7 +120,10 @@ class RuntimeAgentExecutor:
                 if pid is not None:
                     await self.io.run(
                         partial(
-                            self.docker_client.terminate_agent_process, runtime.container_id, pid
+                            self.docker_client.terminate_agent_process,
+                            runtime.container_id,
+                            pid,
+                            identity=runtime.identity,
                         )
                     )
             finally:

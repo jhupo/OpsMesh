@@ -44,15 +44,23 @@ class RuntimeQuotaPolicy:
         self._session = session
 
     def assert_can_create_runtime(
-        self, workspace_id: UUID, limits: RuntimeLimits, *, excluding_runtime_id: UUID | None = None
+        self,
+        workspace_id: UUID,
+        limits: RuntimeLimits,
+        *,
+        excluding_runtime_id: UUID | None = None,
+        check_totals: bool = True,
     ) -> RuntimeQuota:
         self._session.scalar(
             select(Workspace).where(Workspace.id == workspace_id).with_for_update()
         )
         quota = self.quota_for_workspace(workspace_id)
         self._validate_single_runtime(limits, quota)
-        usage = self.usage_for_workspace(workspace_id, excluding_runtime_id=excluding_runtime_id)
-        self._validate_total_usage(limits, usage, quota)
+        if check_totals:
+            usage = self.usage_for_workspace(
+                workspace_id, excluding_runtime_id=excluding_runtime_id
+            )
+            self._validate_total_usage(limits, usage, quota)
         return quota
 
     def quota_for_workspace(self, workspace_id: UUID) -> RuntimeQuota:
@@ -118,6 +126,10 @@ class RuntimeQuotaPolicy:
                 WorkspaceRuntime.id != excluding_runtime_id,
             )
         ).all()
+        physical: dict[UUID, WorkspaceRuntime] = {}
+        for runtime in runtimes:
+            physical.setdefault(runtime.host_id or runtime.id, runtime)
+        runtimes = list(physical.values())
         return RuntimeUsage(
             active_runtimes=len(runtimes),
             total_cpu=sum(_float_limit(runtime.limits, "cpu_count") for runtime in runtimes),

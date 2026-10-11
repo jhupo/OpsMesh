@@ -37,7 +37,9 @@ def test_release_is_staged_before_managed_acceptance_and_finalized_without_asset
     package.write_bytes(b"candidate")
     manifest = ReleaseManifest(
         tag="v0.1.0rc2", commit="b" * 40, repository="jhupo/OpsMesh",
-        backend_digest="sha256:" + "c" * 64, runtime_digest="sha256:" + "d" * 64,
+        api_image="ghcr.io/jhupo/opsmesh-api@sha256:" + "c" * 64,
+        worker_image="ghcr.io/jhupo/opsmesh-worker@sha256:" + "e" * 64,
+        runtime_image="ghcr.io/jhupo/opsmesh-runtime@sha256:" + "d" * 64,
         database_revision="0071_platform_delivery", upgrade_from_revisions=[],
         rollback_database_revisions=[], connector_protocol=2, platforms=["linux/amd64"],
         files=[file_record(package)],
@@ -79,10 +81,10 @@ def test_release_is_staged_before_managed_acceptance_and_finalized_without_asset
     assert not any(call[0] == "docker" or call[:2] == ("gh", "release") for call in calls)
     publish_release.finalize_release(manifest.tag, manifest.repository, tmp_path)
     mutations = [call for call in calls if call[0] == "docker" or call[:2] == ("gh", "release")]
-    assert len(mutations) == (3 if draft else 0)
+    assert len(mutations) == (4 if draft else 0)
     if draft:
         assert mutations[-1][-1] == "--draft=false"
-        assert mutations[0][-1] == manifest.image("backend")
+        assert mutations[0][-1] == manifest.image("api")
     if new_release:
         assert len([call for call in calls if "--slurp" in call and "/assets?" not in call[2]]) == 2
         tag_check = ("gh", "api", f"repos/{manifest.repository}/git/ref/tags/{manifest.tag}")
@@ -98,7 +100,9 @@ def test_public_download_verification_fails_closed(
     package.write_bytes(b"candidate")
     manifest = ReleaseManifest(
         tag="v0.1.0rc4", commit="b" * 40, repository="jhupo/OpsMesh",
-        backend_digest="sha256:" + "c" * 64, runtime_digest="sha256:" + "d" * 64,
+        api_image="ghcr.io/jhupo/opsmesh-api@sha256:" + "c" * 64,
+        worker_image="ghcr.io/jhupo/opsmesh-worker@sha256:" + "e" * 64,
+        runtime_image="ghcr.io/jhupo/opsmesh-runtime@sha256:" + "d" * 64,
         database_revision="0072_release_schema", upgrade_from_revisions=[],
         rollback_database_revisions=[], connector_protocol=2, platforms=["linux/amd64"],
         files=[file_record(package)],
@@ -126,7 +130,11 @@ def test_public_download_verification_fails_closed(
         assert verified == [
             (str(package), manifest.tag, manifest.commit, manifest.repository),
             (
-                f"oci://{manifest.image('backend')}", manifest.tag,
+                f"oci://{manifest.image('api')}", manifest.tag,
+                manifest.commit, manifest.repository,
+            ),
+            (
+                f"oci://{manifest.image('worker')}", manifest.tag,
                 manifest.commit, manifest.repository,
             ),
             (

@@ -1,4 +1,7 @@
+from sqlalchemy.orm import object_session
+
 from opsmesh.orchestration.runs.models import AgentRun
+from opsmesh.runtime.instances.allocations import RuntimeAllocationStore, allocation_identity
 from opsmesh.runtime.instances.contracts import DockerRuntimeClient
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 
@@ -14,7 +17,20 @@ class RunProcessCleanupService:
     ) -> None:
         if self._docker is None or host.docker_container_id is None:
             raise RuntimeError("Runtime host is unavailable")
-        commands = [["python", "-m", "opsmesh.runtime.agent_host.processes", str(run.id)]]
+        session = object_session(host)
+        if session is None:
+            raise RuntimeError("Runtime allocation session is unavailable")
+        allocation = RuntimeAllocationStore(session).get(host, "run", run.id)
+        if allocation is not None:
+            self._docker.revoke_execution(host.docker_container_id, allocation_identity(allocation))
+        commands: list[list[str]] = []
+        if retain_workspace:
+            commands.extend(
+                [
+                    ["chown", "-R", "0:0", f"/workspace/runs/{run.id}"],
+                    ["chmod", "700", f"/workspace/runs/{run.id}"],
+                ]
+            )
         if not retain_workspace:
             commands.append(["rm", "-rf", "--", f"/workspace/runs/{run.id}"])
         for command in commands:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -15,10 +15,13 @@ from opsmesh.runtime.instances.cleanup import RuntimeResourceCleaner, cleanup_su
 from opsmesh.runtime.instances.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
+    RuntimeCommandResult,
     RuntimeLimits,
     RuntimeProcess,
 )
 from opsmesh.runtime.instances.events import RuntimeEventLog
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
+from opsmesh.runtime.instances.hosts import RuntimeHostStore
 from opsmesh.runtime.instances.leases import RuntimeLeaseStore, RuntimeSpaceReservationStore
 from opsmesh.runtime.instances.models import (
     RuntimeCommand,
@@ -90,18 +93,18 @@ class RuntimeManager:
         runtime_space_id: UUID | None = None,
         network_disabled: bool = True,
         policy_metadata: dict[str, object] | None = None,
-        execution_mode: RuntimeExecutionMode = "pooled",
-        pool_key: str | None = None,
+        execution_mode: RuntimeExecutionMode = "shared",
     ) -> WorkspaceRuntime:
-        validate_runtime_execution_mode(execution_mode, pool_key)
-        RuntimeQuotaPolicy(self._session).assert_can_create_runtime(workspace_id, limits)
+        validate_runtime_execution_mode(execution_mode)
+        RuntimeQuotaPolicy(self._session).assert_can_create_runtime(
+            workspace_id, limits, check_totals=False
+        )
         runtime = WorkspaceRuntime(
             workspace_id=workspace_id,
             runtime_template_id=template.id,
             runtime_space_id=runtime_space_id,
             name=name,
             execution_mode=execution_mode,
-            pool_key=pool_key,
             limits={
                 "cpu_count": limits.cpu_count,
                 "memory_mb": limits.memory_mb,
@@ -136,13 +139,11 @@ class RuntimeManager:
         network_disabled: bool,
         policy_metadata: dict[str, object] | None = None,
         execution_mode: RuntimeExecutionMode | None = None,
-        pool_key: str | None = None,
         process: RuntimeProcess | None = None,
     ) -> WorkspaceRuntime:
         if execution_mode is not None:
-            validate_runtime_execution_mode(execution_mode, pool_key)
+            validate_runtime_execution_mode(execution_mode)
             runtime.execution_mode = execution_mode
-            runtime.pool_key = pool_key
         return RuntimeProvisioningExecutor(
             self._session,
             self._docker,
@@ -163,8 +164,17 @@ class RuntimeManager:
         self._require_host_idle(runtime)
         runtime.status = "starting"
         runtime.connection_status = "offline"
+        if runtime.host is None:
+            raise RuntimeError("Runtime has no physical host")
+        runtime.host.status = "starting"
         self._session.commit()
         self._docker.start_container(runtime.docker_container_id or "")
+        if runtime.host is None:
+            raise RuntimeError("Runtime has no physical host")
+        runtime.host.status = "running"
+        for binding in RuntimeHostStore(self._session, self._docker).bindings(runtime):
+            binding.status = "running"
+            binding.connection_status = "online"
         runtime.status = "running"
         runtime.connection_status = "online"
         runtime.last_heartbeat_at = datetime.now(UTC)
@@ -179,8 +189,17 @@ class RuntimeManager:
         self._require_host_idle(runtime)
         runtime.status = "stopping"
         runtime.connection_status = "offline"
+        if runtime.host is None:
+            raise RuntimeError("Runtime has no physical host")
+        runtime.host.status = "stopping"
         self._session.commit()
         self._docker.stop_container(runtime.docker_container_id or "")
+        if runtime.host is None:
+            raise RuntimeError("Runtime has no physical host")
+        runtime.host.status = "stopped"
+        for binding in RuntimeHostStore(self._session, self._docker).bindings(runtime):
+            binding.status = "stopped"
+            binding.connection_status = "offline"
         runtime.status = "stopped"
         runtime.connection_status = "offline"
         lease = self._leases.set_status(runtime, "stopped")
@@ -195,8 +214,17 @@ class RuntimeManager:
     ) -> None:
         require_container(runtime)
         self._require_host_idle(runtime)
+        bindings = RuntimeHostStore(self._session, self._docker).bindings(runtime)
+        if len(bindings) > 1:
+            runtime.host = None
+            runtime.status = "deleted"
+            runtime.connection_status = "offline"
+            self._session.commit()
+            return
         runtime.status = "deleting"
         runtime.connection_status = "offline"
+        if runtime.host is not None:
+            runtime.host.status = "deleting"
         self._session.commit()
         container_id = runtime.docker_container_id or ""
         try:
@@ -219,7 +247,6 @@ class RuntimeManager:
             )
             self._security_events.record_cleanup_failure(runtime, cleanup, reason=str(exc))
             self._leases.set_status(runtime, "cleanup_failed", released_at=datetime.now(UTC))
-            self._reservations.release(runtime)
             self._session.commit()
             raise
         cleanup = self._cleaner.cleanup_runtime_resources(
@@ -228,6 +255,8 @@ class RuntimeManager:
             container_id=container_id,
             container_removed=True,
         )
+        if runtime.host is not None:
+            runtime.host.status = "deleted" if cleanup_succeeded(cleanup) else "cleanup_failed"
         runtime.status = "deleted" if cleanup_succeeded(cleanup) else "cleanup_failed"
         runtime.connection_status = "offline"
         self._events.append(
@@ -247,11 +276,18 @@ class RuntimeManager:
             "released" if runtime.status == "deleted" else "cleanup_failed",
             released_at=datetime.now(UTC),
         )
-        self._reservations.release(runtime)
+        if cleanup_succeeded(cleanup):
+            self._reservations.release(runtime)
         self._session.commit()
 
     def cleanup_stale_runtime(self, runtime: WorkspaceRuntime) -> None:
         if runtime.status not in {"stopped", "failed", "deleted"}:
+            return
+        bindings = RuntimeHostStore(self._session, self._docker).bindings(runtime)
+        if any(binding.id != runtime.id for binding in bindings):
+            runtime.host = None
+            runtime.status = "deleted"
+            self._session.commit()
             return
         container_id = runtime.docker_container_id
         container_removed = True
@@ -269,6 +305,8 @@ class RuntimeManager:
             container_removed=container_removed,
             error=error,
         )
+        if runtime.host is not None and container_removed:
+            runtime.host.status = "deleted" if cleanup_succeeded(cleanup) else "cleanup_failed"
         runtime.status = "deleted" if cleanup_succeeded(cleanup) else "cleanup_failed"
         runtime.connection_status = "offline"
         self._events.append(
@@ -290,7 +328,8 @@ class RuntimeManager:
             "released" if runtime.status == "deleted" else "cleanup_failed",
             released_at=datetime.now(UTC),
         )
-        self._reservations.release(runtime)
+        if cleanup_succeeded(cleanup):
+            self._reservations.release(runtime)
         self._session.commit()
 
     def execute_command(
@@ -301,6 +340,8 @@ class RuntimeManager:
         command: list[str],
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
+        result_consumer: Callable[[RuntimeCommandResult, RuntimeExecutionIdentity], None]
+        | None = None,
     ) -> RuntimeCommand:
         self._require_host_idle(runtime)
         return self._commands.execute_command(
@@ -309,6 +350,7 @@ class RuntimeManager:
             command=command,
             input_file=input_file,
             working_dir=working_dir,
+            result_consumer=result_consumer,
         )
 
     async def execute_command_async(
@@ -350,6 +392,8 @@ class RuntimeManager:
         )
 
     def _require_host_idle(self, runtime: WorkspaceRuntime) -> None:
+        if runtime.host is None or runtime.host.node_id != self._docker.node_identity():
+            raise ValueError("Runtime belongs to another execution node")
         RuntimeAllocationStore(self._session).require_idle(runtime)
 
 

@@ -20,6 +20,7 @@ import psycopg
 from dotenv import dotenv_values
 from opsmesh_operator.backups import postgres_env
 from opsmesh_operator.commands import run_command
+from opsmesh_operator.contracts import ReleaseManifest
 from opsmesh_operator.files import atomic_write
 from opsmesh_operator.installation import Installation
 from opsmesh_operator.releases import ReleaseSource
@@ -72,7 +73,12 @@ class Acceptance:
         return psycopg.connect(**self.database, autocommit=True)
 
     def diagnostics(self) -> None:
-        directory = self.installation.release_dir(self.tag)
+        record = ROOT / "downloads" / self.tag / "release-manifest.json"
+        if not record.is_file():
+            print("Installation diagnostics: release manifest has not been downloaded", flush=True)
+            return
+        manifest = ReleaseManifest.model_validate_json(record.read_bytes())
+        directory = self.installation.release_dir(manifest)
         executable = directory / "opsmesh-server"
         print(
             f"Installation diagnostics: staged={directory.exists()}, "

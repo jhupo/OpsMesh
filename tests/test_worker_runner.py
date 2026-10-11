@@ -81,6 +81,7 @@ from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 from opsmesh.teams.sessions.service import TeamRuntimeService
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.runtime_host import runtime_host
 
 
 @pytest.fixture(autouse=True)
@@ -98,6 +99,17 @@ def approve_reviews_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
         "opsmesh.governance.reviews.model_request.ModelRequestReviewService.review_request",
         fake_model_request_review,
     )
+
+
+async def _immediate_sleep(_: float) -> None:
+    pass
+
+
+def _stop_on_sleep(stop_event):
+    async def sleep(_: float) -> None:
+        stop_event.set()
+
+    return sleep
 
 
 class DeterministicAgentRunner:
@@ -173,6 +185,15 @@ class MustNotRunAgentRunner:
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
+    def node_identity(self) -> str:
+        return "test-node"
+
     def __init__(self) -> None:
         self.created_requests: list[RuntimeCreateRequest] = []
         self.started: list[str] = []
@@ -200,6 +221,8 @@ class FakeDockerClient(DockerRuntimeClient):
         timeout_seconds: int,
         *,
         input_file: RuntimeCommandInputFile | None = None,
+        working_dir=None,
+        identity=None,
     ) -> RuntimeCommandResult:
         _ = input_file
         return RuntimeCommandResult(exit_code=0, stdout="ok\n", stderr="")
@@ -306,7 +329,7 @@ def test_worker_runner_loop_records_heartbeat_and_summary() -> None:
             idle_sleep_seconds=0,
         ),
         agent_runner=DeterministicAgentRunner(),
-        sleep=lambda _: None,
+        sleep=_immediate_sleep,
     )
 
     summary = runner.run(max_jobs=1)
@@ -639,9 +662,11 @@ def test_worker_heartbeat_preserves_existing_capacity_routing_fields() -> None:
         assert node.capacity == {
             "max_jobs": 2,
             "worker_type": "self_hosted",
-            "runtime_modes": ["self_hosted"],
-            "capabilities": ["code.execute"],
+            "runtime_modes": ["isolated", "shared"],
+            "capabilities": [],
             "memory_mb": 2048,
+            "task_slots": 2,
+            "mcp_slots": 2,
         }
 
 
@@ -1491,10 +1516,10 @@ def test_degraded_team_runtime_maintenance_job_recovers_workspace_runtime() -> N
             name="Offline Team Runtime",
             status="running",
             connection_status="offline",
-            docker_container_id="offline-container",
+            host=runtime_host(workspace_id, "offline-container", capacity=16, node_id="test-node"),
             limits={},
             network_policy={},
-            capabilities={},
+            capabilities={"node_id": "test-node"},
         )
         session.add(stale_runtime)
         session.flush()
@@ -1767,7 +1792,7 @@ def test_worker_runner_continues_after_job_failure() -> None:
             idle_sleep_seconds=0,
         ),
         agent_runner=DeterministicAgentRunner(),
-        sleep=lambda _: None,
+        sleep=_immediate_sleep,
     )
 
     summary = runner.run(max_jobs=2)
@@ -2693,7 +2718,7 @@ def test_worker_runner_summary_includes_maintenance_recovery() -> None:
             run_lease_seconds=60,
             idle_sleep_seconds=0,
         ),
-        sleep=lambda _: stop_event.set(),
+        sleep=_stop_on_sleep(stop_event),
     )
 
     summary = runner.run(stop_event=stop_event)
@@ -2731,7 +2756,7 @@ def test_worker_runner_summary_rolls_up_all_maintenance_counts() -> None:
             maintenance_interval_seconds=0,
             idle_sleep_seconds=0,
         ),
-        sleep=lambda _: stop_event.set(),
+        sleep=_stop_on_sleep(stop_event),
     )
     runner.run_maintenance = lambda: WorkerMaintenanceSummary(  # type: ignore[method-assign]
         recovered_runs=1,

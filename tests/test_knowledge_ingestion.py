@@ -28,10 +28,20 @@ from opsmesh.runtime.queues.contracts import JobType
 from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.config import Settings
 from opsmesh.shared.redis.keys import RedisKeyBuilder
+from tests.fixtures.runtime_host import runtime_host
 from tests.test_workspace_api import _client, _headers, _seed_workspace
 
 
 class _UrlFetchDockerClient:
+    def node_identity(self) -> str:
+        return "test-node"
+
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
     def __init__(self, content: bytes) -> None:
         self.content = content
         self.commands: list[list[str]] = []
@@ -44,6 +54,7 @@ class _UrlFetchDockerClient:
         *,
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
+        identity=None,
     ) -> RuntimeCommandResult:
         _ = (container_id, timeout_seconds, input_file, working_dir)
         self.commands.append(command)
@@ -55,6 +66,8 @@ class _UrlFetchDockerClient:
         source_path: str,
         max_bytes: int,
         timeout_seconds: int,
+        *,
+        identity=None,
     ) -> bytes:
         _ = (container_id, source_path, max_bytes, timeout_seconds)
         return self.content
@@ -410,7 +423,7 @@ def test_url_ingestion_uses_network_enabled_runtime_and_records_citations() -> N
         name="Knowledge fetch runtime",
         status="running",
         connection_status="online",
-        docker_container_id="fetch-container",
+        host=runtime_host(workspace.id, "fetch-container", capacity=16, node_id="test-node"),
         execution_mode="isolated",
         limits={"timeout_seconds": 60, "max_output_bytes": 256_000},
         network_policy={"mode": "internet", "disabled": False},
@@ -454,7 +467,7 @@ def test_url_ingestion_uses_network_enabled_runtime_and_records_citations() -> N
 
     assert result.status == "succeeded"
     assert result.chunk_count == 1
-    assert len(docker.commands) == 2
+    assert len(docker.commands) == 1
     citation = session.scalar(
         select(KnowledgeCitation).where(KnowledgeCitation.ingestion_id == ingestion.id)
     )

@@ -40,6 +40,7 @@ from opsmesh.shared.db.base import Base
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.runtime_host import runtime_host
 from tests.fixtures.tools import execute_tool
 
 
@@ -1109,7 +1110,7 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
         runtime_provider="cloud_docker",
         runtime_type="docker",
         name="team-runtime",
-        docker_container_id="container-123",
+        host=runtime_host(workspace.id, "container-123", capacity=16, node_id="test-node"),
         limits={"timeout_seconds": 11},
         status="running",
         connection_status="online",
@@ -1161,6 +1162,9 @@ def test_backend_tool_executor_routes_docker_stdio_mcp_to_bound_runtime() -> Non
     session.add_all([credential, allow, run])
     session.flush()
     _set_mcp_snapshot(run, workspace, server, allow, credentials=(credential,))
+    from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
+
+    RuntimeAllocationStore(session).acquire(runtime, "run", run.id)
     session.commit()
     docker = RecordingDockerClient(
         [
@@ -1237,6 +1241,15 @@ class StaticMcpAdapter:
 
 
 class RecordingDockerClient:
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
+    def node_identity(self) -> str:
+        return "test-node"
+
     def __init__(self, command_results: list[RuntimeCommandResult]) -> None:
         self._command_results = command_results
         self.exec_calls: list[dict[str, object]] = []
@@ -1256,7 +1269,7 @@ class RecordingDockerClient:
     def remove_volume(self, volume_name: str) -> None:
         return None
 
-    def open_mcp_channel(self, container_id: str, *, working_dir: str):
+    def open_mcp_channel(self, container_id: str, *, working_dir: str, identity):
         from tests.test_mcp_adapters import RuntimeChannel
 
         self.channel = RuntimeChannel()
@@ -1282,7 +1295,7 @@ class RecordingDockerClient:
         self.terminated = []
         return self.channel
 
-    def terminate_agent_process(self, container_id: str, pid: int) -> None:
+    def terminate_agent_process(self, container_id: str, pid: int, *, identity) -> None:
         self.terminated.append((container_id, pid))
 
     def exec_command(
@@ -1293,6 +1306,7 @@ class RecordingDockerClient:
         *,
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
+        identity=None,
     ) -> RuntimeCommandResult:
         self.exec_calls.append(
             {

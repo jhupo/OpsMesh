@@ -1,4 +1,5 @@
 import ast
+import json
 import tarfile
 import tomllib
 from pathlib import Path
@@ -8,9 +9,11 @@ import yaml
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from opsmesh_operator.contracts import ReleaseFile, ReleaseManifest, require_tag
+from opsmesh_operator.installation import Installation
 from pydantic import ValidationError
 
 from scripts.build_standalone import archive_tree, build, copy_server_assets
+from scripts.migrate_release_manifest import convert
 from scripts.release import file_record, validate_version, write_checksums
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,8 +83,9 @@ def test_manifest_pins_images_and_rejects_duplicate_files() -> None:
         tag="v0.1.0",
         commit="b" * 40,
         repository="jhupo/OpsMesh",
-        backend_digest="sha256:" + "c" * 64,
-        runtime_digest="sha256:" + "d" * 64,
+        api_image="ghcr.io/jhupo/opsmesh-api@sha256:" + "c" * 64,
+        worker_image="ghcr.io/jhupo/opsmesh-worker@sha256:" + "e" * 64,
+        runtime_image="ghcr.io/jhupo/opsmesh-runtime@sha256:" + "d" * 64,
         database_revision="0070_memory_lifecycle",
         upgrade_from_revisions=[],
         rollback_database_revisions=[],
@@ -89,9 +93,42 @@ def test_manifest_pins_images_and_rejects_duplicate_files() -> None:
         platforms=["linux/amd64"],
         files=[file],
     )
-    assert manifest.image("backend") == "ghcr.io/jhupo/opsmesh@sha256:" + "c" * 64
+    assert manifest.image("api") == "ghcr.io/jhupo/opsmesh-api@sha256:" + "c" * 64
     with pytest.raises(ValidationError, match="unique"):
         ReleaseManifest.model_validate({**manifest.model_dump(), "files": [file, file]})
+    local = manifest.model_copy(update={"api_image": "sha256:" + "f" * 64})
+    assert local.image("api") == "sha256:" + "f" * 64
+    root = Installation(root=Path("/opt/opsmesh"), mode="compose")
+    assert root.release_dir(manifest) != root.release_dir(
+        manifest.model_copy(update={"commit": "e" * 40})
+    )
+    with pytest.raises(ValidationError):
+        ReleaseManifest.model_validate({**manifest.model_dump(), "api_image": "opsmesh-api:latest"})
+
+
+def test_release_record_migration_preserves_source_and_rejects_overwrite(tmp_path: Path) -> None:
+    source = tmp_path / "installed-v1.json"
+    original = json.dumps({
+        "schema_version": 1, "tag": "v0.1.0", "commit": "b" * 40,
+        "repository": "jhupo/OpsMesh", "backend_digest": "sha256:" + "c" * 64,
+        "runtime_digest": "sha256:" + "d" * 64, "database_revision": "revision",
+        "upgrade_from_revisions": [], "rollback_database_revisions": [],
+        "connector_protocol": 2, "platforms": ["linux/amd64"],
+        "files": [{"name": "bundle.tar.gz", "sha256": "e" * 64, "size": 10}],
+    })
+    source.write_text(original)
+    destination = tmp_path / "installed-v2.json"
+    manifest = convert(source, destination)
+    assert manifest.api_image == manifest.worker_image == (
+        "ghcr.io/jhupo/opsmesh-backend@sha256:" + "c" * 64
+    )
+    assert source.read_text() == original
+    assert ReleaseManifest.model_validate_json(destination.read_bytes()) == manifest
+    with pytest.raises(ValueError, match="new destination"):
+        convert(source, destination)
+    with pytest.raises(ValueError, match="version-1"):
+        convert(destination, tmp_path / "invalid.json")
+    assert not (tmp_path / "invalid.json").exists()
 
 
 def test_workflow_actions_are_pinned_and_publish_requires_gate() -> None:
@@ -172,7 +209,7 @@ def test_checksums_cover_artifacts_not_their_own_digest(tmp_path: Path) -> None:
 @pytest.mark.parametrize("tag", ["../v1.0.0", "v9.9.9"])
 def test_native_builder_rejects_wrong_identity_before_writing(tmp_path: Path, tag: str) -> None:
     with pytest.raises(ValueError):
-        build("cli", tag, tmp_path, tmp_path / "output", "never-run")
+        build("cli", tag, tmp_path, tmp_path / "output", "never-run", "a" * 40)
     assert not (tmp_path / "output").exists()
 
 

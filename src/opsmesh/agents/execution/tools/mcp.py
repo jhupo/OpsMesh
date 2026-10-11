@@ -18,6 +18,7 @@ from opsmesh.capabilities.mcp.transport.stdio import (
 )
 from opsmesh.governance.security_events.models import SecurityEvent
 from opsmesh.orchestration.runs.models import AgentRun
+from opsmesh.runtime.instances.allocations import run_execution_identity
 from opsmesh.runtime.instances.contracts import DockerRuntimeClient
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.runtime.self_hosted.dispatch.mcp import SelfHostedMcpJobService
@@ -52,7 +53,10 @@ class ContextualMcpAdapterResolver:
                     "mcp_http_runtime_unsupported", "HTTP MCP requires a Docker Runtime"
                 )
             return DockerRuntimeHttpMcpToolAdapter(
-                self._docker_client, runtime, self._secret_service
+                self._docker_client,
+                runtime,
+                self._secret_service,
+                run_execution_identity(self._session, runtime, run.id),
             )
         if server.connection.get("runtime") == "managed":
             if server.workspace_id != self._context.workspace_id or self._current_run() is None:
@@ -68,7 +72,7 @@ class ContextualMcpAdapterResolver:
         if runtime_binding is None or runtime_binding.mode == "none":
             self._deny_stdio(
                 "stdio_requires_runtime",
-                "MCP stdio execution requires an isolated, pooled, or persistent runtime",
+                "MCP stdio execution requires an isolated or shared runtime",
             )
         run = self._current_run()
         if run is None:
@@ -85,6 +89,7 @@ class ContextualMcpAdapterResolver:
                 runtime=runtime,
                 secret_service=self._secret_service,
                 working_dir=self._project_working_directory(run),
+                identity=run_execution_identity(self._session, runtime, run.id),
             )
         if runtime.runtime_provider == "self_hosted":
             return SelfHostedStdioMcpToolAdapter(

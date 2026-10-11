@@ -54,17 +54,9 @@ class RuntimeSafetyPolicy:
                 "runtime_network_not_allowed",
                 "Runtime network access is disabled by default for personal safety",
             )
-        if egress_policy is not None and egress_policy.mode == "restricted":
-            if egress_policy.gateway_network is None:
-                raise RuntimeSafetyError(
-                    "runtime_egress_gateway_required",
-                    "Restricted runtime egress requires a managed Docker gateway network",
-                )
-            return
-        return
 
 
-_DIGEST_PINNED_IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
+_DIGEST_PINNED_IMAGE = re.compile(r"^(?:[^\s]+@)?sha256:[0-9a-f]{64}$")
 
 
 def is_digest_pinned_image(image: str) -> bool:
