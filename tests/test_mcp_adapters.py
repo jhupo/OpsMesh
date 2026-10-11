@@ -15,6 +15,7 @@ from opsmesh.runtime.agent_host.wire import RpcFrame
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.shared.concurrency import BlockingIO
 from opsmesh.shared.security.secrets import SecretEncryptionService
+from opsmesh.shared.telemetry.request_context import log_context
 from tests.fixtures.runtime_host import execution_identity, runtime_host
 
 
@@ -62,6 +63,53 @@ class RuntimeDocker:
 
     def terminate_agent_process(self, container_id, pid, *, identity):
         self.terminated.append((container_id, pid))
+
+
+def test_runtime_failure_preserves_diagnostics_and_cleans_only_its_process():
+    target = runtime()
+    channel = RuntimeChannel()
+    original_receive = channel.receive
+
+    async def receive():
+        if channel.frames == 1:
+            channel.frames += 1
+            return RpcFrame(
+                type="error",
+                payload={
+                    "category": "network",
+                    "phase": "connect",
+                    "exception_type": "ConnectTimeout",
+                    "password": "private-canary",
+                    "workspace_id": "forged",
+                },
+            ).encoded()
+        return await original_receive()
+
+    channel.receive = receive
+    docker = RuntimeDocker(channel)
+    with log_context(workspace_id=target.workspace_id, tool_call_id="sdk-call-1"):
+        operation = DockerRuntimeStdioMcpToolAdapter(
+            docker=docker, runtime=target, identity=execution_identity()
+        ).prepare(
+            server=McpServer(workspace_id=target.workspace_id, connection={"command": "offline"}),
+            tool_name="inspect",
+            arguments={},
+            credential_refs=[],
+            timeout_seconds=5,
+        )
+
+    async def execute():
+        with BlockingIO(1, name="diagnostic-test") as io:
+            with pytest.raises(McpExecutionError) as failure:
+                await operation.execute(io)
+            assert failure.value.diagnostic["exception_type"] == "ConnectTimeout"
+            assert failure.value.diagnostic["operation_id"] == channel.request["operation_id"]
+            assert "private-canary" not in str(failure.value.diagnostic)
+            assert "forged" not in str(failure.value.diagnostic)
+
+    asyncio.run(execute())
+    assert channel.request["meta"]["tool_call_id"] == "sdk-call-1"
+    assert channel.closed and docker.terminated == [(target.docker_container_id, 27)]
 
 
 def runtime():

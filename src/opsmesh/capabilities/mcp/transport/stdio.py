@@ -125,7 +125,9 @@ class SelfHostedStdioMcpToolAdapter:
                 raise McpExecutionError("Runtime RPC has no result", code="mcp_rpc_result_missing")
             return CompletedMcpOperation(job.response_payload)
         if job.status in {"failed", "expired"}:
-            raise McpExecutionError("Runtime RPC failed", code="mcp_rpc_failed")
+            raise McpExecutionError(
+                "Runtime RPC failed", code="mcp_rpc_failed", diagnostic=job.error_payload
+            )
         raise McpExecutionPending(
             "MCP tool is queued for self-hosted runtime execution",
             code="mcp_self_hosted_job_queued",

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.contracts import AgentRuntimeExecutor
 from opsmesh.bootstrap.job_handlers import WorkerJobHandler
+from opsmesh.capabilities.mcp.execution.retention import expire_mcp_diagnostics
 from opsmesh.capabilities.mcp.managed_maintenance import reconcile_managed_mcp
 from opsmesh.orchestration.conversations.recovery import ConversationRecoveryService
 from opsmesh.orchestration.runs.async_execution import AsyncAgentRunExecutor
@@ -49,6 +50,7 @@ def build_worker_runner(
 ) -> WorkerRunner:
     if runtime_docker_client is not None:
         config = replace(config, node_id=runtime_docker_client.node_identity())
+
     @contextmanager
     def failure_session_scope() -> Iterator[Session]:
         session = session_factory()
@@ -66,8 +68,11 @@ def build_worker_runner(
             with failure_session_scope() as session:
                 if not maintenance_enabled(session):
                     reconcile_managed_mcp(session, queue)
+                    expire_mcp_diagnostics(
+                        session, days=(settings or get_settings()).mcp_diagnostic_retention_days
+                    )
         except Exception:
-            logging.getLogger(__name__).error("Managed MCP maintenance failed")
+            logging.getLogger(__name__).exception("Managed MCP maintenance failed")
         with failure_session_scope() as session:
             if not maintenance_enabled(session):
                 ConversationRecoveryService(session).recover(limit=config.recovery_batch_size)
@@ -131,8 +136,8 @@ def build_worker_runner(
         maintenance=maintenance,
         dispatch_events=dispatch_events,
         admission_blocked=maintenance_enabled,
-        can_claim=lambda session, job: config.node_id is None or worker_owns_runtime_job(
-            session, job, config.node_id
+        can_claim=lambda session, job: (
+            config.node_id is None or worker_owns_runtime_job(session, job, config.node_id)
         ),
         on_job_failure=failure_reporter.record_failure,
         settings=settings,

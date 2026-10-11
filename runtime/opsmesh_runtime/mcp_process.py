@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from .diagnostics import exception_diagnostic
 from .mcp_sdk import RuntimeMCPServerStdio
 
 MAX_BYTES = 1_048_576
@@ -49,6 +50,7 @@ class McpProcess:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.state = "starting"
+        self.last_diagnostic: dict[str, Any] | None = None
         self.restarts = 0
         self.restart_policy = config["restart_policy"]
         self.started_at = time.monotonic()
@@ -65,7 +67,11 @@ class McpProcess:
                 request = json.loads(await reader.readline())
                 action = request.get("action")
                 if action == "status":
-                    result = {"status": self.state, "restarts": self.restarts}
+                    result = {
+                        "status": self.state,
+                        "restarts": self.restarts,
+                        "diagnostic": self.last_diagnostic,
+                    }
                 elif action == "stop":
                     self.stopped.set()
                     result = {"status": "stopping"}
@@ -79,8 +85,11 @@ class McpProcess:
                     result = await future
                 else:
                     result = {"error": "mcp_process_not_ready"}
-        except Exception:
-            result = {"error": "mcp_process_request_failed"}
+        except Exception as error:
+            result = {
+                "error": "mcp_process_request_failed",
+                "diagnostic": exception_diagnostic(error, phase="control"),
+            }
         finally:
             if future is not None and not future.done():
                 future.cancel()
@@ -102,7 +111,6 @@ class McpProcess:
             await writer.wait_closed()
 
     async def run_session(self) -> None:
-        # Do not forward project stderr: it can contain environment credentials.
         async with RuntimeMCPServerStdio(
             params={
                 "command": self.config["command"],
@@ -127,6 +135,7 @@ class McpProcess:
                     continue
                 if future.cancelled():
                     continue
+                server.reset_diagnostics()
                 try:
                     timeout = min(50, max(1, int(request.get("timeout_seconds", 50))))
                     async with asyncio.timeout(timeout):
@@ -151,7 +160,9 @@ class McpProcess:
                             result = {"tools": tools}
                         else:
                             operation = asyncio.create_task(
-                                server.call_tool(request["name"], request["arguments"])
+                                server.call_tool(
+                                    request["name"], request["arguments"], meta=request.get("meta")
+                                )
                             )
 
                             def cancel_disconnected(
@@ -172,16 +183,20 @@ class McpProcess:
                                 operation.cancel()
                                 with contextlib.suppress(asyncio.CancelledError):
                                     await operation
-                            result = response.model_dump(
-                                mode="json", by_alias=True, exclude_none=True
+                            result = server.diagnostic_result(
+                                response.model_dump(mode="json", by_alias=True, exclude_none=True)
                             )
                     if not future.done():
                         future.set_result(result)
-                except Exception:
+                except Exception as error:
                     self.state = "restarting"
                     if not future.done():
                         # Never replay a tool after an ambiguous transport failure.
-                        future.set_result({"error": "mcp_process_call_failed"})
+                        diagnostic = exception_diagnostic(error, phase="tool")
+                        diagnostic["diagnostic"]["stderr"] = server.stderr_capture.snapshot()
+                        future.set_result(
+                            {"error": "mcp_process_call_failed", "diagnostic": diagnostic}
+                        )
                     raise
 
     async def supervise(self) -> None:
@@ -190,7 +205,8 @@ class McpProcess:
                 self.started_at = time.monotonic()
                 await self.run_session()
                 return
-            except Exception:
+            except Exception as error:
+                self.last_diagnostic = exception_diagnostic(error, phase="connect")
                 self.state = "restarting"
                 while not self.requests.empty():
                     _, pending = self.requests.get_nowait()
@@ -264,7 +280,10 @@ async def control(request: dict[str, Any]) -> dict[str, Any]:
         if current.get("status") == "running":
             return current
         if current.get("status") == "failed":
-            return {"error": "mcp_process_restart_required"}
+            return {
+                "error": "mcp_process_restart_required",
+                "diagnostic": current.get("diagnostic"),
+            }
     except (FileNotFoundError, ConnectionRefusedError):
         home = Path(f"/workspace/mcp/{UUID(identifier)}")
         (home / "tmp").mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -287,10 +306,16 @@ async def control(request: dict[str, Any]) -> dict[str, Any]:
             if current.get("status") == "running":
                 return current
             if current.get("status") == "failed":
-                break
+                return {
+                    "error": "mcp_process_start_failed",
+                    "diagnostic": current.get("diagnostic"),
+                }
         except (FileNotFoundError, ConnectionRefusedError):
             continue
-    return {"error": "mcp_process_start_failed"}
+    return {
+        "error": "mcp_process_start_failed",
+        "diagnostic": exception_diagnostic(TimeoutError(), phase="connect"),
+    }
 
 
 def main() -> int:
@@ -310,8 +335,15 @@ def main() -> int:
         result = asyncio.run(control(json.loads(raw)))
         print(json.dumps(result))
         return 1 if "error" in result else 0
-    except Exception:
-        print('{"error":"mcp_process_control_failed"}')
+    except Exception as error:
+        print(
+            json.dumps(
+                {
+                    "error": "mcp_process_control_failed",
+                    "diagnostic": exception_diagnostic(error, phase="control"),
+                }
+            )
+        )
         return 1
 
 

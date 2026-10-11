@@ -22072,114 +22072,9 @@
 }
 ```
 
-<a id="schema-McpToolCallLogRequest"></a>
+<a id="schema-McpToolCallDiagnosticResponse"></a>
 
-## McpToolCallLogRequest
-
-| 字段 | 类型 | 必填 | 说明与约束 |
-| --- | --- | --- | --- |
-| `mcp_server_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `agent_run_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `approval_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `tool_name` | string | 是 | `maxLength=160`; `minLength=1` |
-| `status` | string | 是 | `maxLength=32`; `minLength=1` |
-| `request` | object | 否 | `additionalProperties=true` |
-| `response` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `error` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-
-```json
-{
-  "properties": {
-    "agent_run_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Agent Run Id"
-    },
-    "approval_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Approval Id"
-    },
-    "error": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Error"
-    },
-    "mcp_server_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Mcp Server Id"
-    },
-    "request": {
-      "additionalProperties": true,
-      "title": "Request",
-      "type": "object"
-    },
-    "response": {
-      "anyOf": [
-        {
-          "additionalProperties": true,
-          "type": "object"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Response"
-    },
-    "status": {
-      "maxLength": 32,
-      "minLength": 1,
-      "title": "Status",
-      "type": "string"
-    },
-    "tool_name": {
-      "maxLength": 160,
-      "minLength": 1,
-      "title": "Tool Name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "tool_name",
-    "status"
-  ],
-  "title": "McpToolCallLogRequest",
-  "type": "object"
-}
-```
-
-<a id="schema-McpToolCallLogResponse"></a>
-
-## McpToolCallLogResponse
+## McpToolCallDiagnosticResponse
 
 | 字段 | 类型 | 必填 | 说明与约束 |
 | --- | --- | --- | --- |
@@ -22205,6 +22100,7 @@
 | `request` | object | 是 | `additionalProperties=true` |
 | `response` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
 | `error` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `tool_call_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
 
 ```json
@@ -22402,6 +22298,17 @@
       ],
       "title": "Task Step Id"
     },
+    "tool_call_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Tool Call Id"
+    },
     "tool_name": {
       "title": "Tool Name",
       "type": "string"
@@ -22457,6 +22364,412 @@
     "request",
     "response",
     "error",
+    "tool_call_id",
+    "created_at"
+  ],
+  "title": "McpToolCallDiagnosticResponse",
+  "type": "object"
+}
+```
+
+<a id="schema-McpToolCallLogRequest"></a>
+
+## McpToolCallLogRequest
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `mcp_server_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `agent_run_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `approval_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `tool_name` | string | 是 | `maxLength=160`; `minLength=1` |
+| `status` | string | 是 | `maxLength=32`; `minLength=1` |
+| `request` | object | 否 | `additionalProperties=true` |
+| `response` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `error` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "agent_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Run Id"
+    },
+    "approval_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Approval Id"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error"
+    },
+    "mcp_server_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Mcp Server Id"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object"
+    },
+    "response": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Response"
+    },
+    "status": {
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Status",
+      "type": "string"
+    },
+    "tool_name": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Tool Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tool_name",
+    "status"
+  ],
+  "title": "McpToolCallLogRequest",
+  "type": "object"
+}
+```
+
+<a id="schema-McpToolCallLogResponse"></a>
+
+## McpToolCallLogResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | 是 | `format="uuid"` |
+| `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `mcp_server_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `agent_run_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `task_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `task_step_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `agent_profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `approval_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `tool_name` | string | 是 | — |
+| `status` | string | 是 | — |
+| `latency_ms` | integer anyOf null | 是 | `anyOf=[{"type": "integer"}, {"type": "null"}]` |
+| `argument_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `response_sha256` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `request_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `worker_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `runtime_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `trace_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `span_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `request` | object | 是 | `additionalProperties=true` |
+| `response` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `error` | object anyOf null | 是 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
+| `tool_call_id` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `created_at` | string (date-time) | 是 | `format="date-time"` |
+
+```json
+{
+  "properties": {
+    "agent_profile_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Profile Id"
+    },
+    "agent_run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Agent Run Id"
+    },
+    "approval_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Approval Id"
+    },
+    "argument_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Argument Sha256"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Error Code"
+    },
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "latency_ms": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Latency Ms"
+    },
+    "mcp_server_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Mcp Server Id"
+    },
+    "request": {
+      "additionalProperties": true,
+      "title": "Request",
+      "type": "object"
+    },
+    "request_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Request Id"
+    },
+    "response": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Response"
+    },
+    "response_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Response Sha256"
+    },
+    "runtime_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Runtime Id"
+    },
+    "span_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Span Id"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Task Id"
+    },
+    "task_step_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Task Step Id"
+    },
+    "tool_call_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Tool Call Id"
+    },
+    "tool_name": {
+      "title": "Tool Name",
+      "type": "string"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Trace Id"
+    },
+    "worker_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Worker Id"
+    },
+    "workspace_id": {
+      "format": "uuid",
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "workspace_id",
+    "mcp_server_id",
+    "agent_run_id",
+    "task_id",
+    "task_step_id",
+    "agent_profile_id",
+    "approval_id",
+    "tool_name",
+    "status",
+    "latency_ms",
+    "argument_sha256",
+    "response_sha256",
+    "error_code",
+    "request_id",
+    "worker_id",
+    "runtime_id",
+    "trace_id",
+    "span_id",
+    "request",
+    "response",
+    "error",
+    "tool_call_id",
     "created_at"
   ],
   "title": "McpToolCallLogResponse",

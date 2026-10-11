@@ -39,8 +39,12 @@ async def execute_request(request: dict[str, object]) -> dict[str, object]:
             result = await session.call_tool(
                 _string(tool, "name"),
                 arguments=_mapping(tool, "arguments"),
+                meta=request.get("meta"),
             )
-    return cast(dict[str, object], result.model_dump(mode="json", by_alias=True, exclude_none=True))
+            response = session.diagnostic_result(
+                result.model_dump(mode="json", by_alias=True, exclude_none=True)
+            )
+    return cast(dict[str, object], response)
 
 
 def validate_request_contract(request: dict[str, object]) -> None:

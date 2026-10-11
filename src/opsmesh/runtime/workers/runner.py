@@ -291,6 +291,7 @@ class WorkerRunner:
                     task_id=task_id,
                     run_id=run_id,
                     runtime_id=runtime_id,
+                    conversation_id=job.routing.get("conversation_id"),
                     **active_trace.metadata(),
                 ),
             ):
@@ -317,6 +318,7 @@ class WorkerRunner:
                 task_id=task_id,
                 run_id=run_id,
                 runtime_id=runtime_id,
+                conversation_id=job.routing.get("conversation_id"),
                 **active_trace.metadata(),
             ),
         ):

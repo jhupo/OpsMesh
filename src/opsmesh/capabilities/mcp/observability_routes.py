@@ -8,6 +8,7 @@ from opsmesh.capabilities.governance.diagnostic_schemas import (
     WorkspaceToolPolicyMatrixResponse,
 )
 from opsmesh.capabilities.mcp.execution.contracts import (
+    McpToolCallDiagnosticResponse,
     McpToolCallLogRequest,
     McpToolCallLogResponse,
 )
@@ -79,6 +80,9 @@ def list_mcp_tool_call_logs(
     status_filter: str | None = Query(default=None, alias="status", min_length=1, max_length=32),
     trace_id: str | None = Query(default=None, min_length=32, max_length=32),
     request_id: str | None = Query(default=None, min_length=1, max_length=80),
+    agent_run_id: UUID | None = Query(default=None),
+    tool_call_id: str | None = Query(default=None, min_length=1, max_length=160),
+    error_id: UUID | None = Query(default=None),
     context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.READ)),
     session: Session = Depends(get_db_session),
 ) -> PageResponse[McpToolCallLogResponse]:
@@ -91,7 +95,23 @@ def list_mcp_tool_call_logs(
             status=status_filter,
             trace_id=trace_id,
             request_id=request_id,
+            agent_run_id=agent_run_id,
+            tool_call_id=tool_call_id,
+            error_id=error_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return PageResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+@router.get("/mcp-tool-call-logs/{log_id}/diagnostic", response_model=McpToolCallDiagnosticResponse)
+def get_mcp_tool_call_diagnostic(
+    log_id: UUID,
+    context: WorkspaceContext = Depends(workspace_dependency(WorkspaceAction.ADMIN)),
+    session: Session = Depends(get_db_session),
+) -> McpToolCallDiagnosticResponse:
+    try:
+        log = McpToolCallLogQueryService(session).get_diagnostic(context.workspace.id, log_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return McpToolCallDiagnosticResponse.model_validate(log)

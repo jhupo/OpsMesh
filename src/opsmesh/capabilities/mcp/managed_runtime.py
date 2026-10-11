@@ -81,7 +81,9 @@ def process_request(
         result = None
     if record.exit_code or not isinstance(result, dict) or "error" in result:
         raise McpExecutionError(
-            "Managed MCP process request failed", code="mcp_process_request_failed"
+            "Managed MCP process request failed",
+            code="mcp_process_request_failed",
+            diagnostic=result.get("diagnostic") if isinstance(result, dict) else None,
         )
     return result
 

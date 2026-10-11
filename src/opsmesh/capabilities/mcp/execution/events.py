@@ -14,6 +14,7 @@ from opsmesh.capabilities.mcp.execution.contracts import (
     McpToolCallLogRequest,
     snapshot_audit_metadata,
 )
+from opsmesh.capabilities.mcp.execution.diagnostics import normalize_failure, public_response
 from opsmesh.capabilities.mcp.execution.payloads import (
     error_code,
     hash_from_payload,
@@ -115,6 +116,9 @@ class McpToolCallLogQueryService:
         status: str | None = None,
         trace_id: str | None = None,
         request_id: str | None = None,
+        agent_run_id: UUID | None = None,
+        tool_call_id: str | None = None,
+        error_id: UUID | None = None,
     ) -> tuple[list[McpToolCallLog], int]:
         if mcp_server_id is not None:
             require_mcp_server(self._session, workspace_id, mcp_server_id)
@@ -129,7 +133,25 @@ class McpToolCallLogQueryService:
             statement = statement.where(McpToolCallLog.trace_id == trace_id)
         if request_id is not None:
             statement = statement.where(McpToolCallLog.request_id == request_id)
+        if agent_run_id is not None:
+            statement = statement.where(McpToolCallLog.agent_run_id == agent_run_id)
+        if tool_call_id is not None:
+            statement = statement.where(McpToolCallLog.tool_call_id == tool_call_id)
+        if error_id is not None:
+            statement = statement.where(
+                McpToolCallLog.id == error_id, McpToolCallLog.status == "failed"
+            )
         return self._page(statement.order_by(McpToolCallLog.created_at.desc()), page)
+
+    def get_diagnostic(self, workspace_id: UUID, log_id: UUID) -> McpToolCallLog:
+        log = self._session.scalar(
+            select(McpToolCallLog).where(
+                McpToolCallLog.workspace_id == workspace_id, McpToolCallLog.id == log_id
+            )
+        )
+        if log is None:
+            raise ValueError("MCP call log not found")
+        return log
 
     def _mcp_log_run_context(
         self,
@@ -202,9 +224,22 @@ class McpToolCallLogService:
         ).all()
         for log in logs:
             log.status = "completed" if status == "completed" else "failed"
-            log.response = redact_sensitive_payload(response) if response is not None else None
+            log.response = (
+                redact_sensitive_payload(public_response(response))
+                if response is not None
+                else None
+            )
             log.response_sha256 = payload_hash(response) if response is not None else None
-            log.error = redact_sensitive_payload(error) if error is not None else None
+            log.error = (
+                normalize_failure(
+                    error,
+                    code=str((error or {}).get("code", "mcp_rpc_failed")),
+                    message="Self-hosted MCP execution failed",
+                    error_id=log.id,
+                )
+                if error is not None
+                else None
+            )
             log.error_code = error_code(error)
         self.session.flush()
 
@@ -234,6 +269,7 @@ class McpToolCallLogService:
             task_step_id=run.task_step_id if run is not None else None,
             agent_profile_id=uuid_or_none((snapshot or {}).get("agent_profile_id")),
             tool_name=request.tool_name,
+            tool_call_id=request.tool_call_id,
             status=status,
             latency_ms=latency_ms,
             argument_sha256=argument_sha256,
@@ -253,6 +289,7 @@ class McpToolCallLogService:
                     "arguments_sha256": argument_sha256,
                     "argument_bytes": len(canonical_payload(request.arguments).encode("utf-8")),
                     "cost_correlation_agent_run_id": str(request.agent_run_id),
+                    "tool_call_id": request.tool_call_id,
                     **snapshot_audit_metadata(snapshot or {}),
                 }
             ),

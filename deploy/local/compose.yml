@@ -1,4 +1,7 @@
 name: opsmesh
+x-logging: &logging
+  driver: json-file
+  options: {max-size: '10m', max-file: '3'}
 services:
   migrate:
     build:
@@ -13,6 +16,7 @@ services:
       postgres:
         condition: service_healthy
   api:
+    logging: *logging
     build:
       context: ../..
       dockerfile: deploy/images/Dockerfile
@@ -46,6 +50,7 @@ services:
       start_period: 20s
 
   worker:
+    logging: *logging
     image: opsmesh-worker:local
     build:
       context: ../..

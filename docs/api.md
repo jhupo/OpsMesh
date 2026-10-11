@@ -1,6 +1,6 @@
 # OpsMesh API 使用说明
 
-接口来自 `src/opsmesh/bootstrap/routers.py` 与实际注册路由。完整参数和返回字段见 [逐接口参考](api/README.md)、[数据模型](api/schemas.md) 和 [OpenAPI JSON](openapi.json)，覆盖全部 550 个接口，而非接口族示例。
+接口来自 `src/opsmesh/bootstrap/routers.py` 与实际注册路由。完整参数和返回字段见 [逐接口参考](api/README.md)、[数据模型](api/schemas.md) 和 [OpenAPI JSON](openapi.json)，覆盖全部 551 个接口，而非接口族示例。执行日志、错误关联和管理员诊断查询见 [可观测性说明](observability.md)。
 
 ## 地址与发现
 

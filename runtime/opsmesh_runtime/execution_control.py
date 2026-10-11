@@ -60,6 +60,10 @@ def initialize() -> None:
         "external_acl_type execution ttl=0 negative_ttl=0 children-startup=2 children-max=8 "
         f"%>lp %>rd %>rP {Path(sys.executable).with_name('opsmesh-runtime-egress-helper')}"
     )
+    access_format = (
+        '{"event":"runtime.egress","execution_port":%lp,'
+        '"proxy_result":"%Ss","http_status":%>Hs,"duration_ms":%tr}'
+    )
     configuration = f"""{ports}
 pid_filename /run/squid/squid.pid
 cache_effective_user proxy
@@ -68,7 +72,9 @@ cache deny all
 cache_mem 8 MB
 pinger_enable off
 cache_log /dev/null
-access_log none
+logformat opsmesh_egress {access_format}
+acl egress_failed http_status 400-599
+access_log stdio:/dev/stdout opsmesh_egress egress_failed
 cache_store_log none
 logfile_rotate 0
 visible_hostname opsmesh-runtime
@@ -202,6 +208,9 @@ def main() -> None:
     if sys.argv[1:] == ["--initialize"]:
         initialize()
         proxy = pwd.getpwnam(PROXY_USER)
+        # Squid reopens stdout after dropping privileges; only its trusted UID
+        # may own the inherited Docker log pipe. Workload UIDs stay separate.
+        os.fchown(sys.stdout.fileno(), proxy.pw_uid, proxy.pw_gid)
         os.setgroups([])
         os.setgid(proxy.pw_gid)
         os.setuid(proxy.pw_uid)

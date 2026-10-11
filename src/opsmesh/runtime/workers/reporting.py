@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -84,6 +85,9 @@ class WorkerLeaseReporter:
                 "request_id": job.request_id,
                 "routing": dict(job.routing),
                 "node_id": self._config.node_id,
+                "queue_wait_ms": max(
+                    0, int((datetime.now(UTC) - job.created_at).total_seconds() * 1000)
+                ),
                 **(job.trace_metadata() or current_trace_metadata()),
             },
         )

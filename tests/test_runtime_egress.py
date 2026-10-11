@@ -1,4 +1,7 @@
+import os
+import subprocess
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +17,37 @@ from opsmesh.shared.security.egress import (
     url_host,
     validate_egress_url,
 )
+
+
+@pytest.mark.skipif(
+    not os.getenv("OPSMESH_TEST_RUNTIME_IMAGE"),
+    reason="An isolated Docker Runtime image is required",
+)
+def test_runtime_supervisor_logs_denials_without_urls_or_secrets():
+    root = Path(__file__).resolve().parents[1]
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--user",
+            "0",
+            "--cap-add",
+            "NET_ADMIN",
+            "--volume",
+            f"{root}:/validation:ro",
+            "--entrypoint",
+            "python",
+            os.environ["OPSMESH_TEST_RUNTIME_IMAGE"],
+            "/validation/tests/fixtures/runtime_egress_probe.py",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
 
 
 def _request(policy: dict[str, object], *, disabled: bool = False) -> RuntimeCreateRequest:

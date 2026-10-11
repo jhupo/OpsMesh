@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer
 
+from opsmesh.capabilities.mcp.execution.diagnostics import public_error, public_response
 from opsmesh.shared.contracts import ORMModel
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
@@ -42,6 +43,7 @@ class McpToolCallLogResponse(ORMModel):
     request: dict[str, object]
     response: dict[str, object] | None
     error: dict[str, object] | None
+    tool_call_id: str | None
     created_at: datetime
 
     @field_serializer("request")
@@ -53,17 +55,26 @@ class McpToolCallLogResponse(ORMModel):
         self,
         response: dict[str, object] | None,
     ) -> dict[str, object] | None:
-        return redact_sensitive_payload(response) if response is not None else None
+        return redact_sensitive_payload(public_response(response)) if response is not None else None
 
+    @field_serializer("error")
+    def _serialize_error(self, error: dict[str, object] | None) -> dict[str, object] | None:
+        return redact_sensitive_payload(public_error(error)) if error is not None else None
+
+
+class McpToolCallDiagnosticResponse(McpToolCallLogResponse):
     @field_serializer("error")
     def _serialize_error(self, error: dict[str, object] | None) -> dict[str, object] | None:
         return redact_sensitive_payload(error) if error is not None else None
 
 
 class McpExecutionError(Exception):
-    def __init__(self, message: str, *, code: str = "mcp_execution_failed") -> None:
+    def __init__(
+        self, message: str, *, code: str = "mcp_execution_failed", diagnostic: object = None
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.diagnostic = diagnostic
 
 
 class McpExecutionPending(Exception):
@@ -90,6 +101,7 @@ class McpExecutionRequest:
     mcp_server_id: UUID | None = None
     runtime_allowed_tools: tuple[str, ...] | None = None
     approval_granted: bool = False
+    tool_call_id: str | None = None
 
 
 @dataclass(frozen=True)
