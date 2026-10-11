@@ -100,3 +100,13 @@ Managed MCP lifecycle failures write the safe exception summary to the existing 
 stream as `mcp_process.failed`. Its `error.error_id` matches the structured Worker log;
 cleanup failures preserve their exception type separately from the original cause.
 Lifecycle auditing follows the existing workspace audit access and retention policy.
+
+The real Linux egress check starts the privileged controller inside an isolated Runtime,
+then verifies proxy startup, a local 403 and URL/secret omission. Run it with a built image:
+
+```bash
+OPSMESH_TEST_RUNTIME_IMAGE=opsmesh-runtime:<commit> uv run pytest tests/test_runtime_egress.py
+```
+
+Its container has no network and is removed after the check. Without an explicitly supplied
+image, this integration check is skipped.
