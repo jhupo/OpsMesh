@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from uuid import UUID
 
 from opentelemetry.trace import SpanKind
@@ -33,6 +34,7 @@ from opsmesh.agents.execution.tools.payloads import (
     workspace_file_content_payload,
     workspace_file_payload,
 )
+from opsmesh.agents.execution.tools.resource_tools import RESOURCE_TOOL_NAMES, execute_resource_tool
 from opsmesh.capabilities.catalog.product_tools import PRODUCT_TOOL_NAMES as PRODUCT_TOOL_NAMES
 from opsmesh.capabilities.tools.contracts import ToolContext, ToolResourceNotFoundError
 from opsmesh.capabilities.tools.service import ProductToolService
@@ -42,6 +44,8 @@ from opsmesh.orchestration.approvals.waiting import ApprovalWaitingService
 from opsmesh.resources.memory.authorization import memory_read_scopes, memory_write_scopes
 from opsmesh.resources.storage.storage import ObjectStorage, create_storage
 from opsmesh.shared.config import Settings
+from opsmesh.shared.db.errors import DatabaseConflictError
+from opsmesh.shared.errors import DomainError
 from opsmesh.shared.security.redaction import redact_sensitive_text
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.shared.telemetry.trace_context import current_trace_context, telemetry_span
@@ -116,15 +120,19 @@ class ProductToolExecutor:
             metadata=dict(context.metadata),
         )
         try:
-            output = _execute_product_tool(
-                service=self._product_tool_service(),
-                context=product_context,
-                tool_name=tool_name,
-                arguments=arguments,
-                resource_grants=resource_grants,
-                file_scope_ids=context.file_scope_ids,
+            transaction = (
+                self._session.begin_nested() if tool_name in RESOURCE_TOOL_NAMES else nullcontext()
             )
-        except (ToolResourceNotFoundError, ValueError) as exc:
+            with transaction:
+                output = _execute_product_tool(
+                    service=self._product_tool_service(),
+                    context=product_context,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    resource_grants=resource_grants,
+                    file_scope_ids=context.file_scope_ids,
+                )
+        except (ToolResourceNotFoundError, ValueError, DatabaseConflictError, DomainError) as exc:
             error_code = getattr(exc, "code", "product_tool_failed")
             if tool_name in {"read_workspace_file", "get_knowledge_citations"}:
                 if error_code == "product_tool_failed":
@@ -263,6 +271,15 @@ def _execute_product_tool(
     resource_grants: tuple[AgentRuntimeResourceGrant, ...],
     file_scope_ids: tuple[UUID, ...],
 ) -> dict[str, object]:
+    if tool_name in RESOURCE_TOOL_NAMES:
+        return execute_resource_tool(
+            service,
+            context,
+            tool_name,
+            arguments,
+            resource_grants,
+            _file_ids(resource_grants, file_scope_ids),
+        )
     if tool_name == "discover_conversation_targets":
         return service.conversations.discover(
             context,

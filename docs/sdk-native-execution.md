@@ -40,6 +40,8 @@ stdio、Streamable HTTP、SSE 的实际连接在批准的 Runtime 执行，使�
 
 知识搜索工具默认返回前 5 条、最多 10 条匹配摘要和引用定位；完整片段通过 `get_knowledge_citations` 按需读取。排名诊断和内部存储元数据留在平台检索审计中，不自动进入模型工具输出。
 
+共享语义记忆的分页、正文、历史版本，以及知识资料的创建、修改、归档和入库状态通过受治理产品工具提供，见 [Agent 记忆与知识工具](agent-tools.md)。知识工具只管理来源，向量由既有 Worker 索引；文本来源使用 `source_type=text` 与 `config.text`。
+
 Agent Profile 的 `memory_policy.sdk_memory` 默认关闭。例如只读取持久文件记忆：
 
 ```json

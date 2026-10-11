@@ -30,8 +30,160 @@ def _object_schema(
 
 
 UUID_SCHEMA = {"type": "string", "format": "uuid"}
+PAGE_PROPERTIES = {
+    "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20},
+    "offset": {"type": "integer", "minimum": 0, "default": 0},
+}
+KNOWLEDGE_FIELDS = {
+    "name": {"type": "string", "minLength": 1, "maxLength": 160},
+    "description": {"type": "string", "maxLength": 2000},
+    "content": {"type": "string", "minLength": 1, "maxLength": 3000},
+    "workspace_file_id": UUID_SCHEMA,
+}
 
 PRODUCT_TOOL_CATALOG = (
+    ProductToolDefinition(
+        name="list_semantic_memory",
+        description="List authorized memory heads without content.",
+        input_schema=_object_schema(
+            {
+                **PAGE_PROPERTIES,
+                "include_archived": {"type": "boolean", "default": False},
+            }
+        ),
+        required_resource_type="memory_collection",
+        required_access_modes=("read", "read_write"),
+    ),
+    ProductToolDefinition(
+        name="get_semantic_memory",
+        description="Read an authorized memory head or exact revision.",
+        input_schema=_object_schema(
+            {
+                "memory_entry_id": UUID_SCHEMA,
+                "revision": {"type": "integer", "minimum": 1},
+            },
+            required=("memory_entry_id",),
+        ),
+        required_resource_type="memory_collection",
+        required_access_modes=("read", "read_write"),
+    ),
+    ProductToolDefinition(
+        name="list_semantic_memory_revisions",
+        description="Page revision IDs of authorized memory.",
+        input_schema=_object_schema(
+            {
+                **PAGE_PROPERTIES,
+                "memory_entry_id": UUID_SCHEMA,
+            },
+            required=("memory_entry_id",),
+        ),
+        required_resource_type="memory_collection",
+        required_access_modes=("read", "read_write"),
+    ),
+    ProductToolDefinition(
+        name="search_knowledge",
+        description="Retrieve relevant authorized knowledge snippets and citations.",
+        input_schema=_object_schema(
+            {
+                "query": {"type": "string", "minLength": 1},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5},
+            },
+            required=("query",),
+        ),
+        required_resource_type="memory_collection",
+        required_access_modes=("read", "read_write"),
+    ),
+    ProductToolDefinition(
+        name="list_knowledge",
+        description="List authorized knowledge sources without content.",
+        input_schema=_object_schema(
+            {
+                **PAGE_PROPERTIES,
+                "include_archived": {"type": "boolean", "default": False},
+            }
+        ),
+        required_resource_type="memory_collection",
+        required_access_modes=("read", "read_write"),
+    ),
+    ProductToolDefinition(
+        name="get_knowledge",
+        description=(
+            "Read a source declaration and page its text; use citations for indexed file/URL spans."
+        ),
+        input_schema=_object_schema(
+            {
+                "source_id": UUID_SCHEMA,
+                "content_offset": {"type": "integer", "minimum": 0, "default": 0},
+                "content_limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 12000,
+                    "default": 8000,
+                },
+            },
+            required=("source_id",),
+        ),
+        required_resource_type="memory_collection",
+        required_access_modes=("read", "read_write"),
+    ),
+    ProductToolDefinition(
+        name="create_knowledge",
+        description=(
+            "Create text or authorized file knowledge and queue ingestion. "
+            "Provide exactly one of content or workspace_file_id. "
+            "Ingestion status is not vector readiness."
+        ),
+        input_schema=_object_schema(KNOWLEDGE_FIELDS, required=("name",)),
+        risk_level="medium",
+        required_resource_type="memory_collection",
+        required_access_modes=("write", "read_write"),
+    ),
+    ProductToolDefinition(
+        name="update_knowledge",
+        description=(
+            "Update knowledge at an exact version and queue ingestion; "
+            "stale chunks stop matching immediately."
+        ),
+        input_schema=_object_schema(
+            {
+                **KNOWLEDGE_FIELDS,
+                "source_id": UUID_SCHEMA,
+                "expected_version": {"type": "integer", "minimum": 1},
+            },
+            required=("source_id", "expected_version"),
+        ),
+        risk_level="medium",
+        required_resource_type="memory_collection",
+        required_access_modes=("write", "read_write"),
+    ),
+    ProductToolDefinition(
+        name="archive_knowledge",
+        description=("Archive knowledge at an exact version and invalidate its indexed chunks."),
+        input_schema=_object_schema(
+            {
+                "source_id": UUID_SCHEMA,
+                "expected_version": {"type": "integer", "minimum": 1},
+            },
+            required=("source_id", "expected_version"),
+        ),
+        risk_level="medium",
+        requires_approval=True,
+        required_resource_type="memory_collection",
+        required_access_modes=("write", "read_write"),
+    ),
+    ProductToolDefinition(
+        name="get_knowledge_ingestion",
+        description=(
+            "Read an authorized ingestion status and its source version; "
+            "embeddings are maintained separately."
+        ),
+        input_schema=_object_schema(
+            {"source_id": UUID_SCHEMA, "ingestion_id": UUID_SCHEMA},
+            required=("source_id", "ingestion_id"),
+        ),
+        required_resource_type="memory_collection",
+        required_access_modes=("read", "read_write"),
+    ),
     ProductToolDefinition(
         name="discover_conversation_targets",
         description="Discover authorized expert agents and teams before delegating.",

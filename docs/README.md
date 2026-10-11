@@ -10,6 +10,7 @@
 | [对话与委派](conversations.md) | 排队、幂等、Manager、取消和重试 |
 | [执行边界](backend-execution-boundary.md) | API、Worker、Runtime 与 SDK 的职责 |
 | [SDK 原生执行](sdk-native-execution.md) | Session、审批恢复、MCP、记忆和压缩日志 |
+| [Agent 记忆与知识工具](agent-tools.md) | 模型 CRUD、权限、入库状态及路由与回答分工建议 |
 | [共享 Runtime](shared-runtime-hosts.md) | 宿主、执行槽、并发、取消和生命周期 |
 | [托管 MCP](managed-mcp.md) | 导入、宿主绑定、进程控制和凭据 |
 | [审批配置](approval-configuration.md) | 工作空间策略、模型审核与人工批准 |

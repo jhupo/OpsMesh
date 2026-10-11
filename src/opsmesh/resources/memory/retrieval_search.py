@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import and_, false, func, literal_column, or_, select, true
+from sqlalchemy import Text, and_, cast, false, func, literal_column, or_, select, true
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -360,19 +361,19 @@ def _memory_entry_filters(request: MemorySearchRequest) -> list[ColumnElement[bo
         filters.append(_source_type_condition(request.source_types))
     if request.access_scopes is not None:
         filters.append(
-            or_(*(_access_scope_condition(scope) for scope in request.access_scopes))
+            or_(*(memory_scope_predicate(scope) for scope in request.access_scopes))
             if request.access_scopes
             else false()
         )
     return filters
 
 
-def _access_scope_condition(scope: AuthorizedMemoryScope) -> ColumnElement[bool]:
+def memory_scope_predicate(scope: AuthorizedMemoryScope) -> ColumnElement[bool]:
     conditions: list[ColumnElement[bool]] = []
     if scope.source_types is not None:
         conditions.append(_source_type_condition(set(scope.source_types)))
     if scope.tags is not None:
-        conditions.append(WorkspaceMemoryEntry.tags.op("?|")(sorted(scope.tags)))
+        conditions.append(WorkspaceMemoryEntry.tags.op("?|")(cast(sorted(scope.tags), ARRAY(Text))))
     if scope.scope_types is not None:
         conditions.append(WorkspaceMemoryEntry.scope_type.in_(scope.scope_types))
     if scope.scope_ids is not None:

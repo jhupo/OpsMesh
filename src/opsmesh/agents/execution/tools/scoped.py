@@ -17,6 +17,8 @@ from opsmesh.identity.authorization.resource_queries import execution_resource_q
 from opsmesh.orchestration.approvals.pending_tools import PendingToolInvocationService
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.runtime.instances.contracts import DockerRuntimeClient
+from opsmesh.runtime.queues.dispatch import QueueDispatchPublisher
+from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.runtime.self_hosted.models import SelfHostedMcpJob
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.operations import DatabaseOperations
@@ -28,6 +30,7 @@ class ScopedToolExecutor:
     database: DatabaseOperations
     settings: Settings
     docker_client: DockerRuntimeClient | None
+    queue: RedisQueue
     active: set[asyncio.Task[object]] = field(default_factory=set, compare=False, repr=False)
 
     async def cancel_active_tools(self, *, context: AgentRuntimeContext) -> None:
@@ -88,13 +91,17 @@ class ScopedToolExecutor:
             self._authorize(session, context)
             user = ExecutionIdentityService(session).for_run(context.workspace_id, context.run_id)
             with execution_resource_queries(session, context.workspace_id, user):
-                return self._executor(session).prepare_tool(
+                prepared = self._executor(session).prepare_tool(
                     context=context,
                     tool_name=tool_name,
                     arguments=arguments,
                     tool_call_id=tool_call_id,
                     approval_granted=approval_granted,
                 )
+            QueueDispatchPublisher(session, self.queue).publish_pending(
+                workspace_id=context.workspace_id,
+            )
+            return prepared
 
         result = await self.database.run(operation)
         if isinstance(result, PreparedMcpTool):

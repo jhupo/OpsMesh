@@ -149,7 +149,9 @@ class AsyncAgentRunExecutor:
             )
             if storage is not None
             else None,
-            tool_executor=ScopedToolExecutor(database, self.settings, self.docker_client)
+            tool_executor=ScopedToolExecutor(
+                database, self.settings, self.docker_client, self.queue
+            )
             if (
                 request.context.allowed_tools
                 or request.context.tool_definitions
@@ -182,7 +184,7 @@ class AsyncAgentRunExecutor:
                     if isinstance(direct_result, DirectToolCall):
                         call = direct_result
                         tool_result = await ScopedToolExecutor(
-                            database, self.settings, self.docker_client
+                            database, self.settings, self.docker_client, self.queue
                         ).execute_tool(
                             context=call.context,
                             tool_name=call.tool_name,

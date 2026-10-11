@@ -14611,7 +14611,8 @@
           "source_type": {
             "enum": [
               "url",
-              "workspace_file"
+              "workspace_file",
+              "text"
             ],
             "title": "Source Type",
             "type": "string"
@@ -14847,7 +14848,8 @@
           "source_type": {
             "enum": [
               "url",
-              "workspace_file"
+              "workspace_file",
+              "text"
             ],
             "title": "Source Type",
             "type": "string"
@@ -14975,7 +14977,8 @@
           "source_type": {
             "enum": [
               "url",
-              "workspace_file"
+              "workspace_file",
+              "text"
             ],
             "title": "Source Type",
             "type": "string"
@@ -15100,7 +15103,8 @@
               {
                 "enum": [
                   "url",
-                  "workspace_file"
+                  "workspace_file",
+                  "text"
                 ],
                 "type": "string"
               },

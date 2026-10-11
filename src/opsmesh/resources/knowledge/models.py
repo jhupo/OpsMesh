@@ -32,7 +32,7 @@ class KnowledgeSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_knowledge_sources_workspace_status", "workspace_id", "status"),
         Index("ix_knowledge_sources_workspace_type", "workspace_id", "source_type"),
         CheckConstraint(
-            "source_type in ('url', 'workspace_file')",
+            "source_type in ('url', 'workspace_file', 'text')",
             name="knowledge_source_type_valid",
         ),
         CheckConstraint(
@@ -193,7 +193,7 @@ class KnowledgeSourceRevision(UUIDPrimaryKeyMixin, Base):
         ),
         CheckConstraint("version >= 1", name="knowledge_source_revision_version_positive"),
         CheckConstraint(
-            "source_type in ('url', 'workspace_file')",
+            "source_type in ('url', 'workspace_file', 'text')",
             name="knowledge_source_revision_type_valid",
         ),
         CheckConstraint(

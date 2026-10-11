@@ -1,0 +1,477 @@
+"""Product tool workflows against PostgreSQL, including scope and transaction rejection."""
+
+import os
+from dataclasses import replace
+from uuid import UUID, uuid4
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import sessionmaker
+
+from opsmesh.agents.execution.contracts import AgentRuntimeContext
+from opsmesh.agents.execution.tools.executor import BackendToolExecutor
+from opsmesh.identity.authorization.execution import ExecutionIdentityService
+from opsmesh.identity.authorization.resource_queries import execution_resource_queries
+from opsmesh.orchestration.runs.models import AgentRun
+from opsmesh.orchestration.tasks.models import Task
+from opsmesh.resources.knowledge.ingestion import KnowledgeSourceIngestionService
+from opsmesh.resources.knowledge.models import KnowledgeSource, KnowledgeSourceRevision
+from opsmesh.resources.memory.models import WorkspaceMemoryEntry
+from opsmesh.runtime.queues.dispatch import QueueDispatchPublisher
+from opsmesh.runtime.queues.models import QueueDispatch
+from opsmesh.shared.db.base import Base
+from opsmesh.workspaces.management.models import Workspace
+from tests.test_agent_runtime_tools import _memory_resource_grant, _product_definitions
+from tests.test_conversations_postgres import _queue, _seed_conversation
+from tests.test_postgres_scheduler_concurrency import _temporary_postgres_schema
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("OPSMESH_TEST_POSTGRES_URL"), reason="PostgreSQL URL required"
+)
+
+TOOLS = (
+    "create_knowledge",
+    "update_knowledge",
+    "archive_knowledge",
+    "get_knowledge",
+    "list_knowledge",
+    "search_knowledge",
+    "get_knowledge_ingestion",
+    "upsert_semantic_memory",
+    "archive_semantic_memory",
+    "get_semantic_memory",
+    "list_semantic_memory",
+    "list_semantic_memory_revisions",
+)
+
+
+def test_text_source_migration_round_trip_and_refuses_history_loss():
+    with _temporary_postgres_schema() as engine:
+        with engine.connect() as connection:
+            schema = connection.scalar(text("SELECT current_schema()"))
+        url = engine.url.update_query_dict({"options": f"-csearch_path={schema},public"})
+        config = Config("alembic.ini")
+        config.set_main_option(
+            "sqlalchemy.url", url.render_as_string(hide_password=False).replace("%", "%%")
+        )
+        command.upgrade(config, "head")
+        factory = sessionmaker(engine, expire_on_commit=False)
+        context = _seed(factory)
+        created = _call(
+            factory, context, "create_knowledge", {"name": "Policy", "content": "Keep evidence"}
+        )
+        assert created.status == "completed", created.error
+        source_id = UUID(created.output["source_id"])
+        # An old text revision must block downgrade even after the head is a URL.
+        with factory() as session:
+            source = session.get(KnowledgeSource, source_id)
+            source.source_type = "url"
+            source.uri = "https://example.com/policy"
+            source.source_config = {}
+            session.commit()
+        with pytest.raises(DBAPIError, match="Export and remove text"):
+            command.downgrade(config, "0120_retired_egress_configuration")
+        with factory() as session:
+            assert session.scalar(select(KnowledgeSourceRevision.source_type)) == "text"
+            session.delete(session.get(KnowledgeSource, source_id))
+            session.commit()
+        command.downgrade(config, "0120_retired_egress_configuration")
+        command.upgrade(config, "head")
+        recreated = _call(
+            factory, context, "create_knowledge", {"name": "Policy", "content": "Keep evidence"}
+        )
+        assert recreated.status == "completed", recreated.error
+
+
+def _seed(factory):
+    wid, uid, _, _ = _seed_conversation(factory)
+    with factory() as session:
+        task = Task(
+            workspace_id=wid,
+            created_by_user_id=uid,
+            title="Maintain knowledge",
+            execution_identity=ExecutionIdentityService(session).capture(wid, uid),
+        )
+        session.add(task)
+        session.flush()
+        run = AgentRun(workspace_id=wid, task_id=task.id, status="running", input={})
+        session.add(run)
+        grant = _memory_resource_grant(session, session.get(Workspace, wid))
+        session.commit()
+        return AgentRuntimeContext(
+            workspace_id=wid,
+            user_id=uid,
+            task_id=task.id,
+            run_id=run.id,
+            allowed_tools=TOOLS,
+            tool_definitions=_product_definitions(*TOOLS),
+            resource_grants=(grant,),
+        )
+
+
+def _call(factory, context, tool, arguments):
+    with factory() as session:
+        user = ExecutionIdentityService(session).for_run(context.workspace_id, context.run_id)
+        with execution_resource_queries(session, context.workspace_id, user):
+            result = BackendToolExecutor(session).prepare_tool(
+                context=context,
+                tool_name=tool,
+                arguments=arguments,
+                approval_granted=True,
+            )
+        return result
+
+
+def _ingest(factory, context, source_id, version):
+    with factory() as session:
+        service = KnowledgeSourceIngestionService(session)
+        ingestion = service.start(
+            workspace_id=context.workspace_id,
+            source_id=source_id,
+            source_version=version,
+        )
+        assert ingestion is not None
+        session.commit()
+        result = service.process(ingestion=ingestion)
+        assert result.status == "succeeded"
+        session.commit()
+
+
+def test_knowledge_tools_commit_source_and_job_then_reject_stale_or_foreign_writes():
+    with _temporary_postgres_schema() as engine:
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(engine, expire_on_commit=False)
+        context = _seed(factory)
+        other = _seed(factory)
+        read_only = replace(
+            context,
+            resource_grants=(replace(context.resource_grants[0], access_mode="read"),),
+        )
+        assert (
+            _call(
+                factory, read_only, "create_knowledge", {"name": "Denied", "content": "Denied"}
+            ).status
+            == "failed"
+        )
+        assert (
+            _call(
+                factory,
+                context,
+                "create_knowledge",
+                {"name": "Denied file", "workspace_file_id": str(uuid4())},
+            ).status
+            == "failed"
+        )
+        created = _call(
+            factory,
+            context,
+            "create_knowledge",
+            {
+                "name": "Refund policy",
+                "content": "Refund requires verified order evidence.",
+            },
+        )
+        assert created.status == "completed", created.error
+        source_id = UUID(created.output["source_id"])
+        with factory() as session:
+            assert session.scalar(select(func.count()).select_from(QueueDispatch)) == 1
+            source = session.get(KnowledgeSource, source_id)
+            assert source.source_type == "text"
+            service = KnowledgeSourceIngestionService(session)
+            first = service.request(
+                workspace_id=context.workspace_id,
+                source_id=source_id,
+                requested_by_user_id=context.user_id,
+            )
+            second = service.request(
+                workspace_id=context.workspace_id,
+                source_id=source_id,
+                requested_by_user_id=context.user_id,
+            )
+            assert first.id == second.id
+            session.commit()
+            assert session.scalar(select(func.count()).select_from(QueueDispatch)) == 1
+            queue = _queue()
+            assert QueueDispatchPublisher(session, queue).publish_pending() == 1
+            assert QueueDispatchPublisher(session, queue).publish_pending() == 0
+            assert queue.dequeue().resource_id == source_id
+            first.status = "failed"
+            session.commit()
+            service.request(
+                workspace_id=context.workspace_id,
+                source_id=source_id,
+                requested_by_user_id=context.user_id,
+            )
+            session.commit()
+            assert QueueDispatchPublisher(session, queue).publish_pending() == 1
+            assert queue.dequeue().resource_id == source_id
+        duplicate = _call(
+            factory,
+            context,
+            "create_knowledge",
+            {
+                "name": "Refund policy",
+                "content": "Duplicate must not leave a job.",
+            },
+        )
+        assert duplicate.status == "failed"
+        assert (
+            _call(factory, other, "get_knowledge", {"source_id": str(source_id)}).status == "failed"
+        )
+        assert _call(factory, other, "list_knowledge", {}).output["total"] == 0
+        _ingest(factory, context, source_id, 1)
+        found = _call(factory, context, "search_knowledge", {"query": "verified order"})
+        assert found.output["items"][0]["citations"]
+        assert "content" not in found.output["items"][0]
+        state = _call(
+            factory,
+            context,
+            "get_knowledge_ingestion",
+            {
+                "source_id": str(source_id),
+                "ingestion_id": created.output["ingestion_id"],
+            },
+        )
+        assert state.output["status"] == "succeeded"
+        assert state.output["vector_ready"] is False
+        updated = _call(
+            factory,
+            context,
+            "update_knowledge",
+            {
+                "source_id": str(source_id),
+                "expected_version": 1,
+                "content": "Refund requires manager approval.",
+            },
+        )
+        assert updated.status == "completed", updated.error
+        assert (
+            _call(factory, context, "search_knowledge", {"query": "verified"}).output["items"] == []
+        )
+        stale = _call(
+            factory,
+            context,
+            "update_knowledge",
+            {
+                "source_id": str(source_id),
+                "expected_version": 1,
+                "content": "Stale content",
+            },
+        )
+        assert stale.status == "failed"
+        page = _call(
+            factory,
+            context,
+            "get_knowledge",
+            {
+                "source_id": str(source_id),
+                "content_limit": 6,
+            },
+        )
+        assert page.output["content"] == "Refund"
+        assert page.output["has_more"] is True
+        with factory() as session:
+            assert session.scalar(select(func.count()).select_from(QueueDispatch)) == 3
+            entries = session.scalars(
+                select(WorkspaceMemoryEntry).where(
+                    WorkspaceMemoryEntry.source_id == str(source_id),
+                )
+            ).all()
+            assert entries and all(
+                entry.status == "archived" and entry.embedding is None for entry in entries
+            )
+        _ingest(factory, context, source_id, 2)
+        archived = _call(
+            factory,
+            context,
+            "archive_knowledge",
+            {
+                "source_id": str(source_id),
+                "expected_version": 2,
+            },
+        )
+        assert archived.status == "completed", archived.error
+        assert (
+            _call(factory, context, "search_knowledge", {"query": "manager"}).output["items"] == []
+        )
+        assert _call(factory, context, "list_knowledge", {}).output["total"] == 0
+
+
+def test_knowledge_rename_conflict_preserves_current_version_and_index():
+    with _temporary_postgres_schema() as engine:
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(engine, expire_on_commit=False)
+        context = _seed(factory)
+        first = _call(
+            factory, context, "create_knowledge", {"name": "First", "content": "Original evidence"}
+        )
+        second = _call(
+            factory, context, "create_knowledge", {"name": "Second", "content": "Other evidence"}
+        )
+        assert first.status == second.status == "completed"
+        source_id = UUID(first.output["source_id"])
+        _ingest(factory, context, source_id, 1)
+        renamed = _call(
+            factory,
+            context,
+            "update_knowledge",
+            {"source_id": str(source_id), "expected_version": 1, "name": "Second"},
+        )
+        assert renamed.status == "failed"
+        current = _call(factory, context, "get_knowledge", {"source_id": str(source_id)})
+        assert current.output["name"] == "First"
+        assert current.output["version"] == 1
+        assert _call(factory, context, "search_knowledge", {"query": "Original"}).output["items"]
+        with factory() as session:
+            assert session.scalar(select(func.count()).select_from(QueueDispatch)) == 2
+
+
+def test_memory_revision_reads_enforce_scope_and_read_only_grants():
+    with _temporary_postgres_schema() as engine:
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(engine, expire_on_commit=False)
+        context = _seed(factory)
+        other = _seed(factory)
+        args = {
+            "scope_id": str(context.workspace_id),
+            "scope_type": "workspace",
+            "memory_key": "preference",
+            "title": "Preference",
+            "content": "Use citations",
+            "tags": ["support"],
+            "expected_revision": 0,
+        }
+        created = _call(factory, context, "upsert_semantic_memory", args)
+        assert created.status == "completed", created.error
+        memory_id = created.output["id"]
+        updated = _call(
+            factory,
+            context,
+            "upsert_semantic_memory",
+            {
+                **args,
+                "expected_revision": 1,
+                "content": "Cite original evidence",
+                "tags": ["support", "audit"],
+            },
+        )
+        assert updated.status == "completed", updated.error
+        assert (
+            _call(
+                factory,
+                context,
+                "get_semantic_memory",
+                {
+                    "memory_entry_id": memory_id,
+                    "revision": 1,
+                },
+            ).output["content"]
+            == "Use citations"
+        )
+        assert (
+            _call(
+                factory,
+                context,
+                "list_semantic_memory_revisions",
+                {
+                    "memory_entry_id": memory_id,
+                    "limit": 1,
+                    "offset": 1,
+                },
+            ).output["items"][0]["revision"]
+            == 1
+        )
+        assert _call(factory, context, "list_semantic_memory", {}).output["total"] == 1
+        audit_reader = replace(
+            context,
+            resource_grants=(
+                replace(
+                    context.resource_grants[0], access_mode="read", locator={"tags": ["audit"]}
+                ),
+            ),
+        )
+        assert (
+            _call(
+                factory, audit_reader, "get_semantic_memory", {"memory_entry_id": memory_id}
+            ).status
+            == "completed"
+        )
+        assert (
+            _call(
+                factory,
+                audit_reader,
+                "get_semantic_memory",
+                {"memory_entry_id": memory_id, "revision": 1},
+            ).status
+            == "failed"
+        )
+        assert (
+            _call(
+                factory,
+                other,
+                "get_semantic_memory",
+                {
+                    "memory_entry_id": memory_id,
+                },
+            ).status
+            == "failed"
+        )
+        restricted = replace(
+            context,
+            resource_grants=(
+                replace(
+                    context.resource_grants[0],
+                    access_mode="read",
+                    locator={"tags": ["other"]},
+                ),
+            ),
+        )
+        assert _call(factory, restricted, "list_semantic_memory", {}).output["total"] == 0
+        assert (
+            _call(
+                factory,
+                restricted,
+                "get_semantic_memory",
+                {
+                    "memory_entry_id": memory_id,
+                },
+            ).status
+            == "failed"
+        )
+        assert (
+            _call(
+                factory,
+                restricted,
+                "upsert_semantic_memory",
+                {
+                    **args,
+                    "expected_revision": 2,
+                },
+            ).status
+            == "failed"
+        )
+        archived = _call(
+            factory,
+            context,
+            "archive_semantic_memory",
+            {
+                "memory_entry_id": memory_id,
+                "expected_revision": 2,
+            },
+        )
+        assert archived.status == "completed", archived.error
+        assert _call(factory, context, "list_semantic_memory", {}).output["total"] == 0
+        assert (
+            _call(
+                factory,
+                context,
+                "list_semantic_memory",
+                {
+                    "include_archived": True,
+                },
+            ).output["total"]
+            == 1
+        )

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_serializer, model_validator
 from opsmesh.shared.contracts import ORMModel, TimestampedModel
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 
-KnowledgeSourceType = Literal["url", "workspace_file"]
+KnowledgeSourceType = Literal["url", "workspace_file", "text"]
 
 
 class KnowledgeSourceCreateRequest(BaseModel):
@@ -22,6 +22,8 @@ class KnowledgeSourceCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_source_reference(self) -> KnowledgeSourceCreateRequest:
+        if self.source_type == "text" and (self.uri or self.workspace_file_id):
+            raise ValueError("Text knowledge source cannot include external references")
         if self.source_type == "url" and self.workspace_file_id is not None:
             raise ValueError("URL knowledge source cannot include workspace_file_id")
         if self.source_type == "workspace_file" and self.uri is not None:
@@ -41,6 +43,8 @@ class KnowledgeSourceUpdateRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_change(self) -> KnowledgeSourceUpdateRequest:
+        if self.source_type == "text" and (self.uri or self.workspace_file_id):
+            raise ValueError("Text knowledge source cannot include external references")
         if not any(
             value is not None
             for value in (

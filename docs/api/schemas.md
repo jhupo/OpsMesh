@@ -18593,7 +18593,7 @@
 | --- | --- | --- | --- |
 | `name` | string | 是 | `maxLength=160`; `minLength=1` |
 | `description` | string | 否 | `default=""`; `maxLength=2000` |
-| `source_type` | string | 是 | `enum=["url", "workspace_file"]` |
+| `source_type` | string | 是 | `enum=["url", "workspace_file", "text"]` |
 | `uri` | string anyOf null | 否 | `anyOf=[{"maxLength": 2048, "type": "string"}, {"type": "null"}]` |
 | `workspace_file_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `config` | object | 否 | `additionalProperties=true` |
@@ -18621,7 +18621,8 @@
     "source_type": {
       "enum": [
         "url",
-        "workspace_file"
+        "workspace_file",
+        "text"
       ],
       "title": "Source Type",
       "type": "string"
@@ -18830,7 +18831,7 @@
 | `created_by_user_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `name` | string | 是 | — |
 | `description` | string | 是 | — |
-| `source_type` | string | 是 | `enum=["url", "workspace_file"]` |
+| `source_type` | string | 是 | `enum=["url", "workspace_file", "text"]` |
 | `uri` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `workspace_file_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `source_config` | object | 是 | `additionalProperties=true` |
@@ -18908,7 +18909,8 @@
     "source_type": {
       "enum": [
         "url",
-        "workspace_file"
+        "workspace_file",
+        "text"
       ],
       "title": "Source Type",
       "type": "string"
@@ -18992,7 +18994,7 @@
 | `version` | integer | 是 | — |
 | `name` | string | 是 | — |
 | `description` | string | 是 | — |
-| `source_type` | string | 是 | `enum=["url", "workspace_file"]` |
+| `source_type` | string | 是 | `enum=["url", "workspace_file", "text"]` |
 | `uri` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `workspace_file_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `source_config` | object | 是 | `additionalProperties=true` |
@@ -19061,7 +19063,8 @@
     "source_type": {
       "enum": [
         "url",
-        "workspace_file"
+        "workspace_file",
+        "text"
       ],
       "title": "Source Type",
       "type": "string"
@@ -19159,7 +19162,7 @@
 | `expected_version` | integer | 是 | `minimum=1.0` |
 | `name` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
 | `description` | string anyOf null | 否 | `anyOf=[{"maxLength": 2000, "type": "string"}, {"type": "null"}]` |
-| `source_type` | string anyOf null | 否 | `anyOf=[{"enum": ["url", "workspace_file"], "type": "string"}, {"type": "null"}]` |
+| `source_type` | string anyOf null | 否 | `anyOf=[{"enum": ["url", "workspace_file", "text"], "type": "string"}, {"type": "null"}]` |
 | `uri` | string anyOf null | 否 | `anyOf=[{"maxLength": 2048, "type": "string"}, {"type": "null"}]` |
 | `workspace_file_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `config` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
@@ -19215,7 +19218,8 @@
         {
           "enum": [
             "url",
-            "workspace_file"
+            "workspace_file",
+            "text"
           ],
           "type": "string"
         },

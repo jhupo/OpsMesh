@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
 
-KnowledgeSourceType = Literal["url", "workspace_file"]
+KnowledgeSourceType = Literal["url", "workspace_file", "text"]
 KnowledgeSourceStatus = Literal["active", "paused", "archived"]
 
 
