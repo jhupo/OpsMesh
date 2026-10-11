@@ -1,4 +1,4 @@
-from opsmesh.agents.providers.policy import is_anthropic_provider
+from opsmesh.agents.providers.classification import is_anthropic_provider
 
 ANTHROPIC_MESSAGES_API = "anthropic_messages"
 OPENAI_CHAT_COMPLETIONS_API = "chat_completions"

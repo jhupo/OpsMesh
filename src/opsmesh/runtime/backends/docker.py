@@ -186,9 +186,31 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
     def open_agent_channel(
         self, container_id: str, *, working_dir: str, identity: RuntimeExecutionIdentity
     ) -> DockerAgentChannel:
-        return self._open_channel(
-            container_id, "opsmesh.bootstrap.agent_host", working_dir, identity
-        )
+        client = self._client_factory(self._control_timeout())
+        try:
+            execution = client.api.exec_create(
+                container_id,
+                [
+                    "python",
+                    "-I",
+                    "-m",
+                    "opsmesh_runtime.agent_pool_client",
+                    str(identity.allocation_id),
+                    str(identity.uid),
+                    working_dir,
+                ],
+                stdin=True,
+                stdout=True,
+                stderr=True,
+                tty=False,
+                workdir="/",
+                user="0:0",
+            )
+            connection = client.api.exec_start(execution["Id"], socket=True)
+            return DockerAgentChannel(connection, client)
+        except BaseException:
+            client.close()
+            raise
 
     def open_mcp_channel(
         self, container_id: str, *, working_dir: str, identity: RuntimeExecutionIdentity
@@ -308,6 +330,15 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                 network_mode=_docker_network_mode(request),
                 environment={
                     **(request.process.environment if request.process is not None else {}),
+                    **(
+                        {
+                            "OPSMESH_RUNTIME_MAX_EXECUTIONS": str(
+                                request.limits.max_concurrent_executions
+                            )
+                        }
+                        if request.shared_host
+                        else {}
+                    ),
                 },
                 cap_drop=list(request.hardening.cap_drop),
                 cap_add=["NET_ADMIN", "KILL", "CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"]

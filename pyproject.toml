@@ -118,7 +118,7 @@ extra-standard-library = ["operator"]
 [tool.mypy]
 python_version = "3.11"
 platform = "linux"
-mypy_path = ["src", "operator"]
+mypy_path = ["src", "operator", "runtime"]
 plugins = ["pydantic.mypy"]
 strict = true
 warn_return_any = true

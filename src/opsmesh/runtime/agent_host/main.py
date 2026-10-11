@@ -38,13 +38,15 @@ from opsmesh.shared.security.redaction import redact_sensitive_text
 class HostRpc:
     def __init__(self, reader: asyncio.StreamReader) -> None:
         self.reader = reader
-        self.output = sys.stdout.buffer
+        # Own the wrapper as well as its buffer. Redirecting sys.stdout must not
+        # destroy a forked child's wrapper and close the live RPC descriptor.
+        self.output = sys.stdout
         self.pending: dict[str, asyncio.Future[object]] = {}
         self.closed = asyncio.Event()
 
     def send(self, frame: RpcFrame) -> None:
-        self.output.write(frame.encoded())
-        self.output.flush()
+        self.output.buffer.write(frame.encoded())
+        self.output.buffer.flush()
 
     async def call(self, method: str, payload: dict[str, object]) -> object:
         if self.closed.is_set():

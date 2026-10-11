@@ -164,6 +164,8 @@ class DockerProbe:
                 "512m",
                 "--pids-limit",
                 "128",
+                "--env",
+                "OPSMESH_RUNTIME_MAX_EXECUTIONS=4",
                 "--cap-drop",
                 "ALL",
                 "--cap-add",

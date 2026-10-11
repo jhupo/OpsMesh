@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import re
 from uuid import UUID
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
+from opsmesh.agents.providers.classification import is_openai_compatible_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
 from opsmesh.shared.security.egress import EgressUrlPolicy, url_host, validate_egress_url
 
@@ -58,27 +58,6 @@ class ModelProviderDefaultService:
         if credential_id is not None:
             statement = statement.where(ModelProviderCredential.id != credential_id)
         self._session.execute(statement.values(is_default=False))
-
-
-OPENAI_COMPATIBLE_PROVIDERS = {"openai", "openai-compatible"}
-ANTHROPIC_PROVIDERS = {"anthropic"}
-
-
-def model_provider_key(provider: str | None) -> str:
-    key = re.sub(r"[^a-z0-9]+", "-", (provider or "").strip().lower())
-    return key.strip("-")
-
-
-def canonical_model_provider(provider: str | None) -> str:
-    return model_provider_key(provider)
-
-
-def is_openai_compatible_provider(provider: str | None) -> bool:
-    return canonical_model_provider(provider) in OPENAI_COMPATIBLE_PROVIDERS
-
-
-def is_anthropic_provider(provider: str | None) -> bool:
-    return canonical_model_provider(provider) in ANTHROPIC_PROVIDERS
 
 
 def validated_base_url(

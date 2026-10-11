@@ -79,13 +79,11 @@ from opsmesh.agents.execution.providers.openai.settings import OpenAIModelSettin
 from opsmesh.agents.execution.providers.openai.streaming import run_openai_streamed
 from opsmesh.agents.execution.providers.openai.tools import OpenAIToolBridge
 from opsmesh.agents.execution.usage import runtime_usage
+from opsmesh.agents.providers.classification import is_openai_compatible_provider
 from opsmesh.agents.providers.model_api import (
     OPENAI_CHAT_COMPLETIONS_API,
     OPENAI_RESPONSES_API,
     canonical_model_api,
-)
-from opsmesh.agents.providers.policy import (
-    is_openai_compatible_provider,
 )
 from opsmesh.resources.memory.policy import SDKMemoryPolicy
 

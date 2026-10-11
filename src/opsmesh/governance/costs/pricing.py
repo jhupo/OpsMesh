@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.providers.policy import canonical_model_provider
+from opsmesh.agents.providers.classification import canonical_model_provider
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.costs.models import ModelPricingRule
 from opsmesh.governance.costs.usage import NormalizedModelUsage

@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opsmesh.agents.providers.classification import canonical_model_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
-from opsmesh.agents.providers.policy import canonical_model_provider
 from opsmesh.resources.memory.models import (
     WorkspaceMemoryConfiguration,
     WorkspaceMemoryEmbeddingEvent,

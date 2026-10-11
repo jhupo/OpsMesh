@@ -8,7 +8,7 @@ from opsmesh.agents.execution.contracts import (
     AgentRuntimeCapabilities,
 )
 from opsmesh.agents.execution.errors import AgentRuntimeCapabilityError
-from opsmesh.agents.providers.policy import (
+from opsmesh.agents.providers.classification import (
     is_anthropic_provider,
     is_openai_compatible_provider,
     model_provider_key,

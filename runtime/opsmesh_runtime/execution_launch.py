@@ -25,7 +25,7 @@ def main() -> None:
         if not arguments:
             raise ValueError("Execution command is empty")
         os.execvp(arguments[0], arguments)
-    if arguments or entry not in {"opsmesh.bootstrap.agent_host", "opsmesh_runtime.mcp_host"}:
+    if arguments or entry != "opsmesh_runtime.mcp_host":
         raise ValueError("Unsupported SDK execution entry point")
     sys.argv = [entry]
     runpy.run_module(entry, run_name="__main__")

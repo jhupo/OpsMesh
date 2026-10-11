@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
@@ -35,6 +36,7 @@ class RuntimeAgentExecutor:
                 metadata={},
             )
         wire = RuntimeRunInput.from_request(request)
+        admission_started = time.monotonic()
         runtime = request.sandbox.session.executor
         channel = await self.io.run(
             partial(
@@ -76,6 +78,20 @@ class RuntimeAgentExecutor:
                     if not isinstance(process_id, int) or process_id <= 1 or pid is not None:
                         raise ValueError("SDK host returned an invalid process identity")
                     pid = process_id
+                    if request.lifecycle_sink is not None:
+                        from opsmesh.agents.execution.contracts import AgentRuntimeEvent
+
+                        await request.lifecycle_sink(
+                            AgentRuntimeEvent(
+                                event_type="runtime.sdk_host.ready",
+                                message="Preloaded Runtime execution process admitted",
+                                payload={
+                                    "admission_ms": round(
+                                        (time.monotonic() - admission_started) * 1000
+                                    )
+                                },
+                            )
+                        )
                 elif frame.type == "event":
                     if request.event_sink:
                         request.event_sink(STREAM_EVENT.validate_python(frame.payload))

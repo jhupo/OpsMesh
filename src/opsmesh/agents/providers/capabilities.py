@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-from opsmesh.agents.providers.policy import canonical_model_provider
+from opsmesh.agents.providers.classification import canonical_model_provider
 
 
 class ModelCapability(BaseModel):

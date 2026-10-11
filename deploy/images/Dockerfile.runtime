@@ -22,4 +22,4 @@ WORKDIR /workspace
 RUN python -m opsmesh_runtime.mcp_stdio_client --check
 ARG BUILD_COMMIT
 LABEL org.opencontainers.image.revision=$BUILD_COMMIT
-CMD ["python", "-m", "opsmesh_runtime.execution_control", "--initialize"]
+CMD ["python", "-I", "-m", "opsmesh_runtime.execution_control", "--initialize"]

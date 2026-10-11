@@ -29,7 +29,10 @@ from opsmesh.agents.profiles.routing import (
     bounded_target_int,
     require_handoff_policy,
 )
-from opsmesh.agents.providers.policy import is_anthropic_provider, is_openai_compatible_provider
+from opsmesh.agents.providers.classification import (
+    is_anthropic_provider,
+    is_openai_compatible_provider,
+)
 from opsmesh.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
     effective_catalog_fingerprint,
