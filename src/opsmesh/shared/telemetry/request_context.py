@@ -17,6 +17,10 @@ LOG_CONTEXT_FIELDS = (
     "run_id",
     "worker_id",
     "runtime_id",
+    "conversation_id",
+    "tool_call_id",
+    "operation_id",
+    "error_id",
 )
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
@@ -39,6 +43,8 @@ _CONTEXT_VARS = {
     "worker_id": worker_id_var,
     "runtime_id": runtime_id_var,
 }
+_CONTEXT_VARS.update({field: ContextVar(field, default=None) for field in
+                      ("conversation_id", "tool_call_id", "operation_id", "error_id")})
 
 
 def current_log_context() -> dict[str, str | None]:

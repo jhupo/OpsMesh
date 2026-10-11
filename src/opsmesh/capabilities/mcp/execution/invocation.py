@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from time import monotonic
 from uuid import UUID
@@ -13,6 +14,12 @@ from opsmesh.capabilities.mcp.execution.contracts import (
     McpExecutionResult,
     snapshot_audit_metadata,
 )
+from opsmesh.capabilities.mcp.execution.diagnostics import (
+    normalize_failure,
+    public_error,
+    public_response,
+    response_diagnostic,
+)
 from opsmesh.capabilities.mcp.execution.events import (
     McpExecutionNotifier,
     McpToolCallLogService,
@@ -23,6 +30,7 @@ from opsmesh.capabilities.mcp.models import McpCredentialReference, McpServer
 from opsmesh.capabilities.mcp.transport.contracts import McpToolAdapter, McpToolAdapterResolver
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.shared.security.redaction import redact_sensitive_text
+from opsmesh.shared.telemetry.request_context import log_context
 from opsmesh.shared.telemetry.trace_context import current_trace_context, telemetry_span
 from opsmesh.shared.utils import canonical_payload, payload_hash
 
@@ -55,13 +63,20 @@ class McpToolInvoker:
         started = monotonic()
         try:
             self._enforce_payload_size(request.arguments, policy.max_input_bytes)
-            operation = self._adapter_for(server).prepare(
-                server=server,
-                tool_name=request.tool_name,
-                arguments=request.arguments,
-                credential_refs=list(credentials),
-                timeout_seconds=policy.timeout_seconds,
-            )
+            with log_context(
+                workspace_id=request.workspace_id,
+                run_id=run.id,
+                runtime_id=run.execution_runtime_id or run.runtime_id,
+                task_id=run.task_id,
+                tool_call_id=request.tool_call_id,
+            ):
+                operation = self._adapter_for(server).prepare(
+                    server=server,
+                    tool_name=request.tool_name,
+                    arguments=request.arguments,
+                    credential_refs=list(credentials),
+                    timeout_seconds=policy.timeout_seconds,
+                )
         except McpExecutionPending as error:
             return self._record_pending(
                 request=request,
@@ -88,7 +103,7 @@ class McpToolInvoker:
                 run=run,
                 server=server,
                 snapshot=snapshot,
-                error={"code": "mcp_adapter_failed", "message": type(error).__name__},
+                error=_normalized_error(error),
                 latency_ms=_latency_ms(started),
                 log_id=log.id,
             )
@@ -139,7 +154,12 @@ class McpToolInvoker:
             payload: dict[str, object] = (
                 _normalized_error(error)
                 if isinstance(error, Exception)
-                else {"code": "mcp_execution_cancelled", "message": "Runtime operation cancelled"}
+                else {
+                    "code": "mcp_execution_cancelled",
+                    "message": "Runtime operation cancelled",
+                    "category": "cancelled",
+                    "phase": "tool",
+                }
             )
             return self._record_failure(
                 request=request,
@@ -157,7 +177,11 @@ class McpToolInvoker:
                 run=run,
                 server=server,
                 snapshot=prepared.snapshot,
-                error={"code": "mcp_remote_error", "message": "MCP tool reported an error"},
+                error=normalize_failure(
+                    response_diagnostic(response),
+                    code="mcp_remote_error",
+                    message="MCP tool reported an error",
+                ),
                 latency_ms=_latency_ms(prepared.started),
                 log_id=prepared.log_id,
                 response=response,
@@ -273,6 +297,13 @@ class McpToolInvoker:
         log_id: UUID,
         response: dict[str, object] | None = None,
     ) -> McpExecutionResult:
+        error = normalize_failure(
+            error,
+            code=str(error.get("code", "mcp_execution_failed")),
+            message=str(error.get("message", "MCP execution failed")),
+            error_id=log_id,
+        )
+        response = public_response(response) if response is not None else None
         log = self._logs().record(
             request=request,
             server_id=server.id,
@@ -284,12 +315,31 @@ class McpToolInvoker:
             latency_ms=latency_ms,
             log_id=log_id,
         )
+        error = public_error(error)
+        logging.getLogger(__name__).warning(
+            "MCP tool failed",
+            extra={
+                "workspace_id": str(request.workspace_id),
+                "run_id": str(run.id),
+                "tool_call_id": request.tool_call_id,
+                "tool_name": request.tool_name,
+                "error_id": str(log.id),
+                "error": error,
+                "duration_ms": latency_ms,
+            },
+        )
         notifier = McpExecutionNotifier(self.session)
         notifier.append_run_event(
             run=run,
             event_type="tool.failed",
             message=request.tool_name,
-            metadata={"tool_kind": "mcp", "error": error, "latency_ms": latency_ms},
+            metadata={
+                "tool_kind": "mcp",
+                "error": error,
+                "latency_ms": latency_ms,
+                "mcp_tool_call_log_id": str(log.id),
+                "tool_call_id": request.tool_call_id,
+            },
         )
         notifier.append_task_message(
             run=run,
@@ -411,8 +461,18 @@ class McpToolInvoker:
 
 def _normalized_error(exc: Exception) -> dict[str, object]:
     if isinstance(exc, McpExecutionError):
-        return {"code": exc.code, "message": redact_sensitive_text(str(exc))}
-    return {"code": "mcp_adapter_failed", "message": exc.__class__.__name__}
+        return normalize_failure(
+            exc.diagnostic, code=exc.code, message=redact_sensitive_text(str(exc))
+        )
+    return normalize_failure(
+        {
+            "exception_type": type(exc).__name__,
+            "phase": "control",
+            "category": "network" if isinstance(exc, TimeoutError) else "execution",
+        },
+        code="mcp_adapter_failed",
+        message="MCP adapter failed",
+    )
 
 
 def _latency_ms(started: float) -> int:

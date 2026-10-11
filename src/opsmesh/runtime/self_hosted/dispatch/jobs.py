@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opsmesh.capabilities.mcp.execution.diagnostics import public_error
 from opsmesh.capabilities.mcp.execution.events import McpToolCallLogService
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.state import RunStateService, RunStatus
@@ -272,8 +273,9 @@ class SelfHostedJobFinalizer:
                 run,
                 RunStatus.FAILED,
                 completed_at=datetime.now(UTC),
-                error=job.error_payload
-                or {
+                error=public_error(job.error_payload)
+                if job.error_payload is not None
+                else {
                     "code": "self_hosted_mcp_job_failed",
                     "message": "Self-hosted MCP job failed",
                     "retryable": True,

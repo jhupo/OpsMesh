@@ -6,6 +6,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from opsmesh.capabilities.mcp.execution.diagnostics import (
+    normalize_failure,
+    public_error,
+    public_response,
+)
 from opsmesh.capabilities.mcp.models import McpServer
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.runtime.instances.models import WorkspaceRuntime
@@ -86,19 +91,31 @@ class SelfHostedMcpJobService:
         data: McpJobCompletePayload,
     ) -> SelfHostedMcpJob:
         job = self._locked_mcp_job(auth, mcp_job_id)
+        response = (
+            public_response(data.response_payload) if data.response_payload is not None else None
+        )
+        error = (
+            normalize_failure(
+                data.error_payload,
+                code=str(data.error_payload.get("code", "mcp_rpc_failed")),
+                message="Self-hosted MCP execution failed",
+            )
+            if data.error_payload is not None
+            else None
+        )
         if job.status in {"completed", "failed"}:
             if (
                 job.status != data.status
-                or job.response_payload != data.response_payload
-                or job.error_payload != data.error_payload
+                or job.response_payload != response
+                or job.error_payload != (public_error(error) if error is not None else None)
             ):
                 raise ValueError("Self-hosted MCP job was already completed differently")
             return job
         if job.status != "claimed" or job.worker_id != auth.worker.id:
             raise ValueError("Self-hosted MCP job is not claimed by this worker")
         job.status = data.status
-        job.response_payload = data.response_payload
-        job.error_payload = data.error_payload
+        job.response_payload = response
+        job.error_payload = error
         job.completed_at = datetime.now(UTC)
         run = self._session.get(AgentRun, job.agent_run_id)
         if run is not None:
@@ -114,6 +131,8 @@ class SelfHostedMcpJobService:
                     "error_present": data.error_payload is not None,
                 },
             )
+        # Only the access-controlled call log retains private operator evidence.
+        job.error_payload = public_error(error) if error is not None else None
         self._session.commit()
         self._session.refresh(job)
         return job

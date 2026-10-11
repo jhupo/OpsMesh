@@ -633,10 +633,8 @@ def test_mcp_execution_rejects_oversized_payload_and_logs_failure() -> None:
     events = session.scalars(select(RunEvent).order_by(RunEvent.sequence)).all()
 
     assert result.status == "failed"
-    assert result.error == {
-        "code": "mcp_payload_too_large",
-        "message": "MCP payload exceeds configured size limit",
-    }
+    assert result.error["code"] == "mcp_payload_too_large"
+    assert result.error["error_id"] == str(log.id)
     assert log is not None
     assert log.status == "failed"
     assert log.error is not None
@@ -673,12 +671,10 @@ def test_mcp_preparation_records_sanitized_adapter_failure() -> None:
     assert log.status == "failed"
     assert log.error is not None
     assert log.error["code"] == "mcp_adapter_failed"
-    assert log.error["message"] == "RuntimeError"
+    assert log.error["exception_type"] == "RuntimeError"
     assert event is not None
-    assert event.event_metadata["error"] == {
-        "code": "mcp_adapter_failed",
-        "message": "RuntimeError",
-    }
+    assert event.event_metadata["error"]["code"] == "mcp_adapter_failed"
+    assert event.event_metadata["error"]["exception_type"] == "RuntimeError"
     assert "sk-secret" not in str(log.error)
     assert "sk-secret" not in str(event.event_metadata)
 

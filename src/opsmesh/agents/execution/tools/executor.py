@@ -348,6 +348,7 @@ class BackendToolExecutor:
                 mcp_server_id=prepared.definition.mcp_server_id,
                 runtime_allowed_tools=context.allowed_tools,
                 approval_granted=approval_granted,
+                tool_call_id=tool_call_id,
             )
         )
         if isinstance(mcp_result, PreparedMcpExecution):

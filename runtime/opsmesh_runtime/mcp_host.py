@@ -6,6 +6,7 @@ import os
 import sys
 from contextlib import suppress
 
+from .diagnostics import RuntimeDiagnosticError, exception_diagnostic
 from .mcp_http_client import execute_request as http_request
 from .mcp_process import exchange, socket_path
 from .mcp_stdio_client import execute_request as stdio_request
@@ -25,6 +26,7 @@ async def execute(request: dict[str, object]) -> dict[str, object]:
     payload = request["request"]
     if not isinstance(payload, dict):
         raise ValueError("MCP request must be an object")
+    payload = {**payload, "meta": request.get("meta", {})}
     if request["transport"] == "stdio":
         return await stdio_request(payload)
     if request["transport"] == "http":
@@ -32,7 +34,7 @@ async def execute(request: dict[str, object]) -> dict[str, object]:
     if request["transport"] == "managed":
         result = await exchange(socket_path(str(request["server_id"])), payload)
         if "error" in result:
-            raise RuntimeError("Managed MCP call failed")
+            raise RuntimeDiagnosticError(result.get("diagnostic", {}))
         return result
     raise ValueError("Unknown Runtime MCP transport")
 
@@ -57,7 +59,12 @@ async def run() -> None:
             operation.cancel()
         result = await operation
     except Exception as error:
-        emit("error", {"code": "mcp_runtime_failed", "message": type(error).__name__})
+        diagnostic = (
+            error.diagnostic
+            if isinstance(error, RuntimeDiagnosticError)
+            else exception_diagnostic(error, phase="tool")
+        )
+        emit("error", diagnostic)
     else:
         emit("result", result)
     finally:

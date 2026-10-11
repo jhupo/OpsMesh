@@ -5,6 +5,9 @@ import json
 import sys
 
 from agents.mcp import MCPServerSse, MCPServerStreamableHttp
+from mcp.types import LoggingMessageNotification, ServerNotification
+
+from .diagnostics import attach_diagnostic, diagnostic_fields
 
 
 async def execute_request(request: dict[str, object]) -> dict[str, object]:
@@ -22,15 +25,26 @@ async def execute_request(request: dict[str, object]) -> dict[str, object]:
     if not isinstance(arguments, dict) or not isinstance(name, str):
         raise ValueError("Invalid Runtime MCP HTTP tool")
     server_class = MCPServerStreamableHttp if request["transport"] == "http" else MCPServerSse
+    diagnostic: dict[str, object] = {}
+
+    async def capture_message(message: object) -> None:
+        if isinstance(message, ServerNotification) and isinstance(
+            message.root, LoggingMessageNotification
+        ):
+            diagnostic.update(diagnostic_fields(message.root.params.data))
+
     async with asyncio.timeout(timeout):
         async with server_class(
             params=params,
             name="opsmesh-runtime-http",
             client_session_timeout_seconds=timeout,
             max_retry_attempts=0,
+            message_handler=capture_message,
         ) as server:
-            result = await server.call_tool(name, arguments)
-            return result.model_dump(mode="json", by_alias=True, exclude_none=True)
+            result = await server.call_tool(name, arguments, meta=request.get("meta"))
+            return attach_diagnostic(
+                result.model_dump(mode="json", by_alias=True, exclude_none=True), diagnostic
+            )
 
 
 def main() -> int:

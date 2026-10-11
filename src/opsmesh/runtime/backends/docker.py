@@ -20,7 +20,7 @@ import docker
 from docker.client import DockerClient
 from docker.errors import NotFound
 from docker.models.containers import Container
-from docker.types import Mount
+from docker.types import LogConfig, Mount
 from requests.exceptions import Timeout as RequestsTimeout
 from sqlalchemy.orm import object_session
 
@@ -330,6 +330,7 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                 ],
                 user="0:0" if request.shared_host else request.hardening.user,
                 init=True,
+                log_config=LogConfig(type="json-file", config={"max-size": "10m", "max-file": "3"}),
                 working_dir=request.working_dir,
             )
             return str(container.id)

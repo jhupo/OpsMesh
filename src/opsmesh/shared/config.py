@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     api_prefix: str = Field(default="/api/v1")
     log_level: str = Field(default="INFO")
     log_format: LogFormat = Field(default="json")
+    log_queue_capacity: int = Field(default=2048, ge=1, le=65536)
+    mcp_diagnostic_retention_days: int = Field(default=7, ge=1, le=365)
     enable_api_docs: bool = Field(default=True)
     platform_history_enabled: bool = Field(default=True)
     platform_history_interval_seconds: int = Field(default=60, ge=60, le=3600)

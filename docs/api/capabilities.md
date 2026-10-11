@@ -34,6 +34,7 @@
 | PUT | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-servers/{server_id}/deployment/host` | Bind Managed Mcp Host |
 | GET | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-tool-call-logs` | List Mcp Tool Call Logs |
 | POST | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-tool-call-logs` | Log Mcp Tool Call |
+| GET | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-tool-call-logs/{log_id}/diagnostic` | Get Mcp Tool Call Diagnostic |
 | GET | `/api/v1/workspaces/{workspace_id}/capabilities/mcp-tools` | List Mapped Mcp Tools |
 | GET | `/api/v1/workspaces/{workspace_id}/capabilities/resources` | List Capability Resources |
 | POST | `/api/v1/workspaces/{workspace_id}/capabilities/resources` | Create Capability Resource |
@@ -1062,6 +1063,9 @@ Operation ID：`list_mcp_tool_call_logs_api_v1_workspaces__workspace_id__capabil
 | `status` | query | 否 | string anyOf null | `anyOf=[{"maxLength": 32, "minLength": 1, "type": "string"}, {"type": "null"}]` |
 | `trace_id` | query | 否 | string anyOf null | `anyOf=[{"maxLength": 32, "minLength": 32, "type": "string"}, {"type": "null"}]` |
 | `request_id` | query | 否 | string anyOf null | `anyOf=[{"maxLength": 80, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `agent_run_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `tool_call_id` | query | 否 | string anyOf null | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `error_id` | query | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `limit` | query | 否 | integer | `default=50`; `maximum=100`; `minimum=1` |
 | `offset` | query | 否 | integer | `default=0`; `minimum=0` |
 | `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
@@ -1113,6 +1117,34 @@ Content-Type：`application/json`。
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
 | 201 | Successful Response | application/json | [McpToolCallLogResponse](schemas.md#schema-McpToolCallLogResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## GET `/api/v1/workspaces/{workspace_id}/capabilities/mcp-tool-call-logs/{log_id}/diagnostic`
+
+Get Mcp Tool Call Diagnostic
+
+Operation ID：`get_mcp_tool_call_diagnostic_api_v1_workspaces__workspace_id__capabilities_mcp_tool_call_logs__log_id__diagnostic_get`。
+
+实现：[src/opsmesh/capabilities/mcp/observability_routes.py](../../src/opsmesh/capabilities/mcp/observability_routes.py) · `get_mcp_tool_call_diagnostic`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=admin, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `log_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | application/json | [McpToolCallDiagnosticResponse](schemas.md#schema-McpToolCallDiagnosticResponse) |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。

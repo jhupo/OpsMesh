@@ -79,19 +79,24 @@ class McpJobCompletion:
         return cls(status="completed", response_payload=response_payload)
 
     @classmethod
-    def failed(cls, *, code: str, message: str) -> McpJobCompletion:
+    def failed(
+        cls, *, code: str, message: str, diagnostic: dict[str, object] | None = None
+    ) -> McpJobCompletion:
         return cls(
             status="failed",
-            error_payload={"code": code, "message": message, "retryable": False},
+            error_payload={
+                "code": code,
+                "message": message,
+                "retryable": False,
+                **(diagnostic or {}),
+            },
         )
 
     @classmethod
     def from_payload(cls, payload: object) -> McpJobCompletion:
         if not isinstance(payload, dict) or payload.get("status") not in {"completed", "failed"}:
             raise ConnectorStateError("Connector recovery completion is invalid")
-        status: CompletionStatus = (
-            "completed" if payload["status"] == "completed" else "failed"
-        )
+        status: CompletionStatus = "completed" if payload["status"] == "completed" else "failed"
         response = payload.get("response_payload")
         error = payload.get("error_payload")
         if response is not None and not isinstance(response, dict):
@@ -159,9 +164,7 @@ def request_from_job_payload(
     try:
         validate_request_contract(resolved_request)
     except ValueError as exc:
-        raise ConnectorCredentialError(
-            "Self-hosted MCP credential environment is invalid"
-        ) from exc
+        raise ConnectorCredentialError("Self-hosted MCP credential environment is invalid") from exc
     return resolved_request
 
 

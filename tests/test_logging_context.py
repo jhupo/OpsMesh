@@ -1,9 +1,14 @@
 import json
 import logging
 import sys
+from queue import Queue
 from uuid import uuid4
 
-from opsmesh.shared.telemetry.logging import RequestContextFilter, json_log_formatter
+from opsmesh.shared.telemetry.logging import (
+    BoundedLogHandler,
+    RequestContextFilter,
+    json_log_formatter,
+)
 from opsmesh.shared.telemetry.request_context import current_log_context, log_context
 
 
@@ -59,6 +64,26 @@ def test_log_context_resets_nested_values() -> None:
 
     assert current_log_context()["workspace_id"] is None
     assert current_log_context()["user_id"] is None
+
+
+def test_log_queue_drops_at_capacity_without_synchronous_fallback():
+    records = Queue(maxsize=1)
+    handler = BoundedLogHandler(records)
+    record = logging.LogRecord("test", logging.INFO, __file__, 1, "hello", (), None)
+    handler.enqueue(record)
+    handler.enqueue(record)
+    assert records.qsize() == 1
+
+
+def test_log_filter_bounds_payload_and_retains_error_identity():
+    record = logging.LogRecord("test", logging.ERROR, __file__, 1, "Failure", (), None)
+    record.payload = "x" * 100_000
+    record.error_id = "error-1"
+    RequestContextFilter().filter(record)
+    rendered = json_log_formatter().format(record)
+    assert len(rendered.encode()) < 16_384
+    assert json.loads(rendered)["error_id"] == "error-1"
+    assert "payload" not in record.__dict__
 
 
 def test_log_filter_redacts_formatted_messages_and_structured_extras() -> None:

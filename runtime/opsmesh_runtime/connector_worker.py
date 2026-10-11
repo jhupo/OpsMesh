@@ -17,6 +17,7 @@ from .connector_models import (
     request_from_job_payload,
 )
 from .connector_state import ConnectorStateStore
+from .diagnostics import DIAGNOSTIC_META_KEY, exception_diagnostic
 from .mcp_stdio_client import execute_request
 
 LoopOutcome = Literal["idle", "completed", "failed", "recovered"]
@@ -105,16 +106,18 @@ class SelfHostedMcpConnector:
                         "external side effects may already have occurred."
                     ),
                 )
-            except Exception:
+            except Exception as error:
                 completion = McpJobCompletion.failed(
                     code="self_hosted_mcp_execution_failed",
                     message="Self-hosted MCP execution failed.",
+                    diagnostic=exception_diagnostic(error, phase="tool"),
                 )
             else:
                 completion = (
                     McpJobCompletion.failed(
                         code="self_hosted_mcp_remote_error",
                         message="The MCP server returned a tool error.",
+                        diagnostic=(response.get("_meta") or {}).get(DIAGNOSTIC_META_KEY, {}),
                     )
                     if response.get("isError") is True
                     else McpJobCompletion.completed(response)

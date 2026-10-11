@@ -125,6 +125,7 @@ class McpToolCallLog(UUIDPrimaryKeyMixin, Base):
         Index("ix_mcp_tool_call_logs_workspace_request", "workspace_id", "request_id"),
         Index("ix_mcp_tool_call_logs_workspace_worker", "workspace_id", "worker_id"),
         Index("ix_mcp_tool_call_logs_workspace_runtime", "workspace_id", "runtime_id"),
+        Index("ix_mcp_tool_call_logs_workspace_call", "workspace_id", "tool_call_id"),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(
@@ -156,6 +157,7 @@ class McpToolCallLog(UUIDPrimaryKeyMixin, Base):
         nullable=True,
     )
     tool_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    tool_call_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     argument_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)

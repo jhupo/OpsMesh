@@ -2,7 +2,7 @@
 
 由 `opsmesh.main` 实际注册的路由和 OpenAPI 自动生成。
 
-共 **550 个接口**、**479 个路径**、**733 个模型**。默认前缀 `/api/v1`。
+共 **551 个接口**、**480 个路径**、**734 个模型**。默认前缀 `/api/v1`。
 
 [使用说明](../api.md) · [OpenAPI JSON](../openapi.json) · [全部数据模型](schemas.md)
 
@@ -13,7 +13,7 @@
 | [approvals](approvals.md) | 3 |
 | [auth](auth.md) | 13 |
 | [automations](automations.md) | 9 |
-| [capabilities](capabilities.md) | 52 |
+| [capabilities](capabilities.md) | 53 |
 | [conversations](conversations.md) | 9 |
 | [costs](costs.md) | 7 |
 | [domain-tasks](domain-tasks.md) | 7 |
