@@ -1,6 +1,8 @@
 """Advance durable turns. This module never invokes a model or executes agent code."""
 
+import logging
 from datetime import UTC, datetime
+from time import perf_counter
 from uuid import UUID
 
 from sqlalchemy import select
@@ -19,17 +21,29 @@ from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.tasks.models import Task
 from opsmesh.shared.errors import DomainError
 
+logger = logging.getLogger(__name__)
+
 
 class ConversationAdvanceService:
     def __init__(self, session: Session) -> None:
         self.session = session
 
     def advance(self, workspace_id: UUID, conversation_id: UUID) -> None:
+        started = perf_counter()
         conversation = self.session.scalar(
             select(Conversation)
             .where(Conversation.workspace_id == workspace_id, Conversation.id == conversation_id)
             .with_for_update()
             .execution_options(populate_existing=True)
+        )
+        logger.info(
+            "Conversation lock acquired",
+            extra={
+                "workspace_id": str(workspace_id),
+                "conversation_id": str(conversation_id),
+                "phase": "conversation.lock",
+                "duration_ms": round((perf_counter() - started) * 1000),
+            },
         )
         if conversation is None:
             return
@@ -57,8 +71,18 @@ class ConversationAdvanceService:
         previous = turn.status
         try:
             with self.session.begin_nested():
+                started = perf_counter()
                 ExecutionIdentityService(self.session).restore(
                     turn.workspace_id, turn.execution_identity
+                )
+                logger.info(
+                    "Conversation identity restored",
+                    extra={
+                        "conversation_id": str(conversation.id),
+                        "turn_id": str(turn.id),
+                        "phase": "conversation.identity",
+                        "duration_ms": round((perf_counter() - started) * 1000),
+                    },
                 )
                 self._advance(conversation, turn)
         except (DomainError, ValueError, PermissionError):
@@ -94,8 +118,23 @@ class ConversationAdvanceService:
             .order_by(ConversationExecution.created_at, ConversationExecution.id)
         ).all()
         if not rows:
+            started = perf_counter()
             create_execution(self.session, conversation, turn)
             turn.status = "running"
+            logger.info(
+                "Conversation execution admitted",
+                extra={
+                    "workspace_id": str(turn.workspace_id),
+                    "conversation_id": str(conversation.id),
+                    "turn_id": str(turn.id),
+                    "phase": "conversation.admission",
+                    "duration_ms": round((perf_counter() - started) * 1000),
+                    "accepted_to_admitted_ms": round(
+                        (datetime.now(UTC) - turn.created_at.replace(tzinfo=UTC)).total_seconds()
+                        * 1000
+                    ),
+                },
+            )
             return
         if len(rows) != 1:
             raise ValueError("Conversation turn must have exactly one execution")

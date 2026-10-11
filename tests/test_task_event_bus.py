@@ -11,9 +11,9 @@ from redis.exceptions import ConnectionError
 from opsmesh.orchestration.tasks.events import RedisTaskEventBus, TaskEvent
 from opsmesh.orchestration.tasks.routes.streaming import (
     _read_task_bus_events,
-    _sse_event,
     _task_event_stream_payload,
 )
+from opsmesh.shared.http.sse import sse_event
 
 
 def test_redis_task_event_bus_publishes_and_reads_stream_events() -> None:
@@ -98,7 +98,7 @@ def test_task_event_sse_payload_is_redacted() -> None:
     )
     event = bus.read(workspace_id=workspace_id, task_id=task_id, after_id="0-0")[0]
 
-    payload = _sse_event("task.event", event.as_dict())
+    payload = sse_event("task.event", event.as_dict())
 
     assert "event: task.event" in payload
     assert "[redacted]" in payload

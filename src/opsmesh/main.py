@@ -21,6 +21,7 @@ from opsmesh.shared.http.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
+from opsmesh.shared.redis.client import create_async_redis_client
 from opsmesh.shared.security.rate_limits import FixedWindowRateLimiter
 from opsmesh.shared.telemetry.logging import configure_logging
 
@@ -56,6 +57,7 @@ def create_app_with_dependencies(
     )
     app.state.settings = app_settings
     app.state.redis_client = redis_client
+    app.state.stream_redis_client = create_async_redis_client(app_settings)
     app.state.rate_limiter = rate_limiter
     app.dependency_overrides[get_settings] = lambda: app.state.settings
     app.dependency_overrides[get_agent_runtime_registry] = build_agent_runtime_registry
@@ -90,6 +92,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await app.state.stream_redis_client.aclose()
         shutdown_api_resources(app)
 
 

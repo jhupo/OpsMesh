@@ -20,6 +20,7 @@ from opsmesh.runtime.queues.execution_control import (
     current_execution_control,
     execution_control,
 )
+from opsmesh.runtime.queues.notifications import wait_for_notification
 from opsmesh.runtime.queues.service import QueueLease, RedisQueue
 from opsmesh.runtime.workers.capacity import WorkerCapacitySnapshotService, worker_can_run_job
 from opsmesh.runtime.workers.contracts import WorkerFailureHandler, WorkerJobTypeHandler
@@ -346,7 +347,11 @@ class WorkerRunner:
             BlockingIO(self._config.blocking_io_concurrency, name="opsmesh-io") as io,
             BlockingIO(2, name="opsmesh-control") as controls,
             BlockingIO(1, name="opsmesh-maintenance") as upkeep,
+            self._queue.redis.pubsub() as subscription,
         ):
+            # Subscribe before checking the queue so an enqueue between claim and wait
+            # cannot be missed. All nodes wake; atomic admission and leases select owners.
+            subscription.subscribe(self._queue.keys.queue(self._config.queue_name) + ":ready")
             supervisor = asyncio.create_task(
                 self._supervise(lambda: list(active.values()), controls),
                 name="worker-lease-renewal",
@@ -438,7 +443,11 @@ class WorkerRunner:
                                 continue
                             state.idle_polls += 1
                             if not active:
-                                await self._sleep(max(0.01, self._config.idle_sleep_seconds))
+                                await wait_for_notification(
+                                    subscription, max(0.01, self._config.idle_sleep_seconds)
+                                )
+                                await self._sleep(0)
+                                continue
                     timeout = min(0.1, max(0.01, self._config.idle_sleep_seconds))
                     waiting: set[asyncio.Task[None] | asyncio.Task[WorkerMaintenanceSummary]] = set(
                         active

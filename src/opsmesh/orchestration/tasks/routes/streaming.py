@@ -1,17 +1,14 @@
 import asyncio
-import json
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fastapi import Depends
-from fastapi.encoders import jsonable_encoder
 from redis import Redis
 from redis.exceptions import RedisError
 
 from opsmesh.orchestration.tasks.events import RedisTaskEventBus, TaskEvent, TaskEventBus
 from opsmesh.shared.config import Settings, get_settings
 from opsmesh.shared.redis.dependencies import get_redis_client
-from opsmesh.shared.security.redaction import redact_sensitive_payload
 
 if TYPE_CHECKING:
     RedisClient = Redis[str]
@@ -26,12 +23,6 @@ def get_task_event_bus(
     settings: Settings = Depends(get_settings),
 ) -> TaskEventBus:
     return RedisTaskEventBus(redis=redis, key_prefix=settings.redis_key_prefix)
-
-
-def _sse_event(event_name: str, payload: dict[str, object]) -> str:
-    redacted = redact_sensitive_payload(payload)
-    data = json.dumps(jsonable_encoder(redacted), ensure_ascii=False, sort_keys=True)
-    return f"event: {event_name}\ndata: {data}\n\n"
 
 
 def _task_event_stream_payload(task_event: TaskEvent, cursor: int) -> dict[str, object]:

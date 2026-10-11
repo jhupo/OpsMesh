@@ -129,16 +129,7 @@ class RedisTaskEventBus:
                 **xread_kwargs,
             ),
         )
-        events: list[TaskEvent] = []
-        for _, stream_entries in entries:
-            for stream_id, fields in stream_entries:
-                events.append(
-                    _event_from_fields(
-                        stream_id=_to_text(stream_id),
-                        fields={_to_text(key): _to_text(value) for key, value in fields.items()},
-                    )
-                )
-        return events
+        return decode_stream_entries(entries)
 
     def _stream_key(self, workspace_id: UUID, task_id: UUID) -> str:
         prefix = self.key_prefix.strip(":")
@@ -149,6 +140,17 @@ class RedisTaskEventBus:
         return bool(
             self.redis.xrange(self._stream_key(workspace_id, task_id), cursor, cursor, count=1)
         )
+
+
+def decode_stream_entries(entries: RedisStreamEntries) -> list[TaskEvent]:
+    return [
+        _event_from_fields(
+            stream_id=_to_text(stream_id),
+            fields={_to_text(key): _to_text(value) for key, value in fields.items()},
+        )
+        for _, items in entries
+        for stream_id, fields in items
+    ]
 
 
 def _event_from_fields(*, stream_id: str, fields: dict[str, str]) -> TaskEvent:

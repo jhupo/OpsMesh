@@ -28,6 +28,7 @@ def conversation_job(
         resource_id=conversation_id,
         requested_by_user_id=user_id,
         idempotency_key=f"conversation.advance:{conversation_id}:{request_id}",
+        routing={"conversation_id": str(conversation_id)},
     )
 
 

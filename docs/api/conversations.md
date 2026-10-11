@@ -12,6 +12,7 @@
 | GET | `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/messages` | List Messages |
 | POST | `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/messages` | Send Message |
 | POST | `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/turns/{turn_id}/cancel` | Cancel Turn |
+| GET | `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/turns/{turn_id}/events/stream` | Stream Turn Events |
 | POST | `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/turns/{turn_id}/retry` | Retry Turn |
 
 ## GET `/api/v1/workspaces/{workspace_id}/conversations`
@@ -271,6 +272,37 @@ Operation ID：`cancel_turn_api_v1_workspaces__workspace_id__conversations__conv
 | HTTP | 说明 | Content-Type | 返回类型 |
 | --- | --- | --- | --- |
 | 200 | Successful Response | application/json | [TurnResponse](schemas.md#schema-TurnResponse) |
+| 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
+
+其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
+
+## GET `/api/v1/workspaces/{workspace_id}/conversations/{conversation_id}/turns/{turn_id}/events/stream`
+
+Stream Turn Events
+
+Operation ID：`stream_turn_events_api_v1_workspaces__workspace_id__conversations__conversation_id__turns__turn_id__events_stream_get`。
+
+实现：[src/opsmesh/orchestration/conversations/stream_routes.py](../../src/opsmesh/orchestration/conversations/stream_routes.py) · `stream_turn_events`。
+
+权限依赖：`opsmesh.identity.auth.dependencies.workspace_dependency.<locals>.require_workspace_context`：`action=read, resource_action=update`；`opsmesh.identity.auth.dependencies.get_current_user`
+
+### 参数
+
+| 名称 | 位置 | 必填 | 类型 | 说明与约束 |
+| --- | --- | --- | --- | --- |
+| `conversation_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `turn_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `workspace_id` | path | 是 | string (uuid) | `format="uuid"` |
+| `event_cursor` | query | 否 | string | `default="0-0"`; `maxLength=64`; `pattern="^\\d+-\\d+$"` |
+| `last-event-id` | header | 否 | string anyOf null | `anyOf=[{"maxLength": 64, "pattern": "^\\d+-\\d+$", "type": "string"}, {"type": "null"}]` |
+| `authorization` | header | 否 | string anyOf null | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `X-User-ID` | header | 否 | string (uuid) anyOf null | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+
+### 响应
+
+| HTTP | 说明 | Content-Type | 返回类型 |
+| --- | --- | --- | --- |
+| 200 | Successful Response | text/event-stream | string |
 | 422 | Request validation failed | application/json | [ErrorResponse](schemas.md#schema-ErrorResponse) |
 
 其他错误及请求追踪约定见 [API 使用说明](../api.md#错误与追踪)。
