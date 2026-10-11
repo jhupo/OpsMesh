@@ -71,6 +71,7 @@ def test_text_source_migration_round_trip_and_refuses_history_loss():
             source.source_type = "url"
             source.uri = "https://example.com/policy"
             source.source_config = {}
+            session.get(AgentRun, context.run_id).status = "completed"
             session.commit()
         with pytest.raises(DBAPIError, match="Export and remove text"):
             command.downgrade(config, "0120_retired_egress_configuration")

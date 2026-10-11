@@ -32,7 +32,7 @@ from tests.test_worker_runner import _seed_run, _session_factory
 
 def test_approved_runtime_rpc_waits_and_recovers_without_reexecution():
     factory = _session_factory()
-    workspace_id, run_id, user_id = _seed_run(factory, slug="sdk-rpc")
+    workspace_id, run_id, user_id = _seed_run(factory, slug="sdk-rpc", status=RunStatus.RUNNING)
     settings = Settings(environment="test")
     secrets = SecretEncryptionService(
         secret=settings.credential_encryption_secret, key_id=settings.credential_encryption_key_id

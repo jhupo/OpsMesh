@@ -15,12 +15,13 @@ import opsmesh.agents.execution.providers.openai.runner as openai_runtime
 from opsmesh.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
+    AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,
+    AgentRuntimeAgentTarget,
     AgentRuntimeApprovalDecision,
     AgentRuntimeCapabilities,
     AgentRuntimeCapability,
     AgentRuntimeContext,
-    AgentRuntimeHandoff,
     AgentRuntimeResumeState,
     AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
@@ -197,7 +198,7 @@ def test_openai_agents_runner_builds_agent_from_explicit_provider() -> None:
 
     agent = OpenAIAgentsRunner()._build_agent(request)
 
-    assert agent.name == "Researcher"
+    assert agent.runtime_ref.name == "Researcher"
     assert agent.instructions == "Research carefully."
     assert agent.model.model == "gpt-4.1"
     assert agent.model_settings.temperature == 0.2
@@ -488,7 +489,22 @@ def test_provider_adapter_registry_rejects_unsupported_request_capabilities() ->
         ),
         provider="anthropic",
         api_key="anthropic-test",
-        handoffs=(AgentRuntimeHandoff(target=AgentRuntimeAgentRef(name="Specialist")),),
+        handoffs=(
+            AgentRuntimeAgentTarget(
+                target=AgentRuntimeAgentDefinition(
+                    AgentRuntimeAgentRef(name="Specialist", profile_id=uuid4()),
+                    profile.workspace_id,
+                    "Help",
+                ),
+                tool_name="transfer_to_specialist",
+                description="Transfer",
+                context=AgentRuntimeContext(profile.workspace_id, None, uuid4()),
+                max_turns=5,
+                depth=1,
+                max_depth=1,
+                model="test",
+            ),
+        ),
     )
 
     with pytest.raises(AgentRuntimeCapabilityError) as caught:
@@ -569,7 +585,7 @@ def test_openai_agents_runner_restores_sdk_state(
 
         class Result:
             context_wrapper = RunContextWrapper(context=None, usage=Usage())
-            last_agent = Agent(name="Test")
+            last_agent = args[0]
             new_items = []
             final_output = "resumed"
             interruptions: list[object] = []
@@ -661,11 +677,13 @@ def test_openai_agents_runner_applies_approval_to_exact_sdk_interruption(
             for item in []:
                 yield item
 
-    def fake_runner_streamed(*_: object, **kwargs: object) -> object:
+    def fake_runner_streamed(*args: object, **kwargs: object) -> object:
         assert kwargs.get("context") is None, "Do not replace the approved SDK context wrapper"
         assert approved == [interruption]
         assert rejected == [(rejected_interruption, "operator denied")]
-        return Result()
+        result = Result()
+        result.last_agent = args[0]
+        return result
 
     async def fake_runner_run(*args: object, **kwargs: object) -> object:
         return fake_runner_streamed(*args, **kwargs)
@@ -843,7 +861,9 @@ def test_openai_agents_runner_passes_tracing_run_config_to_sdk(
 
     async def fake_runner_run(*args: object, **kwargs: object) -> Result:
         captured["kwargs"] = kwargs
-        return Result()
+        result = Result()
+        result.last_agent = args[0]
+        return result
 
     monkeypatch.setattr(openai_runtime.Runner, "run", fake_runner_run)
     profile = AgentProfile(

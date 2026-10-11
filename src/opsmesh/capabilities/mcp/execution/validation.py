@@ -28,6 +28,7 @@ from opsmesh.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
+from opsmesh.orchestration.runs.authorization.scopes import agent_execution_scope
 from opsmesh.orchestration.runs.models import (
     AUTHORIZATION_SNAPSHOT_VERSION,
     AgentRun,
@@ -56,6 +57,13 @@ class McpExecutionValidator:
         run = self._require_run(request.workspace_id, request.agent_run_id)
         snapshot = authorization_snapshot_for_run(run)
         self._validate_snapshot_scope(snapshot, request)
+        try:
+            snapshot = agent_execution_scope(
+                snapshot, request.agent_profile_id, request.capability_catalog_fingerprint
+            )
+        except ValueError:
+            self._block(request, "agent_capability_scope_mismatch")
+        self._validate_catalog_scope(snapshot, request)
         self._require_runtime_context_tool(request)
         descriptor, parameters, locked = self._require_snapshot_tool(snapshot, request)
         snapshot_server_id = descriptor.mcp_server_id
@@ -121,6 +129,14 @@ class McpExecutionValidator:
             snapshot
         ):
             self._block(request, "authorization_snapshot_fingerprint_mismatch")
+        if snapshot.get("workspace_id") not in (None, str(request.workspace_id)):
+            self._block(request, "authorization_snapshot_workspace_mismatch")
+        if snapshot.get("agent_run_id") not in (None, str(request.agent_run_id)):
+            self._block(request, "authorization_snapshot_run_mismatch")
+
+    def _validate_catalog_scope(
+        self, snapshot: dict[str, object], request: McpExecutionRequest
+    ) -> None:
         catalog = snapshot.get("capability_catalog")
         catalog_fingerprint = catalog.get("fingerprint") if isinstance(catalog, dict) else None
         if (
@@ -129,10 +145,6 @@ class McpExecutionValidator:
             or catalog_fingerprint != effective_catalog_fingerprint(catalog)
         ):
             self._block(request, "capability_catalog_fingerprint_mismatch")
-        if snapshot.get("workspace_id") not in (None, str(request.workspace_id)):
-            self._block(request, "authorization_snapshot_workspace_mismatch")
-        if snapshot.get("agent_run_id") not in (None, str(request.agent_run_id)):
-            self._block(request, "authorization_snapshot_run_mismatch")
 
     def _require_runtime_context_tool(self, request: McpExecutionRequest) -> None:
         if request.runtime_allowed_tools is None:

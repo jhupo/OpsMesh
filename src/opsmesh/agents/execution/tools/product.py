@@ -49,7 +49,7 @@ from opsmesh.shared.errors import DomainError
 from opsmesh.shared.security.redaction import redact_sensitive_text
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.shared.telemetry.trace_context import current_trace_context, telemetry_span
-from opsmesh.shared.utils import payload_hash, string_list
+from opsmesh.shared.utils import payload_hash, string_list, uuid_or_none
 
 __all__ = ["PRODUCT_TOOL_NAMES", "ProductToolExecutor"]
 
@@ -118,6 +118,7 @@ class ProductToolExecutor:
             task_id=context.task_id,
             allowed_tools=frozenset(context.allowed_tools),
             metadata=dict(context.metadata),
+            agent_profile_id=uuid_or_none(context.metadata.get("agent_profile_id")),
         )
         try:
             transaction = (
@@ -279,20 +280,6 @@ def _execute_product_tool(
             arguments,
             resource_grants,
             _file_ids(resource_grants, file_scope_ids),
-        )
-    if tool_name == "discover_conversation_targets":
-        return service.conversations.discover(
-            context,
-            query=str_argument(arguments, "query", default=""),
-            offset=int_argument(arguments, "offset", default=0),
-        )
-    if tool_name == "delegate_conversation_task":
-        return service.conversations.delegate(
-            context,
-            kind=str_argument(arguments, "kind", default=""),
-            target_id=uuid_argument(arguments, "target_id"),
-            body=str_argument(arguments, "body", default=""),
-            request_key=str_argument(arguments, "request_key", default=""),
         )
     if tool_name == "send_agent_message":
         return service.mailbox.send_agent_message(

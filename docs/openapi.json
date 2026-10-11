@@ -13403,26 +13403,6 @@
             "title": "Id",
             "type": "string"
           },
-          "parent_run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Run Id"
-          },
-          "purpose": {
-            "title": "Purpose",
-            "type": "string"
-          },
-          "round": {
-            "title": "Round",
-            "type": "integer"
-          },
           "runs": {
             "items": {
               "$ref": "#/components/schemas/ExecutionRunResponse"
@@ -13452,9 +13432,6 @@
           "updated_at",
           "turn_id",
           "task_id",
-          "purpose",
-          "parent_run_id",
-          "round",
           "runs"
         ],
         "title": "ExecutionResponse",
@@ -13619,6 +13596,44 @@
           }
         },
         "title": "FileLimits",
+        "type": "object"
+      },
+      "FinalAgentResponse": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "profile_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Id"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "required": [
+          "name",
+          "profile_id",
+          "role"
+        ],
+        "title": "FinalAgentResponse",
         "type": "object"
       },
       "FinalOutputArtifactHistoryResponse": {
@@ -36173,6 +36188,16 @@
             ],
             "title": "Error Code"
           },
+          "final_agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FinalAgentResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -36188,10 +36213,6 @@
               }
             ],
             "title": "Reply"
-          },
-          "round": {
-            "title": "Round",
-            "type": "integer"
           },
           "sequence": {
             "title": "Sequence",
@@ -36217,7 +36238,7 @@
           "reply",
           "status",
           "error_code",
-          "round"
+          "final_agent"
         ],
         "title": "TurnResponse",
         "type": "object"
@@ -43415,10 +43436,6 @@
             "title": "Id",
             "type": "integer"
           },
-          "round": {
-            "title": "Round",
-            "type": "integer"
-          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -43433,7 +43450,6 @@
           "id",
           "turn_id",
           "status",
-          "round",
           "created_at"
         ],
         "title": "EventResponse",

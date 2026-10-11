@@ -24,7 +24,6 @@ class ProductToolService:
         storage: ObjectStorage | None = None,
         memory_embedding_secret_service: SecretEncryptionService | None = None,
     ) -> None:
-        from opsmesh.capabilities.tools.conversations import ConversationProductTools
 
         events = ProductToolEventRecorder(session)
         artifact_persistence = (
@@ -54,4 +53,3 @@ class ProductToolService:
         )
         self.mailbox = AgentMailboxProductTools(session, events)
         self.knowledge = KnowledgeProductTools(session, events)
-        self.conversations = ConversationProductTools(session)

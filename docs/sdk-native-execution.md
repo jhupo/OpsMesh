@@ -12,7 +12,7 @@ Worker 的每个活动 Job 是一个 asyncio Task；模型等待和自托管 MCP
 
 - Runtime 中的 `RpcSession` 实现官方公共 Session 接口，将会话操作提交给控制面授权网关；Runtime 不接收数据库凭据。控制面的官方 `SQLAlchemySession` 使用 AsyncEngine 写入 `sdk_agent_sessions` / `sdk_agent_messages`。Alembic 管理表结构，运行时禁止自动建表。`persistent_agent_sessions` 只保留工作空间、用户作用域、Agent、Session key 和管理状态。
 - `AuthorizedSDKSession` 通过公共 Session 接口增加执行身份、会话绑定及租约检查，消息增删读全部交给父类；没有另一套消息存储算法。Session key 全局唯一，读取管理视图时必须联接租户元数据。
-- 平台只提供当前新增输入。同会话按 turn 排序，专家拥有独立 Session。后续输入、审批恢复和自托管 MCP 返回都不拼成旧历史或伪造的用户消息。
+- 平台只提供当前新增输入，同会话按 turn 排序。handoff 共享当前运行历史及 Session；`Agent.as_tool` 由 SDK 执行子调用，结果以工具消息保存到父 Session。独立 Task 使用独立 Session。后续输入、审批恢复和自托管 MCP 返回不拼成旧历史或伪造用户消息。
 - 审批使用加密的 SDK RunState 和原工具 call ID。自托管 MCP Job 通过 `(agent_run_id, tool_call_id)` 唯一约束去重；SDK 工具协程等待原 RPC 结果。恢复到已保存的 SDK 工具调用时先核对持久 RPC，再复用结果，不重复计费配额或再次执行远程工具。没有 SDK 快照的进程中断不等同于任意指令断点恢复；外部副作用仍不保证 exactly-once。
 - 普通工作流的直接工具节点完成后重新排队做领域结算；SDK 正在等待的工具调用不会因此重新排队。审计日志同时进入终态。
 - 不再保存 `resume_input`、`sdk_continuation`、`pending_tool_results` 或 Provider conversation ID；不再同步第二套服务端会话。切换 OpenAI/Claude SDK 家族前必须显式清空有历史的 Session，禁止静默解释另一家格式。

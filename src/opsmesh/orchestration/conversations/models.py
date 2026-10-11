@@ -45,20 +45,16 @@ class ConversationTurn(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="queued")
     error_code: Mapped[str | None] = mapped_column(String(120))
     execution_identity: Mapped[dict[str, object]] = mapped_column(JSONB)
-    round: Mapped[int] = mapped_column(Integer, default=0)
+    final_agent: Mapped[dict[str, object] | None] = mapped_column(JSONB)
 
 
 class ConversationExecution(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "conversation_executions"
-    __table_args__ = (UniqueConstraint("turn_id", "key"), UniqueConstraint("task_id"))
+    __table_args__ = (UniqueConstraint("turn_id"), UniqueConstraint("task_id"))
 
     workspace_id: Mapped[UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"))
     turn_id: Mapped[UUID] = mapped_column(ForeignKey("conversation_turns.id", ondelete="CASCADE"))
     task_id: Mapped[UUID] = mapped_column(ForeignKey("tasks.id"))
-    key: Mapped[str] = mapped_column(String(128))
-    purpose: Mapped[str] = mapped_column(String(16))
-    parent_run_id: Mapped[UUID | None] = mapped_column(ForeignKey("agent_runs.id"))
-    round: Mapped[int] = mapped_column(Integer)
 
 
 class ConversationEvent(TimestampMixin, Base):
@@ -74,7 +70,6 @@ class ConversationEvent(TimestampMixin, Base):
     )
     turn_id: Mapped[UUID] = mapped_column(ForeignKey("conversation_turns.id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(String(32))
-    round: Mapped[int] = mapped_column(Integer)
 
 
 def turn_event(turn: ConversationTurn) -> ConversationEvent:
@@ -83,5 +78,4 @@ def turn_event(turn: ConversationTurn) -> ConversationEvent:
         conversation_id=turn.conversation_id,
         turn_id=turn.id,
         status=turn.status,
-        round=turn.round,
     )

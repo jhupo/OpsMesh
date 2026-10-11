@@ -6,6 +6,8 @@ from opsmesh.agents.execution.contracts import AgentRunResult
 
 def run_output_payload(result: AgentRunResult) -> dict[str, object]:
     payload: dict[str, object] = {"final_output": result.final_output}
+    if result.final_agent is not None:
+        payload["final_agent"] = json_safe_object(asdict(result.final_agent))
     if result.raw_output is not None:
         payload["raw_output"] = json_safe_object(result.raw_output)
     if result.structured_output is not None:
@@ -22,6 +24,8 @@ def run_output_payload(result: AgentRunResult) -> dict[str, object]:
         )
     if result.usage is not None:
         payload["usage"] = json_safe_object(asdict(result.usage))
+    if result.model_usages:
+        payload["model_usages"] = json_safe_object([asdict(item) for item in result.model_usages])
     return payload
 
 

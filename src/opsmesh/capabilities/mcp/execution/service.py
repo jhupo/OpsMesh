@@ -78,9 +78,7 @@ class McpToolExecutionService:
                 "agent_run_id": str(run.id),
                 "task_id": str(run.task_id) if run.task_id is not None else None,
                 "task_step_id": str(run.task_step_id) if run.task_step_id is not None else None,
-                "agent_profile_id": str(run.agent_profile_id)
-                if run.agent_profile_id is not None
-                else None,
+                "agent_profile_id": snapshot.get("agent_profile_id"),
                 "mcp_server_id": str(server.id),
                 **snapshot_audit_metadata(snapshot),
             },
@@ -108,6 +106,7 @@ class McpToolExecutionService:
                 server,
                 descriptor=descriptor,
                 reason=review_reason,
+                snapshot=snapshot,
                 execution_review=execution_review,
             )
 

@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 from agents import RunContextWrapper
+from agents.items import ModelResponse
 from agents.stream_events import RawResponsesStreamEvent
 from agents.usage import Usage
 from claude_agent_sdk import ResultMessage, StreamEvent
@@ -96,6 +97,7 @@ def test_openai_streaming_maps_ordered_events_lifecycle_and_usage(
 
         def __init__(self, agent: object, hooks: object) -> None:
             self.agent = agent
+            self.last_agent = agent
             self.hooks = hooks
 
         async def stream_events(self):
@@ -112,7 +114,13 @@ def test_openai_streaming_maps_ordered_events_lifecycle_and_usage(
                     logprobs=[],
                 )
             )
-            await self.hooks.on_llm_end(None, self.agent, object())
+            await self.hooks.on_llm_end(
+                None,
+                self.agent,
+                ModelResponse(
+                    output=[], usage=self.context_wrapper.usage, response_id="stream-response"
+                ),
+            )
             await self.hooks.on_agent_end(None, self.agent, "done")
 
         def cancel(self) -> None:

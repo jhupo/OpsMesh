@@ -466,6 +466,7 @@ def test_backend_tool_executor_dispatches_agent_mailbox_product_tools() -> None:
         task_id=task.id,
         run_id=run.id,
         allowed_tools=("send_agent_message", "list_agent_thread_messages"),
+        metadata={"agent_profile_id": str(sender.id)},
         tool_definitions=_product_definitions(
             "send_agent_message",
             "list_agent_thread_messages",
@@ -637,6 +638,7 @@ def test_backend_tool_executor_dispatches_agent_inbox_product_tools() -> None:
         task_id=task.id,
         run_id=run.id,
         allowed_tools=("get_agent_inbox", "mark_agent_message_read"),
+        metadata={"agent_profile_id": str(recipient.id)},
         tool_definitions=_product_definitions(
             "get_agent_inbox",
             "mark_agent_message_read",
@@ -744,7 +746,10 @@ def test_backend_tool_executor_scopes_agent_inbox_to_runtime_metadata() -> None:
             run_id=run.id,
             allowed_tools=("get_agent_inbox",),
             tool_definitions=_product_definitions("get_agent_inbox"),
-            metadata={"agent_mailbox": {"scope": {"task_id": str(current_task.id)}}},
+            metadata={
+                "agent_profile_id": str(recipient.id),
+                "agent_mailbox": {"scope": {"task_id": str(current_task.id)}},
+            },
         ),
         tool_name="get_agent_inbox",
         arguments={"latest_limit": 5, "unread_only": True},
@@ -921,6 +926,7 @@ def test_backend_tool_executor_dispatches_workspace_memory_product_tools() -> No
             "archive_semantic_memory",
         ),
         resource_grants=(memory_grant,),
+        metadata={"agent_profile_id": str(agent.id)},
     )
 
     searched = execute_tool(
@@ -1419,7 +1425,7 @@ def _set_mcp_snapshot(
     }
     catalog["fingerprint"] = effective_catalog_fingerprint(catalog)
     snapshot: dict[str, object] = {
-        "version": 3,
+        "version": 4,
         "workspace_id": str(workspace.id),
         "allowed_tools": [allow.tool_name],
         "capability_catalog": catalog,

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.contracts import AgentRuntimeContext
 from opsmesh.orchestration.runs.models import AgentRun
+from opsmesh.shared.utils import uuid_or_none
 
 
 def tool_metadata(
@@ -55,7 +56,10 @@ def agent_profile_id_for_context(
     run = session.get(AgentRun, context.run_id)
     if run is None or run.workspace_id != context.workspace_id:
         return None
-    return run.agent_profile_id
+    profile_id = uuid_or_none(context.metadata.get("agent_profile_id"))
+    if profile_id is None:
+        raise ValueError("Tool execution requires an authorized agent profile identity")
+    return profile_id
 
 
 def _team_metadata(team_context: dict[str, object]) -> dict[str, object]:

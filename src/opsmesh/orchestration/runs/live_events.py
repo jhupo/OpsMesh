@@ -94,6 +94,9 @@ class LiveToolExecutor:
     executor: AgentRuntimeToolExecutor
     publisher: RunLivePublisher
 
+    async def authorize_agent(self, *, context: AgentRuntimeContext) -> None:
+        await self.executor.authorize_agent(context=context)
+
     async def cancel_active_tools(self, *, context: AgentRuntimeContext) -> None:
         await self.executor.cancel_active_tools(context=context)
 

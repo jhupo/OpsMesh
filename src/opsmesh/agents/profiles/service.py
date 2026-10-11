@@ -22,6 +22,7 @@ from opsmesh.agents.profiles.payloads import (
     uuid_or_none,
 )
 from opsmesh.agents.profiles.reviews import AgentProfileReviewService
+from opsmesh.agents.profiles.routing import agent_target_policy, require_handoff_policy
 from opsmesh.agents.profiles.versions import AgentVersionRecorder
 from opsmesh.governance.reviews.policy import (
     RESOURCE_STATUS_ACTIVE,
@@ -67,6 +68,9 @@ class AgentManagementService:
         commit: bool = True,
     ) -> AgentProfile:
         values = normalize_create_payload(data, {})
+        for kind in ("agent_tools", "handoffs"):
+            agent_target_policy(values["tool_policy"], kind)
+        require_handoff_policy(values["tool_policy"])
         self._model_validator.validate_model_provider_credential(
             workspace_id,
             values["model_provider_credential_id"],
@@ -138,6 +142,9 @@ class AgentManagementService:
         if "status" in values:
             raise ValueError("Use archive or activate to change agent lifecycle status")
         before_snapshot = profile_snapshot(profile)
+        for kind in ("agent_tools", "handoffs"):
+            agent_target_policy(values.get("tool_policy", profile.tool_policy), kind)
+        require_handoff_policy(values.get("tool_policy", profile.tool_policy))
         if "model_provider_credential_id" in values:
             self._model_validator.validate_model_provider_credential(
                 profile.workspace_id,

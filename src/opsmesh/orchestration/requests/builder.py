@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.execution.contracts import (
     AgentInputAttachment,
     AgentRunRequest,
-    AgentRuntimeAgentTool,
+    AgentRuntimeAgentTarget,
     AgentRuntimeContext,
     AgentRuntimeProfile,
     AgentRuntimeResourceGrant,
@@ -20,6 +20,7 @@ from opsmesh.agents.execution.errors import AgentRuntimePolicyError
 from opsmesh.agents.execution.guardrails import runtime_controls_from_snapshot
 from opsmesh.agents.execution.state import AgentRunStateStore
 from opsmesh.agents.profiles.models import AgentProfile
+from opsmesh.agents.profiles.routing import bounded_target_int
 from opsmesh.agents.sessions.models import PersistentAgentSessionRef
 from opsmesh.orchestration.approvals.pending_tools import PendingToolInvocationService
 from opsmesh.orchestration.conversations.models import ConversationExecution
@@ -40,7 +41,7 @@ from opsmesh.orchestration.runs.authorization.runtime import (
     ResolvedRunRuntimeBinding,
     RunRuntimeAuthorizationService,
 )
-from opsmesh.orchestration.runs.authorization.tools import hydrate_agent_tools
+from opsmesh.orchestration.runs.authorization.tools import hydrate_agent_targets
 from opsmesh.orchestration.runs.authorization.validation import (
     RunAuthorizationService,
     agent_runtime_profile_for_snapshot,
@@ -99,7 +100,8 @@ class _MemoryRequestState:
 class _ContextRequestState:
     attachments: tuple[AgentInputAttachment, ...]
     runtime_context: AgentRuntimeContext
-    agent_tools: tuple[AgentRuntimeAgentTool, ...]
+    agent_tools: tuple[AgentRuntimeAgentTarget, ...]
+    handoffs: tuple[AgentRuntimeAgentTarget, ...]
     output_schema: Any
     guardrails: Any
     budget: ContextBudgetResult
@@ -185,8 +187,7 @@ class RunRequestBuilder:
             if runtime is None:
                 raise RunRuntimeAuthorizationError(
                     "conversation_runtime_required",
-                    "Conversation execution requires an approved "
-                    "isolated or shared Runtime",
+                    "Conversation execution requires an approved isolated or shared Runtime",
                 )
         runtime_profile = agent_runtime_profile_for_snapshot(
             snapshot,
@@ -364,11 +365,18 @@ class RunRequestBuilder:
             runtime_binding=inputs.runtime_binding.as_runtime_context(),
             metadata=runtime.metadata,
         )
-        agent_tools = hydrate_agent_tools(
+        agent_tools = hydrate_agent_targets(
             session=self.session,
             snapshot=inputs.snapshot,
             root_context=runtime_context,
             resolve_model_provider=self.resolve_model_provider,
+        )
+        handoffs = hydrate_agent_targets(
+            session=self.session,
+            snapshot=inputs.snapshot,
+            root_context=runtime_context,
+            resolve_model_provider=self.resolve_model_provider,
+            kind="handoffs",
         )
         output_schema, guardrails = runtime_controls_from_snapshot(inputs.snapshot)
         attachments = message_attachments(
@@ -430,6 +438,7 @@ class RunRequestBuilder:
             instructions=inputs.runtime_profile.instructions,
             tool_definitions=inputs.tool_definitions,
             agent_tools=agent_tools,
+            handoffs=handoffs,
             output_schema=output_schema,
         )
         runtime.metadata["context_budget"] = budget.evidence()
@@ -463,6 +472,7 @@ class RunRequestBuilder:
             attachments=attachments,
             runtime_context=runtime_context,
             agent_tools=agent_tools,
+            handoffs=handoffs,
             output_schema=output_schema,
             guardrails=guardrails,
             budget=budget,
@@ -480,6 +490,7 @@ class RunRequestBuilder:
         secret_service = self.secret_service()
         return AgentRunRequest(
             agent_profile=inputs.runtime_profile,
+            max_turns=bounded_target_int(inputs.snapshot.get("max_turns", 10), "max_turns", 1, 20),
             input_text=context.budget.text,
             attachments=context.attachments,
             context=context.runtime_context,
@@ -505,6 +516,8 @@ class RunRequestBuilder:
                 run_id=run.id,
             ),
             agent_tools=context.agent_tools,
+            handoffs=context.handoffs,
+            require_handoff=inputs.snapshot.get("require_handoff") is True,
             output_schema=context.output_schema,
             guardrails=context.guardrails,
             stream=True,
@@ -528,6 +541,8 @@ class RunRequestBuilder:
         )
         catalog = snapshot.get("capability_catalog")
         metadata = {
+            "agent_profile_id": str(profile.id),
+            "agent_profile_version": profile.version,
             "authorization_snapshot_fingerprint": snapshot.get("fingerprint"),
             "capability_catalog_fingerprint": (
                 catalog.get("fingerprint") if isinstance(catalog, dict) else None

@@ -1,4 +1,5 @@
 """Durable initiating identities, shared by admission, retries and runtime calls."""
+
 from copy import deepcopy
 from dataclasses import replace
 from uuid import UUID
@@ -124,7 +125,7 @@ class ExecutionIdentityService:
                 references.append((kind, identifier, action))
         snapshot = run.input.get("authorization_snapshot")
         if isinstance(snapshot, dict):
-            pending = list(snapshot.get("agent_tools") or [])
+            pending = list(snapshot.get("agent_tools") or []) + list(snapshot.get("handoffs") or [])
             while pending:
                 item = pending.pop()
                 if not isinstance(item, dict) or not isinstance(item.get("target"), dict):
@@ -136,6 +137,8 @@ class ExecutionIdentityService:
                     raise ResourceAccessDenied() from exc
                 references.append((ResourceKind.AGENT, identifier, ResourceAction.INVOKE))
                 children = item.get("agent_tools", [])
+                if isinstance(children, list):
+                    children = children + list(item.get("handoffs") or [])
                 if not isinstance(children, list):
                     raise ResourceAccessDenied()
                 pending.extend(children)

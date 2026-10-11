@@ -43,7 +43,11 @@ class AgentToolInterruptionService:
                     workspace_id=context.workspace_id,
                     task_id=context.task_id,
                     agent_run_id=context.run_id,
-                    requested_by_agent_profile_id=requested_by_agent_profile_id,
+                    requested_by_agent_profile_id=(
+                        interruption.agent.profile_id
+                        if interruption.agent is not None
+                        else requested_by_agent_profile_id
+                    ),
                     approval_type=f"{interruption.tool_kind}.tool",
                     risk_level=_risk_level(interruption.policy_decision),
                     payload={
@@ -51,9 +55,7 @@ class AgentToolInterruptionService:
                         "tool_call_id": interruption.tool_call_id,
                         "tool_name": interruption.tool_name,
                         "tool_kind": interruption.tool_kind,
-                        "policy_decision": redact_sensitive_payload(
-                            interruption.policy_decision
-                        ),
+                        "policy_decision": redact_sensitive_payload(interruption.policy_decision),
                     },
                 )
                 approval = created.id

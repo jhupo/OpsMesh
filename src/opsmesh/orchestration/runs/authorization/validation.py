@@ -154,7 +154,7 @@ class RunAuthorizationService:
         except RunRuntimeAuthorizationError as exc:
             self.record_runtime_denial(run, exc)
             raise
-        self._require_active_installed_skills(run.workspace_id, snapshot, lock=lock_resources)
+        self.validate_capability_scope(run.workspace_id, snapshot, lock=lock_resources)
         catalog = catalog_for_snapshot(snapshot)
         if catalog is None:
             if snapshot.get("allowed_tools") not in ([], None):
@@ -175,10 +175,13 @@ class RunAuthorizationService:
             definition.name for definition in definitions
         ]:
             raise ValueError("Authorization snapshot tool manifest mismatch")
+
+    def validate_capability_scope(
+        self, workspace_id: UUID, snapshot: dict[str, object], *, lock: bool = False
+    ) -> None:
+        self._require_active_installed_skills(workspace_id, snapshot, lock=lock)
         self._require_active_capability_resources(
-            run.workspace_id,
-            resource_grants_for_snapshot(snapshot),
-            lock=lock_resources,
+            workspace_id, resource_grants_for_snapshot(snapshot), lock=lock
         )
 
     def _require_active_installed_skills(

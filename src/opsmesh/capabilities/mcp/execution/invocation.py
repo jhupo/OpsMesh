@@ -232,6 +232,9 @@ class McpToolInvoker:
         )
         notifier.append_task_message(
             run=run,
+            agent_profile_id=request.agent_profile_id
+            if request.agent_profile_id is not None
+            else run.agent_profile_id,
             message_type="tool.waiting",
             body=f"MCP tool waiting for self-hosted runtime: {request.tool_name}",
             payload={
@@ -290,6 +293,9 @@ class McpToolInvoker:
         )
         notifier.append_task_message(
             run=run,
+            agent_profile_id=request.agent_profile_id
+            if request.agent_profile_id is not None
+            else run.agent_profile_id,
             message_type="tool.failed",
             body=f"MCP tool failed: {request.tool_name}",
             payload={
@@ -354,6 +360,9 @@ class McpToolInvoker:
         )
         notifier.append_task_message(
             run=run,
+            agent_profile_id=request.agent_profile_id
+            if request.agent_profile_id is not None
+            else run.agent_profile_id,
             message_type="tool.completed",
             body=f"MCP tool completed: {request.tool_name}",
             payload={

@@ -70,7 +70,7 @@ def authorize_project_run(
         },
     }
     snapshot: dict[str, object] = {
-        "version": 3,
+        "version": 4,
         "workspace_id": str(run.workspace_id),
         "task_id": str(task.id),
         "task_step_id": None,

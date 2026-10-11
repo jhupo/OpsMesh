@@ -158,6 +158,9 @@ def test_native_mcp_approval_resume_preserves_call_identity_and_tool_output(monk
             yield
 
     class Executor:
+        async def authorize_agent(self, **kwargs):
+            pass
+
         async def review_tool_call(self, **kwargs):
             return {"decision": "require_approval", "risk_level": "high"}
 

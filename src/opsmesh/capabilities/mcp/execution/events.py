@@ -32,7 +32,7 @@ from opsmesh.shared.pagination import PageParams
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 from opsmesh.shared.telemetry.request_context import current_evidence_context
 from opsmesh.shared.telemetry.trace_context import with_current_trace_metadata
-from opsmesh.shared.utils import canonical_payload, payload_hash
+from opsmesh.shared.utils import canonical_payload, payload_hash, uuid_or_none
 
 
 class McpToolCallLogQueryService:
@@ -232,7 +232,7 @@ class McpToolCallLogService:
             agent_run_id=request.agent_run_id,
             task_id=run.task_id if run is not None else None,
             task_step_id=run.task_step_id if run is not None else None,
-            agent_profile_id=run.agent_profile_id if run is not None else None,
+            agent_profile_id=uuid_or_none((snapshot or {}).get("agent_profile_id")),
             tool_name=request.tool_name,
             status=status,
             latency_ms=latency_ms,
@@ -314,6 +314,7 @@ class McpExecutionNotifier:
         self,
         *,
         run: AgentRun,
+        agent_profile_id: UUID | None,
         message_type: str,
         body: str,
         payload: dict[str, object],
@@ -325,7 +326,7 @@ class McpExecutionNotifier:
             task_id=run.task_id,
             task_step_id=run.task_step_id,
             agent_run_id=run.id,
-            agent_profile_id=run.agent_profile_id,
+            agent_profile_id=agent_profile_id,
             message_type=message_type,
             body=body,
             payload=payload,

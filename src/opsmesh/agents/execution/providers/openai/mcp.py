@@ -5,6 +5,7 @@ connection; the SDK owns tool conversion, approvals, output conversion and its e
 """
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from agents import Agent, FunctionTool, RunContextWrapper
@@ -17,7 +18,7 @@ from agents.tool_context import ToolContext
 from mcp.types import CallToolResult, GetPromptResult, ListPromptsResult, Tool
 
 from opsmesh.agents.execution.cancellation import raise_if_cancelled
-from opsmesh.agents.execution.contracts import AgentRunRequest
+from opsmesh.agents.execution.contracts import AgentRunRequest, AgentRuntimeAgentRef
 
 
 class RuntimeMCPServer(MCPServer):
@@ -161,11 +162,19 @@ def _approval_callback(
     return needs_approval
 
 
+@dataclass
 class GovernedAgent(Agent[Any]):
+    runtime_request: AgentRunRequest | None = field(default=None, repr=False)
+    runtime_ref: AgentRuntimeAgentRef | None = None
+
     async def get_mcp_tools(self, run_context: RunContextWrapper[Any]) -> list[AgentTool]:
         return governed_mcp_tools(self, await super().get_mcp_tools(run_context))
 
 
+@dataclass
 class GovernedSandboxAgent(SandboxAgent[Any]):
+    runtime_request: AgentRunRequest | None = field(default=None, repr=False)
+    runtime_ref: AgentRuntimeAgentRef | None = None
+
     async def get_mcp_tools(self, run_context: RunContextWrapper[Any]) -> list[AgentTool]:
         return governed_mcp_tools(self, await super().get_mcp_tools(run_context))

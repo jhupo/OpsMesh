@@ -319,7 +319,7 @@ class WorkspaceMemoryProductTools:
                 importance=importance,
                 metadata=metadata or {},
                 expected_revision=expected_revision,
-                changed_by_agent_profile_id=run.agent_profile_id,
+                changed_by_agent_profile_id=context.agent_profile_id,
                 changed_by_agent_run_id=run.id,
                 change_reason=change_reason,
             )
@@ -360,7 +360,7 @@ class WorkspaceMemoryProductTools:
         AgentSemanticMemoryService(self._session).archive(
             entry,
             expected_revision=expected_revision,
-            changed_by_agent_profile_id=run.agent_profile_id,
+            changed_by_agent_profile_id=context.agent_profile_id,
             changed_by_agent_run_id=run.id,
             change_reason=change_reason,
         )

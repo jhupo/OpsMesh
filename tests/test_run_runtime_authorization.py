@@ -446,7 +446,7 @@ def test_file_grant_without_frozen_runtime_binding_is_rejected() -> None:
         ],
     )
     snapshot: dict[str, object] = {
-        "version": 3,
+        "version": 4,
         "workspace_id": str(workspace.id),
         "task_id": str(task.id),
         "task_step_id": str(step.id),
@@ -579,7 +579,7 @@ def _snapshot(
     binding: dict[str, object],
 ) -> dict[str, object]:
     snapshot: dict[str, object] = {
-        "version": 3,
+        "version": 4,
         "workspace_id": str(workspace_id),
         "task_id": str(task.id),
         "task_step_id": str(step.id),

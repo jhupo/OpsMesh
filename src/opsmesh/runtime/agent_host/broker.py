@@ -6,7 +6,7 @@ from typing import cast
 
 from opsmesh.agents.execution.contracts import (
     AgentRunRequest,
-    AgentRuntimeAgentTool,
+    AgentRuntimeAgentTarget,
     AgentRuntimeContext,
     AgentSessionBinding,
 )
@@ -18,12 +18,14 @@ from opsmesh.shared.utils import payload_hash
 def allowed_contexts(request: AgentRunRequest) -> dict[str, AgentRuntimeContext]:
     contexts = [request.context]
 
-    def collect(tools: Iterable[AgentRuntimeAgentTool]) -> None:
+    def collect(tools: Iterable[AgentRuntimeAgentTarget]) -> None:
         for tool in tools:
             contexts.append(tool.context)
             collect(tool.nested_tools)
+            collect(tool.nested_handoffs)
 
     collect(request.agent_tools)
+    collect(request.handoffs)
     return {
         payload_hash(CONTEXT.dump_python(context, mode="json")): context for context in contexts
     }
@@ -94,6 +96,9 @@ class RuntimeCallbackBroker:
             return None
         if self.request.cancellation and await self.request.cancellation.is_cancelled():
             raise AgentRuntimeCancelledError
+        if method == "agent.authorize":
+            await executor.authorize_agent(context=context)
+            return None
         name, arguments = payload.get("tool_name"), payload.get("arguments")
         if not isinstance(name, str) or not isinstance(arguments, dict):
             raise ValueError("Invalid SDK tool invocation")

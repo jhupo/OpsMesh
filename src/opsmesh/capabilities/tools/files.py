@@ -175,7 +175,7 @@ class WorkspaceFileProductTools:
         previous = self._latest_artifact_for_work_package(context, work_package_id)
         return {
             "task_step_id": step.id if step is not None else None,
-            "agent_profile_id": run.agent_profile_id if run is not None else None,
+            "agent_profile_id": context.agent_profile_id,
             "work_package_id": work_package_id,
             "version": (previous.version + 1) if previous is not None else 1,
             "supersedes_artifact_id": previous.id if previous is not None else None,

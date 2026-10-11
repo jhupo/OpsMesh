@@ -17,7 +17,6 @@ from opsmesh.orchestration.approvals.policy import ApprovalPolicyDecision
 from opsmesh.orchestration.approvals.service import ApprovalService
 from opsmesh.orchestration.approvals.waiting import ApprovalWaitingService
 from opsmesh.orchestration.runs.models import AgentRun
-from opsmesh.orchestration.runs.queries import authorization_snapshot_for_run
 from opsmesh.shared.security.redaction import redact_sensitive_payload
 from opsmesh.shared.utils import payload_hash
 
@@ -34,9 +33,9 @@ class McpToolApprovalRequester:
         *,
         descriptor: CapabilityToolDescriptor,
         reason: str,
+        snapshot: dict[str, object],
         execution_review: ApprovalPolicyDecision | None = None,
     ) -> McpExecutionResult:
-        snapshot = authorization_snapshot_for_run(run)
         log = McpToolCallLogService(self.session).record(
             request=request,
             server_id=server.id,
@@ -51,7 +50,9 @@ class McpToolApprovalRequester:
             workspace_id=request.workspace_id,
             task_id=run.task_id,
             agent_run_id=run.id,
-            requested_by_agent_profile_id=run.agent_profile_id,
+            requested_by_agent_profile_id=request.agent_profile_id
+            if request.agent_profile_id is not None
+            else run.agent_profile_id,
             approval_type="mcp.tool",
             risk_level=(
                 execution_review.risk_level
@@ -137,6 +138,9 @@ class McpToolApprovalRequester:
         )
         notifier.append_task_message(
             run=run,
+            agent_profile_id=request.agent_profile_id
+            if request.agent_profile_id is not None
+            else run.agent_profile_id,
             message_type="approval.requested",
             body=f"MCP tool requires approval: {request.tool_name}",
             payload={

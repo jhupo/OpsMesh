@@ -156,6 +156,7 @@ class AsyncAgentRunExecutor:
                 request.context.allowed_tools
                 or request.context.tool_definitions
                 or request.agent_tools
+                or request.handoffs
             )
             else None,
             cancellation=ScopedRunCancellation(controls, job.workspace_id, job.resource_id),

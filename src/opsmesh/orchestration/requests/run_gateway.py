@@ -8,9 +8,12 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
+    AgentRuntimeAgentTarget,
+    AgentRuntimeGuardrails,
 )
 from opsmesh.agents.execution.errors import (
     AgentRuntimeCancelledError,
+    AgentRuntimePolicyError,
     AgentRuntimeProviderError,
 )
 from opsmesh.governance.costs.service import (
@@ -32,8 +35,19 @@ from opsmesh.runtime.queues.execution_control import (
     current_execution_control,
 )
 from opsmesh.shared.config import Settings
+from opsmesh.shared.utils import uuid_or_none
 
 MarkRunFailed = Callable[[AgentRun, Exception], None]
+
+
+def _blocks_text_preview(
+    guardrails: AgentRuntimeGuardrails | None,
+    targets: tuple[AgentRuntimeAgentTarget, ...],
+) -> bool:
+    return bool(guardrails and any(rule.blocking for rule in guardrails.output)) or any(
+        _blocks_text_preview(target.guardrails, (*target.nested_handoffs, *target.nested_tools))
+        for target in targets
+    )
 
 
 @dataclass(slots=True)
@@ -67,8 +81,8 @@ class ModelRunGateway:
                 run.id,
                 run.task_step_id,
                 step.work_package_id if step else None,
-                allow_text=not bool(
-                    request.guardrails and any(rule.blocking for rule in request.guardrails.output)
+                allow_text=not _blocks_text_preview(
+                    request.guardrails, (*request.handoffs, *request.agent_tools)
                 ),
             )
             request = replace(
@@ -175,6 +189,12 @@ class ModelRunGateway:
                 request.model_provider_credential_id,
                 exc,
             )
+        elif isinstance(exc, AgentRuntimePolicyError) and exc.event_type == "agent.model.failed":
+            routing.record_failure(
+                run,
+                uuid_or_none(exc.metadata.get("model_provider_credential_id")),
+                exc,
+            )
         self.session.commit()
 
     def record_model_success(
@@ -191,7 +211,7 @@ class ModelRunGateway:
         routing = self.routing()
         audit = self.audit()
         request_sequence = 1 if fallback_selected else 0
-        usage_record = costs.record_attempt(
+        usage_records = costs.record_attempt(
             run=run,
             request=request,
             result=result,
@@ -200,22 +220,23 @@ class ModelRunGateway:
             attempt_outcome="succeeded",
             budget_decision=budget_decision,
         )
-        self.events.append_event(
-            run,
-            "cost.usage_recorded",
-            "Model usage and cost recorded",
-            {
-                "model_usage_record_id": str(usage_record.id),
-                "metering_status": usage_record.metering_status,
-                "currency": usage_record.currency,
-                "total_cost": str(usage_record.total_cost)
-                if usage_record.total_cost is not None
-                else None,
-                "total_tokens": usage_record.total_tokens,
-                "job_attempt": usage_record.job_attempt,
-                "request_sequence": usage_record.request_sequence,
-            },
-        )
+        for usage_record in usage_records:
+            self.events.append_event(
+                run,
+                "cost.usage_recorded",
+                "Model usage and cost recorded",
+                {
+                    "model_usage_record_id": str(usage_record.id),
+                    "metering_status": usage_record.metering_status,
+                    "currency": usage_record.currency,
+                    "total_cost": str(usage_record.total_cost)
+                    if usage_record.total_cost is not None
+                    else None,
+                    "total_tokens": usage_record.total_tokens,
+                    "job_attempt": usage_record.job_attempt,
+                    "request_sequence": usage_record.request_sequence,
+                },
+            )
         self.events.append_model_response_received_event(run, request, result)
         self.events.append_model_provider_used_event(run, request)
         audit.record_provider_used(
