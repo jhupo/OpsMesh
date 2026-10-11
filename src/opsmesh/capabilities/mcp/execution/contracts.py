@@ -85,6 +85,8 @@ class McpExecutionRequest:
     agent_run_id: UUID
     tool_name: str
     arguments: dict[str, object]
+    agent_profile_id: UUID | None = None
+    capability_catalog_fingerprint: str | None = None
     mcp_server_id: UUID | None = None
     runtime_allowed_tools: tuple[str, ...] | None = None
     approval_granted: bool = False

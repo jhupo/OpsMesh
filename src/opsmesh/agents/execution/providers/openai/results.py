@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agents import Agent, Tool
+from agents import Tool
 from agents import __version__ as agents_sdk_version
+from agents.agent import AgentBase
 from agents.stream_events import (
     AgentUpdatedStreamEvent,
     RawResponsesStreamEvent,
@@ -15,7 +16,6 @@ from agents.usage import Usage
 from pydantic import TypeAdapter
 
 from opsmesh.agents.execution.contracts import (
-    AgentRuntimeAgentRef,
     AgentRuntimeContext,
     AgentRuntimeEvent,
     AgentRuntimeHandoffResult,
@@ -111,7 +111,7 @@ class OpenAIAgentsResultMapper:
                 else {}
             )
             agent = getattr(item, "agent", None)
-            servers = agent.mcp_servers if isinstance(agent, Agent) else []
+            servers = agent.mcp_servers if isinstance(agent, AgentBase) else []
             mcp_server = next(
                 (
                     server
@@ -132,6 +132,7 @@ class OpenAIAgentsResultMapper:
                     if mcp_server is not None
                     else "unknown",
                     arguments=arguments,
+                    agent=getattr(agent, "runtime_ref", None),
                     policy_decision=dict(review),
                 )
             )
@@ -162,20 +163,15 @@ class OpenAIAgentsResultMapper:
                 continue
             source_agent = getattr(item, "source_agent", None)
             target_agent = getattr(item, "target_agent", None)
-            source_name = str(getattr(source_agent, "name", source_agent or ""))
+            if source_agent is None or target_agent is None:
+                raise ValueError("SDK handoff lost its authorized agent identity")
             target_name = str(getattr(target_agent, "name", target_agent or ""))
             audit = dict((audits or {}).get(target_name, {}))
-            filtered_keys = audit.pop("filtered_context_keys", ())
             mapped.append(
                 AgentRuntimeHandoffResult(
-                    source=AgentRuntimeAgentRef(name=source_name),
-                    target=AgentRuntimeAgentRef(name=target_name),
+                    source=source_agent.runtime_ref,
+                    target=target_agent.runtime_ref,
                     status="completed",
-                    filtered_context_keys=(
-                        tuple(str(item) for item in filtered_keys)
-                        if isinstance(filtered_keys, tuple | list)
-                        else ()
-                    ),
                     metadata=redact_sensitive_payload(audit),
                 )
             )
@@ -197,7 +193,11 @@ def runtime_stream_event_from_sdk_item(
         payload = {"name": item.name, "item": jsonable(item.item.raw_item)}
     elif isinstance(item, AgentUpdatedStreamEvent):
         event_type = "agent.updated"
-        payload = {"agent": item.new_agent.name}
+        ref = getattr(item.new_agent, "runtime_ref", None)
+        payload = {
+            "agent": ref.name if ref else item.new_agent.name,
+            "agent_profile_id": str(ref.profile_id) if ref else None,
+        }
     else:
         return None
     normalized_payload = redact_sensitive_payload(
@@ -263,7 +263,7 @@ def _serialize_runtime_context(value: object) -> dict[str, object]:
 
 def _interrupted_tool(item: object, tool_name: str) -> Tool | None:
     agent = getattr(item, "agent", None)
-    if not isinstance(agent, Agent):
+    if not isinstance(agent, AgentBase):
         return None
     for tool in agent.tools:
         if getattr(tool, "name", None) == tool_name:

@@ -21,8 +21,9 @@ from opsmesh.resources.knowledge.contracts import (
     KnowledgeSourceType,
     KnowledgeSourceUpdate,
 )
+from opsmesh.resources.knowledge.ingestion import KnowledgeSourceIngestionService
 from opsmesh.resources.knowledge.models import KnowledgeSource, KnowledgeSourceRevision
-from opsmesh.shared.db.errors import commit_or_raise_conflict, flush_or_raise_conflict
+from opsmesh.shared.db.errors import flush_or_raise_conflict
 from opsmesh.shared.db.pagination import page_scalars_by_offset
 from opsmesh.shared.security.redaction import is_sensitive_payload_key
 
@@ -93,8 +94,6 @@ class KnowledgeSourceService:
         flush_or_raise_conflict(self._session, "Knowledge source name already exists")
         self._record_revision(source, actor_user_id, reason="created")
         self._audit(source, actor_user_id, "knowledge_source.created")
-        commit_or_raise_conflict(self._session, "Knowledge source name already exists")
-        self._session.refresh(source)
         return source
 
     def update(
@@ -118,8 +117,7 @@ class KnowledgeSourceService:
             description=command.description
             if command.description is not None
             else source.description,
-            source_type=command.source_type
-            or cast(KnowledgeSourceType, source.source_type),
+            source_type=command.source_type or cast(KnowledgeSourceType, source.source_type),
             uri=command.uri if command.source_type or command.uri is not None else source.uri,
             workspace_file_id=(
                 command.workspace_file_id
@@ -140,6 +138,8 @@ class KnowledgeSourceService:
         source.version += 1
         if command.status is not None:
             source.status = command.status
+        flush_or_raise_conflict(self._session, "Knowledge source name already exists")
+        KnowledgeSourceIngestionService(self._session).archive_chunks(workspace_id, source.id)
         if source.source_fingerprint != old_fingerprint:
             source.last_ingested_at = None
             source.last_error_code = None
@@ -153,8 +153,7 @@ class KnowledgeSourceService:
                 "source_changed": source.source_fingerprint != old_fingerprint,
             },
         )
-        commit_or_raise_conflict(self._session, "Knowledge source name already exists")
-        self._session.refresh(source)
+        flush_or_raise_conflict(self._session, "Knowledge source name already exists")
         return source
 
     def set_status(
@@ -176,6 +175,8 @@ class KnowledgeSourceService:
         if status == "archived" and source.status == "archived":
             return source
         source.status = status
+        if status == "archived":
+            KnowledgeSourceIngestionService(self._session).archive_chunks(workspace_id, source.id)
         source.version += 1
         self._record_revision(source, actor_user_id, reason=f"status:{status}")
         self._audit(
@@ -184,8 +185,7 @@ class KnowledgeSourceService:
             f"knowledge_source.{status}",
             metadata={"version": source.version},
         )
-        self._session.commit()
-        self._session.refresh(source)
+        self._session.flush()
         return source
 
     def _lock_source(self, workspace_id: UUID, source_id: UUID) -> KnowledgeSource | None:
@@ -266,8 +266,14 @@ class KnowledgeSourceService:
         command: KnowledgeSourceCreate,
     ) -> KnowledgeSourceCreate:
         source_type = command.source_type
-        if source_type not in {"url", "workspace_file"}:
+        if source_type not in {"url", "workspace_file", "text"}:
             raise ValueError("Unsupported knowledge source type")
+        if source_type == "text":
+            if command.uri is not None or command.workspace_file_id is not None:
+                raise ValueError("Text knowledge source cannot include external references")
+            text = command.config.get("text")
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("Text knowledge source requires config.text")
         uri = _normalize_uri(command.uri) if source_type == "url" else None
         workspace_file_id = command.workspace_file_id if source_type == "workspace_file" else None
         if source_type == "url" and uri is None:

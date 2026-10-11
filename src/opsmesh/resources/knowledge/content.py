@@ -110,6 +110,14 @@ def _load_source_bytes(
     storage: ObjectStorage | None,
     url_fetcher: KnowledgeUrlFetcher | None,
 ) -> tuple[bytes, str, str, str | None]:
+    if source.source_type == "text":
+        content = source.source_config.get("text")
+        if not isinstance(content, str) or not content.strip():
+            raise KnowledgeContentError("source_empty")
+        raw = content.encode("utf-8")
+        if len(raw) > operational_configuration(session).files.knowledge_source_bytes:
+            raise KnowledgeContentError("source_too_large")
+        return raw, f"knowledge-source://{source.id}/v{source.version}", source.name, None
     if source.source_type == "url":
         if source.uri is None or url_fetcher is None:
             raise KnowledgeContentError("fetch_runtime_unavailable")

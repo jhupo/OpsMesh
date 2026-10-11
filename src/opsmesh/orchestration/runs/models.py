@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from opsmesh.shared.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
-AUTHORIZATION_SNAPSHOT_VERSION = 3
+AUTHORIZATION_SNAPSHOT_VERSION = 4
 
 
 def authorization_snapshot_fingerprint(snapshot: dict[str, object]) -> str:

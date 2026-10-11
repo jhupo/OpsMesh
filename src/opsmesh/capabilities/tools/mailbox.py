@@ -38,17 +38,21 @@ class AgentMailboxProductTools:
                 AgentRun.workspace_id == context.workspace_id, AgentRun.id == context.agent_run_id
             )
         )
-        if run is None or run.workspace_id != context.workspace_id or run.agent_profile_id is None:
+        if (
+            run is None
+            or run.workspace_id != context.workspace_id
+            or context.agent_profile_id is None
+        ):
             raise ToolResourceNotFoundError("Agent run is not bound to an agent profile")
         agent = self._session.scalar(
             select(AgentProfile).where(
                 AgentProfile.workspace_id == context.workspace_id,
-                AgentProfile.id == run.agent_profile_id,
+                AgentProfile.id == context.agent_profile_id,
             )
         )
         if agent is None or agent.workspace_id != context.workspace_id:
             raise ToolResourceNotFoundError("Agent not found in workspace")
-        return run.agent_profile_id
+        return context.agent_profile_id
 
     def send_agent_message(
         self,

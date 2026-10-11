@@ -107,7 +107,7 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     assert logs[0].trace_id is not None
     assert logs[0].span_id is not None
     assert logs[0].request["arguments_sha256"]
-    assert logs[0].request["authorization_snapshot_version"] == 3
+    assert logs[0].request["authorization_snapshot_version"] == 4
     assert logs[0].request["snapshot_workspace_id"] == str(workspace.id)
     assert logs[0].request["snapshot_allowed_tools"] == ["generate_image"]
     assert "prompt" not in str(logs[0].request)
@@ -116,7 +116,7 @@ def test_mcp_execution_authorizes_and_records_events_without_leaking_request() -
     assert logs[0].response == {"asset_id": "img_123", "status": "created"}
     assert [event.event_type for event in events] == ["tool.called", "tool.completed"]
     assert events[0].event_metadata["request_sha256"]
-    assert events[0].event_metadata["authorization_snapshot_version"] == 3
+    assert events[0].event_metadata["authorization_snapshot_version"] == 4
     assert "mountain" not in str(events[0].event_metadata)
     assert [message.message_type for message in messages] == ["tool.completed"]
     assert messages[0].payload["response_sha256"]
@@ -383,7 +383,7 @@ def test_mcp_execution_blocks_tool_not_in_runtime_context() -> None:
     assert log.status == "blocked"
     assert log.error is not None
     assert log.error["code"] == "mcp_tool_not_in_runtime_context"
-    assert log.request["authorization_snapshot_version"] == 3
+    assert log.request["authorization_snapshot_version"] == 4
     assert security_event is not None
     assert security_event.reason == "mcp_tool_not_in_runtime_context"
 
@@ -424,7 +424,7 @@ def test_mcp_execution_blocks_unhealthy_server_before_adapter_call() -> None:
     assert log.status == "blocked"
     assert log.error is not None
     assert log.error["code"] == "mcp_server_unhealthy"
-    assert log.request["authorization_snapshot_version"] == 3
+    assert log.request["authorization_snapshot_version"] == 4
     assert security_event is not None
     assert security_event.reason == "mcp_server_unhealthy"
     assert audit is not None
@@ -467,7 +467,7 @@ def test_mcp_execution_blocks_stale_health_check_before_adapter_call() -> None:
     assert log.status == "blocked"
     assert log.error is not None
     assert log.error["code"] == "mcp_server_health_check_stale"
-    assert log.request["authorization_snapshot_version"] == 3
+    assert log.request["authorization_snapshot_version"] == 4
     assert security_event is not None
     assert security_event.reason == "mcp_server_health_check_stale"
 
@@ -772,7 +772,7 @@ def test_mcp_execution_sends_explicit_approval_tool_to_approval() -> None:
     assert approval is not None
     assert approval.payload["reason"] == "mcp_tool_requires_approval"
     assert approval.payload["requires_approval"] is True
-    assert approval.payload["authorization_snapshot_version"] == 3
+    assert approval.payload["authorization_snapshot_version"] == 4
     assert log is not None
     assert log.status == "waiting_approval"
     assert log.approval_id == approval.id
@@ -1162,7 +1162,7 @@ def _seed_run_with_mcp_tool(
         ]
     catalog["fingerprint"] = effective_catalog_fingerprint(catalog)
     snapshot: dict[str, object] = {
-        "version": 3,
+        "version": 4,
         "workspace_id": str(workspace.id),
         "allowed_tools": requested_tools,
         "capability_catalog": catalog,

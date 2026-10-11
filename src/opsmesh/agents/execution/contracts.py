@@ -110,14 +110,7 @@ class AgentRuntimeAgentDefinition:
     model: str | None = None
     model_settings: dict[str, object] = field(default_factory=dict)
     handoff_description: str | None = None
-
-
-@dataclass(frozen=True)
-class AgentRuntimeHandoff:
-    target: AgentRuntimeAgentRef
-    reason: str = ""
-    input_filter: tuple[str, ...] = ()
-    metadata: dict[str, object] = field(default_factory=dict)
+    version: int = 1
 
 
 @dataclass(frozen=True)
@@ -126,7 +119,6 @@ class AgentRuntimeHandoffResult:
     target: AgentRuntimeAgentRef
     status: str
     reason: str = ""
-    filtered_context_keys: tuple[str, ...] = ()
     metadata: dict[str, object] = field(default_factory=dict)
 
 
@@ -247,8 +239,8 @@ class AgentRuntimeContext:
 
 
 @dataclass(frozen=True)
-class AgentRuntimeAgentTool:
-    """One authorized nested agent exposed as a provider SDK tool."""
+class AgentRuntimeAgentTarget:
+    """Frozen execution scope for a native SDK handoff or agent tool."""
 
     target: AgentRuntimeAgentDefinition
     tool_name: str
@@ -260,10 +252,14 @@ class AgentRuntimeAgentTool:
     model: str
     provider: str | None = None
     base_url: str | None = None
-    api_key: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     model_api: str | None = None
     model_provider_credential_id: UUID | None = None
-    nested_tools: tuple[AgentRuntimeAgentTool, ...] = ()
+    nested_tools: tuple[AgentRuntimeAgentTarget, ...] = ()
+    nested_handoffs: tuple[AgentRuntimeAgentTarget, ...] = ()
+    output_schema: AgentRuntimeOutputSchema | None = None
+    guardrails: AgentRuntimeGuardrails | None = None
+    require_handoff: bool = False
 
 
 @dataclass(frozen=True)
@@ -319,6 +315,7 @@ class AgentRuntimeInterruption:
     tool_name: str
     tool_kind: str
     arguments: dict[str, object]
+    agent: AgentRuntimeAgentRef | None = None
     policy_decision: dict[str, object] = field(default_factory=dict)
     kind: str = "tool_approval"
     message: str | None = None
@@ -326,6 +323,8 @@ class AgentRuntimeInterruption:
 
 
 class AgentRuntimeToolExecutor(Protocol):
+    async def authorize_agent(self, *, context: AgentRuntimeContext) -> None: ...
+
     async def cancel_active_tools(self, *, context: AgentRuntimeContext) -> None: ...
 
     async def review_tool_call(
@@ -366,7 +365,7 @@ class AgentRunRequest:
     model: str | None = None
     provider: str | None = None
     base_url: str | None = None
-    api_key: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     model_api: str | None = None
     model_provider_credential_id: UUID | None = None
     tool_executor: AgentRuntimeToolExecutor | None = None
@@ -374,9 +373,9 @@ class AgentRunRequest:
     tracing: AgentRunTracing | None = None
     resume_state: AgentRuntimeResumeState | None = None
     approval_decisions: tuple[AgentRuntimeApprovalDecision, ...] = ()
-    handoffs: tuple[AgentRuntimeHandoff, ...] = ()
-    handoff_agents: tuple[AgentRuntimeAgentDefinition, ...] = ()
-    agent_tools: tuple[AgentRuntimeAgentTool, ...] = ()
+    handoffs: tuple[AgentRuntimeAgentTarget, ...] = ()
+    agent_tools: tuple[AgentRuntimeAgentTarget, ...] = ()
+    require_handoff: bool = False
     output_schema: AgentRuntimeOutputSchema | None = None
     guardrails: AgentRuntimeGuardrails | None = None
     stream: bool = False
@@ -407,8 +406,19 @@ class AgentRuntimeUsage:
 
 
 @dataclass(frozen=True)
+class AgentRuntimeModelUsage:
+    request_id: str
+    agent: AgentRuntimeAgentRef
+    model: str
+    provider: str
+    model_api: str | None
+    usage: AgentRuntimeUsage
+
+
+@dataclass(frozen=True)
 class AgentRunResult:
     final_output: str
+    final_agent: AgentRuntimeAgentRef | None = None
     raw_output: object | None = None
     events: tuple[AgentRuntimeEvent, ...] = ()
     resume_state: AgentRuntimeResumeState | None = None
@@ -419,6 +429,7 @@ class AgentRunResult:
     agent_tool_calls: tuple[AgentRuntimeAgentToolResult, ...] = ()
     guardrail_results: tuple[AgentRuntimeGuardrailResult, ...] = ()
     usage: AgentRuntimeUsage | None = None
+    model_usages: tuple[AgentRuntimeModelUsage, ...] = ()
     capabilities: AgentRuntimeCapabilities | None = None
 
 

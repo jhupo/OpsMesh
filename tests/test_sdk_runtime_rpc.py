@@ -26,12 +26,13 @@ from opsmesh.shared.db.operations import DatabaseOperations
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from opsmesh.workspaces.management.models import Workspace
 from tests.test_agent_runtime_tools import _mcp_definition, _set_mcp_snapshot
+from tests.test_conversations_postgres import _queue
 from tests.test_worker_runner import _seed_run, _session_factory
 
 
 def test_approved_runtime_rpc_waits_and_recovers_without_reexecution():
     factory = _session_factory()
-    workspace_id, run_id, user_id = _seed_run(factory, slug="sdk-rpc")
+    workspace_id, run_id, user_id = _seed_run(factory, slug="sdk-rpc", status=RunStatus.RUNNING)
     settings = Settings(environment="test")
     secrets = SecretEncryptionService(
         secret=settings.credential_encryption_secret, key_id=settings.credential_encryption_key_id
@@ -109,7 +110,7 @@ def test_approved_runtime_rpc_waits_and_recovers_without_reexecution():
     async def scenario():
         with BlockingIO(1, name="sdk-rpc-test") as io:
             database = DatabaseOperations(factory, io, lambda: None)
-            executor = ScopedToolExecutor(database, settings, None)
+            executor = ScopedToolExecutor(database, settings, None, _queue())
 
             async def execute():
                 return await executor.execute_tool(

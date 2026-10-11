@@ -9,11 +9,12 @@ class ToolContext:
     task_id: UUID | None
     allowed_tools: frozenset[str]
     metadata: dict[str, object] | None = None
+    task_step_id: UUID | None = None
+    agent_profile_id: UUID | None = None
 
     def require_tool(self, tool_name: str) -> None:
         if tool_name not in self.allowed_tools:
             raise ToolPermissionError(f"Tool is not allowed: {tool_name}")
-    task_step_id: UUID | None = None
 
 
 class ToolPermissionError(PermissionError):

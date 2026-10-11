@@ -218,7 +218,7 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
     session.add(task)
     session.flush()
     snapshot = {
-        "version": 3,
+        "version": 4,
         "workspace_id": str(workspace.id),
         "task_id": str(task.id),
         "task_step_id": None,

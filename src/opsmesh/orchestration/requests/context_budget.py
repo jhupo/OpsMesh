@@ -5,8 +5,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from opsmesh.agents.execution.contracts import (
-    AgentRuntimeAgentDefinition,
-    AgentRuntimeAgentTool,
+    AgentRuntimeAgentTarget,
     AgentRuntimeOutputSchema,
     AgentRuntimeToolDefinition,
 )
@@ -104,8 +103,8 @@ class ContextBudgetManager:
         policy: ContextBudgetPolicy,
         instructions: str,
         tool_definitions: tuple[AgentRuntimeToolDefinition, ...] = (),
-        handoff_agents: tuple[AgentRuntimeAgentDefinition, ...] = (),
-        agent_tools: tuple[AgentRuntimeAgentTool, ...] = (),
+        handoffs: tuple[AgentRuntimeAgentTarget, ...] = (),
+        agent_tools: tuple[AgentRuntimeAgentTarget, ...] = (),
         output_schema: AgentRuntimeOutputSchema | None = None,
     ) -> ContextBudgetResult:
         limits = self._limits(
@@ -114,7 +113,7 @@ class ContextBudgetManager:
             policy=policy,
             instructions=instructions,
             tool_definitions=tool_definitions,
-            handoff_agents=handoff_agents,
+            handoffs=handoffs,
             agent_tools=agent_tools,
             output_schema=output_schema,
         )
@@ -137,15 +136,15 @@ class ContextBudgetManager:
         policy: ContextBudgetPolicy,
         instructions: str,
         tool_definitions: tuple[AgentRuntimeToolDefinition, ...],
-        handoff_agents: tuple[AgentRuntimeAgentDefinition, ...],
-        agent_tools: tuple[AgentRuntimeAgentTool, ...],
+        handoffs: tuple[AgentRuntimeAgentTarget, ...],
+        agent_tools: tuple[AgentRuntimeAgentTarget, ...],
         output_schema: AgentRuntimeOutputSchema | None,
     ) -> _BudgetLimits:
         context_window = context_window_tokens(provider, model, policy)
         fixed_tokens = fixed_context_tokens(
             instructions=instructions,
             tool_definitions=tool_definitions,
-            handoff_agents=handoff_agents,
+            handoffs=handoffs,
             agent_tools=agent_tools,
             output_schema=output_schema,
         )
@@ -227,15 +226,29 @@ def fixed_context_tokens(
     *,
     instructions: str,
     tool_definitions: tuple[AgentRuntimeToolDefinition, ...],
-    handoff_agents: tuple[AgentRuntimeAgentDefinition, ...],
-    agent_tools: tuple[AgentRuntimeAgentTool, ...],
+    handoffs: tuple[AgentRuntimeAgentTarget, ...],
+    agent_tools: tuple[AgentRuntimeAgentTarget, ...],
     output_schema: AgentRuntimeOutputSchema | None,
 ) -> int:
     payload: dict[str, object] = {
         "instructions": instructions,
         "tools": tool_definitions,
-        "handoff_agents": handoff_agents,
-        "agent_tools": agent_tools,
+        "handoffs": [
+            {"name": item.tool_name, "description": item.description} for item in handoffs
+        ],
+        "agent_tools": [
+            {
+                "name": item.tool_name,
+                "description": item.description,
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"input": {"type": "string"}},
+                    "required": ["input"],
+                    "additionalProperties": False,
+                },
+            }
+            for item in agent_tools
+        ],
         "output_schema": output_schema,
     }
     return SERIALIZATION_OVERHEAD_TOKENS + estimate_token_upper_bound(

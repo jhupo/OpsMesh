@@ -14,7 +14,7 @@ from opsmesh.agents.execution.contracts import (
     AgentRunRequest,
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,
-    AgentRuntimeAgentTool,
+    AgentRuntimeAgentTarget,
     AgentRuntimeContext,
     AgentRuntimeToolDefinition,
     AgentRuntimeToolResult,
@@ -76,7 +76,7 @@ def test_openai_agent_tool_uses_sdk_and_scoped_runtime_context(
         run_id=run_id,
         allowed_tools=("read_data",),
         tool_definitions=(_tool("read_data"),),
-        metadata={"agent_tool": {"depth": 1, "max_depth": 1}},
+        metadata={"agent_target": {"depth": 1, "max_depth": 1}},
     )
     manager = AgentProfile(
         id=manager_id,
@@ -106,7 +106,7 @@ def test_openai_agent_tool_uses_sdk_and_scoped_runtime_context(
         api_key="sk-test",
         tool_executor=executor,
         agent_tools=(
-            AgentRuntimeAgentTool(
+            AgentRuntimeAgentTarget(
                 target=target,
                 tool_name="delegate_to_researcher",
                 description="Delegate research.",
@@ -123,7 +123,7 @@ def test_openai_agent_tool_uses_sdk_and_scoped_runtime_context(
 
     async def fake_run(*args: object, **kwargs: object) -> object:
         agent = kwargs.get("starting_agent") or args[0]
-        if getattr(agent, "name", None) == "Researcher":
+        if agent.runtime_ref.name == "Researcher":
             context = kwargs["context"]
             return SimpleNamespace(
                 final_output="research complete",
@@ -278,7 +278,7 @@ def test_team_agent_tool_policy_is_frozen_and_hydrated_for_worker_request() -> N
     assert agent_tool.max_turns == 5
     assert agent_tool.context.allowed_tools == ("get_agent_inbox",)
     assert agent_tool.context.resource_grants == ()
-    assert agent_tool.context.metadata["agent_tool"]["target_agent_profile_id"] == str(
+    assert agent_tool.context.metadata["agent_target"]["target_agent_profile_id"] == str(
         specialist.id
     )
     assert agent_tool.api_key == "sk-unit-test-provider"

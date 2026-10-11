@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,7 +25,7 @@ from opsmesh.resources.memory.configuration import initial_embedding_status
 from opsmesh.resources.memory.models import WorkspaceMemoryEntry, memory_content_fingerprint
 from opsmesh.resources.storage.storage import ObjectStorage
 from opsmesh.runtime.queues.contracts import JobPayload, JobType
-from opsmesh.runtime.queues.service import RedisQueue
+from opsmesh.runtime.queues.dispatch import stage_job
 from opsmesh.shared.db.errors import flush_or_raise_conflict
 from opsmesh.shared.db.pagination import page_scalars_by_offset
 
@@ -98,6 +98,19 @@ class KnowledgeSourceIngestionService:
             target_type="knowledge_source",
             target_id=source.id,
             metadata={"source_version": source.version, "ingestion_id": str(existing.id)},
+        )
+        stage_job(
+            self._session,
+            JobPayload(
+                workspace_id=workspace_id,
+                job_type=JobType.KNOWLEDGE_INGEST,
+                resource_id=source.id,
+                requested_by_user_id=requested_by_user_id,
+                idempotency_key=f"knowledge.ingest:{workspace_id}:{source.id}:v{source.version}:{uuid4()}",
+                routing={"source_version": source.version},
+                priority=-5,
+                max_attempts=1,
+            ),
         )
         return existing
 
@@ -211,11 +224,13 @@ class KnowledgeSourceIngestionService:
             raise ValueError("Knowledge source is not active")
         return list(
             self._session.scalars(
-                select(KnowledgeCitation).where(
+                select(KnowledgeCitation)
+                .where(
                     KnowledgeCitation.workspace_id == workspace_id,
                     KnowledgeCitation.source_id == source_id,
                     KnowledgeCitation.memory_entry_id == memory_entry_id,
-                ).order_by(KnowledgeCitation.chunk_index, KnowledgeCitation.id)
+                )
+                .order_by(KnowledgeCitation.chunk_index, KnowledgeCitation.id)
             ).all()
         )
 
@@ -337,12 +352,14 @@ class KnowledgeSourceIngestionService:
         url_fetcher: KnowledgeUrlFetcher | None = None,
     ) -> KnowledgeIngestionResult:
         source = self._session.scalar(
-            select(KnowledgeSource).where(
+            select(KnowledgeSource)
+            .where(
                 KnowledgeSource.workspace_id == ingestion.workspace_id,
                 KnowledgeSource.id == ingestion.source_id,
                 KnowledgeSource.version == ingestion.source_version,
                 KnowledgeSource.status == "active",
             )
+            .with_for_update()
         )
         if source is None:
             return self._fail_result(ingestion, "source_version_stale")
@@ -356,7 +373,7 @@ class KnowledgeSourceIngestionService:
         except KnowledgeContentError as exc:
             return self._fail_result(ingestion, exc.code)
         chunks = content.chunks
-        self._archive_chunks(ingestion.workspace_id, ingestion.source_id)
+        self.archive_chunks(ingestion.workspace_id, ingestion.source_id)
         entries: list[WorkspaceMemoryEntry] = []
         for index, chunk in enumerate(chunks):
             title = f"{source.name} #{index + 1}" if len(chunks) > 1 else source.name
@@ -486,7 +503,7 @@ class KnowledgeSourceIngestionService:
             .with_for_update()
         )
 
-    def _archive_chunks(self, workspace_id: UUID, source_id: UUID) -> None:
+    def archive_chunks(self, workspace_id: UUID, source_id: UUID) -> None:
         entries = self._session.scalars(
             select(WorkspaceMemoryEntry).where(
                 WorkspaceMemoryEntry.workspace_id == workspace_id,
@@ -501,25 +518,3 @@ class KnowledgeSourceIngestionService:
             entry.status = "archived"
             entry.archived_at = now
             entry.invalidate_embedding(status="not_applicable")
-
-
-def enqueue_knowledge_source_ingestion_job(
-    *,
-    queue: RedisQueue,
-    workspace_id: UUID,
-    source_id: UUID,
-    source_version: int,
-    requested_by_user_id: UUID,
-) -> bool:
-    return queue.enqueue(
-        JobPayload(
-            workspace_id=workspace_id,
-            job_type=JobType.KNOWLEDGE_INGEST,
-            resource_id=source_id,
-            requested_by_user_id=requested_by_user_id,
-            idempotency_key=f"knowledge.ingest:{workspace_id}:{source_id}:v{source_version}",
-            routing={"source_version": source_version},
-            priority=-5,
-            max_attempts=1,
-        )
-    )

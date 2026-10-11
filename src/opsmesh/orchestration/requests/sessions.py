@@ -63,7 +63,7 @@ class RunRequestSessionService:
             task.execution_identity,
         )
         execution = self.session.execute(
-            select(Conversation, ConversationExecution.purpose)
+            select(Conversation)
             .join(ConversationTurn, ConversationTurn.conversation_id == Conversation.id)
             .join(ConversationExecution, ConversationExecution.turn_id == ConversationTurn.id)
             .where(
@@ -79,7 +79,7 @@ class RunRequestSessionService:
                 AutomationEvent.task_id == task.id,
             )
         )
-        if execution is not None and execution[1] == "manager":
+        if execution is not None:
             conversation = execution[0]
             if conversation.created_by_user_id != user.user_id:
                 raise ResourceAccessDenied()

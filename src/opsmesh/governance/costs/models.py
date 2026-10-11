@@ -113,12 +113,14 @@ class WorkspaceCostBudget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class ModelUsageRecord(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "model_usage_records"
+    usage_key: Mapped[str] = mapped_column(String(80), nullable=False, default="single_model")
     __table_args__ = (
         UniqueConstraint(
             "workspace_id",
             "agent_run_id",
             "job_attempt",
             "request_sequence",
+            "usage_key",
             name="uq_model_usage_records_run_job_attempt_request",
         ),
         CheckConstraint("request_count >= 0", name="ck_model_usage_request_count"),

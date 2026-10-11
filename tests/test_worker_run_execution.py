@@ -579,7 +579,9 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
         captured["agent"] = agent
         captured["input_text"] = input_text
         captured["kwargs"] = kwargs
-        return FakeSdkResult()
+        result = FakeSdkResult()
+        result.last_agent = agent
+        return result
 
     monkeypatch.setattr(openai_runtime.Runner, "run_streamed", fake_runner_run)
     settings = Settings(environment="test")
@@ -602,7 +604,7 @@ def test_worker_executes_openai_agents_runner_through_control_plane(
     assert run.output is not None
     assert run.output["final_output"] == "sdk-e2e-ok"
     assert captured["input_text"]
-    assert captured["agent"].name == "Researcher"
+    assert captured["agent"].runtime_ref.name == "Researcher"
     assert captured["agent"].instructions == "Return the requested research summary."
     assert captured["kwargs"]["context"].run_id == run.id
     assert captured["kwargs"]["max_turns"] == 10
@@ -3997,7 +3999,7 @@ def test_agent_request_includes_profile_tool_policy_context() -> None:
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
         "tool_policy_source": "agent_profile",
-        "authorization_snapshot_version": 3,
+        "authorization_snapshot_version": 4,
         "agent_mailbox": {
             "scope": {"task_id": str(task.id)},
             "thread_count": 0,
@@ -4363,7 +4365,7 @@ def test_agent_request_includes_authorized_task_step_context() -> None:
         "authorized_workspace_id": str(workspace.id),
         "authorized_task_id": str(task.id),
         "tool_policy_source": "agent_profile",
-        "authorization_snapshot_version": 3,
+        "authorization_snapshot_version": 4,
         "context_scope": "task_step",
         "task_step_id": str(step.id),
         "work_package_id": "visual-design",

@@ -163,7 +163,7 @@ def sandbox_capabilities(
         ).get_model(request.model or request.agent_profile.model)
         meter = memory_usage.get()
         if meter is not None:
-            model = MeteredMemoryModel(model, meter)
+            model = MeteredMemoryModel(model, meter, request)
         settings = OpenAIModelSettingsMapper().map_settings(
             model_settings if model_settings is not None else request.agent_profile.model_settings
         )

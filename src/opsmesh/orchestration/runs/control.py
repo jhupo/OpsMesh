@@ -10,7 +10,8 @@ from opsmesh.governance.audit.service import AuditService
 from opsmesh.orchestration.approvals.lifecycle import AgentToolApprovalLifecycleService
 from opsmesh.orchestration.approvals.models import PendingToolInvocation
 from opsmesh.orchestration.runs.events import RunEventRecorder
-from opsmesh.orchestration.runs.models import AgentRun
+from opsmesh.orchestration.runs.models import AUTHORIZATION_SNAPSHOT_VERSION, AgentRun
+from opsmesh.orchestration.runs.queries import authorization_snapshot_for_run
 from opsmesh.orchestration.runs.resources import (
     release_run_reservations,
 )
@@ -164,6 +165,11 @@ class RunControlService:
             return None
         if RunStatus(failed_run.status) != RunStatus.FAILED:
             raise ValueError("Only failed runs can be retried")
+        snapshot = authorization_snapshot_for_run(failed_run)
+        if snapshot and snapshot.get("version") != AUTHORIZATION_SNAPSHOT_VERSION:
+            raise ValueError(
+                "Historical authorization snapshot cannot be retried; submit a new task"
+            )
 
         task = (
             self.session.get(Task, failed_run.task_id) if failed_run.task_id is not None else None

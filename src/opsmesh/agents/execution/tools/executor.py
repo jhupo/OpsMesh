@@ -38,6 +38,7 @@ from opsmesh.runtime.queues.execution_control import (
 from opsmesh.runtime.self_hosted.models import SelfHostedMcpJob
 from opsmesh.shared.config import Settings
 from opsmesh.shared.security.secrets import SecretEncryptionService
+from opsmesh.shared.utils import optional_string, uuid_or_none
 
 
 class BackendToolExecutor:
@@ -340,6 +341,10 @@ class BackendToolExecutor:
                 agent_run_id=context.run_id,
                 tool_name=tool_name,
                 arguments=prepared.arguments,
+                agent_profile_id=uuid_or_none(context.metadata.get("agent_profile_id")),
+                capability_catalog_fingerprint=optional_string(
+                    context.metadata.get("capability_catalog_fingerprint")
+                ),
                 mcp_server_id=prepared.definition.mcp_server_id,
                 runtime_allowed_tools=context.allowed_tools,
                 approval_granted=approval_granted,

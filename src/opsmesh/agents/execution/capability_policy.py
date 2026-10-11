@@ -10,7 +10,7 @@ def required_runtime_capabilities(
     }
     if request.context.tool_definitions:
         required.add(AgentRuntimeCapability.TOOLS)
-    if request.handoffs or request.handoff_agents:
+    if request.handoffs:
         required.add(AgentRuntimeCapability.HANDOFFS)
     if request.agent_tools:
         required.add(AgentRuntimeCapability.AGENTS_AS_TOOLS)

@@ -199,8 +199,15 @@ class AgentToolGateway:
             return tuple(
                 grant
                 for grant in context.resource_grants
-                if grant.resource_type == required_type
-                and grant.access_mode in definition.required_access_modes
+                if (
+                    grant.resource_type == required_type
+                    and grant.access_mode in definition.required_access_modes
+                )
+                or (
+                    definition.name in {"create_knowledge", "update_knowledge"}
+                    and grant.resource_type == "file_collection"
+                    and grant.access_mode == "read"
+                )
             )
         if definition.source == "mcp" and definition.mcp_server_id is not None:
             server_id = str(definition.mcp_server_id)
@@ -257,8 +264,12 @@ class AgentToolGateway:
                     "workspace_file_not_in_resource_scope",
                     "Workspace file is outside the run resource scope",
                 )
-        if definition.name == "search_workspace_memory":
-            requested_source_types = arguments.get("source_types")
+        if definition.name in {"search_workspace_memory", "search_knowledge"}:
+            requested_source_types = (
+                ["knowledge_source"]
+                if definition.name == "search_knowledge"
+                else arguments.get("source_types")
+            )
             read_scopes = memory_read_scopes(grants)
             if isinstance(requested_source_types, list) and any(
                 not any(

@@ -184,11 +184,14 @@ def test_openai_structured_output_fails_closed_on_invalid_value(
         asyncio.run(OpenAIAgentsRunner().run(_request()))
 
     assert normalize_agent_error(raised.value).retryable is False
-    assert raised.value.metadata == {
+    assert {
+        key: raised.value.metadata[key] for key in ("schema_name", "schema_version", "validator")
+    } == {
         "schema_name": "answer",
         "schema_version": "v1",
         "validator": "required",
     }
+    assert len(raised.value.metadata["model_usages"]) == 1
 
 
 def test_openai_waiting_approval_defers_final_output_validation(

@@ -12,10 +12,23 @@ from sqlalchemy.orm import Session
 from opsmesh.agents.execution.contracts import (
     AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,
-    AgentRuntimeAgentTool,
+    AgentRuntimeAgentTarget,
     AgentRuntimeContext,
 )
+from opsmesh.agents.execution.guardrails import (
+    runtime_controls_from_snapshot,
+    runtime_controls_snapshot,
+)
 from opsmesh.agents.profiles.models import AgentProfile
+from opsmesh.agents.profiles.routing import (
+    MAX_AGENT_TOOL_DEPTH,
+    MAX_AGENT_TOOL_GRAPH_NODES,
+    MAX_AGENT_TOOL_TURNS,
+    AgentTargetPolicy,
+    agent_target_policy,
+    bounded_target_int,
+    require_handoff_policy,
+)
 from opsmesh.agents.providers.policy import is_anthropic_provider, is_openai_compatible_provider
 from opsmesh.capabilities.catalog.effective import (
     EffectiveCapabilityCatalogService,
@@ -28,30 +41,21 @@ from opsmesh.identity.authorization.resources import (
     ResourceAuthorizationService,
     ResourceKind,
 )
+from opsmesh.orchestration.runs.authorization.policy import runtime_resource_grants
 from opsmesh.orchestration.runs.authorization.validation import (
+    RunAuthorizationService,
     resource_grants_for_snapshot,
     tool_definitions_for_snapshot,
 )
 from opsmesh.orchestration.tasks.models import Task
+from opsmesh.resources.memory.policy import agent_memory_policy
+from opsmesh.runtime.instances.policies.runtime import policy_disables_network
 from opsmesh.shared.utils import dict_or_empty, string_list, uuid_or_none
 from opsmesh.teams.management.models import AgentTeam, AgentTeamMember
 
-MAX_AGENT_TOOL_DEPTH = 3
-MAX_AGENT_TOOL_TURNS = 20
-MAX_AGENT_TOOL_TARGETS = 10
-MAX_AGENT_TOOL_GRAPH_NODES = 25
-
-
-@dataclass(frozen=True, slots=True)
-class AgentToolPolicy:
-    allowed_profile_ids: tuple[UUID, ...] | None
-    max_depth: int
-    max_turns: int
-    max_targets: int
-
 
 @dataclass(slots=True)
-class AgentToolAuthorizationSnapshotService:
+class AgentTargetAuthorizationSnapshotService:
     session: Session
 
     def build(
@@ -63,15 +67,12 @@ class AgentToolAuthorizationSnapshotService:
         source_model_provider: dict[str, object],
         file_scope_ids: tuple[UUID, ...],
         model_provider_snapshot: Callable[[AgentProfile], dict[str, object]],
+        kind: str = "agent_tools",
+        graph_size: list[int] | None = None,
     ) -> list[dict[str, object]]:
-        if (
-            source_profile is None
-            or source_profile.id is None
-            or source_catalog is None
-            or task.agent_team_id is None
-        ):
+        if source_profile is None or source_profile.id is None or source_catalog is None:
             return []
-        policy = _agent_tool_policy(source_profile)
+        policy = agent_target_policy(source_profile.tool_policy, kind)
         if policy is None:
             return []
         team = self.session.scalar(
@@ -81,9 +82,9 @@ class AgentToolAuthorizationSnapshotService:
                 AgentTeam.status == "active",
             )
         )
-        if team is None:
+        if task.agent_team_id is not None and team is None:
             raise ValueError("Agent tool authorization requires an active task team")
-        graph_size = [0]
+        graph_size = graph_size if graph_size is not None else [0]
         return self._build_level(
             task=task,
             team=team,
@@ -97,25 +98,41 @@ class AgentToolAuthorizationSnapshotService:
             file_scope_ids=file_scope_ids,
             model_provider_snapshot=model_provider_snapshot,
             graph_size=graph_size,
+            kind=kind,
         )
 
     def _build_level(
         self,
         *,
         task: Task,
-        team: AgentTeam,
+        team: AgentTeam | None,
         source_profile: AgentProfile,
         source_catalog: dict[str, object],
         source_model_provider: dict[str, object],
-        policy: AgentToolPolicy,
+        policy: AgentTargetPolicy,
         depth: int,
         branch_max_depth: int,
         path: tuple[UUID, ...],
         file_scope_ids: tuple[UUID, ...],
         model_provider_snapshot: Callable[[AgentProfile], dict[str, object]],
         graph_size: list[int],
+        kind: str,
     ) -> list[dict[str, object]]:
-        candidates = self._team_candidates(team)
+        if team is None:
+            if policy.allowed_profile_ids is None:
+                raise ValueError("Wildcard agent targets require an active task team")
+            candidates = {
+                profile.id: profile
+                for profile in self.session.scalars(
+                    select(AgentProfile).where(
+                        AgentProfile.workspace_id == task.workspace_id,
+                        AgentProfile.id.in_(policy.allowed_profile_ids),
+                        AgentProfile.status == "active",
+                    )
+                )
+            }
+        else:
+            candidates = self._team_candidates(team)
         target_ids = (
             sorted((item for item in candidates if item not in path), key=str)
             if policy.allowed_profile_ids is None
@@ -127,7 +144,7 @@ class AgentToolAuthorizationSnapshotService:
         tool_names: set[str] = set()
         for target_id in target_ids:
             if target_id in path:
-                continue
+                raise ValueError("Agent target configuration contains a cycle")
             target = candidates.get(target_id)
             if target is None:
                 raise ValueError(
@@ -147,23 +164,29 @@ class AgentToolAuthorizationSnapshotService:
                         task.workspace_id,
                         task.execution_identity,
                     ),
-                    team_id=team.id,
+                    team_id=team.id if team else None,
                 )
                 .model_dump(mode="json")
             )
-            scoped_catalog = _intersect_catalog(source_catalog, target_catalog)
-            tool_name = _agent_tool_name(target)
+            scoped_catalog = (
+                _intersect_catalog(source_catalog, target_catalog)
+                if kind == "agent_tools"
+                else target_catalog
+            )
+            tool_name = _agent_tool_name(target, kind)
             if tool_name in tool_names:
                 raise ValueError("Agent tool names must be unique")
             tool_names.add(tool_name)
-            target_policy = _agent_tool_policy(target)
-            nested: list[dict[str, object]] = []
-            if target_policy is not None and depth < branch_max_depth:
-                child_max_depth = min(
-                    branch_max_depth,
-                    depth + target_policy.max_depth,
-                )
-                nested = self._build_level(
+            nested: dict[str, list[dict[str, object]]] = {}
+            for child_kind in ("agent_tools", "handoffs"):
+                target_policy = agent_target_policy(target.tool_policy, child_kind)
+                if target_policy is None:
+                    nested[child_kind] = []
+                    continue
+                if depth >= branch_max_depth:
+                    raise ValueError("Configured agent graph exceeds the authorized max_depth")
+                child_max_depth = min(branch_max_depth, depth + target_policy.max_depth)
+                nested[child_kind] = self._build_level(
                     task=task,
                     team=team,
                     source_profile=target,
@@ -176,6 +199,7 @@ class AgentToolAuthorizationSnapshotService:
                     file_scope_ids=file_scope_ids,
                     model_provider_snapshot=model_provider_snapshot,
                     graph_size=graph_size,
+                    kind=child_kind,
                 )
             snapshots.append(
                 {
@@ -197,8 +221,18 @@ class AgentToolAuthorizationSnapshotService:
                     },
                     "model_provider": target_provider,
                     "capability_catalog": scoped_catalog,
+                    "installed_skills": RunAuthorizationService(
+                        self.session
+                    ).installed_skill_snapshots(task.workspace_id, target),
                     "file_scope_ids": [str(item) for item in file_scope_ids],
-                    "agent_tools": nested,
+                    "runtime_policy": dict(target.runtime_policy or {}),
+                    "memory_policy": dict(target.memory_policy or {}),
+                    "approval_policy": dict(target.approval_policy or {}),
+                    "require_handoff": require_handoff_policy(target.tool_policy),
+                    **runtime_controls_snapshot(
+                        model_settings=target.model_settings, runtime_policy=target.runtime_policy
+                    ),
+                    **nested,
                 }
             )
         return snapshots
@@ -227,14 +261,15 @@ class AgentToolAuthorizationSnapshotService:
         return {item.id: item for item in profiles}
 
 
-def hydrate_agent_tools(
+def hydrate_agent_targets(
     *,
     session: Session,
     snapshot: dict[str, object],
     root_context: AgentRuntimeContext,
     resolve_model_provider: Callable[..., dict[str, Any]],
-) -> tuple[AgentRuntimeAgentTool, ...]:
-    raw_items = snapshot.get("agent_tools")
+    kind: str = "agent_tools",
+) -> tuple[AgentRuntimeAgentTarget, ...]:
+    raw_items = snapshot.get(kind)
     if raw_items is None:
         return ()
     if not isinstance(raw_items, list):
@@ -255,8 +290,8 @@ def _hydrate_level(
     root_context: AgentRuntimeContext,
     resolve_model_provider: Callable[..., dict[str, Any]],
     path: tuple[UUID, ...],
-) -> tuple[AgentRuntimeAgentTool, ...]:
-    hydrated: list[AgentRuntimeAgentTool] = []
+) -> tuple[AgentRuntimeAgentTarget, ...]:
+    hydrated: list[AgentRuntimeAgentTarget] = []
     for raw_item in raw_items:
         if not isinstance(raw_item, dict):
             raise ValueError("Authorization snapshot agent tool entry is invalid")
@@ -312,20 +347,24 @@ def _hydrate_level(
         if uuid_or_none(catalog.get("agent_profile_id")) != profile_id:
             raise ValueError("Agent tool capability catalog profile mismatch")
         scoped_snapshot: dict[str, object] = {"capability_catalog": catalog}
+        scoped_snapshot["installed_skills"] = raw_item.get("installed_skills", [])
+        RunAuthorizationService(session).validate_capability_scope(
+            root_context.workspace_id, scoped_snapshot
+        )
         tool_definitions = tool_definitions_for_snapshot(scoped_snapshot)
         resource_grants = resource_grants_for_snapshot(scoped_snapshot)
         allowed_tools = tuple(item.name for item in tool_definitions)
         file_scope_ids = _uuid_list(raw_item.get("file_scope_ids"))
         if any(item not in root_context.file_scope_ids for item in file_scope_ids):
             raise ValueError("Agent tool file scope exceeds the parent run scope")
-        depth = _bounded_int(raw_item.get("depth"), "depth", 1, MAX_AGENT_TOOL_DEPTH)
-        max_depth = _bounded_int(
+        depth = bounded_target_int(raw_item.get("depth"), "depth", 1, MAX_AGENT_TOOL_DEPTH)
+        max_depth = bounded_target_int(
             raw_item.get("max_depth"),
             "max_depth",
             depth,
             MAX_AGENT_TOOL_DEPTH,
         )
-        max_turns = _bounded_int(
+        max_turns = bounded_target_int(
             raw_item.get("max_turns"),
             "max_turns",
             1,
@@ -350,6 +389,18 @@ def _hydrate_level(
         if not isinstance(model_settings, dict):
             raise ValueError("Authorization snapshot agent tool definition is invalid")
         handoff_description = target.get("handoff_description")
+        runtime_policy = dict_or_empty(raw_item.get("runtime_policy"))
+        _, target_runtime_ids, target_space_ids = runtime_resource_grants(catalog)
+        binding = root_context.runtime_binding
+        if target_runtime_ids and (
+            binding is None or target_runtime_ids != {binding.workspace_runtime_id}
+        ):
+            raise ValueError("Agent target requires a different execution Runtime")
+        if policy_disables_network(runtime_policy) and binding and not binding.network_disabled:
+            raise ValueError("Agent target requires a network-disabled execution Runtime")
+        if target_space_ids and (binding is None or target_space_ids != {binding.runtime_space_id}):
+            raise ValueError("Agent target requires a different Runtime space")
+        output_schema, guardrails = runtime_controls_from_snapshot(raw_item)
         context = AgentRuntimeContext(
             workspace_id=root_context.workspace_id,
             task_id=root_context.task_id,
@@ -362,13 +413,25 @@ def _hydrate_level(
             runtime_binding=root_context.runtime_binding,
             metadata={
                 **root_context.metadata,
-                "agent_tool": {
+                "agent_target": {
                     "target_agent_profile_id": str(profile_id),
                     "depth": depth,
                     "max_depth": max_depth,
                     "capability_catalog_fingerprint": fingerprint,
                 },
                 "capability_catalog_fingerprint": fingerprint,
+                "agent_profile_id": str(profile_id),
+                "agent_profile_version": target.get("profile_version"),
+                "agent_role": role,
+                "run_model": selected_model,
+                "model_provider_provider": resolved.get("provider"),
+                "model_provider_model_api": resolved.get("model_api"),
+                "model_provider_credential_id": str(credential_id) if credential_id else None,
+                "runtime_policy": runtime_policy,
+                "approval_policy": dict_or_empty(raw_item.get("approval_policy")),
+                "sdk_memory": agent_memory_policy(
+                    raw_item.get("memory_policy")
+                ).sdk_memory.model_dump(mode="json"),
             },
         )
         raw_nested = raw_item.get("agent_tools", [])
@@ -381,8 +444,18 @@ def _hydrate_level(
             resolve_model_provider=resolve_model_provider,
             path=(*path, profile_id),
         )
+        raw_handoffs = raw_item.get("handoffs", [])
+        if not isinstance(raw_handoffs, list):
+            raise ValueError("Authorization snapshot nested handoffs are invalid")
+        nested_handoffs = _hydrate_level(
+            session=session,
+            raw_items=raw_handoffs,
+            root_context=root_context,
+            resolve_model_provider=resolve_model_provider,
+            path=(*path, profile_id),
+        )
         hydrated.append(
-            AgentRuntimeAgentTool(
+            AgentRuntimeAgentTarget(
                 target=AgentRuntimeAgentDefinition(
                     ref=AgentRuntimeAgentRef(
                         name=name,
@@ -391,6 +464,9 @@ def _hydrate_level(
                     ),
                     workspace_id=root_context.workspace_id,
                     instructions=instructions,
+                    version=bounded_target_int(
+                        target.get("profile_version"), "profile_version", 1, 2_147_483_647
+                    ),
                     model=selected_model,
                     model_settings=dict(model_settings),
                     handoff_description=handoff_description
@@ -410,41 +486,13 @@ def _hydrate_level(
                 model_api=resolved.get("model_api"),
                 model_provider_credential_id=resolved.get("model_provider_credential_id"),
                 nested_tools=nested,
+                nested_handoffs=nested_handoffs,
+                output_schema=output_schema,
+                guardrails=guardrails,
+                require_handoff=raw_item.get("require_handoff") is True,
             )
         )
     return tuple(hydrated)
-
-
-def _agent_tool_policy(profile: AgentProfile) -> AgentToolPolicy | None:
-    raw = profile.tool_policy.get("agent_tools") if isinstance(profile.tool_policy, dict) else None
-    if raw is None:
-        return None
-    if not isinstance(raw, dict):
-        raise ValueError("Agent tool policy must be an object")
-    if raw.get("enabled") is not True:
-        return None
-    raw_allowed = raw.get("allowed_agent_profile_ids")
-    allowed_profile_ids: tuple[UUID, ...] | None
-    if raw_allowed == "*":
-        allowed_profile_ids = None
-    elif isinstance(raw_allowed, list):
-        parsed = tuple(uuid_or_none(item) for item in raw_allowed)
-        if any(item is None for item in parsed) or len(set(parsed)) != len(parsed):
-            raise ValueError("Agent tool allowed profile IDs are invalid or duplicated")
-        allowed_profile_ids = tuple(item for item in parsed if item is not None)
-    else:
-        raise ValueError("Agent tool policy requires allowed_agent_profile_ids")
-    return AgentToolPolicy(
-        allowed_profile_ids=allowed_profile_ids,
-        max_depth=_bounded_int(raw.get("max_depth", 1), "max_depth", 1, MAX_AGENT_TOOL_DEPTH),
-        max_turns=_bounded_int(raw.get("max_turns", 8), "max_turns", 1, MAX_AGENT_TOOL_TURNS),
-        max_targets=_bounded_int(
-            raw.get("max_targets", 5),
-            "max_targets",
-            1,
-            MAX_AGENT_TOOL_TARGETS,
-        ),
-    )
 
 
 def _intersect_catalog(
@@ -563,16 +611,9 @@ def _uuid_list(value: object) -> tuple[UUID, ...]:
     return tuple(item for item in parsed if item is not None)
 
 
-def _bounded_int(value: object, name: str, minimum: int, maximum: int) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
-        raise ValueError(f"Agent tool {name} must be between {minimum} and {maximum}")
-    return value
-
-
-def _agent_tool_name(profile: AgentProfile) -> str:
-    safe_name = "".join(char.lower() if char.isalnum() else "_" for char in profile.name)
-    safe_name = "_".join(part for part in safe_name.split("_") if part)[:32] or "specialist"
-    return f"delegate_to_{safe_name}_{profile.id.hex[:8]}"
+def _agent_tool_name(profile: AgentProfile, kind: str = "agent_tools") -> str:
+    prefix = "delegate_to" if kind == "agent_tools" else "transfer_to"
+    return f"{prefix}_{profile.id.hex}"
 
 
 def _require_same_provider_family(

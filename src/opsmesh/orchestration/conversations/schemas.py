@@ -68,6 +68,12 @@ class MessageCreate(BaseModel):
         return value
 
 
+class FinalAgentResponse(BaseModel):
+    name: str
+    profile_id: UUID | None
+    role: str | None
+
+
 class TurnResponse(TimestampedModel):
     conversation_id: UUID
     sequence: int
@@ -76,7 +82,7 @@ class TurnResponse(TimestampedModel):
     status: str
     error_code: str | None
     error: dict[str, object] | None = None
-    round: int
+    final_agent: FinalAgentResponse | None
 
     @field_serializer("body", "reply")
     def redact(self, value: str | None) -> str | None:
@@ -101,9 +107,6 @@ class ExecutionRunResponse(BaseModel):
 class ExecutionResponse(TimestampedModel):
     turn_id: UUID
     task_id: UUID
-    purpose: str
-    parent_run_id: UUID | None
-    round: int
     runs: list[ExecutionRunResponse]
 
 
@@ -112,5 +115,4 @@ class EventResponse(BaseModel):
     id: int
     turn_id: UUID
     status: str
-    round: int
     created_at: datetime

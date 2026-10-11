@@ -36,6 +36,9 @@ class RpcSession:
 class RpcTools:
     call: RpcCall
 
+    async def authorize_agent(self, *, context: AgentRuntimeContext) -> None:
+        await self.call("agent.authorize", {"context": CONTEXT.dump_python(context, mode="json")})
+
     async def review_tool_call(
         self, *, context: AgentRuntimeContext, tool_name: str, arguments: dict[str, object]
     ) -> dict[str, object]:

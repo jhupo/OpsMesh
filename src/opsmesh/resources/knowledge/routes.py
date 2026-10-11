@@ -13,10 +13,7 @@ from opsmesh.resources.knowledge.contracts import (
     KnowledgeSourceStatus,
     KnowledgeSourceUpdate,
 )
-from opsmesh.resources.knowledge.ingestion import (
-    KnowledgeSourceIngestionService,
-    enqueue_knowledge_source_ingestion_job,
-)
+from opsmesh.resources.knowledge.ingestion import KnowledgeSourceIngestionService
 from opsmesh.resources.knowledge.schemas import (
     KnowledgeCitationResponse,
     KnowledgeSourceCreateRequest,
@@ -31,6 +28,7 @@ from opsmesh.resources.knowledge.service import (
     KnowledgeSourceVersionConflictError,
 )
 from opsmesh.runtime.queues.dependencies import get_worker_queue
+from opsmesh.runtime.queues.dispatch import QueueDispatchPublisher
 from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.shared.db.errors import DatabaseConflictError
 from opsmesh.shared.db.session import get_db_session
@@ -77,6 +75,7 @@ def create_source(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.message) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    session.commit()
     return KnowledgeSourceResponse.model_validate(source)
 
 
@@ -120,6 +119,7 @@ def update_source(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Knowledge source not found",
         )
+    session.commit()
     return KnowledgeSourceResponse.model_validate(source)
 
 
@@ -177,13 +177,7 @@ def ingest_source(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     session.commit()
     session.refresh(ingestion)
-    enqueue_knowledge_source_ingestion_job(
-        queue=queue,
-        workspace_id=context.workspace.id,
-        source_id=source_id,
-        source_version=ingestion.source_version,
-        requested_by_user_id=context.user.user_id,
-    )
+    QueueDispatchPublisher(session, queue).publish_pending(workspace_id=context.workspace.id)
     return KnowledgeSourceIngestionResponse.model_validate(ingestion)
 
 
@@ -342,4 +336,5 @@ async def _set_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Knowledge source not found",
         )
+    session.commit()
     return KnowledgeSourceResponse.model_validate(source)

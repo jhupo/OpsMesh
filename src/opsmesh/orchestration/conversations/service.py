@@ -243,9 +243,6 @@ class ConversationService:
                 updated_at=link.updated_at,
                 turn_id=link.turn_id,
                 task_id=link.task_id,
-                purpose=link.purpose,
-                parent_run_id=link.parent_run_id,
-                round=link.round,
                 runs=[
                     ExecutionRunResponse.model_validate(run)
                     for run in runs
@@ -271,8 +268,6 @@ class ConversationService:
                 ConversationTurn.conversation_id == conversation_id,
                 ConversationTurn.id.in_(failed_ids),
                 ConversationExecution.workspace_id == context.workspace.id,
-                ConversationExecution.round == ConversationTurn.round,
-                ConversationExecution.purpose == "manager",
                 AgentRun.workspace_id == context.workspace.id,
             )
             .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
@@ -356,7 +351,7 @@ class ConversationService:
         )
         if turn is None:
             raise NotFoundError("Turn not found")
-        if turn.status != "failed" or turn.error_code == "conversation_delegation_limit":
+        if turn.status != "failed":
             raise ConflictError("Only failed executions or rejected admission can be retried")
         if (
             self.session.scalar(
@@ -378,8 +373,6 @@ class ConversationService:
             select(ConversationExecution).where(
                 ConversationExecution.workspace_id == context.workspace.id,
                 ConversationExecution.turn_id == turn.id,
-                ConversationExecution.purpose == "manager",
-                ConversationExecution.round == turn.round,
             )
         )
         if link is not None:
@@ -393,7 +386,7 @@ class ConversationService:
                 .limit(1)
             )
             if run is None or run.status != "failed":
-                raise ConflictError("No failed manager run is available to retry")
+                raise ConflictError("No failed conversation run is available to retry")
             ResourceAuthorizationService(self.session, context.user).require(
                 context.workspace.id,
                 ResourceKind.TASK,
@@ -410,6 +403,8 @@ class ConversationService:
             )
         turn.status = "queued" if link is None else "running"
         turn.error_code = None
+        turn.final_agent = None
+        turn.reply = None
         self.session.add(turn_event(turn))
         if link is not None:
             stage_task_runs(self.session, context.workspace.id, link.task_id, context.user.user_id)
@@ -451,30 +446,18 @@ def create_execution(
     session: Session,
     conversation: Conversation,
     turn: ConversationTurn,
-    *,
-    key: str,
-    purpose: str,
-    body: str,
-    agent_id: UUID | None,
-    team_id: UUID | None,
-    parent_run_id: UUID | None = None,
 ) -> Task:
     task = WorkspaceTaskService(session).create_conversation_task(
         workspace_id=conversation.workspace_id,
         user_id=conversation.created_by_user_id,
         execution_identity=turn.execution_identity,
-        parent_run_id=parent_run_id,
         command=TaskCreateCommand(
-            title=conversation.title if purpose == "manager" else body[:240],
-            description=body,
-            agent_profile_id=agent_id,
-            agent_team_id=team_id,
-            orchestration_definition_id=conversation.orchestration_definition_id
-            if purpose == "manager"
-            else None,
-            orchestration_version=conversation.orchestration_version
-            if purpose == "manager"
-            else None,
+            title=conversation.title,
+            description=turn.body,
+            agent_profile_id=conversation.agent_profile_id,
+            agent_team_id=conversation.agent_team_id,
+            orchestration_definition_id=conversation.orchestration_definition_id,
+            orchestration_version=conversation.orchestration_version,
             runtime_space_id=conversation.runtime_space_id,
             workspace_project_id=conversation.workspace_project_id,
             input={"conversation_id": str(conversation.id), "turn_id": str(turn.id)},
@@ -485,10 +468,6 @@ def create_execution(
             workspace_id=conversation.workspace_id,
             turn_id=turn.id,
             task_id=task.id,
-            key=key,
-            purpose=purpose,
-            parent_run_id=parent_run_id,
-            round=turn.round,
         )
     )
     session.flush()

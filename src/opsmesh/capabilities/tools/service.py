@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.capabilities.tools.events import ProductToolEventRecorder
 from opsmesh.capabilities.tools.files import WorkspaceFileProductTools
+from opsmesh.capabilities.tools.knowledge import KnowledgeProductTools
 from opsmesh.capabilities.tools.mailbox import AgentMailboxProductTools
 from opsmesh.capabilities.tools.memory import WorkspaceMemoryProductTools
 from opsmesh.platform.settings.policy import operational_configuration
@@ -23,7 +24,6 @@ class ProductToolService:
         storage: ObjectStorage | None = None,
         memory_embedding_secret_service: SecretEncryptionService | None = None,
     ) -> None:
-        from opsmesh.capabilities.tools.conversations import ConversationProductTools
 
         events = ProductToolEventRecorder(session)
         artifact_persistence = (
@@ -52,4 +52,4 @@ class ProductToolService:
             memory_embedding_secret_service=memory_embedding_secret_service,
         )
         self.mailbox = AgentMailboxProductTools(session, events)
-        self.conversations = ConversationProductTools(session)
+        self.knowledge = KnowledgeProductTools(session, events)

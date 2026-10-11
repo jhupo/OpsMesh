@@ -1,4 +1,3 @@
-
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -77,6 +76,7 @@ def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -
         workspace_id=workspace.id,
         task_id=task.id,
         agent_run_id=run.id,
+        agent_profile_id=run.agent_profile_id,
         allowed_tools=frozenset(
             {
                 "list_workspace_files",
@@ -90,9 +90,7 @@ def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -
     storage.write(file.storage_key, b"brief")
     service = ProductToolService(session, storage=storage)
 
-    assert [item.filename for item in service.files.list_workspace_files(context)] == [
-        "brief.txt"
-    ]
+    assert [item.filename for item in service.files.list_workspace_files(context)] == ["brief.txt"]
     read = service.files.read_workspace_file(context, file.id)
     assert read.file.filename == "brief.txt"
     assert read.content == "brief"
@@ -110,11 +108,14 @@ def test_product_tools_enforce_permissions_and_workspace_scope(tmp_path: Path) -
         content=b"hello",
         content_type="text/plain",
     )
-    assert service.memory.search_workspace_memory(
-        context,
-        "customer notes",
-        access_scopes=_memory_access_scopes(workspace.id),
-    ) == []
+    assert (
+        service.memory.search_workspace_memory(
+            context,
+            "customer notes",
+            access_scopes=_memory_access_scopes(workspace.id),
+        )
+        == []
+    )
     session.commit()
 
     events = session.scalars(
@@ -174,6 +175,7 @@ def test_workspace_memory_search_returns_workspace_scoped_matches() -> None:
         workspace_id=workspace.id,
         task_id=task.id,
         agent_run_id=run.id,
+        agent_profile_id=run.agent_profile_id,
         artifact_type="report",
         filename="renewal-risk-report.pdf",
         content_type="application/pdf",
@@ -187,6 +189,7 @@ def test_workspace_memory_search_returns_workspace_scoped_matches() -> None:
         workspace_id=workspace.id,
         task_id=task.id,
         agent_run_id=run.id,
+        agent_profile_id=run.agent_profile_id,
         message_type="step.completed",
         sequence=1,
         body="Analyst summarized customer notes and flagged onboarding risk.",
@@ -199,6 +202,7 @@ def test_workspace_memory_search_returns_workspace_scoped_matches() -> None:
         workspace_id=workspace.id,
         task_id=task.id,
         agent_run_id=run.id,
+        agent_profile_id=run.agent_profile_id,
         allowed_tools=frozenset({"search_workspace_memory"}),
     )
 
@@ -308,6 +312,7 @@ def test_semantic_memory_can_be_versioned_searched_and_archived() -> None:
         workspace_id=workspace.id,
         task_id=task.id,
         agent_run_id=run.id,
+        agent_profile_id=run.agent_profile_id,
         allowed_tools=frozenset(
             {
                 "upsert_semantic_memory",
@@ -401,6 +406,7 @@ def test_workspace_memory_search_respects_limit_and_source_filters() -> None:
                 workspace_id=workspace.id,
                 task_id=task.id,
                 agent_run_id=run.id,
+                agent_profile_id=run.agent_profile_id,
                 artifact_type="report",
                 filename="renewal-report.pdf",
                 content_type="application/pdf",
@@ -417,6 +423,7 @@ def test_workspace_memory_search_respects_limit_and_source_filters() -> None:
         workspace_id=workspace.id,
         task_id=task.id,
         agent_run_id=run.id,
+        agent_profile_id=run.agent_profile_id,
         allowed_tools=frozenset({"search_workspace_memory"}),
     )
     service = ProductToolService(session)
@@ -557,6 +564,7 @@ def test_agent_mailbox_tools_send_and_list_workspace_scoped_messages() -> None:
         workspace_id=workspace.id,
         task_id=task.id,
         agent_run_id=run.id,
+        agent_profile_id=run.agent_profile_id,
         allowed_tools=frozenset({"send_agent_message", "list_agent_thread_messages"}),
     )
     service = ProductToolService(session)
@@ -633,6 +641,7 @@ def test_agent_mailbox_tools_require_task_team_membership() -> None:
         workspace_id=workspace.id,
         task_id=task.id,
         agent_run_id=run.id,
+        agent_profile_id=run.agent_profile_id,
         allowed_tools=frozenset({"send_agent_message"}),
     )
     service = ProductToolService(session)
@@ -681,6 +690,7 @@ def test_write_artifact_versions_are_bound_to_work_package(tmp_path: Path) -> No
         workspace_id=workspace.id,
         task_id=task.id,
         agent_run_id=run.id,
+        agent_profile_id=run.agent_profile_id,
         allowed_tools=frozenset({"write_artifact"}),
     )
     storage = LocalStorage(str(tmp_path / "storage"))

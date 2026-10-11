@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from opsmesh.agents.execution.guardrails import runtime_controls_snapshot
 from opsmesh.agents.profiles.models import AgentProfile
+from opsmesh.agents.profiles.routing import agent_target_policy, require_handoff_policy
 from opsmesh.agents.providers.metadata import budget_is_exhausted
 from opsmesh.agents.providers.model_api import canonical_model_api, model_api_for_agent_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
@@ -29,7 +30,9 @@ from opsmesh.orchestration.runs.authorization.runtime import (
     ResolvedRunRuntimeBinding,
     RunRuntimeAuthorizationService,
 )
-from opsmesh.orchestration.runs.authorization.tools import AgentToolAuthorizationSnapshotService
+from opsmesh.orchestration.runs.authorization.tools import (
+    AgentTargetAuthorizationSnapshotService,
+)
 from opsmesh.orchestration.runs.models import (
     AUTHORIZATION_SNAPSHOT_VERSION,
     authorization_snapshot_fingerprint,
@@ -92,6 +95,7 @@ class RunAuthorizationSnapshotService:
             capability_catalog=catalog_snapshot,
             runtime_policy=frozen_runtime_policy,
         )
+        graph_size = [0]
         agent_tools = self._agent_tools(
             task,
             step,
@@ -99,6 +103,17 @@ class RunAuthorizationSnapshotService:
             catalog_snapshot,
             model_provider,
             runtime_binding.allowed_file_ids,
+            graph_size=graph_size,
+        )
+        handoffs = self._agent_tools(
+            task,
+            step,
+            profile,
+            catalog_snapshot,
+            model_provider,
+            runtime_binding.allowed_file_ids,
+            kind="handoffs",
+            graph_size=graph_size,
         )
         snapshot = self._snapshot_payload(
             task=task,
@@ -113,6 +128,12 @@ class RunAuthorizationSnapshotService:
             runtime_controls=runtime_controls,
             runtime_binding=runtime_binding,
             agent_tools=agent_tools,
+        )
+        snapshot["handoffs"] = handoffs
+        handoff_policy = agent_target_policy(profile.tool_policy, "handoffs") if profile else None
+        snapshot["max_turns"] = handoff_policy.max_turns if handoff_policy else 10
+        snapshot["require_handoff"] = (
+            require_handoff_policy(profile.tool_policy) if profile else False
         )
         snapshot["fingerprint"] = authorization_snapshot_fingerprint(snapshot)
         return snapshot
@@ -166,10 +187,12 @@ class RunAuthorizationSnapshotService:
         catalog_snapshot: dict[str, object] | None,
         model_provider: dict[str, object],
         file_scope_ids: tuple[UUID, ...],
+        kind: str = "agent_tools",
+        graph_size: list[int] | None = None,
     ) -> list[dict[str, object]]:
         if is_agent_planning_step(step):
             return []
-        return AgentToolAuthorizationSnapshotService(self.session).build(
+        return AgentTargetAuthorizationSnapshotService(self.session).build(
             task=task,
             source_profile=profile,
             source_catalog=catalog_snapshot,
@@ -179,6 +202,8 @@ class RunAuthorizationSnapshotService:
                 task.workspace_id,
                 target,
             ),
+            kind=kind,
+            graph_size=graph_size,
         )
 
     def _snapshot_payload(

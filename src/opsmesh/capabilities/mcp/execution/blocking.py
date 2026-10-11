@@ -106,6 +106,7 @@ class McpExecutionBlocker:
         )
         notifier.append_task_message(
             run=run,
+            agent_profile_id=run.agent_profile_id,
             message_type="tool.blocked",
             body=f"MCP tool blocked: {request.tool_name}",
             payload={

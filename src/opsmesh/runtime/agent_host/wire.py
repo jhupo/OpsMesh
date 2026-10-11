@@ -10,13 +10,11 @@ from opsmesh.agents.execution.contracts import (
     AgentInputAttachment,
     AgentRunRequest,
     AgentRunResult,
-    AgentRuntimeAgentDefinition,
-    AgentRuntimeAgentTool,
+    AgentRuntimeAgentTarget,
     AgentRuntimeApprovalDecision,
     AgentRuntimeContext,
     AgentRuntimeEvent,
     AgentRuntimeGuardrails,
-    AgentRuntimeHandoff,
     AgentRuntimeOutputSchema,
     AgentRuntimeProfile,
     AgentRuntimeResumeState,
@@ -73,9 +71,9 @@ class RuntimeRunInput(WireModel):
     tracing: AgentRunTracing | None
     resume_state: AgentRuntimeResumeState | None = Field(repr=False)
     approval_decisions: tuple[AgentRuntimeApprovalDecision, ...]
-    handoffs: tuple[AgentRuntimeHandoff, ...]
-    handoff_agents: tuple[AgentRuntimeAgentDefinition, ...]
-    agent_tools: tuple[AgentRuntimeAgentTool, ...] = Field(repr=False)
+    handoffs: tuple[AgentRuntimeAgentTarget, ...] = Field(repr=False)
+    agent_tools: tuple[AgentRuntimeAgentTarget, ...] = Field(repr=False)
+    require_handoff: bool
     output_schema: AgentRuntimeOutputSchema | None
     guardrails: AgentRuntimeGuardrails | None
     stream: bool

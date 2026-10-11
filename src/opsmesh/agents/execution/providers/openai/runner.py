@@ -1,5 +1,6 @@
 import base64
 import json
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, cast
 
@@ -20,8 +21,8 @@ from agents.exceptions import (
     ModelBehaviorError,
     ModelRefusalError,
     OutputGuardrailTripwireTriggered,
+    UserError,
 )
-from agents.handoffs import HandoffInputData
 from agents.handoffs import handoff as sdk_handoff
 from agents.models.interface import Model
 from agents.models.openai_provider import OpenAIProvider
@@ -33,14 +34,16 @@ from opsmesh.agents.execution.base import BaseSDKAgentRuntimeAdapter
 from opsmesh.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
-    AgentRuntimeAgentDefinition,
     AgentRuntimeAgentRef,
-    AgentRuntimeAgentTool,
+    AgentRuntimeAgentTarget,
     AgentRuntimeAgentToolResult,
     AgentRuntimeCapabilities,
     AgentRuntimeCapability,
+    AgentRuntimeContext,
     AgentRuntimeEvent,
     AgentRuntimeGuardrailResult,
+    AgentRuntimeModelUsage,
+    AgentRuntimeProfile,
     AgentRuntimeStructuredOutput,
 )
 from opsmesh.agents.execution.errors import (
@@ -65,6 +68,8 @@ from opsmesh.agents.execution.providers.openai.mcp import (
     runtime_mcp_servers,
 )
 from opsmesh.agents.execution.providers.openai.memory_usage import memory_usage
+from opsmesh.agents.execution.providers.openai.model_errors import GraphModel, graph_model_error
+from opsmesh.agents.execution.providers.openai.model_usage import model_usages
 from opsmesh.agents.execution.providers.openai.results import OpenAIAgentsResultMapper, jsonable
 from opsmesh.agents.execution.providers.openai.sandbox import (
     sandbox_capabilities,
@@ -119,10 +124,17 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         observer: AgentRuntimeExecutionObserver,
     ) -> AgentRunResult:
         token = memory_usage.set(Usage())
+        model_token = model_usages.set([])
         try:
             return await self._run_with_errors(request, observer)
+        except AgentRuntimePolicyError as exc:
+            exc.metadata["model_usages"] = TypeAdapter(
+                tuple[AgentRuntimeModelUsage, ...]
+            ).dump_python(tuple(model_usages.get() or ()), mode="json")
+            raise
         finally:
             memory_usage.reset(token)
+            model_usages.reset(model_token)
 
     async def _run_with_errors(
         self,
@@ -131,6 +143,13 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
     ) -> AgentRunResult:
         try:
             return await self._run_once_sdk(request, observer)
+        except UserError as exc:
+            cause = exc.__cause__
+            while cause is not None:
+                if isinstance(cause, AgentRuntimePolicyError):
+                    raise cause from cause.__cause__
+                cause = cause.__cause__
+            raise
         except MaxTurnsExceeded as exc:
             raise AgentRuntimePolicyError(
                 code="agent_max_turns_exceeded",
@@ -146,12 +165,16 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                 metadata={"provider": request.provider, "model": request.model},
             ) from exc
         except ModelBehaviorError as exc:
+            if request.handoffs or request.agent_tools:
+                raise graph_model_error(exc, request) from exc
             raise AgentRuntimeProviderError(
                 code="provider_malformed_response",
                 message=str(exc),
                 retryable=False,
             ) from exc
         except OpenAIError as exc:
+            if request.handoffs or request.agent_tools:
+                raise graph_model_error(exc, request) from exc
             status_code = getattr(exc, "status_code", None)
             transport_failure = isinstance(exc, APIConnectionError | APITimeoutError)
             code = (
@@ -227,11 +250,17 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         guardrail_results = merged_openai_guardrail_results(result, guardrail_results)
         interruptions = self._result_mapper.interruptions(result)
         final_output, structured_output = self._result_mapper.final_output(result)
-        if request.output_schema is not None and not interruptions:
+        final_agent = result.last_agent
+        if not isinstance(final_agent, GovernedAgent | GovernedSandboxAgent):
+            raise ValueError("SDK final agent is outside the authorized graph")
+        final_request = final_agent.runtime_request
+        if final_request is None or final_agent.runtime_ref is None:
+            raise ValueError("SDK final agent is outside the authorized graph")
+        if final_request.output_schema is not None and not interruptions:
             structured_output = AgentRuntimeStructuredOutput(
                 value=result.final_output,
-                schema_name=request.output_schema.name,
-                schema_version=request.output_schema.version,
+                schema_name=final_request.output_schema.name,
+                schema_version=final_request.output_schema.version,
                 validated=True,
             )
             final_output = json.dumps(
@@ -249,7 +278,6 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                     "source_agent": handoff.source.name,
                     "target_agent": handoff.target.name,
                     "status": handoff.status,
-                    "filtered_context_keys": list(handoff.filtered_context_keys),
                     "metadata": handoff.metadata,
                 },
             )
@@ -259,6 +287,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         runtime_events.extend(guardrail_events(guardrail_results))
         return AgentRunResult(
             final_output=final_output,
+            final_agent=final_agent.runtime_ref,
             raw_output=self._result_mapper.safe_raw_output(result),
             events=tuple(runtime_events),
             resume_state=self._result_mapper.resume_state(result),
@@ -268,6 +297,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             handoffs=tuple(handoffs),
             agent_tool_calls=tuple(agent_tool_calls),
             guardrail_results=tuple(guardrail_results),
+            model_usages=tuple(model_usages.get() or ()),
             usage=runtime_usage(TypeAdapter(Usage).dump_python(usage, mode="json"))
             if isinstance(usage, Usage)
             else None,
@@ -319,11 +349,19 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             raise ValueError("Stored OpenAI Agents run state is not valid JSON") from exc
         if not isinstance(state_payload, dict):
             raise ValueError("Stored OpenAI Agents run state must be a JSON object")
+
+        def restore_context(payload: Mapping[str, Any]) -> AgentRuntimeContext:
+            restored = TypeAdapter(AgentRuntimeContext).validate_python(payload)
+            if _sdk_authorization_context(restored) != _sdk_authorization_context(request.context):
+                raise ValueError("Stored SDK context does not match the frozen run context")
+            return request.context
+
         state = await RunState.from_json(
             initial_agent=agent,
             state_json=state_payload,
             context_override=RunContextWrapper(context=request.context),
             strict_context=True,
+            context_deserializer=restore_context,
         )
         if not request.approval_decisions:
             return state
@@ -359,17 +397,20 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         handoff_audits: dict[str, dict[str, object]] | None = None,
         agent_tool_calls: list[AgentRuntimeAgentToolResult] | None = None,
         guardrail_results: list[AgentRuntimeGuardrailResult] | None = None,
-    ) -> Agent[Any]:
+        sdk_name: str | None = None,
+    ) -> GovernedAgent | GovernedSandboxAgent:
         profile = request.agent_profile
         capabilities = sandbox_capabilities(request) if self._uses_sdk_sandbox(request) else []
         model_name = request.model or profile.model
         if request.api_key is None:
             raise ValueError("OpenAI-compatible runtime requires an explicit provider API key")
-        model: str | Model = OpenAIProvider(
+        model: Model = OpenAIProvider(
             api_key=request.api_key,
             base_url=request.base_url,
             use_responses=_use_responses_api(request.model_api),
         ).get_model(model_name)
+        if request.handoffs or request.agent_tools or sdk_name is not None:
+            model = GraphModel(model, request)
         nested_calls = agent_tool_calls if agent_tool_calls is not None else []
         runtime_guardrail_results = guardrail_results if guardrail_results is not None else []
         tools = self._tool_bridge.tools(request)
@@ -384,6 +425,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                 ),
                 calls=nested_calls,
                 guardrail_results=runtime_guardrail_results,
+                sdk_name=sdk_name or f"agent_{profile.id}",
             )
         )
         input_guardrails, output_guardrails = _openai_guardrails(
@@ -396,7 +438,11 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                 dict[str, Any],
                 {"capabilities": capabilities} if self._uses_sdk_sandbox(request) else {},
             ),
-            name=profile.name,
+            name=sdk_name or f"agent_{profile.id}",
+            runtime_request=request,
+            runtime_ref=AgentRuntimeAgentRef(
+                name=profile.name, profile_id=profile.id, role=profile.role
+            ),
             instructions=profile.instructions,
             model=model,
             model_settings=self._settings_mapper.map_settings(profile.model_settings),
@@ -406,6 +452,8 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                 request,
                 handoff_audits if handoff_audits is not None else {},
                 guardrail_results=runtime_guardrail_results,
+                calls=nested_calls,
+                sdk_name=sdk_name or f"agent_{profile.id}",
             ),
             output_type=(
                 OpenAIRuntimeOutputSchema(request.output_schema)
@@ -419,11 +467,12 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
     def _build_agent_tools(
         self,
         request: AgentRunRequest,
-        definitions: tuple[AgentRuntimeAgentTool, ...],
+        definitions: tuple[AgentRuntimeAgentTarget, ...],
         *,
         source: AgentRuntimeAgentRef,
         calls: list[AgentRuntimeAgentToolResult],
         guardrail_results: list[AgentRuntimeGuardrailResult],
+        sdk_name: str,
     ) -> list[Any]:
         tools: list[Any] = []
         for definition in definitions:
@@ -432,12 +481,17 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                 definition,
                 calls=calls,
                 guardrail_results=guardrail_results,
+                sdk_name=f"{sdk_name}/{definition.tool_name}",
             )
+            target_request = target.runtime_request
+            if target_request is None:
+                raise ValueError("Agent tool target has no authorized request")
+            authorized_target_request = target_request
 
             async def extract_output(
                 result: Any,
                 *,
-                item: AgentRuntimeAgentTool = definition,
+                item: AgentRuntimeAgentTarget = definition,
                 source_ref: AgentRuntimeAgentRef = source,
             ) -> str:
                 invocation = getattr(result, "agent_tool_invocation", None)
@@ -460,11 +514,14 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                 context: Any,
                 exc: Exception,
                 *,
-                item: AgentRuntimeAgentTool = definition,
+                item: AgentRuntimeAgentTarget = definition,
                 source_ref: AgentRuntimeAgentRef = source,
+                failed_request: AgentRunRequest = authorized_target_request,
             ) -> str:
                 if isinstance(exc, AgentRuntimePolicyError):
                     raise exc
+                if isinstance(exc, OpenAIError | ModelBehaviorError):
+                    raise graph_model_error(exc, failed_request) from exc
                 if isinstance(
                     exc,
                     InputGuardrailTripwireTriggered | OutputGuardrailTripwireTriggered,
@@ -489,6 +546,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                     max_turns=definition.max_turns,
                     custom_output_extractor=extract_output,
                     failure_error_function=handle_failure,
+                    hooks=OpenAIRuntimeHooks.for_request(request),
                 )
             )
         return tools
@@ -496,22 +554,28 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
     def _build_agent_tool_target(
         self,
         request: AgentRunRequest,
-        definition: AgentRuntimeAgentTool,
+        definition: AgentRuntimeAgentTarget,
         *,
         calls: list[AgentRuntimeAgentToolResult],
         guardrail_results: list[AgentRuntimeGuardrailResult],
-    ) -> Agent[Any]:
+        sdk_name: str,
+        handoff_audits: dict[str, dict[str, object]] | None = None,
+    ) -> GovernedAgent | GovernedSandboxAgent:
         if not is_openai_compatible_provider(definition.provider):
-            raise ValueError("OpenAI agent tools require an OpenAI-compatible target provider")
-        if not definition.api_key:
-            raise ValueError("OpenAI agent tool target requires an explicit provider API key")
-        model = OpenAIProvider(
-            api_key=definition.api_key,
-            base_url=definition.base_url,
-            use_responses=_use_responses_api(definition.model_api),
-        ).get_model(definition.model)
+            raise ValueError("OpenAI agent targets require an OpenAI-compatible provider")
+        profile = AgentRuntimeProfile(
+            id=definition.target.ref.profile_id,
+            workspace_id=definition.target.workspace_id,
+            version=definition.target.version,
+            name=definition.target.ref.name,
+            role=definition.target.ref.role or "expert",
+            instructions=definition.target.instructions,
+            model=definition.model,
+            model_settings=definition.target.model_settings,
+        )
         scoped_request = replace(
             request,
+            agent_profile=profile,
             context=definition.context,
             model=definition.model,
             provider=definition.provider,
@@ -520,54 +584,25 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             model_api=definition.model_api,
             model_provider_credential_id=definition.model_provider_credential_id,
             agent_tools=definition.nested_tools,
-            handoffs=(),
-            handoff_agents=(),
+            handoffs=definition.nested_handoffs,
+            output_schema=definition.output_schema,
+            guardrails=definition.guardrails,
+            require_handoff=definition.require_handoff,
+            max_turns=definition.max_turns,
         )
-        tools = self._tool_bridge.tools(scoped_request)
-        tools.extend(
-            self._build_agent_tools(
-                scoped_request,
-                definition.nested_tools,
-                source=definition.target.ref,
-                calls=calls,
-                guardrail_results=guardrail_results,
-            )
-        )
-        input_guardrails, output_guardrails = _openai_guardrails(
+        return self._build_agent(
             scoped_request,
-            guardrail_results,
-        )
-        capabilities = (
-            sandbox_capabilities(
-                scoped_request,
-                profile_id=definition.target.ref.profile_id,
-                model_settings=definition.target.model_settings,
-            )
-            if self._uses_sdk_sandbox(scoped_request)
-            else []
-        )
-        agent_class = (
-            GovernedSandboxAgent if self._uses_sdk_sandbox(scoped_request) else GovernedAgent
-        )
-        return agent_class(
-            **cast(
-                dict[str, Any],
-                {"capabilities": capabilities} if self._uses_sdk_sandbox(scoped_request) else {},
-            ),
-            name=definition.target.ref.name,
-            handoff_description=definition.target.handoff_description,
-            instructions=definition.target.instructions,
-            model=model,
-            model_settings=self._settings_mapper.map_settings(definition.target.model_settings),
-            tools=tools,
-            mcp_servers=runtime_mcp_servers(scoped_request),
-            input_guardrails=input_guardrails,
-            output_guardrails=output_guardrails,
+            handoff_audits=handoff_audits,
+            agent_tool_calls=calls,
+            guardrail_results=guardrail_results,
+            sdk_name=sdk_name,
         )
 
     def _validate_agent_tools(self, request: AgentRunRequest) -> None:
+        if request.require_handoff and not request.handoffs:
+            raise ValueError("Routing-only agent requires handoff targets")
         self._validate_agent_tool_level(
-            request.agent_tools,
+            (*request.agent_tools, *request.handoffs),
             workspace_id=request.context.workspace_id,
             task_id=request.context.task_id,
             run_id=request.context.run_id,
@@ -578,7 +613,7 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
 
     def _validate_agent_tool_level(
         self,
-        definitions: tuple[AgentRuntimeAgentTool, ...],
+        definitions: tuple[AgentRuntimeAgentTarget, ...],
         *,
         workspace_id: object,
         task_id: object,
@@ -609,10 +644,12 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
                 raise ValueError("Agent tool turn limit is invalid")
             if profile_id is None or profile_id in path:
                 raise ValueError("Agent tool graph contains a missing target or cycle")
-            if definition.nested_tools and definition.depth >= definition.max_depth:
+            if (
+                definition.nested_tools or definition.nested_handoffs
+            ) and definition.depth >= definition.max_depth:
                 raise ValueError("Agent tool graph exceeds its maximum depth")
             self._validate_agent_tool_level(
-                definition.nested_tools,
+                (*definition.nested_tools, *definition.nested_handoffs),
                 workspace_id=workspace_id,
                 task_id=task_id,
                 run_id=run_id,
@@ -627,111 +664,43 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
         handoff_audits: dict[str, dict[str, object]],
         *,
         guardrail_results: list[AgentRuntimeGuardrailResult],
+        calls: list[AgentRuntimeAgentToolResult],
+        sdk_name: str,
     ) -> list[Any]:
-        if not request.handoffs:
-            return []
-        definitions: dict[tuple[str, str], AgentRuntimeAgentDefinition] = {}
-        for authorized_definition in request.handoff_agents:
-            for key in {
-                _agent_definition_key(authorized_definition),
-                ("name", authorized_definition.ref.name),
-            }:
-                if key in definitions and definitions[key] != authorized_definition:
-                    raise ValueError("OpenAI Agents handoff targets must be unique")
-                definitions[key] = authorized_definition
         handoffs: list[Any] = []
-        seen_targets: set[tuple[str, str]] = set()
-        for descriptor in request.handoffs:
-            target_key = _handoff_target_key(descriptor.target)
-            if target_key in seen_targets:
-                raise ValueError("OpenAI Agents handoff targets must be unique")
-            seen_targets.add(target_key)
-            definition = definitions.get(target_key)
-            if definition is None:
-                raise ValueError(
-                    f"Handoff target {descriptor.target.name} is not in the authorized target set"
-                )
-            if definition.workspace_id != request.context.workspace_id:
-                raise ValueError("Handoff target belongs to another workspace")
-            target = self._build_handoff_agent(
+        for definition in request.handoffs:
+            target = self._build_agent_tool_target(
                 request,
                 definition,
+                calls=calls,
                 guardrail_results=guardrail_results,
+                handoff_audits=handoff_audits,
+                sdk_name=f"{sdk_name}/{definition.tool_name}",
             )
-            audit = handoff_audits.setdefault(target.name, {})
-            source_profile_id = getattr(request.agent_profile, "id", None)
-            if source_profile_id is not None:
-                audit["source_agent_profile_id"] = str(source_profile_id)
-            if definition.ref.profile_id is not None:
-                audit["target_agent_profile_id"] = str(definition.ref.profile_id)
+            handoff_audits[target.name] = {
+                "source_agent_profile_id": str(request.agent_profile.id),
+                "target_agent_profile_id": str(definition.target.ref.profile_id),
+            }
             handoffs.append(
                 sdk_handoff(
                     target,
-                    tool_description_override=descriptor.reason
-                    or f"Transfer the request to {target.name}.",
-                    input_filter=_handoff_input_filter(descriptor.input_filter, audit),
+                    tool_name_override=definition.tool_name,
+                    tool_description_override=definition.description,
                 )
             )
         return handoffs
-
-    def _build_handoff_agent(
-        self,
-        request: AgentRunRequest,
-        definition: AgentRuntimeAgentDefinition,
-        *,
-        guardrail_results: list[AgentRuntimeGuardrailResult],
-    ) -> Agent[Any]:
-        model_name = definition.model or request.model or request.agent_profile.model
-        capabilities = (
-            sandbox_capabilities(
-                replace(request, model=model_name),
-                profile_id=definition.ref.profile_id,
-                model_settings=definition.model_settings,
-            )
-            if self._uses_sdk_sandbox(request)
-            else []
-        )
-        if request.api_key is None:
-            raise ValueError("OpenAI-compatible runtime requires an explicit provider API key")
-        model: str | Model = OpenAIProvider(
-            api_key=request.api_key,
-            base_url=request.base_url,
-            use_responses=_use_responses_api(request.model_api),
-        ).get_model(model_name)
-        input_guardrails, output_guardrails = _openai_guardrails(
-            request,
-            guardrail_results,
-        )
-        agent_class = GovernedSandboxAgent if self._uses_sdk_sandbox(request) else GovernedAgent
-        return agent_class(
-            **cast(
-                dict[str, Any],
-                {"capabilities": capabilities} if self._uses_sdk_sandbox(request) else {},
-            ),
-            name=definition.ref.name,
-            handoff_description=definition.handoff_description,
-            instructions=definition.instructions,
-            model=model,
-            model_settings=self._settings_mapper.map_settings(definition.model_settings),
-            tools=self._tool_bridge.tools(request),
-            mcp_servers=runtime_mcp_servers(request),
-            output_type=(
-                OpenAIRuntimeOutputSchema(request.output_schema)
-                if request.output_schema is not None
-                else None
-            ),
-            input_guardrails=input_guardrails,
-            output_guardrails=output_guardrails,
-        )
 
     @staticmethod
     def _uses_sdk_sandbox(request: AgentRunRequest) -> bool:
         # Native sandbox tools require Responses. Chat Completions still runs in
         # the same approved Runtime, with its supported product/MCP tools.
         supported = _use_responses_api(request.model_api) is not False
-        if not supported and SDKMemoryPolicy.model_validate(
-            request.context.metadata.get("sdk_memory", {})
-        ).enabled:
+        if (
+            not supported
+            and SDKMemoryPolicy.model_validate(
+                request.context.metadata.get("sdk_memory", {})
+            ).enabled
+        ):
             raise AgentRuntimePolicyError(
                 code="sdk_memory_api_unsupported",
                 message="Native SDK Memory requires the Responses API",
@@ -752,10 +721,49 @@ class OpenAIAgentsRunner(BaseSDKAgentRuntimeAdapter):
             trace_include_sensitive_data=tracing.include_sensitive_data if tracing else False,
             sandbox=(
                 sandbox_run_config(request.sandbox)
-                if self._uses_sdk_sandbox(request) and request.sandbox is not None
+                if request.sandbox is not None
+                and (
+                    self._uses_sdk_sandbox(request)
+                    or _targets_use_sandbox((*request.handoffs, *request.agent_tools))
+                )
                 else None
             ),
         )
+
+
+def _sdk_authorization_context(context: AgentRuntimeContext) -> AgentRuntimeContext:
+    binding = context.runtime_binding
+    return replace(
+        context,
+        runtime_binding=replace(binding, execution_runtime_id=None) if binding else None,
+        metadata={
+            key: context.metadata.get(key)
+            for key in (
+                "authorization_snapshot_fingerprint",
+                "authorization_snapshot_version",
+                "capability_catalog_fingerprint",
+                "agent_profile_id",
+                "agent_profile_version",
+                "run_model",
+                "model_provider_provider",
+                "model_provider_credential_id",
+                "model_provider_model_api",
+                "sdk_memory",
+                "runtime_policy",
+                "approval_policy",
+                "persistent_session_key",
+                "persistent_session_mode",
+            )
+        },
+    )
+
+
+def _targets_use_sandbox(targets: tuple[AgentRuntimeAgentTarget, ...]) -> bool:
+    return any(
+        _use_responses_api(target.model_api) is not False
+        or _targets_use_sandbox((*target.nested_tools, *target.nested_handoffs))
+        for target in targets
+    )
 
 
 def _openai_guardrails(
@@ -783,7 +791,7 @@ def _guardrail_blocked_error(
 def _agent_tool_result(
     *,
     source: AgentRuntimeAgentRef,
-    item: AgentRuntimeAgentTool,
+    item: AgentRuntimeAgentTarget,
     invocation: object | None,
     status: str,
     usage: object | None = None,
@@ -846,56 +854,3 @@ def _use_responses_api(model_api: str | None) -> bool | None:
     if normalized == OPENAI_RESPONSES_API:
         return True
     return None
-
-
-def _handoff_target_key(ref: object) -> tuple[str, str]:
-    profile_id = getattr(ref, "profile_id", None)
-    if profile_id is not None:
-        return ("profile_id", str(profile_id))
-    return ("name", str(getattr(ref, "name", "")))
-
-
-def _agent_definition_key(definition: AgentRuntimeAgentDefinition) -> tuple[str, str]:
-    return _handoff_target_key(definition.ref)
-
-
-def _handoff_input_filter(
-    allowed_item_types: tuple[str, ...],
-    audit: dict[str, object],
-) -> Any:
-    if not allowed_item_types:
-        return None
-    allowed = frozenset(allowed_item_types)
-
-    def _filter(data: HandoffInputData) -> HandoffInputData:
-        source = data.input_items if data.input_items is not None else data.new_items
-        retained = []
-        removed: set[str] = set()
-        for item in source:
-            item_type = _handoff_item_type(item)
-            if item_type in allowed:
-                retained.append(item)
-            else:
-                removed.add(item_type)
-        audit["input_items_before"] = len(source)
-        audit["input_items_after"] = len(retained)
-        audit["filtered_context_keys"] = tuple(sorted(removed))
-        return data.clone(input_items=tuple(retained))
-
-    return _filter
-
-
-def _handoff_item_type(item: object) -> str:
-    item_type = getattr(item, "type", None)
-    if isinstance(item_type, str) and item_type:
-        return item_type
-    raw_item = getattr(item, "raw_item", None)
-    if isinstance(raw_item, dict):
-        raw_type = raw_item.get("type") or raw_item.get("role")
-        if isinstance(raw_type, str) and raw_type:
-            return raw_type
-    if isinstance(item, dict):
-        raw_type = item.get("type") or item.get("role")
-        if isinstance(raw_type, str) and raw_type:
-            return raw_type
-    return type(item).__name__

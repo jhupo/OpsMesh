@@ -3,6 +3,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from pydantic import TypeAdapter
 from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
@@ -12,9 +13,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from opsmesh.agents.execution.contracts import (
     AgentRunRequest,
     AgentRunResult,
+    AgentRuntimeAgentRef,
     AgentRuntimeContext,
+    AgentRuntimeModelUsage,
     AgentRuntimeUsage,
 )
+from opsmesh.agents.execution.errors import AgentRuntimePolicyError
 from opsmesh.agents.execution.usage import runtime_usage
 from opsmesh.agents.profiles.models import AgentProfile
 from opsmesh.governance.costs.pricing import CostPricingService
@@ -174,6 +178,120 @@ def test_cost_accounting_prices_usage_idempotently_and_isolates_workspaces() -> 
     assert own_total == 1
     assert foreign_rows == []
     assert foreign_total == 0
+
+
+def test_native_graph_prices_each_model_and_resume_does_not_rebill_router() -> None:
+    _assert_native_graph_costs(_session())
+
+
+def test_failed_graph_preserves_completed_model_usage() -> None:
+    session = _session()
+    _, workspace, profile, run = _seed_run(session, slug="failed-graph-cost")
+    service = CostAccountingService(session)
+    usage = AgentRuntimeModelUsage(
+        request_id="completed-before-failure",
+        agent=AgentRuntimeAgentRef(profile.name, profile.id, profile.role),
+        provider="openai",
+        model=profile.model,
+        model_api="responses",
+        usage=AgentRuntimeUsage(request_count=1, input_tokens=50, output_tokens=5, total_tokens=55),
+    )
+    error = AgentRuntimePolicyError(
+        code="agent_graph_model_failed",
+        message="Graph stopped",
+        event_type="agent.model.failed",
+        metadata={
+            "model_usages": TypeAdapter(list[AgentRuntimeModelUsage]).dump_python(
+                [usage], mode="json"
+            )
+        },
+    )
+    rows = service.record_attempt(
+        run=run,
+        request=_request(profile, run),
+        result=None,
+        job_attempt=1,
+        request_sequence=0,
+        attempt_outcome="failed",
+        budget_decision=service.assert_budget_available(
+            workspace.id, provider="openai", model=profile.model
+        ),
+        error=error,
+    )
+    assert len(rows) == 1
+    assert rows[0].total_tokens == 55 and rows[0].agent_profile_id == profile.id
+    assert rows[0].attempt_outcome == "failed" and rows[0].metering_status == "unpriced"
+
+
+def _assert_native_graph_costs(session: Session) -> None:
+    user, workspace, router, run = _seed_run(session, slug="graph-cost")
+    expert, _ = _add_run(session, workspace, model="expert-model")
+    service = CostAccountingService(session)
+    now = datetime.now(UTC)
+    for profile, rate in ((router, "1"), (expert, "10")):
+        CostPricingService(session).create_pricing_rule(
+            workspace_id=workspace.id,
+            actor_user_id=user.id,
+            provider="openai",
+            model=profile.model,
+            version="graph-price",
+            currency="usd",
+            input_rate_per_million=Decimal(rate),
+            output_rate_per_million=Decimal(rate),
+            cached_input_rate_per_million=None,
+            request_rate=Decimal("0"),
+            effective_from=now - timedelta(days=1),
+            effective_to=None,
+            source="test",
+        )
+    request = _request(router, run)
+    usage = AgentRuntimeUsage(
+        request_count=1, input_tokens=1000, output_tokens=0, total_tokens=1000
+    )
+
+    def call(profile, response_id):
+        return AgentRuntimeModelUsage(
+            request_id=response_id,
+            agent=AgentRuntimeAgentRef(profile.name, profile.id, profile.role),
+            provider="openai",
+            model=profile.model,
+            model_api="responses",
+            usage=usage,
+        )
+
+    decision = service.assert_budget_available(workspace.id, provider="openai", model=router.model)
+
+    def record(calls, sequence):
+        return service.record_attempt(
+            run=run,
+            request=request,
+            result=AgentRunResult("", model_usages=tuple(calls)),
+            job_attempt=1,
+            request_sequence=sequence,
+            attempt_outcome="succeeded",
+            budget_decision=decision,
+            occurred_at=now,
+        )
+
+    initial = (call(router, "routing"), call(expert, "approval-request"))
+    records = record(initial, 0)
+    assert [row.total_cost for row in records] == [Decimal("0.001"), Decimal("0.01")]
+    assert [row.agent_profile_id for row in records] == [router.id, expert.id]
+    assert [row.id for row in record(initial, 0)] == [row.id for row in records]
+    resumed = record((call(expert, "after-approval"),), 1)
+    assert len(resumed) == 1 and resumed[0].agent_profile_id == expert.id
+    session.commit()
+    rows, total = CostQueryService(session).list_usage(
+        workspace.id,
+        start_at=now - timedelta(days=1),
+        end_at=now + timedelta(days=1),
+        provider=None,
+        model=None,
+        limit=100,
+        offset=0,
+    )
+    assert total == 3
+    assert sum(row.total_cost for row in rows) == Decimal("0.021")
 
 
 def test_cost_summary_reports_unpriced_usage_and_enforces_block_budget() -> None:
@@ -457,7 +575,7 @@ def _record_succeeded_attempt(
         attempt_outcome="succeeded",
         budget_decision=decision,
         occurred_at=occurred_at,
-    )
+    )[0]
 
 
 def _usage_result() -> AgentRunResult:

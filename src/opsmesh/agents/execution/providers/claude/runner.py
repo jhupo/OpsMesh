@@ -143,11 +143,6 @@ class ClaudeAgentSDKRunner(BaseSDKAgentRuntimeAdapter):
             raise NotImplementedError(
                 "Claude Agent SDK supports agents-as-tools, not OpenAI-style handoff descriptors"
             )
-        if request.handoff_agents:
-            raise NotImplementedError(
-                "Claude Agent SDK agent definitions are not enabled until "
-                "their MCP tool scope is explicit"
-            )
         if request.agent_tools:
             raise NotImplementedError(
                 "Claude Agent SDK subagents are not enabled until their per-agent "

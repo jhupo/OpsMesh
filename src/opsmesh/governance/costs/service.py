@@ -3,12 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from hashlib import sha256
+from typing import TypedDict
 from uuid import UUID, uuid4
 
+from pydantic import TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.execution.contracts import AgentRunRequest, AgentRunResult
+from opsmesh.agents.execution.contracts import (
+    AgentRunRequest,
+    AgentRunResult,
+    AgentRuntimeModelUsage,
+)
+from opsmesh.agents.execution.errors import AgentRuntimePolicyError
 from opsmesh.agents.providers.policy import canonical_model_provider
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.costs.models import ModelUsageRecord, WorkspaceCostBudget
@@ -75,6 +83,15 @@ class CostBudgetExceededError(RuntimeError):
         self.decision = decision
 
 
+class _AttemptMetadata(TypedDict):
+    run: AgentRun
+    job_attempt: int
+    request_sequence: int
+    attempt_outcome: str
+    error: Exception | None
+    occurred_at: datetime
+
+
 class CostAccountingService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -91,6 +108,71 @@ class CostAccountingService:
         budget_decision: CostBudgetDecision,
         error: Exception | None = None,
         occurred_at: datetime | None = None,
+    ) -> list[ModelUsageRecord]:
+        timestamp = ensure_aware_utc(occurred_at or datetime.now(UTC))
+        common: _AttemptMetadata = dict(
+            run=run,
+            job_attempt=job_attempt,
+            request_sequence=request_sequence,
+            attempt_outcome=attempt_outcome,
+            error=error,
+            occurred_at=timestamp,
+        )
+        records: list[ModelUsageRecord] = []
+        usages = result.model_usages if result is not None else ()
+        if result is None and isinstance(error, AgentRuntimePolicyError):
+            usages = TypeAdapter(tuple[AgentRuntimeModelUsage, ...]).validate_python(
+                error.metadata.get("model_usages", [])
+            )
+        if usages:
+            for item in usages:
+                provider = canonical_model_provider(item.provider)
+                key = sha256(
+                    f"{item.agent.profile_id}:{provider}:{item.model}:{item.request_id}".encode()
+                ).hexdigest()
+                record = self._record_usage(
+                    **common,
+                    usage=normalize_model_usage(AgentRunResult("", usage=item.usage)),
+                    provider=provider,
+                    model=item.model,
+                    model_api=item.model_api,
+                    agent_profile_id=item.agent.profile_id,
+                    usage_key=key,
+                    budget_decision=self.evaluate_budget(
+                        run.workspace_id, provider=provider, model=item.model, now=timestamp
+                    ),
+                )
+                records.append(record)
+            return records
+        return [
+            self._record_usage(
+                **common,
+                usage=normalize_model_usage(result) if result is not None else _missing_usage(),
+                provider=canonical_model_provider(request.provider or "openai"),
+                model=request.model or request.agent_profile.model,
+                model_api=request.model_api,
+                agent_profile_id=request.agent_profile.id,
+                usage_key="single_model",
+                budget_decision=budget_decision,
+            )
+        ]
+
+    def _record_usage(
+        self,
+        *,
+        run: AgentRun,
+        usage: NormalizedModelUsage,
+        provider: str,
+        model: str,
+        model_api: str | None,
+        agent_profile_id: UUID | None,
+        usage_key: str,
+        job_attempt: int,
+        request_sequence: int,
+        attempt_outcome: str,
+        budget_decision: CostBudgetDecision,
+        error: Exception | None = None,
+        occurred_at: datetime | None = None,
     ) -> ModelUsageRecord:
         if attempt_outcome not in {"succeeded", "failed", "cancelled"}:
             raise ValueError("attempt_outcome must be succeeded, failed, or cancelled")
@@ -100,35 +182,31 @@ class CostAccountingService:
                 ModelUsageRecord.agent_run_id == run.id,
                 ModelUsageRecord.job_attempt == job_attempt,
                 ModelUsageRecord.request_sequence == request_sequence,
+                ModelUsageRecord.usage_key == usage_key,
             )
         )
         if existing is not None:
             return existing
 
         occurred_at = ensure_aware_utc(occurred_at or datetime.now(UTC))
-        provider = canonical_model_provider(request.provider or "openai")
-        model = request.model or request.agent_profile.model
-        usage = normalize_model_usage(result) if result is not None else _missing_usage()
         pricing = CostPricingService(self._session).resolve_rule(
             workspace_id=run.workspace_id,
             provider=provider,
             model=model,
             occurred_at=occurred_at,
         )
-        costs = (
-            calculate_costs(usage, pricing) if pricing is not None and usage.available else None
-        )
+        costs = calculate_costs(usage, pricing) if pricing is not None and usage.available else None
         evidence = current_evidence_context()
         record = ModelUsageRecord(
             id=uuid4(),
             workspace_id=run.workspace_id,
             agent_run_id=run.id,
             task_id=run.task_id,
-            agent_profile_id=run.agent_profile_id,
+            agent_profile_id=agent_profile_id,
             pricing_rule_id=pricing.id if pricing is not None else None,
             provider=provider,
             model=model,
-            model_api=request.model_api,
+            model_api=model_api,
             pricing_version=pricing.version if pricing is not None else None,
             currency=pricing.currency if pricing is not None else None,
             metering_status=(
@@ -140,6 +218,7 @@ class CostAccountingService:
             ),
             job_attempt=job_attempt,
             request_sequence=request_sequence,
+            usage_key=usage_key,
             attempt_outcome=attempt_outcome,
             error_code=type(error).__name__ if error is not None else None,
             request_count=usage.request_count,
@@ -220,9 +299,7 @@ class CostAccountingService:
             return CostBudgetDecision(
                 allowed=blocking_budget is None,
                 reason=(
-                    "pricing_unconfigured"
-                    if blocking_budget is None
-                    else "pricing_rule_missing"
+                    "pricing_unconfigured" if blocking_budget is None else "pricing_rule_missing"
                 ),
                 evaluated_at=now,
                 provider=normalized_provider,
@@ -232,9 +309,7 @@ class CostAccountingService:
                 currency=blocking_budget.currency if blocking_budget is not None else None,
                 budget_id=blocking_budget.id if blocking_budget is not None else None,
                 budget_state="unconfigured",
-                enforcement=(
-                    blocking_budget.enforcement if blocking_budget is not None else None
-                ),
+                enforcement=(blocking_budget.enforcement if blocking_budget is not None else None),
                 spent=None,
                 monthly_limit=(
                     blocking_budget.monthly_limit if blocking_budget is not None else None

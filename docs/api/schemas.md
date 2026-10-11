@@ -17026,9 +17026,6 @@
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `turn_id` | string (uuid) | 是 | `format="uuid"` |
 | `task_id` | string (uuid) | 是 | `format="uuid"` |
-| `purpose` | string | 是 | — |
-| `parent_run_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
-| `round` | integer | 是 | — |
 | `runs` | array&lt;[ExecutionRunResponse](schemas.md#schema-ExecutionRunResponse)&gt; | 是 | — |
 
 ```json
@@ -17043,26 +17040,6 @@
       "format": "uuid",
       "title": "Id",
       "type": "string"
-    },
-    "parent_run_id": {
-      "anyOf": [
-        {
-          "format": "uuid",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Parent Run Id"
-    },
-    "purpose": {
-      "title": "Purpose",
-      "type": "string"
-    },
-    "round": {
-      "title": "Round",
-      "type": "integer"
     },
     "runs": {
       "items": {
@@ -17093,9 +17070,6 @@
     "updated_at",
     "turn_id",
     "task_id",
-    "purpose",
-    "parent_run_id",
-    "round",
     "runs"
   ],
   "title": "ExecutionResponse",
@@ -17329,6 +17303,57 @@
     }
   },
   "title": "FileLimits",
+  "type": "object"
+}
+```
+
+<a id="schema-FinalAgentResponse"></a>
+
+## FinalAgentResponse
+
+| 字段 | 类型 | 必填 | 说明与约束 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | — |
+| `profile_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
+| `role` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+
+```json
+{
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "profile_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Profile Id"
+    },
+    "role": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Role"
+    }
+  },
+  "required": [
+    "name",
+    "profile_id",
+    "role"
+  ],
+  "title": "FinalAgentResponse",
   "type": "object"
 }
 ```
@@ -18593,7 +18618,7 @@
 | --- | --- | --- | --- |
 | `name` | string | 是 | `maxLength=160`; `minLength=1` |
 | `description` | string | 否 | `default=""`; `maxLength=2000` |
-| `source_type` | string | 是 | `enum=["url", "workspace_file"]` |
+| `source_type` | string | 是 | `enum=["url", "workspace_file", "text"]` |
 | `uri` | string anyOf null | 否 | `anyOf=[{"maxLength": 2048, "type": "string"}, {"type": "null"}]` |
 | `workspace_file_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `config` | object | 否 | `additionalProperties=true` |
@@ -18621,7 +18646,8 @@
     "source_type": {
       "enum": [
         "url",
-        "workspace_file"
+        "workspace_file",
+        "text"
       ],
       "title": "Source Type",
       "type": "string"
@@ -18830,7 +18856,7 @@
 | `created_by_user_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `name` | string | 是 | — |
 | `description` | string | 是 | — |
-| `source_type` | string | 是 | `enum=["url", "workspace_file"]` |
+| `source_type` | string | 是 | `enum=["url", "workspace_file", "text"]` |
 | `uri` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `workspace_file_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `source_config` | object | 是 | `additionalProperties=true` |
@@ -18908,7 +18934,8 @@
     "source_type": {
       "enum": [
         "url",
-        "workspace_file"
+        "workspace_file",
+        "text"
       ],
       "title": "Source Type",
       "type": "string"
@@ -18992,7 +19019,7 @@
 | `version` | integer | 是 | — |
 | `name` | string | 是 | — |
 | `description` | string | 是 | — |
-| `source_type` | string | 是 | `enum=["url", "workspace_file"]` |
+| `source_type` | string | 是 | `enum=["url", "workspace_file", "text"]` |
 | `uri` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `workspace_file_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `source_config` | object | 是 | `additionalProperties=true` |
@@ -19061,7 +19088,8 @@
     "source_type": {
       "enum": [
         "url",
-        "workspace_file"
+        "workspace_file",
+        "text"
       ],
       "title": "Source Type",
       "type": "string"
@@ -19159,7 +19187,7 @@
 | `expected_version` | integer | 是 | `minimum=1.0` |
 | `name` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
 | `description` | string anyOf null | 否 | `anyOf=[{"maxLength": 2000, "type": "string"}, {"type": "null"}]` |
-| `source_type` | string anyOf null | 否 | `anyOf=[{"enum": ["url", "workspace_file"], "type": "string"}, {"type": "null"}]` |
+| `source_type` | string anyOf null | 否 | `anyOf=[{"enum": ["url", "workspace_file", "text"], "type": "string"}, {"type": "null"}]` |
 | `uri` | string anyOf null | 否 | `anyOf=[{"maxLength": 2048, "type": "string"}, {"type": "null"}]` |
 | `workspace_file_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `config` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
@@ -19215,7 +19243,8 @@
         {
           "enum": [
             "url",
-            "workspace_file"
+            "workspace_file",
+            "text"
           ],
           "type": "string"
         },
@@ -46484,7 +46513,7 @@ Explicit region a privileged editor is allowed to change.
 | `status` | string | 是 | — |
 | `error_code` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
 | `error` | object anyOf null | 否 | `anyOf=[{"additionalProperties": true, "type": "object"}, {"type": "null"}]` |
-| `round` | integer | 是 | — |
+| `final_agent` | [FinalAgentResponse](schemas.md#schema-FinalAgentResponse) anyOf null | 是 | `anyOf=[{"$ref": "#/components/schemas/FinalAgentResponse"}, {"type": "null"}]` |
 
 ```json
 {
@@ -46533,6 +46562,16 @@ Explicit region a privileged editor is allowed to change.
       ],
       "title": "Error Code"
     },
+    "final_agent": {
+      "anyOf": [
+        {
+          "$ref": "#/components/schemas/FinalAgentResponse"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "id": {
       "format": "uuid",
       "title": "Id",
@@ -46548,10 +46587,6 @@ Explicit region a privileged editor is allowed to change.
         }
       ],
       "title": "Reply"
-    },
-    "round": {
-      "title": "Round",
-      "type": "integer"
     },
     "sequence": {
       "title": "Sequence",
@@ -46577,7 +46612,7 @@ Explicit region a privileged editor is allowed to change.
     "reply",
     "status",
     "error_code",
-    "round"
+    "final_agent"
   ],
   "title": "TurnResponse",
   "type": "object"
@@ -55746,7 +55781,6 @@ A bounded reference to task or completed-step data.
 | `id` | integer | 是 | — |
 | `turn_id` | string (uuid) | 是 | `format="uuid"` |
 | `status` | string | 是 | — |
-| `round` | integer | 是 | — |
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
 
 ```json
@@ -55759,10 +55793,6 @@ A bounded reference to task or completed-step data.
     },
     "id": {
       "title": "Id",
-      "type": "integer"
-    },
-    "round": {
-      "title": "Round",
       "type": "integer"
     },
     "status": {
@@ -55779,7 +55809,6 @@ A bounded reference to task or completed-step data.
     "id",
     "turn_id",
     "status",
-    "round",
     "created_at"
   ],
   "title": "EventResponse",

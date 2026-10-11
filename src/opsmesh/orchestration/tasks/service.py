@@ -113,16 +113,15 @@ class WorkspaceTaskService:
         user_id: UUID,
         command: TaskCreateCommand,
         execution_identity: dict[str, object],
-        parent_run_id: UUID | None = None,
     ) -> Task:
         """Admission inside the conversation transaction; queue recovery dispatches after commit."""
         task, _ = self._create_task(
             workspace_id=workspace_id,
             created_by_user_id=user_id,
-            created_by_agent_run_id=parent_run_id,
             command=command,
             queue=None,
             initiating_identity=execution_identity,
+            created_by_agent_run_id=None,
         )
         return task
 
