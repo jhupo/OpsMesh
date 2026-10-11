@@ -39,7 +39,7 @@ sys.path.insert(0, sys.argv[1])
 from fastapi.testclient import TestClient
 from opsmesh.main import app
 from opsmesh.bootstrap.models import register_models
-for name in ('opsmesh.runtime.workers.cli', 'opsmesh.bootstrap.agent_host',
+for name in ('opsmesh.runtime.workers.cli', 'opsmesh.runtime.agent_host.main',
              'opsmesh.platform.updates.daemon', 'opsmesh.delivery'):
     importlib.import_module(name)
 with TestClient(app) as client:

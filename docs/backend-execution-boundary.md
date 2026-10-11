@@ -2,7 +2,7 @@
 
 API 持久化任务意图后返回 Run 标识。Worker 的异步执行器领取 Run，在短事务中重新检查租户、执行身份、授权快照、审批、成本和 Runtime 状态，再释放事务。模型执行只有 `AsyncAgentRunExecutor` 一个入口；直接工具、审批和子工作流节点由 `DirectWorkflowExecutor` 处理。
 
-模型 SDK 在批准的 Docker Runtime 中启动独立进程。Worker 通过 Docker exec 双向通道传递冻结请求、会话操作、产品工具回调和事件。Runtime 不接收数据库连接、Docker 客户端或 ORM 对象。回调只能使用冻结的工作空间、Run 和能力范围；嵌套专家的上下文也必须匹配已批准的范围。
+模型 SDK 在批准的 Docker Runtime 初始化时预加载，任务从单线程可信父进程派生独立 UID 子进程，直接继承已加载模块。Worker 通过 Docker exec 的轻量 root-only 准入转发器连接子进程，传递冻结请求、会话操作、产品工具回调和事件。预加载父进程不读取这些业务帧；执行子进程在接收输入前不可逆降权。Runtime 不接收数据库连接、Docker 客户端或 ORM 对象。回调只能使用冻结的工作空间、Run 和能力范围；嵌套专家的上下文也必须匹配已批准的范围。
 
 SDK 拥有模型与工具循环、Session 历史、RunState、审批中断和恢复、原生 MCP 消息，以及支持的 Sandbox/Memory 能力。平台提供持久化 Session 的公共接口适配、授权、隔离、审批事实、租约、成本和审计。平台不拼接历史消息，不复制工具结果为用户消息，不设置压缩阈值，不启用另一套压缩算法；只转发 SDK 实际产生的压缩日志。
 

@@ -10,6 +10,7 @@ import openai
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
+from opsmesh.agents.providers.classification import canonical_model_provider
 from opsmesh.agents.providers.contracts import ProviderProbeName
 from opsmesh.agents.providers.model_api import (
     ANTHROPIC_MESSAGES_API,
@@ -17,7 +18,6 @@ from opsmesh.agents.providers.model_api import (
     OPENAI_RESPONSES_API,
     canonical_model_api,
 )
-from opsmesh.agents.providers.policy import canonical_model_provider
 
 ProviderHealthStatus = Literal["healthy", "degraded", "unhealthy"]
 ProbeOperation = Callable[[], Awaitable[dict[str, object]]]

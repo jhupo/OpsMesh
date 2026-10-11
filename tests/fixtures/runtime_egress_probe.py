@@ -1,6 +1,7 @@
 """Offline Runtime probe; requires an isolated Linux container with NET_ADMIN."""
 
 import json
+import os
 import pwd
 import subprocess
 import sys
@@ -16,6 +17,7 @@ def exercise() -> dict[str, object]:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        env={**os.environ, "OPSMESH_RUNTIME_MAX_EXECUTIONS": "4"},
     )
     try:
         deadline = time.monotonic() + 15

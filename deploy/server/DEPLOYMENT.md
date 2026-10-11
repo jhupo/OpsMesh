@@ -60,12 +60,12 @@ docker run --rm opsmesh-runtime:local \
 
 The runtime image installs the `opsmesh-runtime` transport package and the `opsmesh` execution
 package with the locked Agent SDKs. It does not start the API or Worker and is never given database
-or Docker daemon credentials. Agent SDK processes use `python -m opsmesh.bootstrap.agent_host`;
+or Docker daemon credentials. Runtime initialization preloads the SDK execution pool;
 session persistence and product authorization cross the private RPC boundary. Python, Node/npm
 and uv/uvx remain available for approved MCP commands.
 
 The fixed non-root runtime user is UID/GID 65532. Shared hosts group executions by workspace,
-trust scope and network policy; Agent runs and managed MCP processes occupy durable capacity
+trust scope and resource budgets; network policy is enforced per execution UID. Agent runs and managed MCP processes occupy durable capacity
 slots, not one container per Agent/MCP. Only explicitly isolated executions get private containers.
 Provision approved hosts before binding Agents or importing MCP projects. See
 [shared Runtime hosts](../../docs/shared-runtime-hosts.md) and [managed MCP](../../docs/managed-mcp.md).

@@ -8,7 +8,11 @@ Worker 使用有界 asyncio Task，阻塞数据库和 Docker 控制进入有界 
 
 SDK 生命周期 Hook 经 Runtime RPC 实时回传。Worker 在有租户与租约校验的独立短事务中提交 `agent.started`、`agent.llm.started/completed`、`agent.tool.started/completed/failed`、`agent.handoff.started` 与 `agent.completed`，然后发布 Task 的 `run.live` 进度。客户端可在执行中查询 Run events 和 activity；live payload 的 `kind` 分别为 `started`、`llm.started/completed`、`tool.started/completed/failed`、`handoff.started` 与 `completed`。生命周期提交不依赖文本流开关，不经过可丢弃的预览缓冲，也不在结果返回后重复补写。文本预览仍使用有界缓冲；已授权平台工具的即时预览由工具执行器发布一次。SDK 的 `agent.completed` 表示 SDK 返回，最终 Run 状态仍由控制面结果校验和持久化决定。
 
-容器启动时，可信控制程序配置 nftables，然后降权运行内部代理。OUTPUT 默认拒绝，按 socket UID 强制网络权限：`none` 无网络；`restricted` 只能连接自己的 loopback 代理端口，由代理校验域名/IP 和端口；`internet` 可访问公网 TCP/UDP。宿主、其他容器、私网、link-local 和元数据地址均禁止；DNS 仅允许配置解析器。修改环境变量、请求头或使用其他身份的代理端口不能扩权。共享 Runtime 不支持私网目标。
+容器启动时，可信控制程序配置 nftables，启动独立降权代理，并预加载 SDK 执行服务。OUTPUT 默认拒绝，按 socket UID 强制网络权限：`none` 无网络；`restricted` 只能连接自己的 loopback 代理端口，由代理校验域名/IP 和端口；`internet` 可访问公网 TCP/UDP。宿主、其他容器、私网、link-local 和元数据地址均禁止；DNS 仅允许配置解析器。修改环境变量、请求头或使用其他身份的代理端口不能扩权。共享 Runtime 不支持私网目标。
+
+SDK 模块只在宿主初始化时加载。单线程可信预加载进程经 root-only Unix socket 接收公开的 allocation ID、UID 和目录，校验有效分配与目录所有者后，从已加载的进程派生执行子进程；不读取模型输入、凭据或会话内容。每个子进程先关闭继承的控制文件描述符，清除环境变量并不可逆降权，再读取冻结请求，创建自己的 event loop、Agent、SDK 客户端和会话绑定。结束、取消或断连后销毁该子进程；不复用带有上一任务状态的执行进程。模块内存通过操作系统 copy-on-write 共享，任务不重复导入 SDK，也不重新启动容器。
+
+`OPSMESH_RUNTIME_MAX_EXECUTIONS` 由物理宿主的容量预算注入，执行服务拒绝超额和重复 UID 准入；PostgreSQL 的 allocations 仍负责跨 Worker 公平排队和持久容量事实。SDK 预加载初始化、代理或监督服务失败使宿主停止，禁止退回逐任务冷启动。单个 SDK 执行失败只结束对应子进程。`runtime.sdk_host.ready` Run 事件记录准入至子进程 ready 的 `admission_ms`，用于区分宿主调度、SDK 初始化和模型请求耗时。升级必须排空执行并重新创建宿主，旧镜像不支持新准入协议。
 
 内部代理是 Runtime 进程，不增加模型网关容器。Docker 控制面使用 root 和 `NET_ADMIN/KILL/CHOWN/DAC_OVERRIDE/SETUID/SETGID`；用户代码没有这些权限，不能写控制策略。UID 和私有文件权限提供可信工作空间内的执行边界，不替代不可信代码的容器或虚拟机隔离。
 

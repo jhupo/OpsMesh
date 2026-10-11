@@ -6,8 +6,8 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from opsmesh.agents.providers.classification import is_openai_compatible_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
-from opsmesh.agents.providers.policy import is_openai_compatible_provider
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.platform.settings.policy import operational_configuration
 from opsmesh.resources.memory.models import WorkspaceMemoryConfiguration, WorkspaceMemoryEntry

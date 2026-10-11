@@ -11,11 +11,11 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.providers.models import ModelProviderCredential
-from opsmesh.agents.providers.policy import (
+from opsmesh.agents.providers.classification import (
     canonical_model_provider,
     is_openai_compatible_provider,
 )
+from opsmesh.agents.providers.models import ModelProviderCredential
 from opsmesh.governance.costs.service import CostAccountingService, CostBudgetExceededError
 from opsmesh.resources.memory.configuration import (
     WorkspaceMemoryConfigurationService,

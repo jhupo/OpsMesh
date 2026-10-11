@@ -8,12 +8,9 @@ from opsmesh.agents.providers.audit import (
     ModelProviderAuditWriter,
     budget_metadata_with_model_api,
 )
+from opsmesh.agents.providers.classification import canonical_model_provider
 from opsmesh.agents.providers.models import ModelProviderCredential
-from opsmesh.agents.providers.policy import (
-    ModelProviderDefaultService,
-    canonical_model_provider,
-    validated_base_url,
-)
+from opsmesh.agents.providers.policy import ModelProviderDefaultService, validated_base_url
 from opsmesh.agents.providers.queries import ModelProviderCredentialQueryService
 from opsmesh.shared.security.egress import MODEL_PROVIDER_BASE_URL_POLICY, EgressUrlPolicy
 from opsmesh.shared.security.secrets import SecretEncryptionService

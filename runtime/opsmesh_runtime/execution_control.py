@@ -207,6 +207,15 @@ def main() -> None:
         raise PermissionError("Execution control requires root")
     if sys.argv[1:] == ["--initialize"]:
         initialize()
+        from opsmesh.bootstrap.runtime_pool import serve
+
+        capacity = int(os.environ["OPSMESH_RUNTIME_MAX_EXECUTIONS"])
+        proxy_process = subprocess.Popen(
+            [sys.executable, "-I", "-m", "opsmesh_runtime.execution_control", "--proxy"]
+        )
+        serve(proxy_process, capacity)
+        return
+    if sys.argv[1:] == ["--proxy"]:
         proxy = pwd.getpwnam(PROXY_USER)
         # Squid reopens stdout after dropping privileges; only its trusted UID
         # may own the inherited Docker log pipe. Workload UIDs stay separate.
@@ -224,7 +233,9 @@ def main() -> None:
     # Docker start acknowledges process creation, not supervisor readiness. No
     # workload is admitted before both the kernel policy and proxy are initialized.
     deadline = time.monotonic() + 20
-    while not Path("/run/squid/squid.pid").exists():
+    while not (
+        Path("/run/squid/squid.pid").exists() and Path("/run/opsmesh-agent-pool.sock").is_socket()
+    ):
         if time.monotonic() >= deadline:
             raise RuntimeError("Runtime supervisor is not ready")
         time.sleep(0.05)

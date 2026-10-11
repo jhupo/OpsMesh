@@ -17,7 +17,7 @@ from opsmesh.agents.execution.contracts import (
     AgentRuntimeModelUsage,
 )
 from opsmesh.agents.execution.errors import AgentRuntimePolicyError
-from opsmesh.agents.providers.policy import canonical_model_provider
+from opsmesh.agents.providers.classification import canonical_model_provider
 from opsmesh.governance.audit.service import AuditService
 from opsmesh.governance.costs.models import ModelUsageRecord, WorkspaceCostBudget
 from opsmesh.governance.costs.pricing import (

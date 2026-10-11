@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from opsmesh.agents.providers.policy import canonical_model_provider
+from opsmesh.agents.providers.classification import canonical_model_provider
 from opsmesh.governance.costs.models import ModelUsageRecord, WorkspaceCostBudget
 from opsmesh.governance.costs.pricing import normalize_currency
 from opsmesh.identity.authorization.resource_queries import resource_query_scope
