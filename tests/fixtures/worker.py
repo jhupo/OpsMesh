@@ -78,7 +78,7 @@ class WorkerFlow:
             capacity={
                 "max_jobs": 32,
                 "capabilities": ["tools", "mcp", "sandbox"],
-                "runtime_modes": ["isolated", "pooled", "persistent"],
+                "runtime_modes": ["isolated", "shared"],
                 "cpu_count": 8,
                 "memory_mb": 32768,
             },
@@ -98,6 +98,7 @@ class WorkerFlow:
             maintenance=lambda: WorkerMaintenanceSummary(recovered_runs=0, expired_leases=0),
             dispatch_events=lambda: WorkerEventDispatchSummary(),
             admission_blocked=lambda session: False,
+            can_claim=lambda session, job: True,
             on_job_failure=lambda job, *, status, error: None,
             settings=self.settings,
         )

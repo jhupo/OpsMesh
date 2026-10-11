@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
-from opsmesh.runtime.instances.models import RuntimeAllocation, WorkspaceRuntime
-from opsmesh.runtime.pools.policy import pool_policy_matches, runtime_pool_key
+from opsmesh.runtime.instances.models import RuntimeAllocation, RuntimeHost, WorkspaceRuntime
+from opsmesh.runtime.pools.policy import shared_host_policy_matches
 
 MANAGED_RUNTIME_PROVIDER = "cloud_docker"
 
@@ -18,10 +18,11 @@ class RuntimePoolAcquisition:
 
 
 class RuntimePoolService:
-    """Select a host with a free process slot and the authorized parent policy."""
+    """Select a shared host with a free process slot and matching policy."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, node_id: str | None = None) -> None:
         self._session = session
+        self._node_id = node_id
         self._allocations = RuntimeAllocationStore(session)
 
     def acquire(
@@ -51,9 +52,10 @@ class RuntimePoolService:
     def hosts(self, parent: WorkspaceRuntime) -> list[WorkspaceRuntime]:
         statement = (
             select(WorkspaceRuntime)
+            .join(WorkspaceRuntime.host)
             .where(
                 WorkspaceRuntime.workspace_id == parent.workspace_id,
-                WorkspaceRuntime.execution_mode == "pooled",
+                WorkspaceRuntime.execution_mode == "shared",
                 WorkspaceRuntime.runtime_provider == MANAGED_RUNTIME_PROVIDER,
                 WorkspaceRuntime.status.in_(["active", "running"]),
                 WorkspaceRuntime.connection_status == "online",
@@ -63,10 +65,10 @@ class RuntimePoolService:
             )
             .order_by(WorkspaceRuntime.updated_at.asc(), WorkspaceRuntime.created_at.asc())
         )
+        if self._node_id is not None:
+            statement = statement.where(RuntimeHost.node_id == self._node_id)
         return [
             member
             for member in self._session.scalars(statement)
-            if runtime_pool_key(member) == runtime_pool_key(parent)
-            and pool_policy_matches(parent, member)
-            and member.docker_container_id
+            if shared_host_policy_matches(parent, member) and member.docker_container_id
         ]

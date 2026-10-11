@@ -54,7 +54,8 @@ def release_notes(manifest: ReleaseManifest) -> str:
         f"--signer-workflow {manifest.repository}/.github/workflows/release-publish.yml "
         f"--source-ref refs/tags/{manifest.tag} --source-digest {manifest.commit} "
         "--deny-self-hosted-runners", "```", "",
-        "## Container images", "", f"- `{manifest.image('backend')}`",
+        "## Container images", "", f"- `{manifest.image('api')}`",
+        f"- `{manifest.image('worker')}`",
         f"- `{manifest.image('runtime')}`", "",
         "The `.whl` and source distributions are developer packages, not standalone executables.",
         "",
@@ -69,6 +70,10 @@ def candidate_manifest(tag: str, repository: str, directory: Path) -> ReleaseMan
     )
     if manifest.tag != tag or manifest.repository != repository:
         raise ValueError("Release identity mismatch")
+    owner = repository.split("/")[0].lower()
+    for kind in ("api", "worker", "runtime"):
+        if not manifest.image(kind).startswith(f"ghcr.io/{owner}/opsmesh-{kind}@sha256:"):
+            raise ValueError("Published images must belong to their service repository")
     if manifest.commit != command("git", "rev-parse", "HEAD"):
         raise ValueError("Release commit mismatch")
     expected = {record.name for record in manifest.files} | {"release-manifest.json"}
@@ -144,7 +149,7 @@ def finalize_release(tag: str, repository: str, directory: Path) -> None:
         return
     # Managed acceptance has passed against these exact draft bytes. Publish their immutable
     # image digests under version tags before making the GitHub release visible.
-    for kind in ("backend", "runtime"):
+    for kind in ("api", "worker", "runtime"):
         source = manifest.image(kind)
         target = f"{source.split('@')[0]}:{tag}"
         command("docker", "buildx", "imagetools", "create", "--tag", target, source)

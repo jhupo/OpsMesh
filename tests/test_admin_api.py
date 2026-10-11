@@ -56,6 +56,7 @@ from opsmesh.workspaces.quotas.models import WorkspaceQuota
 from opsmesh.workspaces.quotas.reservations import (
     WorkspaceQuotaService as WorkspaceQuotaReservationService,
 )
+from tests.fixtures.runtime_host import runtime_host
 
 TOKEN = "test-token"
 ADMIN_TOKEN = "admin-token"
@@ -156,7 +157,9 @@ def test_admin_api_exposes_global_control_plane_metadata() -> None:
         workspace_id=workspace.id,
         runtime_space_id=runtime_space.id,
         name="team-runtime",
-        docker_container_id="container-admin-visible",
+        host=runtime_host(
+            workspace.id, "container-admin-visible", capacity=16, node_id="test-node"
+        ),
     )
     session.add(runtime)
     session.flush()
@@ -1198,7 +1201,7 @@ def test_admin_can_manage_global_queue_runtime_and_risky_execution_policy() -> N
         name="Team runtime",
         status="running",
         connection_status="online",
-        docker_container_id="container-123",
+        host=runtime_host(workspace.id, "container-123", capacity=16, node_id="test-node"),
         limits={"cpu_count": 1, "memory_mb": 512},
         network_policy={"mode": "none"},
         capabilities={},

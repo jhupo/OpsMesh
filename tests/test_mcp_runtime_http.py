@@ -13,6 +13,7 @@ from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.shared.concurrency import BlockingIO
 from opsmesh.shared.security.secrets import SecretEncryptionService
 from runtime.opsmesh_runtime.mcp_http_client import execute_request
+from tests.fixtures.runtime_host import execution_identity, runtime_host
 from tests.test_mcp_adapters import RuntimeChannel, RuntimeDocker
 
 
@@ -74,7 +75,7 @@ def test_remote_mcp_runs_in_runtime_with_transient_credentials_and_native_result
         id=uuid4(),
         workspace_id=workspace_id,
         name="Runtime",
-        docker_container_id="runtime-http",
+        host=runtime_host(workspace_id, "runtime-http", capacity=16, node_id="test-node"),
         limits={},
     )
     payload = {
@@ -105,7 +106,9 @@ def test_remote_mcp_runs_in_runtime_with_transient_credentials_and_native_result
             "auth_method": "bearer_token",
         },
     )
-    operation = DockerRuntimeHttpMcpToolAdapter(docker, runtime, secrets).prepare(
+    operation = DockerRuntimeHttpMcpToolAdapter(
+        docker, runtime, secrets, identity=execution_identity()
+    ).prepare(
         server=server,
         tool_name="inspect",
         arguments={},

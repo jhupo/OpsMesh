@@ -3,9 +3,6 @@ from __future__ import annotations
 import ipaddress
 from dataclasses import dataclass
 from typing import Literal, cast
-from urllib.parse import urlsplit
-
-from opsmesh.shared.utils import non_empty_string_or_none
 
 EgressMode = Literal["none", "restricted", "internet"]
 
@@ -17,8 +14,6 @@ class RuntimeEgressPolicy:
     allowed_cidrs: tuple[str, ...] = ()
     allowed_ports: tuple[int, ...] = ()
     allowed_protocols: tuple[str, ...] = ()
-    gateway_network: str | None = None
-    proxy_url: str | None = None
 
     @property
     def disabled(self) -> bool:
@@ -31,8 +26,6 @@ class RuntimeEgressPolicy:
             "allowed_cidrs": list(self.allowed_cidrs),
             "allowed_ports": list(self.allowed_ports),
             "allowed_protocols": list(self.allowed_protocols),
-            "gateway_network": self.gateway_network,
-            "proxy_url": self.proxy_url,
         }
 
 
@@ -55,8 +48,6 @@ def resolve_egress_policy(
         "allowed_cidrs",
         "allowed_ports",
         "allowed_protocols",
-        "gateway_network",
-        "proxy_url",
     }
     if set(policy) - allowed:
         raise RuntimeEgressPolicyError(
@@ -70,20 +61,26 @@ def resolve_egress_policy(
     if mode == "internet":
         return RuntimeEgressPolicy(mode="internet")
 
-    gateway_network = non_empty_string_or_none(policy.get("gateway_network"))
-    if gateway_network is None:
+    domains = _domains(policy.get("allowed_domains"))
+    cidrs = _cidrs(policy.get("allowed_cidrs"))
+    ports = _ports(policy.get("allowed_ports"))
+    protocols = _protocols(policy.get("allowed_protocols"))
+    if not (domains or cidrs) or not ports:
         raise RuntimeEgressPolicyError(
-            "runtime_egress_gateway_required",
-            "Restricted runtime egress requires a managed Docker gateway network",
+            "runtime_egress_destinations_required",
+            "Restricted Runtime execution requires destinations and ports",
+        )
+    if protocols and protocols != ("tcp",):
+        raise RuntimeEgressPolicyError(
+            "runtime_egress_protocol_invalid",
+            "Restricted Runtime execution supports TCP through the managed proxy",
         )
     return RuntimeEgressPolicy(
         mode="restricted",
-        allowed_domains=_domains(policy.get("allowed_domains")),
-        allowed_cidrs=_cidrs(policy.get("allowed_cidrs")),
-        allowed_ports=_ports(policy.get("allowed_ports")),
-        allowed_protocols=_protocols(policy.get("allowed_protocols")),
-        gateway_network=gateway_network,
-        proxy_url=_proxy_url(policy.get("proxy_url")),
+        allowed_domains=domains,
+        allowed_cidrs=cidrs,
+        allowed_ports=ports,
+        allowed_protocols=protocols,
     )
 
 
@@ -99,7 +96,7 @@ def _mode(policy: dict[str, object]) -> EgressMode:
 def _domains(value: object) -> tuple[str, ...]:
     if value is None:
         return ()
-    if not isinstance(value, list):
+    if not isinstance(value, list) or len(value) > 128:
         raise RuntimeEgressPolicyError(
             "runtime_egress_domains_invalid",
             "Runtime egress allowed_domains must be a list",
@@ -117,7 +114,10 @@ def _domains(value: object) -> tuple[str, ...]:
                 "runtime_egress_domain_invalid",
                 "Runtime egress domain is invalid",
             )
-        if any(not label or len(label) > 63 for label in domain.split(".")):
+        if any(
+            not label or len(label) > 63 or not label.replace("-", "").isalnum()
+            for label in domain.removeprefix("*.").split(".")
+        ):
             raise RuntimeEgressPolicyError(
                 "runtime_egress_domain_invalid",
                 "Runtime egress domain is invalid",
@@ -129,7 +129,7 @@ def _domains(value: object) -> tuple[str, ...]:
 def _cidrs(value: object) -> tuple[str, ...]:
     if value is None:
         return ()
-    if not isinstance(value, list):
+    if not isinstance(value, list) or len(value) > 128:
         raise RuntimeEgressPolicyError(
             "runtime_egress_cidrs_invalid",
             "Runtime egress allowed_cidrs must be a list",
@@ -155,7 +155,7 @@ def _cidrs(value: object) -> tuple[str, ...]:
 def _ports(value: object) -> tuple[int, ...]:
     if value is None:
         return ()
-    if not isinstance(value, list):
+    if not isinstance(value, list) or len(value) > 128:
         raise RuntimeEgressPolicyError(
             "runtime_egress_ports_invalid",
             "Runtime egress allowed_ports must be a list",
@@ -174,7 +174,7 @@ def _ports(value: object) -> tuple[int, ...]:
 def _protocols(value: object) -> tuple[str, ...]:
     if value is None:
         return ()
-    if not isinstance(value, list):
+    if not isinstance(value, list) or len(value) > 128:
         raise RuntimeEgressPolicyError(
             "runtime_egress_protocols_invalid",
             "Runtime egress allowed_protocols must be a list",
@@ -188,21 +188,3 @@ def _protocols(value: object) -> tuple[str, ...]:
             )
         protocols.append(item.strip().lower())
     return tuple(dict.fromkeys(protocols))
-
-
-def _proxy_url(value: object) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise RuntimeEgressPolicyError(
-            "runtime_egress_proxy_invalid",
-            "Runtime egress proxy URL must be a string",
-        )
-    proxy = value.strip()
-    parsed = urlsplit(proxy)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username:
-        raise RuntimeEgressPolicyError(
-            "runtime_egress_proxy_invalid",
-            "Runtime egress proxy URL must be an unauthenticated HTTP(S) endpoint",
-        )
-    return proxy

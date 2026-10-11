@@ -62,7 +62,7 @@ def test_env_template_lists_required_runtime_settings() -> None:
         "OPSMESH_POSTGRES_PASSWORD",
     ):
         assert setting in env_example
-    assert "OPSMESH_SERVICE_NAME=opsmesh-backend" in env_example
+    assert "OPSMESH_SERVICE_NAME=opsmesh-api" in env_example
     assert "OPSMESH_STORAGE_ROOT=.opsmesh-storage" in env_example
     assert "OPSMESH_AGENT_RUNNER_BACKEND" not in env_example
     assert "OPSMESH_RUNTIME_ALLOWED_IMAGES=[]" in env_example
@@ -130,7 +130,7 @@ def test_server_env_template_uses_shared_runtime_services() -> None:
     assert "127.0.0.1:5432" in env_example
     assert "127.0.0.1:6379" in env_example
     assert "OPSMESH_BACKEND_NETWORK" not in env_example
-    assert "OPSMESH_BACKEND_IMAGE" not in env_example
+    assert "OPSMESH_API_IMAGE" not in env_example
     assert "OPSMESH_ROOT=/opt/opsmesh" in env_example
     assert "OPSMESH_RELEASES_DIR=/opt/opsmesh/releases" in env_example
     assert "OPSMESH_CURRENT_LINK=/opt/opsmesh/current" in env_example
@@ -140,7 +140,7 @@ def test_server_env_template_uses_shared_runtime_services() -> None:
     assert "OPSMESH_ENV_FILE=/opt/opsmesh/.env" in env_example
     assert "OPSMESH_MONITORING_DIR=/opt/opsmesh/current/deploy/server/monitoring" in env_example
     assert "OPSMESH_WORKER_HEARTBEAT_TOKEN=replace-with-random-token" in env_example
-    assert "OPSMESH_SERVICE_NAME=opsmesh-backend" in env_example
+    assert "OPSMESH_SERVICE_NAME=opsmesh-api" in env_example
     assert "OPSMESH_STORAGE_ROOT=/var/lib/opsmesh/storage" in env_example
     assert "OPSMESH_READINESS_WORKER_CHECK_ENABLED=true" in env_example
     assert "OPSMESH_EXTERNAL_CALL_MAX_ATTEMPTS=2" in env_example

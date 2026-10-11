@@ -31,8 +31,10 @@ from opsmesh.resources.files.models import FileAccessEvent, WorkspaceFile
 from opsmesh.resources.storage.storage import LocalStorage
 from opsmesh.runtime.backends.docker import DockerRuntimeBackend
 from opsmesh.runtime.backends.registry import RuntimeBackendRegistry
+from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
 from opsmesh.runtime.instances.contracts import RuntimeCommandResult
 from opsmesh.runtime.instances.models import WorkspaceRuntime
+from opsmesh.runtime.instances.project_files import DockerRunProjectFilesystem
 from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
@@ -49,6 +51,7 @@ from opsmesh.workspaces.projects.models import (
 from opsmesh.workspaces.projects.snapshots.format import sha256_json
 from opsmesh.workspaces.projects.snapshots.service import RunProjectSnapshotService
 from tests.fixtures.project_authorization import authorize_project_run
+from tests.fixtures.runtime_host import runtime_host
 
 
 @dataclass
@@ -65,6 +68,7 @@ class FakeDockerClient:
         timeout_seconds: int,
         *,
         working_dir: str | None = None,
+        identity=None,
     ) -> RuntimeCommandResult:
         assert container_id == "container-1"
         assert timeout_seconds == 60
@@ -80,16 +84,20 @@ class FakeDockerClient:
         timeout_seconds: int,
     ) -> None:
         assert container_id == "container-1"
-        assert destination_path == "/workspace"
+        assert destination_path.startswith("/workspace/runs/")
         assert timeout_seconds == 60
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
             for member in bundle.getmembers():
-                self.staged_modes[member.name] = member.mode
+                self.staged_modes[
+                    f"{destination_path.removeprefix(chr(47) + 'workspace/')}/{member.name}"
+                ] = member.mode
                 if not member.isfile():
                     continue
                 stream = bundle.extractfile(member)
                 assert stream is not None
-                self.staged_files[member.name] = stream.read()
+                self.staged_files[
+                    f"{destination_path.removeprefix(chr(47) + 'workspace/')}/{member.name}"
+                ] = stream.read()
 
     def copy_file_from_container(
         self,
@@ -97,6 +105,8 @@ class FakeDockerClient:
         source_path: str,
         max_bytes: int,
         timeout_seconds: int,
+        *,
+        identity=None,
     ) -> bytes | None:
         assert container_id == "container-1"
         assert timeout_seconds == 60
@@ -119,6 +129,29 @@ class ProjectIOFixture:
     output: WorkspaceProjectOutput
     source_file: WorkspaceFile
     run: AgentRun
+
+
+@pytest.mark.parametrize("entry", ["../neighbour/file", "link", "absolute"])
+def test_project_archive_rejects_entries_outside_run_scope(tmp_path: Path, entry: str) -> None:
+    fixture = _fixture(tmp_path)
+    runtime = fixture.session.get(WorkspaceRuntime, fixture.run.runtime_id)
+    assert runtime is not None
+    filesystem = DockerRunProjectFilesystem(
+        fixture.docker, runtime, fixture.run.id, timeout_seconds=60
+    )
+    content = io.BytesIO()
+    with tarfile.open(fileobj=content, mode="w") as bundle:
+        member = tarfile.TarInfo(f"runs/{fixture.run.id}/{entry}")
+        if entry == "link":
+            member.type = tarfile.SYMTYPE
+            member.linkname = "../../neighbour"
+        elif entry == "absolute":
+            member.name = "/workspace/other/file"
+        bundle.addfile(member, io.BytesIO())
+    with pytest.raises(ValueError):
+        filesystem.stage_archive(content.getvalue())
+    assert fixture.docker.staged_files == {}
+    assert fixture.docker.cleanup_commands == []
 
 
 def test_managed_runtime_stages_snapshot_and_versions_declared_outputs(tmp_path: Path) -> None:
@@ -212,9 +245,8 @@ def test_terminal_run_cleanup_is_scoped_idempotent_and_audited(tmp_path: Path) -
     assert state.cleanup_status == "completed"
     assert state.cleanup_attempts == 1
     assert state.cleaned_at is not None
-    assert fixture.docker.cleanup_commands == [
-        ["rm", "-rf", "--", f"/workspace/runs/{fixture.run.id}"]
-    ]
+    removed = [command for command in fixture.docker.cleanup_commands if command[0] == "rm"]
+    assert removed == [["rm", "-rf", "--", f"/workspace/runs/{fixture.run.id}"]]
     event = fixture.session.scalar(
         select(RunEvent).where(
             RunEvent.workspace_id == fixture.workspace.id,
@@ -602,7 +634,7 @@ def _fixture(tmp_path: Path) -> ProjectIOFixture:
         name="managed-runtime",
         status="running",
         connection_status="online",
-        docker_container_id="container-1",
+        host=runtime_host(workspace.id, "container-1", capacity=16, node_id="test-node"),
         limits={"disk_mb": 256},
         capabilities={"isolation": {"workspace_mount": {"target": "/workspace", "mode": "rw"}}},
     )
@@ -631,6 +663,7 @@ def _fixture(tmp_path: Path) -> ProjectIOFixture:
         runtime=runtime,
         files=[source_file],
     )
+    assert RuntimeAllocationStore(session).acquire(runtime, "run", run.id) is not None
     RunProjectSnapshotService(session).freeze_for_run(run=run, task=task)
     session.commit()
     storage = LocalStorage(str(tmp_path / "storage"))
@@ -685,6 +718,7 @@ def _new_run(fixture: ProjectIOFixture) -> AgentRun:
         runtime=runtime,
         files=[fixture.source_file],
     )
+    assert RuntimeAllocationStore(fixture.session).acquire(runtime, "run", run.id) is not None
     RunProjectSnapshotService(fixture.session).freeze_for_run(run=run, task=task)
     fixture.session.commit()
     return run

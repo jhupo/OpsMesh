@@ -954,7 +954,7 @@ def test_team_task_e2e_uses_runtime_space_queue_and_releases_reservations() -> N
         created_by_user_id=user.id,
         name="Market Team Space",
         scope="team",
-        policy={"runtime_modes": ["pooled"], "resource_requirements": {"cpu_count": 1}},
+        policy={"runtime_modes": ["shared"], "resource_requirements": {"cpu_count": 1}},
     )
     session.add(runtime_space)
     session.flush()

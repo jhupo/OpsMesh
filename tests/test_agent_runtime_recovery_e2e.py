@@ -30,7 +30,7 @@ from opsmesh.orchestration.runs.steps.scheduling_state import (
 )
 from opsmesh.orchestration.tasks.models import Task, TaskStep
 from opsmesh.orchestration.tasks.state import TaskStatus
-from opsmesh.runtime.instances.models import WorkspaceRuntime
+from opsmesh.runtime.instances.models import RuntimeTemplate, WorkspaceRuntime
 from opsmesh.runtime.queues.contracts import JobPayload, JobType
 from opsmesh.runtime.queues.service import RedisQueue
 from opsmesh.runtime.spaces.models import RuntimeSpace, RuntimeSpaceQuota
@@ -39,7 +39,9 @@ from opsmesh.shared.redis.keys import RedisKeyBuilder
 from opsmesh.teams.management.models import AgentTeam
 from tests.fixtures.database import flow_database_url
 from tests.fixtures.execution import test_agent_id
+from tests.fixtures.runtime_host import runtime_host
 from tests.fixtures.worker import WorkerFlow
+from tests.test_run_runtime_environment import FakeDockerClient
 from tests.test_worker_run_execution import (
     _patch_portable_types_for_sqlite,
     _seed_workspace,
@@ -169,13 +171,31 @@ def test_runtime_timeout_marks_run_failed_with_durable_evidence(
 def test_network_denial_fails_worker_run_without_model_call() -> None:
     session = _session()
     user, workspace = _seed_workspace(session)
+    template = RuntimeTemplate(
+        name="network-denied-template",
+        image="python@sha256:" + "0" * 64,
+        default_limits={},
+        default_network_policy={"mode": "none"},
+        created_at=datetime.now(UTC),
+    )
+    session.add(template)
+    session.flush()
     runtime = WorkspaceRuntime(
         workspace_id=workspace.id,
+        runtime_template_id=template.id,
         name="Network denied runtime",
-        execution_mode="none",
+        execution_mode="shared",
         status="running",
         connection_status="online",
+        host=runtime_host(
+            workspace.id, "network-denied-container", capacity=1, node_id="test-node"
+        ),
+        limits={"max_concurrent_executions": 1},
         network_policy={"mode": "internet"},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace"}},
+        },
     )
     session.add(runtime)
     session.flush()
@@ -238,7 +258,11 @@ def test_network_denial_fails_worker_run_without_model_call() -> None:
     session.add(run)
     session.commit()
 
-    WorkerFlow(session, agent_runner=ExplodingRunner()).handle(_job(workspace.id, run.id, user.id))
+    WorkerFlow(
+        session,
+        agent_runner=ExplodingRunner(),
+        runtime_docker_client=FakeDockerClient(),
+    ).handle(_job(workspace.id, run.id, user.id))
     result = session.get(AgentRun, run.id)
 
     assert result.status == RunStatus.FAILED.value

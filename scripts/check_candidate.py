@@ -15,7 +15,8 @@ from dotenv import dotenv_values
 def main() -> None:
     if os.environ.get("GITHUB_ACTIONS") != "true" or os.geteuid() != 0:
         raise RuntimeError("Candidate acceptance requires a disposable root Linux Actions runner")
-    backend = os.environ["BACKEND_DIGEST"]
+    api = os.environ["API_DIGEST"]
+    worker = os.environ["WORKER_DIGEST"]
     runtime = os.environ["RUNTIME_DIGEST"]
     with tempfile.TemporaryDirectory(prefix="opsmesh-candidate-") as temporary:
         root = Path(temporary)
@@ -28,7 +29,8 @@ def main() -> None:
         }
         values.update({
             "OPSMESH_ROOT": str(root),
-            "OPSMESH_BACKEND_IMAGE": f"ghcr.io/jhupo/opsmesh@{backend}",
+            "OPSMESH_API_IMAGE": f"ghcr.io/jhupo/opsmesh-api@{api}",
+            "OPSMESH_WORKER_IMAGE": f"ghcr.io/jhupo/opsmesh-worker@{worker}",
             "OPSMESH_RUNTIME_ALLOWED_IMAGES": json.dumps([
                 f"ghcr.io/jhupo/opsmesh-runtime@{runtime}"
             ]),

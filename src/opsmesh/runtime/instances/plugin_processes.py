@@ -162,7 +162,9 @@ class PluginProcessWorker:
         if runtime is not None and runtime.status != "deleted":
             # The stable name also finds a container created just before a Worker interruption.
             if not runtime.docker_container_id:
-                runtime.docker_container_id = f"opsmesh-{item.workspace_id}-{runtime.id}"
+                if runtime.host is None:
+                    raise RuntimeError("Plugin physical host identity is unavailable")
+                runtime.host.docker_container_id = f"opsmesh-{item.workspace_id}-{runtime.host.id}"
             manager.delete_runtime(runtime)
             if runtime.status != "deleted":
                 raise RuntimeError("Plugin runtime cleanup is incomplete")
@@ -272,7 +274,7 @@ class PluginProcessWorker:
             workspace_id=item.workspace_id,
             runtime_template_id=item.template_id,
             name=f"plugin-{item.install_id}",
-            execution_mode="persistent",
+            execution_mode="shared",
             status="provisioning",
             limits=asdict(config.limits),
             network_policy=config.network_policy,

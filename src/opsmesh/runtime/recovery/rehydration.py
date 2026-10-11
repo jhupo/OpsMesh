@@ -92,7 +92,7 @@ class QueueRehydrationService:
                         continue
                     hosts = (
                         RuntimePoolService(self._session).hosts(parent)
-                        if parent.execution_mode == "pooled"
+                        if parent.execution_mode == "shared"
                         else [parent]
                     )
                     if not any(

@@ -21,6 +21,7 @@ from opsmesh.runtime.agent_host.local_sandbox import LocalSandboxExecutor
 from opsmesh.runtime.agent_host.wire import CONTEXT, RuntimeRunInput
 from opsmesh.runtime.backends.docker import DockerSandboxSessionExecutor
 from opsmesh.runtime.contracts import SandboxBinding, SandboxManifest, SandboxSession
+from tests.fixtures.runtime_host import execution_identity
 
 
 def request():
@@ -60,7 +61,9 @@ def test_callback_rejects_tenant_and_grant_mutation_before_calling_tools():
 
 def test_wire_carries_frozen_limits_without_live_database_or_docker_objects():
     original = request()
-    executor = DockerSandboxSessionExecutor(object(), "container", "/workspace", 12, 128)
+    executor = DockerSandboxSessionExecutor(
+        object(), "container", "/workspace", 12, 128, identity=execution_identity()
+    )
     binding = SandboxBinding(
         SandboxManifest(original.context.run_id, "/workspace"),
         SandboxSession("run", "/workspace", "docker", executor),

@@ -11,6 +11,7 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from opsmesh.identity.authorization.execution import ExecutionIdentityService
 from opsmesh.identity.users.models import User
 from opsmesh.orchestration.runs.models import AgentRun
 from opsmesh.orchestration.runs.service import RunOrchestrationService
@@ -32,6 +33,8 @@ from opsmesh.runtime.spaces.models import (
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
 from opsmesh.workspaces.members.models import WorkspaceMember
+from tests.fixtures.execution import test_agent_id
+from tests.test_worker_run_execution import _seed_default_model_provider
 
 POSTGRES_TEST_URL_ENV = "OPSMESH_TEST_POSTGRES_URL"
 
@@ -94,6 +97,9 @@ def test_parallel_schedulers_do_not_over_reserve_runtime_space_quota() -> None:
                     RuntimeSpaceQuota.quota_key == "active_runs",
                 )
             )
+            assert len(runs) == 1, [
+                step.dependencies for step in session.scalars(select(TaskStep))
+            ]
 
         assert quota is not None
         assert quota.reserved_value == 1
@@ -211,10 +217,11 @@ def _seed_scheduler_fixture(session_factory: sessionmaker[Session]) -> Scheduler
         membership = WorkspaceMember(workspace=workspace, user=user, role="owner")
         session.add_all([user, workspace, membership])
         session.flush()
+        _seed_default_model_provider(session, workspace_id=workspace.id, user_id=user.id)
         runtime_space = RuntimeSpace(
             workspace_id=workspace.id,
-            name="Team runtime space",
-            scope="team",
+            name="Workspace runtime space",
+            scope="workspace",
             policy={},
         )
         session.add(runtime_space)
@@ -293,18 +300,25 @@ def _seed_task_step(
     title: str,
     priority: int,
 ) -> TaskStep:
+    workspace = session.get(Workspace, workspace_id)
+    owner_id = workspace.owner_user_id
+    profile_id = test_agent_id(session, workspace_id)
     task = Task(
         workspace_id=workspace_id,
         title=title,
         priority=priority,
         status=TaskStatus.QUEUED.value,
         runtime_space_id=runtime_space_id,
+        created_by_user_id=owner_id,
+        owner_agent_profile_id=profile_id,
+        execution_identity=ExecutionIdentityService(session).capture(workspace_id, owner_id),
     )
     session.add(task)
     session.flush()
     step = TaskStep(
         workspace_id=workspace_id,
         task_id=task.id,
+        assigned_agent_profile_id=profile_id,
         title=f"{title} step",
         status="queued",
         order_index=0,

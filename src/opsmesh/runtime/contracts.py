@@ -8,10 +8,8 @@ from uuid import UUID
 
 
 class SandboxMode(StrEnum):
-    NONE = "none"
     ISOLATED = "isolated"
-    POOLED = "pooled"
-    PERSISTENT = "persistent"
+    SHARED = "shared"
 
 
 class SandboxCapability(StrEnum):
@@ -20,21 +18,14 @@ class SandboxCapability(StrEnum):
     PROJECT_FILES = "project_files"
 
 
-RuntimeExecutionMode = Literal["none", "isolated", "pooled", "persistent"]
+RuntimeExecutionMode = Literal["isolated", "shared"]
 
 
 def validate_runtime_execution_mode(
     execution_mode: str,
-    pool_key: str | None,
 ) -> RuntimeExecutionMode:
-    if execution_mode not in {"none", "isolated", "pooled", "persistent"}:
+    if execution_mode not in {"isolated", "shared"}:
         raise ValueError("Runtime execution mode is unsupported")
-    if execution_mode == "none":
-        raise ValueError("Runtime resources cannot use the none execution mode")
-    if pool_key is not None and execution_mode != "pooled":
-        raise ValueError("Runtime pool key is only valid for pooled execution")
-    if pool_key is not None and (not pool_key.strip() or len(pool_key) > 160):
-        raise ValueError("Runtime pool key must contain between 1 and 160 characters")
     return cast(RuntimeExecutionMode, execution_mode)
 
 
@@ -103,8 +94,7 @@ class SandboxPolicy:
 
     @classmethod
     def for_mode(cls, mode: SandboxMode) -> SandboxPolicy:
-        enabled = mode is not SandboxMode.NONE
-        return cls(mode, enabled, enabled, enabled)
+        return cls(mode, True, True, True)
 
     def require(self, capability: str) -> None:
         allowed = {

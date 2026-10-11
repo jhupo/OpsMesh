@@ -8,15 +8,27 @@ from sqlalchemy.dialects.sqlite import JSON as SqliteJSON
 from sqlalchemy.orm import Session, sessionmaker
 
 from opsmesh.orchestration.runs.models import AgentRun
+from opsmesh.runtime.instances.allocations import RuntimeAllocationStore
 from opsmesh.runtime.instances.contracts import RuntimeCommandInputFile, RuntimeCommandResult
 from opsmesh.runtime.instances.models import RuntimeEvent, RuntimeTemplate, WorkspaceRuntime
 from opsmesh.runtime.instances.run_environment import RunRuntimeEnvironmentService
 from opsmesh.shared.db.base import Base
 from opsmesh.workspaces.management.models import Workspace
+from tests.fixtures.runtime_host import runtime_host
 
 
 class FakeDockerClient:
+    def configure_execution(self, container_id, identity):
+        self.identities[identity.allocation_id] = identity
+
+    def revoke_execution(self, container_id, identity):
+        self.identities.pop(identity.allocation_id, None)
+
+    def node_identity(self) -> str:
+        return "test-node"
+
     def __init__(self) -> None:
+        self.identities = {}
         self.created = []
         self.started: list[str] = []
         self.removed: list[str] = []
@@ -47,6 +59,7 @@ class FakeDockerClient:
         *,
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
+        identity=None,
     ) -> RuntimeCommandResult:
         self.exec_command_calls.append((container_id, command, timeout_seconds, working_dir))
         _ = input_file
@@ -67,6 +80,8 @@ class FakeDockerClient:
         source_path: str,
         max_bytes: int,
         timeout_seconds: int,
+        *,
+        identity=None,
     ) -> bytes | None:
         _ = (container_id, source_path, max_bytes, timeout_seconds)
         return None
@@ -91,7 +106,7 @@ def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> Non
         execution_mode="isolated",
         status="active",
         connection_status="online",
-        docker_container_id="parent-container",
+        host=runtime_host(workspace.id, "parent-container", capacity=1, node_id="test-node"),
         limits={
             "cpu_count": 1,
             "memory_mb": 512,
@@ -102,7 +117,10 @@ def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> Non
             "max_concurrent_executions": 1,
         },
         network_policy={"mode": "none", "disabled": True},
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace"}},
+        },
     )
     session.add(parent)
     session.flush()
@@ -128,6 +146,18 @@ def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> Non
     assert docker.created[0].labels["opsmesh.run_id"] == str(first.id)
     assert docker.created[1].labels["opsmesh.run_id"] == str(second.id)
 
+    # A process restart after Docker creation must reacquire an identity before
+    # resuming; an acknowledged container start alone cannot authorize execution.
+    RuntimeAllocationStore(session).release(first_result.runtime, "run", first.id)
+    first_result.runtime.status = "created"
+    first_result.runtime.connection_status = "offline"
+    first_result.runtime.host.status = "created"
+    session.commit()
+    resumed = service.ensure_for_run(first)
+    assert resumed.runtime.id == first_result.runtime.id
+    allocation = RuntimeAllocationStore(session).get(resumed.runtime, "run", first.id)
+    assert allocation is not None and allocation.id in docker.identities
+
     assert service.cleanup_for_run(first) is True
     assert service.cleanup_for_run(first) is True
     assert service.cleanup_for_run(second) is True
@@ -147,11 +177,11 @@ def test_each_managed_run_gets_a_distinct_ephemeral_runtime_and_cleanup() -> Non
     }
 
 
-def test_pooled_run_reuses_a_preprovisioned_container_and_releases_lease() -> None:
+def test_shared_run_reuses_a_preprovisioned_container_and_releases_lease() -> None:
     session = _session()
-    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="pooled", settings={})
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="shared", settings={})
     template = RuntimeTemplate(
-        name="pooled-image",
+        name="shared-image",
         image="python@sha256:" + "0" * 64,
         default_limits={},
         default_network_policy={"mode": "none"},
@@ -162,12 +192,11 @@ def test_pooled_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
     parent = WorkspaceRuntime(
         workspace_id=workspace.id,
         runtime_template_id=template.id,
-        name="pooled-placement",
-        execution_mode="pooled",
-        pool_key="python-default",
+        name="shared-placement",
+        execution_mode="shared",
         status="active",
         connection_status="online",
-        docker_container_id="pooled-container",
+        host=runtime_host(workspace.id, "shared-container", capacity=1, node_id="test-node"),
         limits={
             "cpu_count": 1,
             "memory_mb": 512,
@@ -179,10 +208,11 @@ def test_pooled_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
         },
         network_policy={"mode": "none", "disabled": True},
         capabilities={
+            "node_id": "test-node",
             "isolation": {
                 "workspace_mount": {
                     "type": "volume",
-                    "docker_volume": "pooled-volume",
+                    "docker_volume": "shared-volume",
                     "target": "/workspace",
                     "mode": "rw",
                 },
@@ -203,7 +233,7 @@ def test_pooled_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
     session.commit()
 
     assert result.runtime is not None
-    assert result.runtime.execution_mode == "pooled"
+    assert result.runtime.execution_mode == "shared"
     assert result.runtime.id == parent.id
     assert result.runtime.docker_container_id == parent.docker_container_id
     assert docker.created == []
@@ -217,10 +247,10 @@ def test_pooled_run_reuses_a_preprovisioned_container_and_releases_lease() -> No
     assert len(docker.started) == 0
     assert len(docker.removed) == 0
     assert len(docker.removed_volumes) == 0
-    assert len(docker.exec_command_calls) == 3
+    assert len(docker.exec_command_calls) == 4
 
 
-def test_pooled_runs_use_distinct_pool_members_until_a_member_is_released() -> None:
+def test_shared_runs_use_distinct_hosts_until_a_slot_is_released() -> None:
     session = _session()
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="pool-members", settings={})
     template = RuntimeTemplate(
@@ -242,6 +272,7 @@ def test_pooled_runs_use_distinct_pool_members_until_a_member_is_released() -> N
         "max_concurrent_executions": 1,
     }
     capabilities = {
+        "node_id": "test-node",
         "isolation": {
             "workspace_mount": {
                 "type": "volume",
@@ -258,11 +289,12 @@ def test_pooled_runs_use_distinct_pool_members_until_a_member_is_released() -> N
             workspace_id=workspace.id,
             runtime_template_id=template.id,
             name=f"pool-member-{index}",
-            execution_mode="pooled",
-            pool_key="shared-python",
+            execution_mode="shared",
             status="active",
             connection_status="online",
-            docker_container_id=f"pool-container-{index}",
+            host=runtime_host(
+                workspace.id, f"pool-container-{index}", capacity=1, node_id="test-node"
+            ),
             limits=limits,
             network_policy={"mode": "none", "disabled": True},
             capabilities=capabilities,
@@ -298,11 +330,11 @@ def test_pooled_runs_use_distinct_pool_members_until_a_member_is_released() -> N
     assert docker.created == []
 
 
-def test_persistent_run_binds_parent_without_child_or_container_cleanup() -> None:
+def test_shared_run_binds_parent_without_child_or_container_cleanup() -> None:
     session = _session()
-    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="persistent", settings={})
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="shared", settings={})
     template = RuntimeTemplate(
-        name="persistent-image",
+        name="shared-image",
         image="python@sha256:" + "0" * 64,
         default_limits={},
         default_network_policy={"mode": "none"},
@@ -313,14 +345,17 @@ def test_persistent_run_binds_parent_without_child_or_container_cleanup() -> Non
     parent = WorkspaceRuntime(
         workspace_id=workspace.id,
         runtime_template_id=template.id,
-        name="persistent-placement",
-        execution_mode="persistent",
+        name="shared-placement",
+        execution_mode="shared",
         status="active",
         connection_status="online",
-        docker_container_id="persistent-container",
+        host=runtime_host(workspace.id, "shared-container", capacity=2, node_id="test-node"),
         limits={"timeout_seconds": 30, "max_concurrent_executions": 2},
         network_policy={"mode": "none", "disabled": True},
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace"}},
+        },
     )
     session.add(parent)
     session.flush()
@@ -342,11 +377,11 @@ def test_persistent_run_binds_parent_without_child_or_container_cleanup() -> Non
     assert docker.removed_volumes == []
 
 
-def test_persistent_runtime_shares_capacity_and_releases_only_one_run() -> None:
+def test_shared_runtime_shares_capacity_and_releases_only_one_run() -> None:
     session = _session()
-    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="persistent-busy", settings={})
+    workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="shared-busy", settings={})
     template = RuntimeTemplate(
-        name="persistent-busy-image",
+        name="shared-busy-image",
         image="python@sha256:" + "0" * 64,
         default_limits={},
         default_network_policy={"mode": "none"},
@@ -357,14 +392,17 @@ def test_persistent_runtime_shares_capacity_and_releases_only_one_run() -> None:
     parent = WorkspaceRuntime(
         workspace_id=workspace.id,
         runtime_template_id=template.id,
-        name="persistent-placement",
-        execution_mode="persistent",
+        name="shared-placement",
+        execution_mode="shared",
         status="active",
         connection_status="online",
-        docker_container_id="persistent-container",
+        host=runtime_host(workspace.id, "shared-container", capacity=2, node_id="test-node"),
         limits={"timeout_seconds": 30, "max_concurrent_executions": 2},
         network_policy={"mode": "none", "disabled": True},
-        capabilities={"isolation": {"workspace_mount": {"target": "/workspace"}}},
+        capabilities={
+            "node_id": "test-node",
+            "isolation": {"workspace_mount": {"target": "/workspace"}},
+        },
     )
     session.add(parent)
     session.flush()

@@ -416,7 +416,7 @@ class RunExecutionService:
                         WorkspaceRuntime.id == run.execution_runtime_id,
                     )
                 )
-                if runtime is not None and runtime.execution_mode in {"pooled", "persistent"}:
+                if runtime is not None and runtime.execution_mode == "shared":
                     self._runtime_environment().cleanup_for_run(run, suspend=True)
         self.session.commit()
         self.session.refresh(run)

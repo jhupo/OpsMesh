@@ -8,16 +8,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opsmesh.platform.settings.policy import operational_configuration
-from opsmesh.runtime.instances.contracts import DockerRuntimeClient, RuntimeCommandInputFile
+from opsmesh.runtime.instances.contracts import (
+    DockerRuntimeClient,
+    RuntimeCommandInputFile,
+    RuntimeCommandResult,
+)
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
 from opsmesh.runtime.instances.manager import RuntimeManager
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 
 _FETCH_SCRIPT = """
 import json
+import os
 import sys
 import urllib.error
-import ipaddress
-import socket
 import urllib.parse
 import urllib.request
 
@@ -33,15 +37,8 @@ def assert_safe_url(value):
         or parsed.fragment
     ):
         raise ValueError("URL must use https")
-    for item in socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM):
-        address = ipaddress.ip_address(item[4][0])
-        if (
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
-        ):
-            raise ValueError("URL resolves to a private network address")
+    # The trusted Runtime firewall blocks private addresses, including redirects
+    # and DNS rebinding. Restricted executions resolve through their scoped proxy.
 
 
 class HttpsRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -57,7 +54,7 @@ with open(request_path, encoding="utf-8") as request_file:
     request = json.load(request_file)
 url = request["url"]
 assert_safe_url(url)
-output_path = request["output_path"]
+output_path = f'/tmp/opsmesh-runs/{os.getuid()}/{request["output_name"]}'
 max_bytes = request["max_bytes"]
 opener = urllib.request.build_opener(HttpsRedirectHandler)
 http_request = urllib.request.Request(
@@ -69,7 +66,8 @@ try:
         content = response.read(max_bytes + 1)
     if len(content) > max_bytes:
         raise ValueError("response exceeds the configured byte limit")
-    with open(output_path, "wb") as output_file:
+    output_fd = os.open(output_path, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o600)
+    with os.fdopen(output_fd, "wb") as output_file:
         output_file.write(content)
 except (OSError, ValueError, urllib.error.URLError) as exc:
     print(str(exc), file=sys.stderr)
@@ -117,11 +115,11 @@ class RuntimeUrlFetcher:
                 "Knowledge fetch runtime has no managed container",
             )
         self._assert_network_policy(runtime, url)
-        output_path = f"/tmp/opsmesh-knowledge-fetch-{uuid4().hex}.bin"
+        output_name = f"knowledge-fetch-{uuid4().hex}.bin"
         request_payload = json.dumps(
             {
                 "url": url,
-                "output_path": output_path,
+                "output_name": output_name,
                 "max_bytes": max_bytes,
                 "timeout_seconds": operational_configuration(
                     self._session
@@ -129,6 +127,20 @@ class RuntimeUrlFetcher:
             },
             separators=(",", ":"),
         ).encode("utf-8")
+        content: bytes | None = None
+
+        def consume(result: RuntimeCommandResult, identity: RuntimeExecutionIdentity) -> None:
+            nonlocal content
+            if result.exit_code:
+                return
+            content = self._docker.copy_file_from_container(
+                runtime.docker_container_id or "",
+                f"/tmp/opsmesh-runs/{identity.uid}/{output_name}",
+                max_bytes,
+                operational_configuration(self._session).url_fetch_timeout_seconds,
+                identity=identity,
+            )
+
         try:
             command = self._manager.execute_command(
                 workspace_id=workspace_id,
@@ -139,18 +151,13 @@ class RuntimeUrlFetcher:
                     argument_name="--request",
                 ),
                 working_dir="/tmp",
+                result_consumer=consume,
             )
             if command.status != "completed" or command.exit_code != 0:
                 raise RuntimeUrlFetchError(
                     "url_fetch_failed",
                     "Knowledge source URL fetch failed",
                 )
-            content = self._docker.copy_file_from_container(
-                runtime.docker_container_id,
-                output_path,
-                max_bytes,
-                operational_configuration(self._session).url_fetch_timeout_seconds,
-            )
             if content is None:
                 raise RuntimeUrlFetchError(
                     "url_fetch_output_missing",
@@ -164,13 +171,11 @@ class RuntimeUrlFetcher:
                 "url_fetch_failed",
                 "Knowledge source URL fetch failed",
             ) from exc
-        finally:
-            self._cleanup_output(runtime, output_path, workspace_id)
 
     def _assert_network_policy(self, runtime: WorkspaceRuntime, url: str) -> None:
         policy = runtime.network_policy if isinstance(runtime.network_policy, dict) else {}
         mode = policy.get("mode")
-        if policy.get("disabled") is True or mode in {None, "none", "disabled", "off"}:
+        if mode in {None, "none"}:
             raise RuntimeUrlFetchError(
                 "fetch_runtime_network_disabled",
                 "Knowledge fetch runtime network access is disabled",
@@ -185,22 +190,6 @@ class RuntimeUrlFetcher:
                 "Knowledge source domain is not allowed by the fetch runtime",
             )
 
-    def _cleanup_output(
-        self,
-        runtime: WorkspaceRuntime,
-        output_path: str,
-        workspace_id: UUID,
-    ) -> None:
-        try:
-            self._manager.execute_command(
-                workspace_id=workspace_id,
-                runtime=runtime,
-                command=["rm", "-f", output_path],
-                working_dir="/tmp",
-            )
-        except Exception:
-            return
-
 
 def _domain_allowed(host: str, allowed_domains: list[object]) -> bool:
     normalized_host = host.lower().rstrip(".")
@@ -208,6 +197,8 @@ def _domain_allowed(host: str, allowed_domains: list[object]) -> bool:
         if not isinstance(item, str):
             continue
         domain = item.lower().rstrip(".")
-        if normalized_host == domain or normalized_host.endswith(f".{domain}"):
+        if normalized_host == domain or (
+            domain.startswith("*.") and normalized_host.endswith(domain[1:])
+        ):
             return True
     return False

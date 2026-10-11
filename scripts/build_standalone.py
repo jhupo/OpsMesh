@@ -62,9 +62,11 @@ def copy_server_assets(target: Path) -> None:
         (target / "scripts" / name).chmod(0o755)
 
 
-def build(kind: str, tag: str, wheels: Path, output: Path, uv: str) -> Path:
+def build(kind: str, tag: str, wheels: Path, output: Path, uv: str, commit: str) -> Path:
     if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:rc[0-9]+)?", tag) is None:
         raise ValueError("Expected a canonical release tag")
+    if re.fullmatch(r"[a-f0-9]{40}", commit) is None:
+        raise ValueError("Expected the full build commit")
     for project in (ROOT, ROOT / "operator", ROOT / "runtime"):
         version = tomllib.loads((project / "pyproject.toml").read_text("utf-8"))["project"][
             "version"
@@ -229,6 +231,7 @@ def build(kind: str, tag: str, wheels: Path, output: Path, uv: str) -> Path:
             json.dumps(
                 {
                     "tag": tag,
+                    "commit": commit,
                     "platform": target_platform,
                     "kind": kind,
                     "python": PYTHON_VERSION,
@@ -245,11 +248,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--kind", choices=["cli", "server"], required=True)
     parser.add_argument("--tag", required=True)
+    parser.add_argument("--commit", required=True)
     parser.add_argument("--wheels", type=Path, default=ROOT / "dist")
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--uv", default="uv")
     args = parser.parse_args()
-    print(build(args.kind, args.tag, args.wheels, args.output, args.uv), flush=True)
+    print(build(args.kind, args.tag, args.wheels, args.output, args.uv, args.commit), flush=True)
 
 
 if __name__ == "__main__":

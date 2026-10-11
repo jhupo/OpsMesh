@@ -39,8 +39,7 @@ class QueuedRuntimeControl:
         limits: RuntimeLimits | None,
         runtime_space_id: UUID | None = None,
         network_disabled: bool = True,
-        execution_mode: RuntimeExecutionMode = "pooled",
-        pool_key: str | None = None,
+        execution_mode: RuntimeExecutionMode = "shared",
     ) -> WorkspaceRuntime | None:
         runtime = self._service.queue_runtime_create(
             workspace_id=workspace_id,
@@ -51,7 +50,6 @@ class QueuedRuntimeControl:
             network_disabled=network_disabled,
             requested_by_user_id=self._requested_by_user_id,
             execution_mode=execution_mode,
-            pool_key=pool_key,
         )
         if runtime is None:
             return None
@@ -66,7 +64,6 @@ class QueuedRuntimeControl:
                 "limits": _runtime_limits_routing(limits),
                 "network_disabled": network_disabled,
                 "execution_mode": runtime.execution_mode,
-                "pool_key": runtime.pool_key,
             },
         )
         return runtime

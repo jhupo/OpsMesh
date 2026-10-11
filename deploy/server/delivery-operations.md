@@ -7,7 +7,7 @@
 Linux amd64 主机需准备 Docker、systemd 和 PostgreSQL 客户端工具。Compose 模式使用发布资产中声明的 PostgreSQL/Redis 服务；systemd 模式要求提前配置这两个依赖。使用已验证的发布版本，安装根目录默认 `/opt/opsmesh`：
 
 ```bash
-sudo sh deploy/install.sh --version <release-tag> --origin https://api.example.com --mode compose
+sudo sh deploy/install.sh --version <release-tag> --origin https://api.example.com
 ```
 
 安装器按固定仓库和版本下载发布资产，核对 manifest、平台/协议字段、包 SHA-256 和不可变镜像摘要；不在安装时从源码构建或临时解析 Python 依赖。保管一次性交付的初始管理员密码。配置、数据和加密密钥位于可变安装目录，发布目录保持不可变。
@@ -38,6 +38,10 @@ opsmesh --api-url https://api.example.com update apply --plan <plan-uuid> --fing
 ```
 
 计划和审批是持久记录。独立 updater 验证 manifest 与指纹，进入维护，排空工作，停应用服务，创建并恢复验证备份，运行迁移，切换发布，检查就绪，再恢复准入。Runtime 镜像与正在运行的宿主需同步更新；活动槽必须先释放，不能把 API 镜像升级当作全部执行代码已更新。
+
+发布合同版本为 2，分别保存 `api_image`、`worker_image` 和 `runtime_image` 的完整不可变引用。安装目录用版本和完整 commit 共同标识，避免同版本的不同构建相互覆盖。本机构建记录可以使用 Docker 的 `sha256` 镜像 ID；公开发布必须使用各服务自己的 GHCR 仓库及 OCI digest，并通过发布验证。
+
+从版本 1 的安装记录迁入时，先停止 updater、备份安装根目录，并使用 `scripts/migrate_release_manifest.py <old-record> <new-record>` 显式转换保留版本。该脚本保留源记录；运维核对新记录后，将对应包放入 `<tag>-<commit>` 目录并切换 `current`。当前执行代码只接受版本 2，不会自动读取旧合同或静默转换。安装记录必须对应实际运行的构建与镜像；本地部署不能伪装成已发布的 OCI 资产。
 
 ## 失败恢复
 

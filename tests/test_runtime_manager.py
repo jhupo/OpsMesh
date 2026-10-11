@@ -46,9 +46,19 @@ from opsmesh.shared.config import Settings
 from opsmesh.shared.db.base import Base
 from opsmesh.teams.management.models import AgentTeam
 from opsmesh.workspaces.management.models import Workspace
+from tests.fixtures.runtime_host import runtime_host
 
 
 class FakeDockerClient(DockerRuntimeClient):
+    def configure_execution(self, container_id, identity):
+        pass
+
+    def revoke_execution(self, container_id, identity):
+        pass
+
+    def node_identity(self) -> str:
+        return "test-node"
+
     def __init__(self) -> None:
         self.created_requests: list[RuntimeCreateRequest] = []
         self.started: list[str] = []
@@ -80,6 +90,8 @@ class FakeDockerClient(DockerRuntimeClient):
         timeout_seconds: int,
         *,
         input_file: RuntimeCommandInputFile | None = None,
+        working_dir: str | None = None,
+        identity=None,
     ) -> RuntimeCommandResult:
         _ = input_file
         self.executed.append((container_id, command, timeout_seconds))
@@ -146,6 +158,7 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
     assert [tmpfs.target for tmpfs in docker.created_requests[0].hardening.tmpfs] == [
         "/tmp",
         "/var/tmp",
+        "/run",
     ]
     assert docker.created_requests[0].hardening.user_enforced is True
     assert docker.created_requests[0].hardening.user == "65532:65532"
@@ -226,10 +239,9 @@ def test_runtime_manager_lifecycle_and_command_execution() -> None:
             "mode": "rw,noexec,nosuid,nodev",
             "size_mb": 16,
         },
+        {"type": "tmpfs", "target": "/run", "mode": "rw,noexec,nosuid,nodev", "size_mb": 32},
     ]
-    assert runtime.capabilities["managed_resources"]["docker_volumes"] == [
-        docker.created_requests[0].mounts[0].source
-    ]
+    assert runtime.host.resources["docker_volumes"] == [docker.created_requests[0].mounts[0].source]
 
 
 def test_runtime_manager_passes_input_file_without_persisting_it() -> None:
@@ -243,6 +255,8 @@ def test_runtime_manager_passes_input_file_without_persisting_it() -> None:
             timeout_seconds: int,
             *,
             input_file: RuntimeCommandInputFile | None = None,
+            working_dir=None,
+            identity=None,
         ) -> RuntimeCommandResult:
             self.input_files.append(input_file)
             return super().exec_command(
@@ -369,7 +383,7 @@ def test_runtime_manager_reserves_and_releases_runtime_space_docker_usage() -> N
         "storage_mb": 1024,
     }
     assert reservation.status == "active"
-    assert reservation.reservation_key == f"workspace_runtime:{runtime.id}:docker"
+    assert reservation.reservation_key == f"runtime_host:{runtime.host_id}:docker"
     assert reservation.resource_usage == {
         "docker_runtimes": 1,
         "cpu": 2,
@@ -390,11 +404,16 @@ def test_runtime_manager_reserves_and_releases_runtime_space_docker_usage() -> N
     assert reservation.released_at is not None
 
 
-def test_runtime_manager_releases_runtime_space_reservation_when_docker_create_fails() -> None:
+def test_runtime_manager_retains_unknown_create_ownership_and_reconciles_on_redelivery() -> None:
     class FailingCreateDockerClient(FakeDockerClient):
+        def node_identity(self) -> str:
+            return "test-node"
+
         def create_container(self, request: RuntimeCreateRequest) -> str:
-            self.created_requests.append(request)
-            raise RuntimeError("docker create failed")
+            if not self.created_requests:
+                self.created_requests.append(request)
+                raise RuntimeError("docker create failed")
+            return super().create_container(request)
 
     session = _session()
     workspace = Workspace(owner_user_id=uuid4(), name="Acme", slug="acme-create-fail", settings={})
@@ -440,9 +459,20 @@ def test_runtime_manager_releases_runtime_space_reservation_when_docker_create_f
 
     reservation = session.query(RuntimeSpaceReservation).one()
     assert docker.created_requests
-    assert session.query(WorkspaceRuntime).count() == 0
-    assert _runtime_space_quotas(session, runtime_space.id) == {"docker_runtimes": 0}
-    assert reservation.status == "released"
+    runtime = session.query(WorkspaceRuntime).one()
+    host_id = runtime.host_id
+    assert runtime.status == runtime.host.status == "provisioning"
+    assert _runtime_space_quotas(session, runtime_space.id) == {"docker_runtimes": 1}
+    assert reservation.status == "active"
+    RuntimeManager(session, docker).provision_runtime(
+        runtime,
+        template=template,
+        limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
+        network_disabled=True,
+    )
+    assert runtime.host_id == host_id and runtime.status == "created"
+    assert len({request.name for request in docker.created_requests}) == 1
+    assert _runtime_space_quotas(session, runtime_space.id) == {"docker_runtimes": 1}
 
 
 def test_runtime_manager_rejects_runtime_space_docker_quota_before_container_create() -> None:
@@ -533,6 +563,8 @@ def test_runtime_manager_records_command_timeout_without_leaving_running_command
             timeout_seconds: int,
             *,
             input_file: RuntimeCommandInputFile | None = None,
+            working_dir=None,
+            identity=None,
         ) -> RuntimeCommandResult:
             _ = input_file
             self.executed.append((container_id, command, timeout_seconds))
@@ -587,6 +619,8 @@ def test_runtime_manager_records_docker_exec_failure_without_raising() -> None:
             timeout_seconds: int,
             *,
             input_file: RuntimeCommandInputFile | None = None,
+            working_dir=None,
+            identity=None,
         ) -> RuntimeCommandResult:
             _ = input_file
             self.executed.append((container_id, command, timeout_seconds))
@@ -639,6 +673,8 @@ def test_runtime_manager_limits_command_output_and_records_policy_event() -> Non
             timeout_seconds: int,
             *,
             input_file: RuntimeCommandInputFile | None = None,
+            working_dir=None,
+            identity=None,
         ) -> RuntimeCommandResult:
             _ = input_file
             self.executed.append((container_id, command, timeout_seconds))
@@ -810,12 +846,10 @@ def test_cleanup_stale_runtime_removes_managed_host_resources(tmp_path: Path) ->
         limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
     )
     runtime.status = "stopped"
-    runtime.capabilities = {
-        "managed_resources": {
-            "temp_dirs": [str(temp_dir)],
-            "staged_files": [str(staged_file)],
-            "docker_volumes": ["opsmesh-runtime-1"],
-        }
+    runtime.host.resources = {
+        "temp_dirs": [str(temp_dir)],
+        "staged_files": [str(staged_file)],
+        "docker_volumes": ["opsmesh-runtime-1"],
     }
     session.commit()
 
@@ -875,7 +909,7 @@ def test_cleanup_stale_runtime_rejects_unmanaged_host_resource(tmp_path: Path) -
         limits=RuntimeLimits(cpu_count=1, memory_mb=256, disk_mb=512, timeout_seconds=10),
     )
     runtime.status = "stopped"
-    runtime.capabilities = {"managed_resources": {"staged_files": [str(unmanaged_file)]}}
+    runtime.host.resources = {"staged_files": [str(unmanaged_file)]}
     session.commit()
 
     RuntimeManager(
@@ -1117,6 +1151,7 @@ def test_docker_sdk_create_container_applies_limits_and_hardening() -> None:
     assert captured["tmpfs"] == {
         "/tmp": "rw,noexec,nosuid,nodev,size=64m",
         "/var/tmp": "rw,noexec,nosuid,nodev,size=16m",
+        "/run": "rw,noexec,nosuid,nodev,size=32m",
     }
     mounts = captured["mounts"]
     assert isinstance(mounts, list)
@@ -1154,7 +1189,7 @@ def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
 
     class API:
         def exec_create(self, container_id: str, command: list[str], **kwargs: object) -> dict:
-            assert kwargs == {"stdin": True, "stdout": True, "stderr": True}
+            assert kwargs == {"stdin": True, "stdout": True, "stderr": True, "user": "0:0"}
             input_commands.append(command)
             return {"Id": "write-input"}
 
@@ -1175,6 +1210,8 @@ def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
             *,
             workdir: str | None,
             demux: bool,
+            user: str,
+            environment=None,
         ) -> SimpleNamespace:
             assert demux is True
             calls.append((command, workdir))
@@ -1225,64 +1262,6 @@ def test_docker_sdk_exec_uses_transient_file_without_argv_secret() -> None:
     assert "os.O_EXCL,0o400" in input_commands[0][2]
 
 
-def test_docker_sdk_archive_transfer_uses_runtime_identity() -> None:
-    from opsmesh.runtime.backends.docker import DockerSdkRuntimeClient
-
-    captured: list[bytes] = []
-
-    class Container:
-        def exec_run(
-            self,
-            command: list[str],
-            *,
-            workdir: str | None,
-            demux: bool,
-        ) -> SimpleNamespace:
-            _ = workdir, demux
-            value = b"1001\n" if command == ["id", "-u"] else b"1002\n"
-            return SimpleNamespace(exit_code=0, output=(value, None))
-
-        def put_archive(self, path: str, archive: bytes) -> bool:
-            assert path == "/workspace"
-            captured.append(archive)
-            return True
-
-    container = Container()
-
-    class Containers:
-        def get(self, container_id: str) -> Container:
-            assert container_id == "container-123"
-            return container
-
-    class Client:
-        containers = Containers()
-
-        def close(self) -> None:
-            return None
-
-    source = io.BytesIO()
-    with tarfile.open(fileobj=source, mode="w") as archive:
-        member = tarfile.TarInfo("runs/run-1/work/output.txt")
-        member.size = 2
-        member.mode = 0o644
-        archive.addfile(member, io.BytesIO(b"ok"))
-
-    DockerSdkRuntimeClient(
-        lambda: 30, client_factory=lambda timeout: Client()
-    ).copy_archive_to_container(
-        "container-123",
-        "/workspace",
-        source.getvalue(),
-        15,
-    )
-
-    with tarfile.open(fileobj=io.BytesIO(captured[0]), mode="r:") as archive:
-        member = archive.getmembers()[0]
-        assert member.uid == 1001
-        assert member.gid == 1002
-        assert member.mode == 0o644
-
-
 def test_managed_runtime_cleanup_probes_live_container_instead_of_heartbeat() -> None:
     from datetime import timedelta
 
@@ -1299,7 +1278,8 @@ def test_managed_runtime_cleanup_probes_live_container_instead_of_heartbeat() ->
         status="running",
         connection_status="online",
         runtime_provider="cloud_docker",
-        docker_container_id="live-container",
+        host=runtime_host(workspace.id, "live-container", capacity=16, node_id="test-node"),
+        capabilities={"node_id": "test-node"},
         last_heartbeat_at=old,
     )
     hosted = WorkspaceRuntime(
@@ -1316,7 +1296,7 @@ def test_managed_runtime_cleanup_probes_live_container_instead_of_heartbeat() ->
         status="stopped",
         connection_status="offline",
         runtime_provider="cloud_docker",
-        docker_container_id="stopped-container",
+        host=runtime_host(workspace.id, "stopped-container", capacity=16, node_id="test-node"),
         last_heartbeat_at=old,
     )
     session.add_all([managed, hosted, stopped])

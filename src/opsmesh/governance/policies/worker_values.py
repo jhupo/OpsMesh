@@ -115,6 +115,8 @@ def _int_dict(value: object) -> dict[str, int]:
 
 _DEFAULT_WORKER_CAPACITY_CAPS = {
     "max_jobs": 64,
+    "task_slots": 64,
+    "mcp_slots": 64,
     "cpu_count": 128,
     "memory_mb": 1_048_576,
 }

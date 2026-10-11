@@ -70,7 +70,8 @@ def main() -> None:
     parser.add_argument("--tag", required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--repository", default="jhupo/OpsMesh")
-    parser.add_argument("--backend-digest")
+    parser.add_argument("--api-digest", required=False)
+    parser.add_argument("--worker-digest", required=False)
     parser.add_argument("--runtime-digest")
     args = parser.parse_args()
     validate_version(args.tag)
@@ -100,8 +101,9 @@ def main() -> None:
         tag=args.tag,
         commit=commit,
         repository=args.repository,
-        backend_digest=args.backend_digest,
-        runtime_digest=args.runtime_digest,
+        api_image=f"ghcr.io/{args.repository.split('/')[0].lower()}/opsmesh-api@{args.api_digest}",
+        worker_image=f"ghcr.io/{args.repository.split('/')[0].lower()}/opsmesh-worker@{args.worker_digest}",
+        runtime_image=f"ghcr.io/{args.repository.split('/')[0].lower()}/opsmesh-runtime@{args.runtime_digest}",
         database_revision=revision,
         files=files,
         **policy,

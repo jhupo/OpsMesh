@@ -28,7 +28,7 @@ def verify_release(tag: str, repository: str) -> None:
             path = source.download_file(manifest, record, directory)
             verify_attestation(str(path), tag, manifest.commit, repository)
             print(f"Verified download, checksum and provenance: {record.name}", flush=True)
-        for kind in ("backend", "runtime"):
+        for kind in ("api", "worker", "runtime"):
             image = manifest.image(kind)
             verify_attestation(f"oci://{image}", manifest.tag, manifest.commit, repository)
             print(f"Verified image provenance: {image}", flush=True)

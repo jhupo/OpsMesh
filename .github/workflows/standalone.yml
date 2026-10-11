@@ -64,7 +64,7 @@ jobs:
       - if: inputs.wheels-artifact == ''
         run: uv build --package opsmesh-operator --wheel --out-dir wheels
       - name: Build native CLI from the locked wheel
-        run: uv run --no-project python scripts/build_standalone.py --kind cli --tag "$RELEASE_TAG" --wheels wheels
+        run: uv run --no-project python scripts/build_standalone.py --kind cli --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --wheels wheels
       - name: Verify relocated CLI without system Python
         run: uv run --no-project python scripts/check_standalone.py --kind cli --tag "$RELEASE_TAG" --archive "dist/opsmesh-cli-$RELEASE_TAG-${{ matrix.target }}.${{ matrix.extension }}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -106,7 +106,7 @@ jobs:
       - if: inputs.wheels-artifact == ''
         run: uv build --all-packages --wheel --out-dir wheels
       - name: Build self-contained server from locked wheels and CPython
-        run: uv run --no-project python scripts/build_standalone.py --kind server --tag "$RELEASE_TAG" --wheels wheels
+        run: uv run --no-project python scripts/build_standalone.py --kind server --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --wheels wheels
       - name: Verify relocation, real migrations, API, worker and updater without system Python
         run: uv run --no-project python scripts/check_standalone.py --kind server --tag "$RELEASE_TAG" --archive "dist/opsmesh-server-$RELEASE_TAG-linux-amd64.tar.gz"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

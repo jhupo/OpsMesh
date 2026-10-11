@@ -4,7 +4,8 @@ services:
     build:
       context: ../..
       dockerfile: deploy/images/Dockerfile
-    image: opsmesh-backend:local
+      target: api
+    image: opsmesh-api:local
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
     command: [alembic, upgrade, head]
@@ -15,13 +16,15 @@ services:
     build:
       context: ../..
       dockerfile: deploy/images/Dockerfile
-    image: opsmesh-backend:local
+      target: api
+    image: opsmesh-api:local
     env_file:
       - ../../.env
     environment:
       OPSMESH_DATABASE_URL: postgresql+psycopg://opsmesh:${OPSMESH_POSTGRES_PASSWORD:-opsmesh}@postgres:5432/opsmesh
       OPSMESH_REDIS_URL: redis://redis:6379/0
       OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
+      OPSMESH_SERVICE_NAME: opsmesh-api
     ports:
       - "${OPSMESH_API_PORT:-8000}:8000"
     volumes:
@@ -43,10 +46,11 @@ services:
       start_period: 20s
 
   worker:
-    image: opsmesh-backend:local
+    image: opsmesh-worker:local
     build:
       context: ../..
       dockerfile: deploy/images/Dockerfile
+      target: worker
     env_file:
       - ../../.env
     environment:
@@ -54,7 +58,7 @@ services:
       OPSMESH_REDIS_URL: redis://redis:6379/0
       OPSMESH_STORAGE_ROOT: /app/.opsmesh-storage
       OPSMESH_RUN_MIGRATIONS: "false"
-    command: ["python", "-m", "opsmesh.runtime.workers.cli"]
+      OPSMESH_SERVICE_NAME: opsmesh-worker
     volumes:
       - opsmesh_storage:/app/.opsmesh-storage
     depends_on:

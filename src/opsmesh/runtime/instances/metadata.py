@@ -24,7 +24,9 @@ class RuntimeIsolationMetadata(TypedDict):
 
 
 def runtime_space_reservation_key(runtime: WorkspaceRuntime) -> str:
-    return f"workspace_runtime:{runtime.id}:docker"
+    if runtime.host_id is None:
+        raise ValueError("Runtime space reservation requires a physical host")
+    return f"runtime_host:{runtime.host_id}:docker"
 
 
 def runtime_space_usage_for_runtime(limits: RuntimeLimits) -> dict[str, int]:
@@ -129,8 +131,6 @@ def runtime_labels(runtime: WorkspaceRuntime) -> dict[str, str]:
     }
     if runtime.runtime_space_id is not None:
         labels["opsmesh.runtime_space_id"] = str(runtime.runtime_space_id)
-    if runtime.pool_key is not None:
-        labels["opsmesh.pool_key"] = runtime.pool_key
     policy_resolution = runtime.capabilities.get("policy_resolution")
     if isinstance(policy_resolution, dict):
         team = policy_resolution.get("team")

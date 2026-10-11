@@ -124,16 +124,7 @@ class RuntimeControlJobHandler:
             "execution_mode",
             context=RUNTIME_CONTROL_JOB,
         )
-        pool_key_value = job.routing.get("pool_key")
-        pool_key = pool_key_value if isinstance(pool_key_value, str) else None
-        if pool_key_value is not None and pool_key is None:
-            raise ValueError("Runtime control job pool_key is invalid")
-        if pool_key is not None and (not pool_key.strip() or len(pool_key) > 160):
-            raise ValueError("Runtime control job pool_key is invalid")
-        execution_mode = validate_runtime_execution_mode(
-            execution_mode_value,
-            pool_key,
-        )
+        execution_mode = validate_runtime_execution_mode(execution_mode_value)
         runtime = service.complete_queued_runtime_create(
             workspace_id=job.workspace_id,
             runtime_id=job.resource_id,
@@ -143,7 +134,6 @@ class RuntimeControlJobHandler:
             runtime_space_id=runtime_space_id,
             network_disabled=network_disabled,
             execution_mode=execution_mode,
-            pool_key=pool_key,
         )
         if runtime is None:
             raise ValueError("Queued runtime not found")

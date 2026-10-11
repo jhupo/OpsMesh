@@ -83,6 +83,7 @@ class WorkerLeaseReporter:
                 else None,
                 "request_id": job.request_id,
                 "routing": dict(job.routing),
+                "node_id": self._config.node_id,
                 **(job.trace_metadata() or current_trace_metadata()),
             },
         )

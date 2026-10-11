@@ -322,7 +322,7 @@ class RunControlService:
         if not isinstance(timeout, int) or timeout <= 0:
             return False
         execution = run.input.get("runtime_execution")
-        if isinstance(execution, dict) and execution.get("mode") in {"pooled", "persistent"}:
+        if isinstance(execution, dict) and execution.get("mode") == "shared":
             if execution.get("status") != "active":
                 return False
             active_since = execution.get("active_since")

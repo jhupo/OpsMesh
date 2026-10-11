@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import base64
 import io
+import json
 import math
-import posixpath
 import re
 import socket
 import tarfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import PurePosixPath
 from subprocess import TimeoutExpired
 from typing import Any, BinaryIO
@@ -20,6 +22,7 @@ from docker.errors import NotFound
 from docker.models.containers import Container
 from docker.types import Mount
 from requests.exceptions import Timeout as RequestsTimeout
+from sqlalchemy.orm import object_session
 
 from opsmesh.runtime.agent_host.channel import DockerAgentChannel
 from opsmesh.runtime.backends.contracts import RuntimeBackendCapabilities
@@ -29,6 +32,7 @@ from opsmesh.runtime.contracts import (
     SandboxSession,
     SandboxSessionExecutor,
 )
+from opsmesh.runtime.instances.allocations import RuntimeAllocationStore, allocation_identity
 from opsmesh.runtime.instances.contracts import (
     DockerRuntimeClient,
     RuntimeCommandInputFile,
@@ -36,10 +40,10 @@ from opsmesh.runtime.instances.contracts import (
     RuntimeCreateRequest,
     RuntimeProjectFilesystem,
 )
+from opsmesh.runtime.instances.execution_identity import RuntimeExecutionIdentity
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.runtime.instances.project_files import DockerRunProjectFilesystem
 
-_ARCHIVE_OVERHEAD_LIMIT_BYTES = 1_048_576
 _COMMAND_INPUT_LIMIT_BYTES = 1_048_576
 _INPUT_ARGUMENT_NAME = re.compile(r"^--[a-z][a-z0-9-]*$")
 
@@ -85,8 +89,9 @@ class DockerRuntimeBackend:
                 root=manifest.root,
                 timeout_seconds=_runtime_limit(runtime, "timeout_seconds", 300),
                 max_file_bytes=_runtime_limit(runtime, "max_output_bytes", 256_000),
+                identity=_run_identity(runtime, manifest.run_id),
             ),
-            persistent=runtime.execution_mode == "persistent",
+            persistent=runtime.execution_mode == "shared",
         )
 
 
@@ -97,6 +102,7 @@ class DockerSandboxSessionExecutor(SandboxSessionExecutor):
     root: str
     timeout_seconds: int
     max_file_bytes: int
+    identity: RuntimeExecutionIdentity
 
     def execute(
         self,
@@ -111,6 +117,7 @@ class DockerSandboxSessionExecutor(SandboxSessionExecutor):
             command,
             bounded_timeout,
             working_dir=working_dir,
+            identity=self.identity,
         )
         stdout = _bounded_bytes(result.stdout.encode("utf-8"), self.max_file_bytes)
         stderr = _bounded_bytes(result.stderr.encode("utf-8"), self.max_file_bytes)
@@ -126,6 +133,7 @@ class DockerSandboxSessionExecutor(SandboxSessionExecutor):
             path.as_posix(),
             self.max_file_bytes,
             self.timeout_seconds,
+            identity=self.identity,
         )
 
     def write_file(self, path: PurePosixPath, data: BinaryIO) -> None:
@@ -134,16 +142,22 @@ class DockerSandboxSessionExecutor(SandboxSessionExecutor):
             raise TypeError("Sandbox file writes require a binary stream")
         if len(payload) > self.max_file_bytes:
             raise ValueError("Sandbox file exceeds the runtime transfer limit")
-        parent = posixpath.dirname(path.as_posix()) or self.root
-        name = posixpath.basename(path.as_posix())
-        if not name:
-            raise ValueError("Sandbox file path must name a file")
-        self.client.copy_archive_to_container(
-            self.container_id,
-            parent,
-            _single_file_archive(name, payload),
-            self.timeout_seconds,
+        writer = (
+            "import os,sys; content=open(sys.argv[-1],'rb').read(); "
+            "os.makedirs(os.path.dirname(sys.argv[1]),exist_ok=True); "
+            "fd=os.open(sys.argv[1],os.O_WRONLY|os.O_CREAT|os.O_TRUNC|os.O_NOFOLLOW,0o600); "
+            "\nwith os.fdopen(fd,'wb') as output: output.write(content)"
         )
+        result = self.client.exec_command(
+            self.container_id,
+            ["python", "-c", writer, path.as_posix()],
+            self.timeout_seconds,
+            input_file=RuntimeCommandInputFile(content=payload, argument_name="--input-file"),
+            working_dir=self.root,
+            identity=self.identity,
+        )
+        if result.exit_code:
+            raise RuntimeError("Sandbox file write failed")
 
     def running(self) -> bool:
         return self.client.container_running(self.container_id)
@@ -158,23 +172,51 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
         self._control_timeout = control_timeout
         self._client_factory = client_factory or _create_docker_client
 
-    def open_agent_channel(self, container_id: str, *, working_dir: str) -> DockerAgentChannel:
-        return self._open_channel(container_id, "opsmesh.bootstrap.agent_host", working_dir)
+    def node_identity(self) -> str:
+        return self._node_identity
 
-    def open_mcp_channel(self, container_id: str, *, working_dir: str) -> DockerAgentChannel:
-        return self._open_channel(container_id, "opsmesh_runtime.mcp_host", working_dir)
+    @cached_property
+    def _node_identity(self) -> str:
+        with self._client(self._control_timeout()) as client:
+            identity = client.info().get("ID")
+        if not isinstance(identity, str) or not identity:
+            raise RuntimeError("Docker execution node identity is unavailable")
+        return identity
 
-    def _open_channel(self, container_id: str, module: str, working_dir: str) -> DockerAgentChannel:
+    def open_agent_channel(
+        self, container_id: str, *, working_dir: str, identity: RuntimeExecutionIdentity
+    ) -> DockerAgentChannel:
+        return self._open_channel(
+            container_id, "opsmesh.bootstrap.agent_host", working_dir, identity
+        )
+
+    def open_mcp_channel(
+        self, container_id: str, *, working_dir: str, identity: RuntimeExecutionIdentity
+    ) -> DockerAgentChannel:
+        return self._open_channel(container_id, "opsmesh_runtime.mcp_host", working_dir, identity)
+
+    def _open_channel(
+        self, container_id: str, module: str, working_dir: str, identity: RuntimeExecutionIdentity
+    ) -> DockerAgentChannel:
         client = self._client_factory(self._control_timeout())
         try:
             execution = client.api.exec_create(
                 container_id,
-                ["python", "-m", module],
+                [
+                    "python",
+                    "-m",
+                    "opsmesh_runtime.execution_launch",
+                    str(identity.allocation_id),
+                    str(identity.uid),
+                    module,
+                ],
                 stdin=True,
                 stdout=True,
                 stderr=True,
                 tty=False,
                 workdir=working_dir,
+                user=f"{identity.uid}:{identity.uid}",
+                environment=identity.environment(),
             )
             connection = client.api.exec_start(execution["Id"], socket=True)
             return DockerAgentChannel(connection, client)
@@ -182,7 +224,31 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
             client.close()
             raise
 
-    def terminate_agent_process(self, container_id: str, pid: int) -> None:
+    def configure_execution(self, container_id: str, identity: RuntimeExecutionIdentity) -> None:
+        self._execution_control(container_id, identity, "configure")
+
+    def revoke_execution(self, container_id: str, identity: RuntimeExecutionIdentity) -> None:
+        self._execution_control(container_id, identity, "revoke")
+
+    def _execution_control(
+        self, container_id: str, identity: RuntimeExecutionIdentity, action: str
+    ) -> None:
+        content = json.dumps({"action": action, "execution": identity.payload()}).encode()
+        with self._client(self._control_timeout()) as client:
+            container = client.containers.get(container_id)
+            result = _exec_stdin(
+                container,
+                ["python", "-m", "opsmesh_runtime.execution_control"],
+                content,
+                timeout_seconds=self._control_timeout(),
+                user="0:0",
+            )
+            if result != 0:
+                raise RuntimeError("Runtime execution identity control failed")
+
+    def terminate_agent_process(
+        self, container_id: str, pid: int, *, identity: RuntimeExecutionIdentity
+    ) -> None:
         if pid <= 1:
             raise ValueError("SDK process identity is invalid")
         with self._client(self._control_timeout()) as client:
@@ -196,7 +262,12 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                 "\n except ProcessLookupError: break"
                 "\n if sig == signal.SIGTERM: time.sleep(0.1)"
             )
-            result = _exec(container, ["python", "-c", script, str(pid)], working_dir="/")
+            result = _exec(
+                container,
+                _execution_command(["python", "-c", script, str(pid)], identity),
+                working_dir="/",
+                user=f"{identity.uid}:{identity.uid}",
+            )
             if result.exit_code != 0:
                 raise RuntimeError("Runtime SDK process termination failed")
 
@@ -211,7 +282,7 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
             labels["opsmesh.runtime_space_id"] = request.runtime_space_id
 
         with self._client(self._control_timeout()) as client:
-            if request.process is not None:
+            if request.process is not None or request.shared_host:
                 try:
                     existing = client.containers.get(request.name)
                 except NotFound:
@@ -225,7 +296,9 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                     return str(existing.id)
             container = client.containers.create(
                 image=request.image,
-                command=None if request.process is not None else ["sleep", "infinity"],
+                command=None
+                if request.shared_host or request.process is not None
+                else ["sleep", "infinity"],
                 name=request.name,
                 labels=labels,
                 nano_cpus=int(request.limits.cpu_count * 1_000_000_000),
@@ -235,9 +308,11 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                 network_mode=_docker_network_mode(request),
                 environment={
                     **(request.process.environment if request.process is not None else {}),
-                    **(_docker_network_environment(request) or {}),
                 },
                 cap_drop=list(request.hardening.cap_drop),
+                cap_add=["NET_ADMIN", "KILL", "CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"]
+                if request.shared_host
+                else [],
                 security_opt=_security_options(request),
                 read_only=request.hardening.read_only_rootfs,
                 tmpfs={
@@ -253,7 +328,8 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                     )
                     for mount in request.mounts
                 ],
-                user=request.hardening.user,
+                user="0:0" if request.shared_host else request.hardening.user,
+                init=True,
                 working_dir=request.working_dir,
             )
             return str(container.id)
@@ -297,6 +373,7 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
         *,
         input_file: RuntimeCommandInputFile | None = None,
         working_dir: str | None = None,
+        identity: RuntimeExecutionIdentity | None = None,
     ) -> RuntimeCommandResult:
         _require_positive_timeout(timeout_seconds)
         if not command:
@@ -305,13 +382,20 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
             with self._client(timeout_seconds) as client:
                 container = client.containers.get(container_id)
                 if input_file is None:
-                    return _exec(container, command, working_dir=working_dir)
+                    return _exec(
+                        container,
+                        _execution_command(command, identity),
+                        working_dir=working_dir,
+                        user=f"{identity.uid}:{identity.uid}" if identity else "0:0",
+                        environment=identity.environment() if identity else None,
+                    )
                 return self._exec_with_input_file(
                     container,
                     command,
                     input_file,
                     timeout_seconds=timeout_seconds,
                     working_dir=working_dir,
+                    identity=identity,
                 )
         except RequestsTimeout as exc:
             raise TimeoutExpired(command, timeout_seconds) from exc
@@ -326,13 +410,21 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
         _require_positive_timeout(timeout_seconds)
         with self._client(timeout_seconds) as client:
             container = client.containers.get(container_id)
-            uid, gid = _container_identity(container)
-            copied = container.put_archive(
-                destination_path,
-                _rewrite_archive_owner(archive, uid=uid, gid=gid),
+            validated = _rewrite_archive_owner(archive, uid=0, gid=0)
+            extractor = (
+                "import io,sys,tarfile; data=sys.stdin.buffer.read(); "
+                "archive=tarfile.open(fileobj=io.BytesIO(data),mode='r:'); "
+                "archive.extractall(sys.argv[1],filter='data')"
             )
-        if copied is not True:
-            raise RuntimeError("Docker rejected the runtime archive")
+            exit_code = _exec_stdin(
+                container,
+                ["python", "-c", extractor, destination_path],
+                validated,
+                timeout_seconds=timeout_seconds,
+                user="0:0",
+            )
+        if exit_code:
+            raise RuntimeError("Runtime input archive staging failed")
 
     def copy_file_from_container(
         self,
@@ -340,18 +432,33 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
         source_path: str,
         max_bytes: int,
         timeout_seconds: int,
+        *,
+        identity: RuntimeExecutionIdentity,
     ) -> bytes | None:
         if max_bytes < 0:
             raise ValueError("Runtime file read limit must not be negative")
         _require_positive_timeout(timeout_seconds)
-        with self._client(timeout_seconds) as client:
-            container = client.containers.get(container_id)
-            try:
-                stream, _ = container.get_archive(source_path)
-            except NotFound:
-                return None
-            archive = _read_bounded_archive(stream, payload_limit=max_bytes)
-        return _single_regular_file_from_tar(archive, max_bytes=max_bytes)
+        reader = (
+            "import os,sys,stat,json,base64; "
+            "\ntry: fd=os.open(sys.argv[1],os.O_RDONLY|os.O_NOFOLLOW)"
+            "\nexcept FileNotFoundError: print('null'); sys.exit(0)"
+            "\nwith os.fdopen(fd,'rb') as source:"
+            "\n assert stat.S_ISREG(os.fstat(source.fileno()).st_mode)"
+            "\n content=source.read(int(sys.argv[2])+1)"
+            "\n assert len(content)<=int(sys.argv[2])"
+            "\nprint(json.dumps(base64.b64encode(content).decode()))"
+        )
+        result = self.exec_command(
+            container_id,
+            ["python", "-c", reader, source_path, str(max_bytes)],
+            timeout_seconds,
+            working_dir="/",
+            identity=identity,
+        )
+        if result.exit_code:
+            raise ValueError("Runtime file read failed or exceeds its transfer limit")
+        payload = json.loads(result.stdout)
+        return None if payload is None else base64.b64decode(payload, validate=True)
 
     def _exec_with_input_file(
         self,
@@ -361,13 +468,15 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
         *,
         timeout_seconds: int,
         working_dir: str | None,
+        identity: RuntimeExecutionIdentity | None,
     ) -> RuntimeCommandResult:
         if not _INPUT_ARGUMENT_NAME.fullmatch(input_file.argument_name):
             raise ValueError("Runtime input argument name is invalid")
         if len(input_file.content) > _COMMAND_INPUT_LIMIT_BYTES:
             raise ValueError("Runtime command input exceeds its transfer limit")
         directory_name = f"opsmesh-command-input-{uuid4()}"
-        container_directory = f"/tmp/{directory_name}"
+        parent = f"/tmp/opsmesh-runs/{identity.uid}" if identity else "/tmp"
+        container_directory = f"{parent}/{directory_name}"
         container_path = f"{container_directory}/request.json"
         try:
             _write_input_file(
@@ -376,11 +485,15 @@ class DockerSdkRuntimeClient(DockerRuntimeClient):
                 container_path,
                 input_file.content,
                 timeout_seconds=timeout_seconds,
+                user=f"{identity.uid}:{identity.uid}" if identity else "0:0",
+                identity=identity,
             )
             return _exec(
                 container,
-                [*command, input_file.argument_name, container_path],
+                _execution_command([*command, input_file.argument_name, container_path], identity),
                 working_dir=working_dir,
+                user=f"{identity.uid}:{identity.uid}" if identity else "0:0",
+                environment=identity.environment() if identity else None,
             )
         finally:
             _remove_input_file(container, container_path, container_directory)
@@ -399,6 +512,8 @@ def _create_docker_client(timeout_seconds: int) -> DockerClient:
 
 
 def _docker_network_mode(request: RuntimeCreateRequest) -> str:
+    if request.shared_host:
+        return "bridge"
     policy = request.network_policy
     mode = policy.get("mode")
     if request.network_disabled or mode in {None, "none"}:
@@ -406,10 +521,7 @@ def _docker_network_mode(request: RuntimeCreateRequest) -> str:
     if mode == "internet":
         return "bridge"
     if mode == "restricted":
-        gateway_network = policy.get("gateway_network")
-        if not isinstance(gateway_network, str) or not gateway_network.strip():
-            raise ValueError("Restricted runtime egress requires a gateway network")
-        return gateway_network.strip()
+        raise ValueError("Restricted egress requires an execution supervisor")
     raise ValueError("Runtime egress mode is unsupported")
 
 
@@ -422,28 +534,17 @@ def _security_options(request: RuntimeCreateRequest) -> list[str]:
     return options
 
 
-def _docker_network_environment(request: RuntimeCreateRequest) -> dict[str, str] | None:
-    policy = request.network_policy
-    if policy.get("mode") != "restricted":
-        return None
-    proxy_url = policy.get("proxy_url")
-    if not isinstance(proxy_url, str) or not proxy_url:
-        return None
-    return {
-        "HTTP_PROXY": proxy_url,
-        "HTTPS_PROXY": proxy_url,
-        "ALL_PROXY": proxy_url,
-        "NO_PROXY": "localhost,127.0.0.1",
-    }
-
-
 def _exec(
     container: Container,
     command: list[str],
     *,
     working_dir: str | None,
+    user: str = "0:0",
+    environment: dict[str, str] | None = None,
 ) -> RuntimeCommandResult:
-    result = container.exec_run(command, workdir=working_dir, demux=True)
+    result = container.exec_run(
+        command, workdir=working_dir, demux=True, user=user, environment=environment
+    )
     if not isinstance(result.output, tuple) or len(result.output) != 2:
         raise RuntimeError("Docker returned an invalid demultiplexed command response")
     if result.exit_code is None:
@@ -456,21 +557,6 @@ def _exec(
     )
 
 
-def _container_identity(container: Container) -> tuple[int, int]:
-    uid_result = _exec(container, ["id", "-u"], working_dir="/")
-    gid_result = _exec(container, ["id", "-g"], working_dir="/")
-    if uid_result.exit_code != 0 or gid_result.exit_code != 0:
-        raise RuntimeError("Runtime container identity cannot be resolved")
-    try:
-        uid = int(uid_result.stdout.strip())
-        gid = int(gid_result.stdout.strip())
-    except ValueError as exc:
-        raise RuntimeError("Runtime container returned an invalid identity") from exc
-    if uid < 0 or gid < 0:
-        raise RuntimeError("Runtime container returned an invalid identity")
-    return uid, gid
-
-
 def _write_input_file(
     container: Container,
     directory: str,
@@ -478,6 +564,8 @@ def _write_input_file(
     content: bytes,
     *,
     timeout_seconds: int,
+    user: str,
+    identity: RuntimeExecutionIdentity | None = None,
 ) -> None:
     # Docker's archive endpoint rejects read-only rootfs, including writable tmpfs mounts.
     # Exec stdin keeps credentials out of argv and writes as the runtime's own user.
@@ -488,15 +576,44 @@ def _write_input_file(
         "assert len(data)<=int(sys.argv[3]); "
         "f=os.fdopen(fd,'wb'); f.write(data); f.close()"
     )
+    exit_code = _exec_stdin(
+        container,
+        _execution_command(["python", "-c", writer, directory, path, str(len(content))], identity),
+        content,
+        timeout_seconds=timeout_seconds,
+        user=user,
+    )
+    if exit_code != 0:
+        raise RuntimeError("Runtime command input transfer failed")
+
+
+def _execution_command(command: list[str], identity: RuntimeExecutionIdentity | None) -> list[str]:
+    if identity is None:
+        return command
+    return [
+        "python",
+        "-m",
+        "opsmesh_runtime.execution_launch",
+        str(identity.allocation_id),
+        str(identity.uid),
+        "--command",
+        *command,
+    ]
+
+
+def _exec_stdin(
+    container: Container, command: list[str], content: bytes, *, timeout_seconds: int, user: str
+) -> int:
     if container.client is None:
         raise RuntimeError("Runtime container has no Docker client")
     api = container.client.api
     execution = api.exec_create(
         container.id,
-        ["python", "-c", writer, directory, path, str(len(content))],
+        command,
         stdin=True,
         stdout=True,
         stderr=True,
+        user=user,
     )
     connection = api.exec_start(execution["Id"], socket=True)
     try:
@@ -513,25 +630,25 @@ def _write_input_file(
                 response.close()
         finally:
             connection.close()
-    if api.exec_inspect(execution["Id"])["ExitCode"] != 0:
-        raise RuntimeError("Runtime command input transfer failed")
-
-
-def _single_file_archive(name: str, content: bytes) -> bytes:
-    if name in {"", ".", ".."} or "/" in name or "\\" in name:
-        raise ValueError("Sandbox file name is invalid")
-    output = io.BytesIO()
-    with tarfile.open(fileobj=output, mode="w", format=tarfile.USTAR_FORMAT) as tar:
-        file_info = tarfile.TarInfo(name)
-        file_info.size = len(content)
-        file_info.mode = 0o600
-        tar.addfile(file_info, io.BytesIO(content))
-    return output.getvalue()
+    exit_code = api.exec_inspect(execution["Id"])["ExitCode"]
+    if not isinstance(exit_code, int):
+        raise RuntimeError("Runtime control process did not exit")
+    return exit_code
 
 
 def _runtime_limit(runtime: WorkspaceRuntime, key: str, default: int) -> int:
     value = runtime.limits.get(key)
     return value if isinstance(value, int) and value > 0 else default
+
+
+def _run_identity(runtime: WorkspaceRuntime, run_id: UUID) -> RuntimeExecutionIdentity:
+    session = object_session(runtime)
+    if session is None:
+        raise RuntimeError("Runtime identity requires a persisted allocation")
+    allocation = RuntimeAllocationStore(session).get(runtime, "run", run_id)
+    if allocation is None:
+        raise RuntimeError("Run has no Runtime execution identity")
+    return allocation_identity(allocation)
 
 
 def _bounded_bytes(content: bytes, limit: int) -> bytes:
@@ -578,23 +695,6 @@ def _remove_input_file(container: Container, path: str, directory: str) -> None:
         raise RuntimeError("Runtime command input cleanup failed")
 
 
-def _read_bounded_archive(stream: Any, *, payload_limit: int) -> bytes:
-    archive_limit = payload_limit + _ARCHIVE_OVERHEAD_LIMIT_BYTES
-    chunks: list[bytes] = []
-    received = 0
-    try:
-        for chunk in stream:
-            received += len(chunk)
-            if received > archive_limit:
-                raise ValueError("Runtime output archive exceeds its transfer limit")
-            chunks.append(chunk)
-    finally:
-        close = getattr(stream, "close", None)
-        if callable(close):
-            close()
-    return b"".join(chunks)
-
-
 def _decode_output(output: bytes | None) -> str:
     if output is None:
         return ""
@@ -604,26 +704,3 @@ def _decode_output(output: bytes | None) -> str:
 def _require_positive_timeout(timeout_seconds: int) -> None:
     if timeout_seconds <= 0:
         raise ValueError("Docker operation timeout must be positive")
-
-
-def _single_regular_file_from_tar(archive: bytes, *, max_bytes: int) -> bytes:
-    try:
-        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
-            members = tar.getmembers()
-            if any(member.issym() or member.islnk() for member in members):
-                raise ValueError("Runtime output cannot be a symbolic or hard link")
-            regular_files = [member for member in members if member.isfile()]
-            if len(regular_files) != 1:
-                raise ValueError("Runtime output must be exactly one regular file")
-            member = regular_files[0]
-            if member.size > max_bytes:
-                raise ValueError("Runtime file exceeds its transfer limit")
-            stream = tar.extractfile(member)
-            if stream is None:
-                raise ValueError("Runtime output archive is invalid")
-            content = stream.read(max_bytes + 1)
-    except tarfile.TarError as exc:
-        raise ValueError("Runtime output archive is invalid") from exc
-    if len(content) > max_bytes or len(content) != member.size:
-        raise ValueError("Runtime output size is invalid")
-    return content

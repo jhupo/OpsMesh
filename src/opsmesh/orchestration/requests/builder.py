@@ -178,7 +178,7 @@ class RunRequestBuilder:
                 select(WorkspaceRuntime).where(
                     WorkspaceRuntime.workspace_id == run.workspace_id,
                     WorkspaceRuntime.id == runtime_id,
-                    WorkspaceRuntime.execution_mode.in_(["isolated", "pooled", "persistent"]),
+                    WorkspaceRuntime.execution_mode.in_(["isolated", "shared"]),
                     WorkspaceRuntime.status.in_(["active", "running"]),
                 )
             )
@@ -186,7 +186,7 @@ class RunRequestBuilder:
                 raise RunRuntimeAuthorizationError(
                     "conversation_runtime_required",
                     "Conversation execution requires an approved "
-                    "isolated, pooled or persistent Runtime",
+                    "isolated or shared Runtime",
                 )
         runtime_profile = agent_runtime_profile_for_snapshot(
             snapshot,

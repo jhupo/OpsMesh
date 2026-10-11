@@ -17,9 +17,6 @@ else:
     RedisClient = object
 
 
-
-
-
 def admin_worker_service(
     session: Session = Depends(get_db_session),
 ) -> AdminWorkerService:

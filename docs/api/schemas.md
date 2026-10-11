@@ -3691,12 +3691,12 @@
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `host_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_template_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_provider` | string | 是 | — |
 | `runtime_type` | string | 是 | — |
-| `execution_mode` | string | 是 | `enum=["none", "isolated", "pooled", "persistent"]` |
-| `pool_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `execution_mode` | string | 是 | `enum=["isolated", "shared"]` |
 | `name` | string | 是 | — |
 | `status` | string | 是 | — |
 | `connection_status` | string | 是 | — |
@@ -3737,10 +3737,8 @@
     },
     "execution_mode": {
       "enum": [
-        "none",
         "isolated",
-        "pooled",
-        "persistent"
+        "shared"
       ],
       "title": "Execution Mode",
       "type": "string"
@@ -3749,6 +3747,18 @@
       "readOnly": true,
       "title": "Has Docker Container",
       "type": "boolean"
+    },
+    "host_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Host Id"
     },
     "id": {
       "format": "uuid",
@@ -3780,17 +3790,6 @@
       "additionalProperties": true,
       "title": "Network Policy",
       "type": "object"
-    },
-    "pool_key": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Pool Key"
     },
     "runtime_provider": {
       "title": "Runtime Provider",
@@ -3844,12 +3843,12 @@
     "created_at",
     "updated_at",
     "workspace_id",
+    "host_id",
     "runtime_template_id",
     "runtime_space_id",
     "runtime_provider",
     "runtime_type",
     "execution_mode",
-    "pool_key",
     "name",
     "status",
     "connection_status",
@@ -35020,8 +35019,9 @@ Explicit region a privileged editor is allowed to change.
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
 | `workspace_runtime_id` | string (uuid) | 是 | `format="uuid"` |
-| `owner_kind` | string | 是 | `enum=["run", "mcp"]` |
+| `owner_kind` | string | 是 | `enum=["run", "mcp", "command"]` |
 | `owner_id` | string (uuid) | 是 | `format="uuid"` |
+| `host_id` | string (uuid) | 是 | `format="uuid"` |
 
 ```json
 {
@@ -35029,6 +35029,11 @@ Explicit region a privileged editor is allowed to change.
     "created_at": {
       "format": "date-time",
       "title": "Created At",
+      "type": "string"
+    },
+    "host_id": {
+      "format": "uuid",
+      "title": "Host Id",
       "type": "string"
     },
     "id": {
@@ -35044,7 +35049,8 @@ Explicit region a privileged editor is allowed to change.
     "owner_kind": {
       "enum": [
         "run",
-        "mcp"
+        "mcp",
+        "command"
       ],
       "title": "Owner Kind",
       "type": "string"
@@ -35072,7 +35078,8 @@ Explicit region a privileged editor is allowed to change.
     "workspace_id",
     "workspace_runtime_id",
     "owner_kind",
-    "owner_id"
+    "owner_id",
+    "host_id"
   ],
   "title": "RuntimeAllocationResponse",
   "type": "object"
@@ -35289,19 +35296,16 @@ Explicit region a privileged editor is allowed to change.
 | `runtime_space_id` | string (uuid) anyOf null | 否 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `limits` | [RuntimeLimitsRequest](schemas.md#schema-RuntimeLimitsRequest) anyOf null | 否 | `anyOf=[{"$ref": "#/components/schemas/RuntimeLimitsRequest"}, {"type": "null"}]` |
 | `network_disabled` | boolean | 否 | `default=true` |
-| `execution_mode` | string | 否 | `default="pooled"`; `enum=["none", "isolated", "pooled", "persistent"]` |
-| `pool_key` | string anyOf null | 否 | `anyOf=[{"maxLength": 160, "minLength": 1, "type": "string"}, {"type": "null"}]` |
+| `execution_mode` | string | 否 | `default="shared"`; `enum=["isolated", "shared"]` |
 
 ```json
 {
   "properties": {
     "execution_mode": {
-      "default": "pooled",
+      "default": "shared",
       "enum": [
-        "none",
         "isolated",
-        "pooled",
-        "persistent"
+        "shared"
       ],
       "title": "Execution Mode",
       "type": "string"
@@ -35326,19 +35330,6 @@ Explicit region a privileged editor is allowed to change.
       "default": true,
       "title": "Network Disabled",
       "type": "boolean"
-    },
-    "pool_key": {
-      "anyOf": [
-        {
-          "maxLength": 160,
-          "minLength": 1,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Pool Key"
     },
     "runtime_space_id": {
       "anyOf": [
@@ -54755,12 +54746,12 @@ A bounded reference to task or completed-step data.
 | `created_at` | string (date-time) | 是 | `format="date-time"` |
 | `updated_at` | string (date-time) | 是 | `format="date-time"` |
 | `workspace_id` | string (uuid) | 是 | `format="uuid"` |
+| `host_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_template_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_space_id` | string (uuid) anyOf null | 是 | `anyOf=[{"format": "uuid", "type": "string"}, {"type": "null"}]` |
 | `runtime_provider` | string | 是 | — |
 | `runtime_type` | string | 是 | — |
-| `execution_mode` | string | 是 | `enum=["none", "isolated", "pooled", "persistent"]` |
-| `pool_key` | string anyOf null | 是 | `anyOf=[{"type": "string"}, {"type": "null"}]` |
+| `execution_mode` | string | 是 | `enum=["isolated", "shared"]` |
 | `name` | string | 是 | — |
 | `status` | string | 是 | — |
 | `connection_status` | string | 是 | — |
@@ -54789,10 +54780,8 @@ A bounded reference to task or completed-step data.
     },
     "execution_mode": {
       "enum": [
-        "none",
         "isolated",
-        "pooled",
-        "persistent"
+        "shared"
       ],
       "title": "Execution Mode",
       "type": "string"
@@ -54801,6 +54790,18 @@ A bounded reference to task or completed-step data.
       "readOnly": true,
       "title": "Has Docker Container",
       "type": "boolean"
+    },
+    "host_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Host Id"
     },
     "id": {
       "format": "uuid",
@@ -54832,17 +54833,6 @@ A bounded reference to task or completed-step data.
       "additionalProperties": true,
       "title": "Network Policy",
       "type": "object"
-    },
-    "pool_key": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "title": "Pool Key"
     },
     "runtime_provider": {
       "title": "Runtime Provider",
@@ -54896,12 +54886,12 @@ A bounded reference to task or completed-step data.
     "created_at",
     "updated_at",
     "workspace_id",
+    "host_id",
     "runtime_template_id",
     "runtime_space_id",
     "runtime_provider",
     "runtime_type",
     "execution_mode",
-    "pool_key",
     "name",
     "status",
     "connection_status",

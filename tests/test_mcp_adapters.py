@@ -15,6 +15,7 @@ from opsmesh.runtime.agent_host.wire import RpcFrame
 from opsmesh.runtime.instances.models import WorkspaceRuntime
 from opsmesh.shared.concurrency import BlockingIO
 from opsmesh.shared.security.secrets import SecretEncryptionService
+from tests.fixtures.runtime_host import execution_identity, runtime_host
 
 
 class RuntimeChannel:
@@ -56,16 +57,19 @@ class RuntimeDocker:
         self.channel = channel
         self.terminated = []
 
-    def open_mcp_channel(self, container_id, *, working_dir):
+    def open_mcp_channel(self, container_id, *, working_dir, identity):
         return self.channel
 
-    def terminate_agent_process(self, container_id, pid):
+    def terminate_agent_process(self, container_id, pid, *, identity):
         self.terminated.append((container_id, pid))
 
 
 def runtime():
     return WorkspaceRuntime(
-        id=uuid4(), workspace_id=uuid4(), docker_container_id="runtime-test", status="running"
+        id=uuid4(),
+        workspace_id=uuid4(),
+        host=runtime_host(uuid4(), "runtime-test", capacity=16, node_id="test-node"),
+        status="running",
     )
 
 
@@ -79,7 +83,7 @@ def test_stdio_request_executes_in_runtime_and_credentials_stay_in_private_paylo
         provider="hosted", encrypted_secret_payload=encrypted.ciphertext
     )
     operation = DockerRuntimeStdioMcpToolAdapter(
-        docker=docker, runtime=target, secret_service=secrets
+        docker=docker, runtime=target, secret_service=secrets, identity=execution_identity()
     ).prepare(
         server=McpServer(
             workspace_id=target.workspace_id,
@@ -108,7 +112,9 @@ def test_cancelled_operation_terminates_runtime_process_and_closes_socket():
     async def execute():
         channel = RuntimeChannel(block=True)
         docker = RuntimeDocker(channel)
-        operation = DockerRuntimeStdioMcpToolAdapter(docker=docker, runtime=target).prepare(
+        operation = DockerRuntimeStdioMcpToolAdapter(
+            docker=docker, runtime=target, identity=execution_identity()
+        ).prepare(
             server=McpServer(
                 workspace_id=target.workspace_id, connection={"command": "mcp-test", "args": []}
             ),
@@ -132,7 +138,9 @@ def test_remote_private_network_is_rejected_before_runtime_execution():
     target = runtime()
     docker = RuntimeDocker(RuntimeChannel())
     with pytest.raises(McpExecutionError):
-        DockerRuntimeHttpMcpToolAdapter(docker, target, None).prepare(
+        DockerRuntimeHttpMcpToolAdapter(
+            docker, target, None, identity=execution_identity()
+        ).prepare(
             server=McpServer(
                 workspace_id=target.workspace_id,
                 server_type="sse",

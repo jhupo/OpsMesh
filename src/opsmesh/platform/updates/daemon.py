@@ -11,6 +11,7 @@ from uuid import UUID
 
 from filelock import FileLock
 from opsmesh_operator.backups import BackupStore, digest
+from opsmesh_operator.contracts import ReleaseManifest
 from opsmesh_operator.deployments import deployment_for
 from opsmesh_operator.installation import Installation
 from opsmesh_operator.releases import ReleaseSource
@@ -91,9 +92,24 @@ class HostUpdater:
             job = UpdateService(session).get(job_id)
             tag, action = job.tag, job.action
         previous = self.installation.current()
-        target = ReleaseSource(self.installation.repository).fetch_manifest(
-            tag, self.installation.root / "downloads" / tag
-        )
+        if action == "backup":
+            if tag != previous.tag:
+                raise ValueError("Backup plans must target the installed release")
+            target = previous
+        elif action == "rollback":
+            retained = [
+                ReleaseManifest.model_validate_json(path.read_bytes())
+                for path in (self.installation.root / "releases").glob(
+                    f"{tag}-*/release-manifest.json"
+                )
+            ]
+            if len(retained) != 1:
+                raise ValueError("Rollback requires one unambiguous retained release")
+            target = retained[0]
+        else:
+            target = ReleaseSource(self.installation.repository).fetch_manifest(
+                tag, self.installation.root / "downloads" / tag
+            )
         revision = self.revision()
         if action == "update":
             if Version(target.tag[1:]) <= Version(previous.tag[1:]):

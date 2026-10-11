@@ -61,13 +61,43 @@ redis.call("RPUSH", KEYS[1], ARGV[1])
 return 1
 """
 
+SCAN_CANDIDATES_SCRIPT = """
+local count = redis.call("LLEN", KEYS[1])
+if count == 0 then return {} end
+local limit = tonumber(ARGV[1])
+local pages = math.ceil(count / limit)
+local sequence = redis.call("INCR", KEYS[2]) - 1
+redis.call("EXPIRE", KEYS[2], 3600)
+local first = (sequence % pages) * limit
+return redis.call("LRANGE", KEYS[1], first, first + limit - 1)
+"""
+
 LEASE_JOB_SCRIPT = """
-local removed = redis.call("LREM", KEYS[1], 1, ARGV[1])
-if removed == 0 then
-    return 0
+local candidates = cjson.decode(ARGV[1])
+local best = nil
+local best_priority = nil
+local best_score = nil
+for _, candidate in ipairs(candidates) do
+    if redis.call("LPOS", KEYS[1], candidate.payload) ~= false then
+        local job = cjson.decode(candidate.payload)
+        local score = tonumber(redis.call("ZSCORE", KEYS[3], job.workspace_id)) or 0
+        local priority = tonumber(job.priority) or 0
+        if best == nil or priority > best_priority
+            or (priority == best_priority and score < best_score) then
+            best = candidate
+            best_priority = priority
+            best_score = score
+        end
+    end
 end
-redis.call("ZADD", KEYS[2], ARGV[2], ARGV[3])
-return 1
+if best == nil then return false end
+redis.call("LREM", KEYS[1], 1, best.payload)
+redis.call("ZADD", KEYS[2], ARGV[2], best.entry)
+local job = cjson.decode(best.payload)
+local sequence = redis.call("INCR", KEYS[4])
+redis.call("ZADD", KEYS[3], sequence, job.workspace_id)
+redis.call("ZREMRANGEBYRANK", KEYS[3], 0, -1001)
+return best.entry
 """
 
 RECLAIM_PROCESSING_SCRIPT = """
@@ -253,7 +283,11 @@ class RedisQueue:
         predicate: Callable[[JobPayload], bool],
         *,
         scan_limit: int = 50,
+        wait: bool = True,
     ) -> QueueLease | None:
+        if not wait:
+            self.reclaim_due_retries()
+            return self._pop_best_matching(predicate, scan_limit=scan_limit)
         return self._dequeue_with_optional_wait(predicate, scan_limit=scan_limit)
 
     def ack(self, job: JobPayload, *, lease_token: str | None = None) -> bool:
@@ -590,37 +624,39 @@ class RedisQueue:
         scan_limit: int = 50,
     ) -> QueueLease | None:
         queue_key = self.keys.queue(self.queue_name)
-        best: tuple[int, int, bytes | str, JobPayload] | None = None
-        raw_payloads = self.redis.lrange(queue_key, 0, max(1, scan_limit) - 1)
-        for index, raw_payload in enumerate(raw_payloads):
+        candidates: list[dict[str, str]] = []
+        raw_payloads = self.redis.eval(  # type: ignore[no-untyped-call]
+            SCAN_CANDIDATES_SCRIPT,
+            2,
+            queue_key,
+            self.keys.queue_scan_sequence(self.queue_name),
+            max(1, scan_limit),
+        )
+        for raw_payload in raw_payloads:
             job = self._deserialize(raw_payload)
             if not predicate(job):
                 continue
-            candidate = (job.priority, -index, raw_payload, job)
-            if best is None or candidate[:2] > best[:2]:
-                best = candidate
-        if best is None:
+            payload = raw_payload.decode() if isinstance(raw_payload, bytes) else raw_payload
+            candidates.append(
+                {"payload": payload, "entry": self._serialize_processing_entry(payload)}
+            )
+        if not candidates:
             return None
-        _, _, selected_payload, job = best
-        lease_token = self._lease_raw_job(queue_key, selected_payload)
-        return QueueLease(job=job, lease_token=lease_token) if lease_token else None
-
-    def _lease_raw_job(self, queue_key: str, raw_payload: bytes | str) -> str | None:
-        processing_entry = self._serialize_processing_entry(raw_payload)
         processing_deadline = time.time() + self.visibility_timeout_seconds
-        leased = self.redis.eval(  # type: ignore[no-untyped-call]
+        selected = self.redis.eval(  # type: ignore[no-untyped-call]
             LEASE_JOB_SCRIPT,
-            2,
+            4,
             queue_key,
             self._processing_key(),
-            raw_payload,
+            self.keys.queue_fairness(self.queue_name),
+            self.keys.queue_fairness_sequence(self.queue_name),
+            json.dumps(candidates),
             processing_deadline,
-            processing_entry,
         )
-        if not leased:
+        if not isinstance(selected, bytes | str):
             return None
-        lease_id = json.loads(processing_entry).get("lease_id")
-        return lease_id if isinstance(lease_id, str) else None
+        entry = self._deserialize_processing_entry(selected)
+        return QueueLease(job=entry["job"], lease_token=entry["lease_id"])
 
     def _remove_processing_job(
         self,
