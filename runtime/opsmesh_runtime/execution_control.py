@@ -143,12 +143,14 @@ def configure(value: dict) -> None:
     nft(identity_rules(policy, resolvers(), exists=exists))
     temporary = path.with_suffix(".pending")
     temporary.unlink(missing_ok=True)
-    # Create with the final read scope, rather than briefly publishing a default
-    # world-readable file. Only root and the trusted proxy read these ACLs.
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
+    # ACLs contain public network rules, never credentials. Only the trusted
+    # proxy owns their read permission; workloads have neither owner nor group
+    # access. The privileged controller can replace them in this root-owned dir.
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
     with os.fdopen(descriptor, "w") as output:
-        os.fchown(output.fileno(), 0, pwd.getpwnam(PROXY_USER).pw_gid)
         output.write(json.dumps(policy.as_dict()))
+        proxy = pwd.getpwnam(PROXY_USER)
+        os.fchown(output.fileno(), proxy.pw_uid, proxy.pw_gid)
     temporary.replace(path)
     directory = Path(f"/run/opsmesh-identities/{policy.uid}")
     directory.mkdir(mode=0o555, exist_ok=True)
